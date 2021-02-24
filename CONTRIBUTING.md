@@ -6,12 +6,12 @@ We welcome contributions to the NEAT project. Before contributing, please review
 Issues
 ------
 
-To submit issues and enhancement requests, please use the [GitHub issues tracker](https://github.com/zstephens/neat-genreads/issues).
+To submit issues and enhancement requests, please use the [GitHub issues tracker](https://github.com/ncsa/neat-genreads/issues).
 
 Contributing
 ------------
 
-Currently, the major effort NEAT is focused on updating the code to Python 3. This is happening in the [python3_conversion branch](https://github.com/zstephens/neat-genreads/tree/python3_conversion). We are working on bringing the code up to [PEP 8 standards](https://www.python.org/dev/peps/pep-0008/), as well as leveraging Biopython and Pandas to speed up analysis. Some work is still ongoing in Master branch, based on issues and bugs that have been raised in the Issues section. 
+Currently, the major effort NEAT is focused on bringing the code up to [PEP 8 standards](https://www.python.org/dev/peps/pep-0008/), as well as leveraging Biopython and Pandas to speed up analysis. We have plans to increase NEAT's utility for a wider range of genomic situations, such as plants, bacteria, and complex features like cancer.
 
 In general, we follow the "fork-and-pull" Git workflow.
 
