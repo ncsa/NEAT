@@ -212,7 +212,9 @@ python compute_gc.py                 \
 Computes empirical fragment length distribution from sample data.
 Takes SAM file via stdin:
 
-    ./samtools view toy.bam | python compute_fraglen.py
+    python compute_fralgen.py			\
+	-i path to sam file		\
+	-o path/to/output
 
 and creates fraglen.p model in working directory.
 
