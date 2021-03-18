@@ -12,10 +12,14 @@
 import pickle
 import argparse
 import platform
+import sys
 
 os = platform.system()
-if os !='Windows':
+if os != 'Windows':
     import pysam
+else:
+    print("Pysam is a required module for this utility and currently does not have a Windows version. Please re-run"
+          "with a Linux-based OS (e.g., MacOS or Ubuntu).")
 
 
 def median(datalist: list) -> float:
@@ -41,7 +45,6 @@ def median(datalist: list) -> float:
     else:
         median = datalist[midpoint]
     return median
-
 
 
 def median_absolute_deviation(datalist: list) -> float:
@@ -70,43 +73,29 @@ def median_absolute_deviation(datalist: list) -> float:
 
 def count_frags(file: str) -> list:
     """
-    Takes a sam or bam file input and creates a list of the number of reads that are paired,
+    Takes a sam file input and creates a list of the number of reads that are paired,
     first in the pair, confidently mapped and whose pair is mapped to the same reference
     :param file: A sam input file
     :return: A list of the tlens from the bam/sam file
     """
-    FILTER_MAPQUAL = 10  # only consider reads that are mapped with at least this mapping quality
+    filter_mapqual = 10  # only consider reads that are mapped with at least this mapping quality
     count_list = []
-    # Check if the file is sam or bam and decide how to open based on that
-    if file[-4:] == ".sam":
-        file_to_parse = open(file, 'r')
-    elif file[-4:] == ".bam":
-        print("WARNING: Must have pysam installed to read bam files. Pysam does not work on Windows OS.")
-        if os != 'Windows':
-            file_to_parse = pysam.AlignmentFile(file, 'rb')
-        else:
-            raise Exception("Your machine is running Windows. Please convert any BAM files to SAM files using samtools prior to input")
-    else:
-        print("Unknown file type, file extension must be bam or sam")
-        exit(1)
 
-    for item in file_to_parse:
-        # Need to convert bam iterable objects into strings for the next part
-        line = str(item)
-        # Skip all comments and headers
-        if line[0] == '#' or line[0] == '@':
-            continue
-        splt = line.strip().split('\t')
-        sam_flag = int(splt[1])
-        my_ref = splt[2]
-        map_qual = int(splt[4])
-        mate_ref = splt[6]
-        my_tlen = abs(int(splt[8]))
+    try:
+        file_to_parse = pysam.AlignmentFile(file, 'rb')
+    except ValueError:
+        print("File type not recognized by pysam.")
+        sys.exit(1)
+
+    for item in file_to_parse.fetch():
+
+        my_template_length = abs(item.template_length)
+
         # if read is paired, and is first in pair, and is confidently mapped...
-        if sam_flag & 1 and sam_flag & 64 and map_qual > FILTER_MAPQUAL:
+        if item.flag & 1 and item.flag & 64 and item.mapping_quality > filter_mapqual:
             # and mate is mapped to same reference
-            if mate_ref == '=' or mate_ref == my_ref:
-                count_list.append(my_tlen)
+            if item.next_reference_id == '=' or item.next_reference_id == item.reference_id:
+                count_list.append(my_template_length)
     count_list = sorted(count_list)
     file_to_parse.close()
     return count_list
@@ -141,7 +130,7 @@ def main():
     """
     Main function takes 2 arguments:
         input - a path to a sam or bam file input. Note that sam files can be formed by applying samtools to a bam file
-        in the follawing way: samtools view nameof.bam > nameof.sam
+        in the following way: samtools view nameof.bam > nameof.sam
         
         output - the string prefix of the output. The actual output will be the prefix plus ".p" at the end
         for pickle file. The list of values and list of probabilities are dumped as a list of lists
@@ -163,8 +152,11 @@ def main():
     all_tlens = count_frags(input_file)
     print('\nSaving model...')
     out_vals, out_probs = compute_probs(all_tlens)
+    print(f'Out vals: {out_vals}')
+    print(f'out probs: {out_probs}')
     pickle.dump([out_vals, out_probs], open(output, 'wb'))
     print('\nModel successfully saved.')
+
 
 if __name__ == "__main__":
     main()
