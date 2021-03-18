@@ -152,8 +152,9 @@ def main():
     all_tlens = count_frags(input_file)
     print('\nSaving model...')
     out_vals, out_probs = compute_probs(all_tlens)
-    print(f'Out vals: {out_vals}')
-    print(f'out probs: {out_probs}')
+    # Print statements for debugging:
+#     print(f'Out vals: {out_vals}')
+#     print(f'out probs: {out_probs}')
     pickle.dump([out_vals, out_probs], open(output, 'wb'))
     print('\nModel successfully saved.')
 
