@@ -84,7 +84,9 @@ def main(raw_args=None):
                         help='empirical fragment length distribution')
     parser.add_argument('--gc-model', type=str, required=False, metavar='<str>', default=None,
                         help='empirical GC coverage bias distribution')
-    parser.add_argument('--bam', required=False, action='store_true', default=False, help='output golden BAM file')
+    parser.add_argument('--bam', required=False, action='store_true', default=False, help='output golden BAM file ('
+                                                                                          'Note that this will '
+                                                                                          'drastically slow NEAT down)')
     parser.add_argument('--vcf', required=False, action='store_true', default=False, help='output golden VCF file')
     parser.add_argument('--fa', required=False, action='store_true', default=False,
                         help='output FASTA instead of FASTQ')
@@ -121,7 +123,9 @@ def main(raw_args=None):
         (args.c, args.p, args.tr, args.dr, args.e, args.E, args.m, args.M, args.Mb, args.v)
     # cancer params (disabled currently)
     # (cancer, cancer_model, cancer_purity) = (args.cancer, args.cm, args.cp)
+    # For now these are set to false
     (cancer, cancer_model, cancer_purity) = (False, None, 0.8)
+
     (off_target_scalar, off_target_discard, force_coverage, rescale_qual) = (args.to,
                                                                              args.discard_offtarget,
                                                                              args.force_coverage, args.rescale_qual)
