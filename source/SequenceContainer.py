@@ -12,6 +12,7 @@ from source.neat_cigar import CigarString
 from source.probability import DiscreteDistribution, poisson_list
 
 # TODO This whole file is in desperate need of refactoring
+# TODO 1st step will be to make all cigar strings optional, since that is only needed for bams
 
 """
 Constants needed for analysis
@@ -94,28 +95,30 @@ class SequenceContainer:
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None,
-                 only_vcf=False):
+    def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, produce_bam=False, mut_models=None,
+                 mut_rate=None, only_vcf=False):
 
         # initialize basic variables
         self.only_vcf = only_vcf
         self.x = x_offset
         self.ploidy = ploidy
         self.read_len = read_len
-        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)]
+        self.produce_bam = produce_bam
+        self.sequences = [sequence] * self.ploidy
         self.seq_len = len(sequence)
-        self.indel_list = [[] for _ in range(self.ploidy)]
-        self.snp_list = [[] for _ in range(self.ploidy)]
-        self.all_cigar = [[] for _ in range(self.ploidy)]
-        self.fm_pos = [[] for _ in range(self.ploidy)]
-        self.fm_span = [[] for _ in range(self.ploidy)]
+        self.indel_list = [[]] * self.ploidy
+        self.snp_list = [[]] * self.ploidy
+        self.fm_pos = [[]] * self.ploidy
+        self.fm_span = [[]] * self.ploidy
+        self.black_list = [np.zeros(self.seq_len, dtype='<i4')] * self.ploidy
+        self.all_cigar = [[]] * self.ploidy
 
         # Blacklist explanation:
         # black_list[ploid][pos] = 0		safe to insert variant here
         # black_list[ploid][pos] = 1		indel inserted here
         # black_list[ploid][pos] = 2		snp inserted here
         # black_list[ploid][pos] = 3		invalid position for various processing reasons
-        self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
+        self.black_list = [np.zeros(self.seq_len, dtype='<i4')] * self.ploidy
 
         # disallow mutations to occur on window overlap points
         self.win_buffer = window_overlap
@@ -125,7 +128,7 @@ class SequenceContainer:
 
         # initialize mutation models
         if not mut_models:
-            default_model = [copy.deepcopy(DEFAULT_MODEL_1) for _ in range(self.ploidy)]
+            default_model = [copy.deepcopy(DEFAULT_MODEL_1)] * self.ploidy
             self.model_data = default_model[:self.ploidy]
         else:
             if len(mut_models) != self.ploidy:
@@ -177,8 +180,8 @@ class SequenceContainer:
         #
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
-        trinuc_snp_bias = [[0. for _ in range(self.seq_len)] for _ in range(self.ploidy)]
-        self.trinuc_bias = [None for _ in range(self.ploidy)]
+        trinuc_snp_bias = [[0.] * self.seq_len] * self.ploidy
+        self.trinuc_bias = [None] * self.ploidy
         for p in range(self.ploidy):
             for i in range(self.win_buffer + 1, self.seq_len - 1):
                 trinuc_snp_bias[p][i] = self.models[p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
@@ -190,18 +193,19 @@ class SequenceContainer:
         self.coverage_distribution = None
         self.fraglen_ind_map = None
 
-    def update_basic_vars(self, x_offset, sequence, ploidy, window_overlap, read_len):
+    def update_basic_vars(self, x_offset, sequence, ploidy, window_overlap, read_len, produce_bam=False):
         self.x = x_offset
         self.ploidy = ploidy
         self.read_len = read_len
-        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)]
+        self.produce_bam = produce_bam
+        self.sequences = [sequence] * self.ploidy
         self.seq_len = len(sequence)
-        self.indel_list = [[] for _ in range(self.ploidy)]
-        self.snp_list = [[] for _ in range(self.ploidy)]
-        self.all_cigar = [[] for _ in range(self.ploidy)]
-        self.fm_pos = [[] for _ in range(self.ploidy)]
-        self.fm_span = [[] for _ in range(self.ploidy)]
-        self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
+        self.indel_list = [[]] * self.ploidy
+        self.snp_list = [[]] * self.ploidy
+        self.fm_pos = [[]] * self.ploidy
+        self.fm_span = [[]] * self.ploidy
+        self.black_list = [np.zeros(self.seq_len, dtype='<i4')] * self.ploidy
+        self.all_cigar = [[]] * self.ploidy
 
         # disallow mutations to occur on window overlap points
         self.win_buffer = window_overlap
@@ -211,7 +215,7 @@ class SequenceContainer:
 
     def update_mut_models(self, mut_models, mut_rate):
         if not mut_models:
-            default_model = [copy.deepcopy(DEFAULT_MODEL_1) for _ in range(self.ploidy)]
+            default_model = [copy.deepcopy(DEFAULT_MODEL_1)] * self.ploidy
             self.model_data = default_model[:self.ploidy]
         else:
             if len(mut_models) != self.ploidy:
@@ -241,8 +245,8 @@ class SequenceContainer:
             self.models[-1].append([m for m in n[9]])
 
     def update_trinuc_bias(self):
-        trinuc_snp_bias = [[0. for _ in range(self.seq_len)] for _ in range(self.ploidy)]
-        self.trinuc_bias = [None for _ in range(self.ploidy)]
+        trinuc_snp_bias = [[0.] * self.seq_len] * self.ploidy
+        self.trinuc_bias = [None] * self.ploidy
         for p in range(self.ploidy):
             for i in range(self.win_buffer + 1, self.seq_len - 1):
                 trinuc_snp_bias[p][i] = self.models[p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
@@ -270,11 +274,7 @@ class SequenceContainer:
                 # Zach implemented a change here but I can't remember if I changed it back for some reason.
                 # If second line below doesn't work, reactivate the first line.
                 # max_coord = min([len(self.sequences[i]) - self.read_len, len(self.all_cigar[i]) - self.read_len])
-                max_coord = min([len(self.sequences[i]) - self.read_len, len(self.all_cigar[i]) - 1])
-
-                # Trying to fix a problem wherein the above line gives a negative answer
-                if max_coord <= 0:
-                    max_coord = min([len(self.sequences[i]), len(self.all_cigar[i])])
+                max_coord = min([len(self.sequences[i]) - self.read_len, len(self.sequences[i])])
 
                 # compute gc-bias
                 j = 0
@@ -482,7 +482,7 @@ class SequenceContainer:
     def random_mutations(self):
 
         # add random indels
-        all_indels = [[] for _ in self.sequences]
+        all_indels = [[]] * len(self.sequences)
         for i in range(self.ploidy):
             for j in range(self.indels_to_add[i]):
                 # insert homozygous indel
@@ -609,7 +609,9 @@ class SequenceContainer:
         # MODIFY REFERENCE STRING: INDELS
         for i in range(len(all_indels_ins)):
             rolling_adj = 0
-            temp_symbol_list = CigarString.string_to_list(str(len(self.sequences[i])) + "M")
+            # TODO looking to remove cigar string calculations
+            if self.produce_bam:
+                temp_symbol_list = CigarString.string_to_list(str(len(self.sequences[i])) + "M")
 
             for j in range(len(all_indels_ins[i])):
                 v_pos = all_indels_ins[i][j][0] + rolling_adj
@@ -625,33 +627,36 @@ class SequenceContainer:
                     # alter reference sequence
                     self.sequences[i] = self.sequences[i][:v_pos] + Seq(all_indels_ins[i][j][2]) + \
                                         self.sequences[i][v_pos2:]
-                    # notate indel positions for cigar computation
-                    if indel_length > 0:
-                        temp_symbol_list = temp_symbol_list[:v_pos + 1] + ['I'] * indel_length \
-                                              + temp_symbol_list[v_pos2 + 1:]
-                    elif indel_length < 0:
-                        temp_symbol_list[v_pos + 1] = "D" * abs(indel_length) + "M"
+                    if self.produce_bam:
+                        # notate indel positions for cigar computation
+                        if indel_length > 0:
+                            temp_symbol_list = temp_symbol_list[:v_pos + 1] + ['I'] * indel_length \
+                                                  + temp_symbol_list[v_pos2 + 1:]
+                        elif indel_length < 0:
+                            temp_symbol_list[v_pos + 1] = "D" * abs(indel_length) + "M"
 
-            # pre-compute cigar strings
-            for j in range(len(temp_symbol_list) - self.read_len):
-                self.all_cigar[i].append(temp_symbol_list[j:j + self.read_len])
+            if self.produce_bam:
+                # pre-compute cigar strings
+                for j in range(len(temp_symbol_list) - self.read_len):
+                    self.all_cigar[i].append(temp_symbol_list[j:j + self.read_len])
 
-            # create some data structures we will need later:
-            # --- self.fm_pos[ploid][pos]: position of the left-most matching base (IN REFERENCE COORDINATES, i.e.
-            #       corresponding to the unmodified reference genome)
-            # --- self.fm_span[ploid][pos]: number of reference positions spanned by a read originating from
-            #       this coordinate
-            md_so_far = 0
-            for j in range(len(temp_symbol_list)):
-                self.fm_pos[i].append(md_so_far)
-                # fix an edge case with deletions
-                if 'D' in temp_symbol_list[j]:
-                    self.fm_pos[i][-1] += temp_symbol_list[j].count('D')
-                # compute number of ref matches for each read
-                # This line gets hit a lot and is relatively slow. Might look for an improvement
-                span_dif = len([n for n in temp_symbol_list[j: j + self.read_len] if 'M' in n])
-                self.fm_span[i].append(self.fm_pos[i][-1] + span_dif)
-                md_so_far += temp_symbol_list[j].count('M') + temp_symbol_list[j].count('D')
+                # TODO do we need fm_pos at all?
+                # create some data structures we will need later:
+                # --- self.fm_pos[ploid][pos]: position of the left-most matching base (IN REFERENCE COORDINATES, i.e.
+                #       corresponding to the unmodified reference genome)
+                # --- self.fm_span[ploid][pos]: number of reference positions spanned by a read originating from
+                #       this coordinate
+                md_so_far = 0
+                for j in range(len(temp_symbol_list)):
+                    self.fm_pos[i].append(md_so_far)
+                    # fix an edge case with deletions
+                    if 'D' in temp_symbol_list[j]:
+                        self.fm_pos[i][-1] += temp_symbol_list[j].count('D')
+                    # compute number of ref matches for each read
+                    # This line gets hit a lot and is relatively slow. Might look for an improvement
+                    span_dif = len([n for n in temp_symbol_list[j: j + self.read_len] if 'M' in n])
+                    self.fm_span[i].append(self.fm_pos[i][-1] + span_dif)
+                    md_so_far += temp_symbol_list[j].count('M') + temp_symbol_list[j].count('D')
 
         # tally up all the variants we handled...
         count_dict = {}
@@ -679,10 +684,6 @@ class SequenceContainer:
 
         # choose a ploid
         my_ploid = random.randint(0, self.ploidy - 1)
-
-        # stop attempting to find a valid position if we fail enough times
-        MAX_READPOS_ATTEMPTS = 100
-        attempts_thus_far = 0
 
         # choose a random position within the ploid, and generate quality scores / sequencing errors
         reads_to_sample = []
@@ -719,15 +720,18 @@ class SequenceContainer:
         """
         read_out = []
         for read in reads_to_sample:
-            try:
-                my_cigar = self.all_cigar[my_ploid][read[0]]
-            except IndexError:
-                print('Index error when attempting to find cigar string.')
-                print(my_ploid, len(self.all_cigar[my_ploid]), read[0])
-                if frag_len is not None:
-                    print((r_pos1, r_pos2))
-                    print(frag_len, self.fraglen_ind_map[frag_len])
-                sys.exit(1)
+            if self.produce_bam:
+                try:
+                    my_cigar = self.all_cigar[my_ploid][read[0]]
+                except IndexError:
+                    print('Index error when attempting to find cigar string.')
+                    print(my_ploid, len(self.all_cigar[my_ploid]), read[0])
+                    if frag_len is not None:
+                        print((r_pos1, r_pos2))
+                        print(frag_len, self.fraglen_ind_map[frag_len])
+                    sys.exit(1)
+            else:
+                my_cigar = ''
             total_d = sum([error[1] for error in read[2] if error[0] == 'D'])
             total_i = sum([error[1] for error in read[2] if error[0] == 'I'])
             avail_b = len(self.sequences[my_ploid]) - read[0] - self.read_len - 1
@@ -752,23 +756,14 @@ class SequenceContainer:
 
             skip_indels = False
 
-            # FIXED TdB 05JUN2018
-            # Moved this outside the for error loop, since it messes up the CIGAR string when
-            # more than one deletion is in the same read
-            extra_cigar_val = []
-            # END FIXED TdB
+            if self.produce_bam:
+                extra_cigar_val = []
 
             for error in sorted_errors:
                 e_len = error[1]
                 e_pos = error[2]
                 if error[0] == 'D' or error[0] == 'I':
                     any_indel_err = True
-
-                    # FIXED TdB 05JUN2018
-                    # Moved this OUTSIDE the for error loop, since it messes up the CIGAR string
-                    # when more than one deletion is in the same read
-                    # extra_cigar_val = []
-                    # END FIXED TdB
 
                     if total_d > avail_b:  # if not enough bases to fill-in deletions, skip all indel erors
                         continue
@@ -777,13 +772,14 @@ class SequenceContainer:
                         # code, which is simplified. May need to fix this all at some point
                         first_time = False
                         fill_to_go = total_d - total_i + 1
-                        if fill_to_go > 0:
-                            try:
-                                extra_cigar_val = self.all_cigar[my_ploid][read[0] + fill_to_go][-fill_to_go:]
-                            except IndexError:
-                                # Applying the deletions we want requires going beyond region boundaries.
-                                # Skip all indel errors
-                                skip_indels = True
+                        if self.produce_bam:
+                            if fill_to_go > 0:
+                                try:
+                                    extra_cigar_val = self.all_cigar[my_ploid][read[0] + fill_to_go][-fill_to_go:]
+                                except IndexError:
+                                    # Applying the deletions we want requires going beyond region boundaries.
+                                    # Skip all indel errors
+                                    skip_indels = True
 
                     if skip_indels:
                         continue
@@ -795,16 +791,17 @@ class SequenceContainer:
                         pf = e_pos + my_adj + e_len + 1
                         if str(read[3][pi:pf]) == str(error[3]):
                             read[3] = read[3][:pi + 1] + read[3][pf:]
-                            my_cigar = my_cigar[:pi + 1] + my_cigar[pf:]
-                            # weird edge case with del at very end of region. Make a guess and add a "M"
-                            if pi + 1 == len(my_cigar):
-                                my_cigar.append('M')
+                            if self.produce_bam:
+                                my_cigar = my_cigar[:pi + 1] + my_cigar[pf:]
+                                # weird edge case with del at very end of region. Make a guess and add a "M"
+                                if pi + 1 == len(my_cigar):
+                                    my_cigar.append('M')
 
-                            try:
-                                my_cigar[pi + 1] = 'D' * e_len + my_cigar[pi + 1]
-                            except IndexError:
-                                print("Bug!! Index error on expanded cigar")
-                                sys.exit(1)
+                                try:
+                                    my_cigar[pi + 1] = 'D' * e_len + my_cigar[pi + 1]
+                                except IndexError:
+                                    print("Bug!! Index error on expanded cigar")
+                                    sys.exit(1)
 
                         else:
                             print('\nError, ref does not match alt while attempting to insert deletion error!\n')
@@ -818,7 +815,8 @@ class SequenceContainer:
                         my_adj = sse_adj[e_pos]
                         if str(read[3][e_pos + my_adj]) == error[3]:
                             read[3] = read[3][:e_pos + my_adj] + error[4] + read[3][e_pos + my_adj + 1:]
-                            my_cigar = my_cigar[:e_pos + my_adj] + ['I'] * e_len + my_cigar[e_pos + my_adj:]
+                            if self.produce_bam:
+                                my_cigar = my_cigar[:e_pos + my_adj] + ['I'] * e_len + my_cigar[e_pos + my_adj:]
                         else:
                             print('\nError, ref does not match alt while attempting to insert insertion error!\n')
                             print('---', chr(read[3][e_pos + my_adj]), '!=', error[3])
@@ -837,7 +835,7 @@ class SequenceContainer:
                         sys.exit(1)
 
             if any_indel_err:
-                if len(my_cigar):
+                if len(my_cigar) and self.produce_bam:
                     my_cigar = (my_cigar + extra_cigar_val)[:self.read_len]
 
                 read[3] = read[3][:self.read_len]
