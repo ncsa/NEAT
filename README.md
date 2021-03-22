@@ -1,11 +1,11 @@
 # The NEAT Project v3.0
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.0. NEAT has now been updated to Python 3, and is moving toward compliance with PEP8 standards. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.0. NEAT has now been updated to 3, and is moving toward compliance with PEP8 standards. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
 NEAT's gen_reads.py is the main program, and it is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant callers to the golden BAM and golden VCF produced by NEAT.
 
-This is an in-progress v3.0 of the software. Version 2.1 was coded in Python 2, and is available under releases. For an older stable release please see: [genReads1](https://github.com/zstephens/genReads1)
+This is an in-progress v3.0 of the software. Version 2.1 was coded in 2, and is available under releases. For an older stable release please see: [genReads1](https://github.com/zstephens/genReads1)
 
 To cite this work, please use:
 
@@ -39,8 +39,8 @@ Table of Contents
 
 ## Requirements
 
-* Python >= 3.6
-* biopython >= 1.78
+* >= 3.6
+* bio>= 1.78
 * matplotlib >= 3.3.4 (optional, for plotting utilities)
 * matplotlib_venn >= 0.11.6 (optional, for plotting utilities)
 * pandas >= 1.2.1
@@ -52,7 +52,7 @@ Table of Contents
 Here's the simplest invocation of genReads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
 
 ```
-python gen_reads.py -r ref.fa -R 101 -o simulated_data
+gen_reads.py -r ref.fa -R 101 -o simulated_data
 ```
 
 The most commonly added options are --pe, --bam, --vcf, and -c.
@@ -122,66 +122,66 @@ The following commands are examples for common types of data to be generated. Th
 Simulate whole genome dataset with random variants inserted according to the default model.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30
+gen_reads.py                    \
+    -r hg19.fa                  \
+    -R 126                      \
+    -o /home/me/simulated_reads \
+    --bam                       \
+    --vcf                       \
+    --pe 300 30
 ```
 
 ### Targeted region simulation
 Simulate a targeted region of a genome, e.g. exome, with -tr.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30                 \
-        -tr hg19_exome.bed
+gen_reads.py                    \
+    -r hg19.fa                  \
+    -R 126                      \
+    -o /home/me/simulated_reads \
+    --bam                       \
+    --vcf                       \
+    --pe 300 30                 \
+    -tr hg19_exome.bed
 ```
 
 ### Insert specific variants
 Simulate a whole genome dataset with only the variants in the provided VCF file using -v and -M.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30                 \
-        -v NA12878.vcf              \
-        -M 0
+gen_reads.py                    \
+    -r hg19.fa                  \
+    -R 126                      \
+    -o /home/me/simulated_reads \
+    --bam                       \
+    --vcf                       \
+    --pe 300 30                 \
+    -v NA12878.vcf              \
+    -M 0
 ```
 
 ### Single end reads
 Simulate single-end reads by omitting the --pe option.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       
+gen_reads.py                    \
+    -r hg19.fa                  \
+    -R 126                      \
+    -o /home/me/simulated_reads \
+    --bam                       \
+    --vcf                       
 ```
 
 ### Large single end reads
 Simulate PacBio-like reads by providing an error model.
 
 ```
-python gen_reads.py                         \
-	-r hg19.fa                         \
-	-R 5000                            \
-	-e models/errorModel_pacbio_toy.p  \
-	-E 0.10                            \
-	-o /home/me/simulated_reads        
+gen_reads.py                           \
+    -r hg19.fa                         \
+    -R 5000                            \
+    -e models/errorModel_pacbio_toy.p  \
+    -E 0.10                            \
+    -o /home/me/simulated_reads        
 ```
 
 # Utilities
@@ -193,18 +193,18 @@ Computes GC% coverage bias distribution from sample (bedrolls genomecov) data.
 Takes .genomecov files produced by BEDtools genomeCov (with -d option).
 
 ```
-bedtools genomecov
-        -d                          \
-        -ibam normal.bam            \
-        -g reference.fa
+bedtools genomecov   \
+    -d               \
+    -ibam normal.bam \
+    -g reference.fa
 ```
 
 ```
-python compute_gc.py                 \
-        -r reference.fa             \
-        -i genomecovfile            \
-        -w [sliding window length]  \
-        -o /path/to/model.p
+compute_gc.py                  \
+    -r reference.fa            \
+    -i genomecovfile           \
+    -w [sliding window length] \
+    -o /path/to/model.p
 ```
 
 ## compute_fraglen.py
@@ -213,9 +213,9 @@ Computes empirical fragment length distribution from sample data.
 Takes SAM file via stdin:
 
 ```
-    python compute_fralgen.py \
-    	-i path to sam file \
-	-o path/to/output
+compute_fralgen.py      \
+    -i path to sam file \
+    -o path/to/output
 ```
 and creates fraglen.p model in working directory.
 
@@ -224,10 +224,10 @@ and creates fraglen.p model in working directory.
 Takes references genome and TSV file to generate mutation models:
 
 ```
-python gen_mut_model.py               \
-        -r hg19.fa                  \
-        -m inputVariants.tsv        \
-        -o /home/me/models.p
+gen_mut_model.py         \
+    -r hg19.fa           \
+    -m inputVariants.tsv \
+    -o /home/me/models.p
 ```
 
 Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
@@ -249,16 +249,16 @@ Generates sequence error model for gen_reads.py -e option.
 This script needs revision, to improve the quality-score model eventually, and to include code to learn sequencing errors from pileup data.
 
 ```
-python genSeqErrorModel.py                            \
-        -i input_read1.fq (.gz) / input_read1.sam     \
-        -o output.p                                   \
-        -i2 input_read2.fq (.gz) / input_read2.sam    \
-        -p input_alignment.pileup                     \
-        -q quality score offset [33]                  \
-        -Q maximum quality score [41]                 \
-        -n maximum number of reads to process [all]   \
-        -s number of simulation iterations [1000000]  \
-        --plot perform some optional plotting
+genSeqErrorModel.py                              \
+    -i input_read1.fq (.gz) / input_read1.sam    \
+    -o output.p                                  \
+    -i2 input_read2.fq (.gz) / input_read2.sam   \
+    -p input_alignment.pileup                    \
+    -q quality score offset [33]                 \
+    -Q maximum quality score [41]                \
+    -n maximum number of reads to process [all]  \
+    -s number of simulation iterations [1000000] \
+    --plot perform some optional plotting
 ```
 
 ## plotMutModel.py
@@ -266,10 +266,10 @@ python genSeqErrorModel.py                            \
 Performs plotting and comparison of mutation models generated from genMutModel.py.
 
 ```
-python plotMutModel.py                                        \
-        -i model1.p [model2.p] [model3.p]...                  \
-        -l legend_label1 [legend_label2] [legend_label3]...   \
-        -o path/to/pdf_plot_prefix
+plotMutModel.py                                         \
+    -i model1.p [model2.p] [model3.p]...                \
+    -l legend_label1 [legend_label2] [legend_label3]... \
+    -o path/to/pdf_plot_prefix
 ```
 
 ## vcf_compare_OLD.py
@@ -277,22 +277,22 @@ python plotMutModel.py                                        \
 Tool for comparing VCF files. This program needs updates, as it is slow and somewhat touchy to use at the moment.
 
 ```
-python vcf_compare_OLD.py
-        -r <ref.fa>        * Reference Fasta                           \
-        -g <golden.vcf>    * Golden VCF                                \
-        -w <workflow.vcf>  * Workflow VCF                              \
-        -o <prefix>        * Output Prefix                             \
-        -m <track.bed>     Mappability Track                           \
-        -M <int>           Maptrack Min Len                            \
-        -t <regions.bed>   Targetted Regions                           \
-        -T <int>           Min Region Len                              \
-        -c <int>           Coverage Filter Threshold [15]              \
-        -a <float>         Allele Freq Filter Threshold [0.3]          \
-        --vcf-out          Output Match/FN/FP variants [False]         \
-        --no-plot          No plotting [False]                         \
-        --incl-homs        Include homozygous ref calls [False]        \
-        --incl-fail        Include calls that failed filters [False]   \
-        --fast             No equivalent variant detection [False]
+vcf_compare_OLD.py                                               \
+    -r <ref.fa>        * Reference Fasta                         \
+    -g <golden.vcf>    * Golden VCF                              \
+    -w <workflow.vcf>  * Workflow VCF                            \
+    -o <prefix>        * Output Prefix                           \
+    -m <track.bed>     Mappability Track                         \
+    -M <int>           Maptrack Min Len                          \
+    -t <regions.bed>   Targetted Regions                         \
+    -T <int>           Min Region Len                            \
+    -c <int>           Coverage Filter Threshold [15]            \
+    -a <float>         Allele Freq Filter Threshold [0.3]        \
+    --vcf-out          Output Match/FN/FP variants [False]       \
+    --no-plot          No plotting [False]                       \
+    --incl-homs        Include homozygous ref calls [False]      \
+    --incl-fail        Include calls that failed filters [False] \
+    --fast             No equivalent variant detection [False]
 ```
 Mappability track examples: https://github.com/zstephens/neat-repeat/tree/master/example_mappabilityTracks
 
