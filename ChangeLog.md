@@ -20,7 +20,7 @@ NEAT is still undergoing active development with many exciting upgrades planned.
 - Improvements and standardization for the utilities, across the board
 - VCF compare has some nice features and output, but is very slow to use. Can we improve this utility?
 
-For improvements, we have a lot of great ideas for general improvements aimed at better simulating bacteria, but we believe this same improvements will have applications in other species as well. 
+For improvements, we have a lot of great ideas for general improvements aimed at better simulating bacteria, but we believe this same improvements will have applications in other species as well.
 - Multiploidy - all right this has nothing to do with bacteria specifically, but it is a feature we would like to implement into gen_reads.
 - Structural Variants - model large scale structural variants with an eye toward intergenic SVs.
 - Transposable Elements - model transposons within the sequence
