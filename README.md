@@ -39,14 +39,22 @@ Table of Contents
 
 ## Requirements
 
-* >= 3.6
-* bio>= 1.78
+* python >= 3.7.1,=< 3.8.8
+* biopython >= 1.78
 * matplotlib >= 3.3.4 (optional, for plotting utilities)
 * matplotlib_venn >= 0.11.6 (optional, for plotting utilities)
-* pandas >= 1.2.1
 * numpy >= 1.19.5
+* pandas >= 1.2.1
 * pysam >= 0.16.0.1
 
+## Installation
+
+### From source
+
+```
+git clone https://github.com/ncsa/neat-genreads
+python -m pip install -e /path/to/NEAT/
+```
 
 ## Usage
 Here's the simplest invocation of genReads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
