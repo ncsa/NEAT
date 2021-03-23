@@ -262,19 +262,16 @@ class SequenceContainer:
         # If we're only creating a vcf, skip some expensive initialization related to coverage depth
         if not self.only_vcf:
             (self.window_size, gc_scalars, target_cov_vals) = coverage_data
-            gc_cov_vals = [[] for _ in self.sequences]
-            tr_cov_vals = [[] for _ in self.sequences]
+            gc_cov_vals = [[]] * self.ploidy
+            tr_cov_vals = [[]] * self.ploidy
             avg_out = []
             self.coverage_distribution = []
-            for i in range(len(self.sequences)):
-                # Zach implemented a change here but I can't remember if I changed it back for some reason.
-                # If second line below doesn't work, reactivate the first line.
-                # max_coord = min([len(self.sequences[i]) - self.read_len, len(self.all_cigar[i]) - self.read_len])
-                max_coord = min([len(self.sequences[i]) - self.read_len, len(self.all_cigar[i]) - 1])
-
-                # Trying to fix a problem wherein the above line gives a negative answer
-                if max_coord <= 0:
-                    max_coord = min([len(self.sequences[i]), len(self.all_cigar[i])])
+            for i in range(self.ploidy):
+                # Combined a couple of lines for this. I'm trying to divorce these calculations from the cigar creation
+                if len(self.sequences[i]) - self.read_len > 0:
+                    max_coord = len(self.sequences[i]) - self.read_len
+                else:
+                    max_coord = len(self.sequences[i])
 
                 # compute gc-bias
                 j = 0
@@ -289,6 +286,7 @@ class SequenceContainer:
 
                 # Targeted values
                 tr_cov_vals[i].append(target_cov_vals[0])
+
                 prev_val = self.fm_pos[i][0]
                 for j in range(1, max_coord):
                     if self.fm_pos[i][j] is None:
