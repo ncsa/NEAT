@@ -106,10 +106,6 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
         print('\nError: Read in Q-scores above specified maximum:', q_range[1], '>', real_q, '\n')
         exit(1)
 
-    # TODO insert trinucleotide context stuff here
-
-    # TODO create matrix of probabilities
-
     print('computing probabilities...')
     prob_q = [None] + [[[0. for m in range(real_q)] for n in range(real_q)] for p in range(actual_readlen - 1)]
     for p in range(1, actual_readlen):
