@@ -170,7 +170,6 @@ def main():
         print("There is no overlap between reference and variant file. This could be a chromosome naming problem")
         exit(1)
 
-
     # Rename header in dataframe for processing
     matching_variants = matching_variants.rename(columns={0: "CHROM", 1: 'chr_start', 2: 'ID', 3: 'REF', 4: 'ALT',
                                                           5: 'QUAL', 6: 'FILTER', 7: 'INFO'})

@@ -22,7 +22,7 @@ import pysam
 from functools import reduce
 
 # enables import from neighboring package
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+# sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from source.probability import DiscreteDistribution
 
@@ -72,9 +72,9 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
             print('assuming read length is uniform...')
             print('detected read length (from first read found):', actual_readlen)
             prior_q = np.zeros([actual_readlen, real_q])
-            total_q = [None] + [np.zeros([real_q, real_q]) for n in range(actual_readlen - 1)]
+            total_q = [None] + [np.zeros([real_q, real_q]) for _ in range(actual_readlen - 1)]
 
-        # sanity-check readlengths
+        # sanity-check read lengths
         if len(qualities_to_check) - 1 != actual_readlen:
             print('skipping read with unexpected length...')
             continue
@@ -105,6 +105,10 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
     if q_range[1] > real_q:
         print('\nError: Read in Q-scores above specified maximum:', q_range[1], '>', real_q, '\n')
         exit(1)
+
+    # TODO insert trinucleotide context stuff here
+
+    # TODO create matrix of probabilities
 
     print('computing probabilities...')
     prob_q = [None] + [[[0. for m in range(real_q)] for n in range(real_q)] for p in range(actual_readlen - 1)]
