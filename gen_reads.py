@@ -284,7 +284,7 @@ def main(raw_args=None):
     print(f'reading {reference}... ')
 
     try:
-        ref_index2 = SeqIO.index(reference, 'fasta')
+        ref_index = SeqIO.index(reference, 'fasta')
     except IOError:
         print("problem reading reference")
         sys.exit(1)
@@ -295,12 +295,6 @@ def main(raw_args=None):
         n_handling = ('random', fragment_size)
     else:
         n_handling = ('ignore', read_len)
-
-    # Gonna change how this is done
-    # indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
-
-    # Not needed in revision
-    # ref_list = [n[0] for n in ref_index]
 
     # parse input variants, if present
     # TODO read this in as a pandas dataframe
@@ -334,11 +328,11 @@ def main(raw_args=None):
         # some validation
         n_in_bed_only = 0
         n_in_ref_only = 0
-        for k in ref_index2.keys():
+        for k in ref_index.keys():
             if k not in input_regions:
                 n_in_ref_only += 1
         for k in input_regions.keys():
-            if k not in ref_index2.keys():
+            if k not in ref_index.keys():
                 n_in_bed_only += 1
                 del input_regions[k]
         if n_in_ref_only > 0:
@@ -391,7 +385,7 @@ def main(raw_args=None):
     if save_bam:
         # TODO wondering if this is actually needed in the bam_header
         # The info is needed, but may exist in the index biopython creates.
-        bam_header = ref_index2
+        bam_header = ref_index
     vcf_header = None
     if save_vcf:
         vcf_header = [reference]
@@ -421,13 +415,10 @@ def main(raw_args=None):
     read_name_count = 1
     unmapped_records = []
 
-    for chrom in ref_index2.keys():
+    for chrom in ref_index.keys():
 
         # read in reference sequence and notate blocks of Ns
-        ref_sequence2 = ref_index2[chrom].seq
-        # I read in the ref above, and I think we can do without the read_ref function, but I need to check
-        # on the N-handling
-        # (ref_sequence, n_regions) = read_ref(reference, ref_index[indices_by_ref_name[chrom]], n_handling)
+        ref_sequence2 = ref_index[chrom].seq
 
         n_regions2 = find_n_regions(ref_sequence2, n_handling)
 
@@ -788,7 +779,7 @@ def main(raw_args=None):
                                 if is_unmapped[0] is False:
                                     if is_forward:
                                         flag1 = 0
-                                        output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                        output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                             my_read_name,
                                                                             my_read_data[0][0],
                                                                             my_read_data[0][1], my_read_data[0][2],
@@ -796,7 +787,7 @@ def main(raw_args=None):
                                                                             output_sam_flag=flag1)
                                     else:
                                         flag1 = sam_flag(['reverse'])
-                                        output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                        output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                             my_read_name,
                                                                             my_read_data[0][0],
                                                                             my_read_data[0][1], my_read_data[0][2],
@@ -818,13 +809,13 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'proper', 'second', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'proper', 'first', 'reverse'])
-                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                         my_read_name, my_read_data[0][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[1][0])
-                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                         my_read_name, my_read_data[1][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
@@ -837,13 +828,13 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'second', 'mate_unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'unmapped', 'reverse'])
-                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                         my_read_name, my_read_data[0][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[0][0])
-                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                         my_read_name, my_read_data[0][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
@@ -857,14 +848,14 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'second', 'unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'mate_unmapped', 'reverse'])
-                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                         my_read_name, my_read_data[1][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[1][0],
                                                                         aln_map_quality=0)
-                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                         my_read_name, my_read_data[1][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
