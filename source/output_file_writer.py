@@ -155,20 +155,20 @@ class OutputFileWriter:
             # WRITE BAM HEADER
             self.bam_file.write("BAM\1")
             header = '@HD\tVN:1.5\tSO:coordinate\n'
-            for n in bam_header[0]:
-                header += '@SQ\tSN:' + n[0] + '\tLN:' + str(n[3]) + '\n'
+            for key in bam_header.keys():
+                header += '@SQ\tSN:' + str(key) + '\tLN:' + str(len(bam_header[key])) + '\n'
             header += '@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n'
             header_bytes = len(header)
-            num_refs = len(bam_header[0])
+            num_refs = len(bam_header)
             self.bam_file.write(pack('<i', header_bytes))
             self.bam_file.write(header)
             self.bam_file.write(pack('<i', num_refs))
 
-            for n in bam_header[0]:
-                l_name = len(n[0]) + 1
+            for key in bam_header.keys():
+                l_name = len(key) + 1
                 self.bam_file.write(pack('<i', l_name))
-                self.bam_file.write(n[0] + '\0')
-                self.bam_file.write(pack('<i', n[3]))
+                self.bam_file.write(key + '\0')
+                self.bam_file.write(pack('<i', len(bam_header[key])))
 
         # buffers for more efficient writing
         self.fq1_buffer = []
@@ -200,7 +200,7 @@ class OutputFileWriter:
             str(chrom) + '\t' + str(pos) + '\t' + str(id_str) + '\t' + str(ref) + '\t' + str(alt) + '\t' + str(
                 qual) + '\t' + str(filt) + '\t' + str(info) + '\n')
 
-    def write_bam_record(self, chromosome, read_name, pos_0, cigar, seq, qual, output_sam_flag,
+    def write_bam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag,
                          mate_pos=None, aln_map_quality=70):
 
         my_bin = reg2bin(pos_0, pos_0 + len(seq))
@@ -211,7 +211,7 @@ class OutputFileWriter:
         cig_letters = re.split(r"\d+", cigar_string)[1:]
         cig_numbers = [int(n) for n in re.findall(r"\d+", cigar_string)]
         cig_ops = len(cig_letters)
-        next_ref_id = chromosome
+        next_ref_id = chromosome_index
         if mate_pos is None:
             next_pos = 0
             my_t_len = 0
@@ -274,9 +274,10 @@ class OutputFileWriter:
 
         # a horribly compressed line, I'm sorry.
         # (ref_index, position, data)
-        self.bam_buffer.append((chromosome, pos_0, pack('<i', block_size) + pack('<i', chromosome) + pack('<i', pos_0) +
+        self.bam_buffer.append((chromosome_index, pos_0, pack('<i', block_size) + pack('<i', chromosome_index) + pack('<i', pos_0) +
                                 pack('<I', (my_bin << 16) + (my_map_quality << 8) + len(read_name) + 1) +
-                                pack('<I', (output_sam_flag << 16) + cig_ops) + pack('<i', seq_len) + pack('<i', next_ref_id) +
+                                pack('<I', (output_sam_flag << 16) + cig_ops) + pack('<i', seq_len) +
+                                pack('<i', next_ref_id) +
                                 pack('<i', next_pos) + pack('<i', my_t_len) + read_name.encode('utf-8') +
                                 b'\0' + encoded_cig + encoded_seq + encoded_qual.encode('utf-8')))
 

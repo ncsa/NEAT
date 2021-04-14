@@ -279,12 +279,6 @@ def main(raw_args=None):
     Process Inputs
     """
 
-    # index reference: [(0: chromosome name, 1: byte index where the contig seq begins,
-    #                    2: byte index where the next contig begins, 3: contig seq length),
-    #                    (repeat for every chrom)]
-    # TODO check to see if this might work better as a dataframe or biopython object
-    ref_index = index_ref(reference)
-
     # TODO check if this index can work, maybe it's faster
     tt = time.time()
     print(f'reading {reference}... ')
@@ -302,10 +296,11 @@ def main(raw_args=None):
     else:
         n_handling = ('ignore', read_len)
 
-    indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
+    # Gonna change how this is done
+    # indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
 
     # Not needed in revision
-    ref_list = [n[0] for n in ref_index]
+    # ref_list = [n[0] for n in ref_index]
 
     # parse input variants, if present
     # TODO read this in as a pandas dataframe
@@ -395,7 +390,8 @@ def main(raw_args=None):
     bam_header = None
     if save_bam:
         # TODO wondering if this is actually needed in the bam_header
-        bam_header = [copy.deepcopy(ref_index)]
+        # The info is needed, but may exist in the index biopython creates.
+        bam_header = ref_index2
     vcf_header = None
     if save_vcf:
         vcf_header = [reference]
@@ -421,19 +417,20 @@ def main(raw_args=None):
     LET'S GET THIS PARTY STARTED...
     """
     # keep track of the number of reads we've sampled, for read-names
+    # TODO this sounds vaguely unnecessary
     read_name_count = 1
     unmapped_records = []
 
-# I think the next line could just be 'for chrom in ref_index2.keys()', not sure why he did it this way.
     for chrom in ref_index2.keys():
 
         # read in reference sequence and notate blocks of Ns
         ref_sequence2 = ref_index2[chrom].seq
         # I read in the ref above, and I think we can do without the read_ref function, but I need to check
         # on the N-handling
-        (ref_sequence, n_regions) = read_ref(reference, ref_index[indices_by_ref_name[chrom]], n_handling)
+        # (ref_sequence, n_regions) = read_ref(reference, ref_index[indices_by_ref_name[chrom]], n_handling)
 
         n_regions2 = find_n_regions(ref_sequence2, n_handling)
+
 
         # count total bp we'll be spanning so we can get an idea of how far along we are
         # (for printing progress indicators)
@@ -470,7 +467,7 @@ def main(raw_args=None):
                 valid_variants_from_vcf.append(n)
 
             print('found', len(valid_variants_from_vcf), 'valid variants for ' +
-                  ref_index[chrom][0] + ' in input VCF...')
+                  chrom + ' in input VCF...')
             if any(n_skipped):
                 print(sum(n_skipped), 'variants skipped...')
                 print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
@@ -508,8 +505,8 @@ def main(raw_args=None):
         print("[", end='', flush=True)
 
         # Applying variants to non-N regions
-        for i in range(len(n_regions['non_N'])):
-            (initial_position, final_position) = n_regions['non_N'][i]
+        for i in range(len(n_regions2['non_N'])):
+            (initial_position, final_position) = n_regions2['non_N'][i]
             number_target_windows = max([1, (final_position - initial_position) // target_size])
             base_pair_distance = int((final_position - initial_position) / float(number_target_windows))
 
@@ -590,11 +587,11 @@ def main(raw_args=None):
                 if input_bed is None:
                     coverage_dat[2] = [1.0] * (end - start)
                 else:
-                    if ref_index[chrom][0] not in input_regions:
+                    if chrom not in input_regions:
                         coverage_dat[2] = [off_target_scalar] * (end - start)
                     else:
                         for j in range(start, end):
-                            if not (bisect.bisect(input_regions[ref_index[chrom][0]], j) % 2):
+                            if not (bisect.bisect(input_regions[chrom], j) % 2):
                                 coverage_dat[2].append(1.0)
                                 target_hits += 1
                             else:
@@ -627,7 +624,7 @@ def main(raw_args=None):
 
                 # construct sequence data that we will sample reads from
                 if sequences is None:
-                    sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
+                    sequences = SequenceContainer(start, ref_sequence2[start:end], ploids, overlap, read_len,
                                                   save_bam, [mut_model] * ploids, mut_rate, only_vcf)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
                             [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
@@ -635,7 +632,7 @@ def main(raw_args=None):
                         # pdb.set_trace()
                         sys.exit(1)
                 else:
-                    sequences.update(start, ref_sequence[start:end], ploids, overlap, read_len, [mut_model] * ploids,
+                    sequences.update(start, ref_sequence2[start:end], ploids, overlap, read_len, [mut_model] * ploids,
                                      mut_rate)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
                             [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
@@ -657,7 +654,7 @@ def main(raw_args=None):
 
                 # unused cancer stuff
                 if cancer:
-                    tumor_sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
+                    tumor_sequences = SequenceContainer(start, ref_sequence2[start:end], ploids, overlap, read_len,
                                                         [cancer_model] * ploids, mut_rate, coverage_dat)
                     tumor_sequences.insert_mutations(vars_cancer_from_prev_overlap + all_inserted_variants)
                     all_cancer_variants = tumor_sequences.random_mutations()
@@ -732,21 +729,21 @@ def main(raw_args=None):
                         # are we discarding offtargets?
                         outside_boundaries = []
                         if off_target_discard and input_bed is not None:
-                            outside_boundaries += [bisect.bisect(input_regions[ref_index[chrom][0]], n[0]) % 2 for n
+                            outside_boundaries += [bisect.bisect(input_regions[chrom], n[0]) % 2 for n
                                                    in my_read_data]
                             outside_boundaries += [
-                                bisect.bisect(input_regions[ref_index[chrom][0]], n[0] + len(n[2])) % 2 for n in
+                                bisect.bisect(input_regions[chrom], n[0] + len(n[2])) % 2 for n in
                                 my_read_data]
                         if discard_bed is not None:
-                            outside_boundaries += [bisect.bisect(discard_regions[ref_index[chrom][0]], n[0]) % 2 for
+                            outside_boundaries += [bisect.bisect(discard_regions[chrom], n[0]) % 2 for
                                                    n in my_read_data]
                             outside_boundaries += [
-                                bisect.bisect(discard_regions[ref_index[chrom][0]], n[0] + len(n[2])) % 2 for n in
+                                bisect.bisect(discard_regions[chrom], n[0] + len(n[2])) % 2 for n in
                                 my_read_data]
                         if len(outside_boundaries) and any(outside_boundaries):
                             continue
 
-                        my_read_name = out_prefix_name + '-' + ref_index[chrom][0] + '-' + str(read_name_count)
+                        my_read_name = out_prefix_name + '-' + chrom + '-' + str(read_name_count)
                         read_name_count += len(my_read_data)
 
                         # if desired, replace all low-quality bases with Ns
@@ -791,14 +788,16 @@ def main(raw_args=None):
                                 if is_unmapped[0] is False:
                                     if is_forward:
                                         flag1 = 0
-                                        output_file_writer.write_bam_record(chrom, my_read_name,
+                                        output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                                                            my_read_name,
                                                                             my_read_data[0][0],
                                                                             my_read_data[0][1], my_read_data[0][2],
                                                                             my_read_data[0][3],
                                                                             output_sam_flag=flag1)
                                     else:
                                         flag1 = sam_flag(['reverse'])
-                                        output_file_writer.write_bam_record(chrom, my_read_name,
+                                        output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                                                            my_read_name,
                                                                             my_read_data[0][0],
                                                                             my_read_data[0][1], my_read_data[0][2],
                                                                             my_read_data[0][3],
@@ -819,15 +818,18 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'proper', 'second', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'proper', 'first', 'reverse'])
-                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[0][0],
+                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[0][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[1][0])
-                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[1][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
-                                                                        output_sam_flag=flag2, mate_pos=my_read_data[0][0])
+                                                                        output_sam_flag=flag2,
+                                                                        mate_pos=my_read_data[0][0])
                                 elif is_unmapped[0] is False and is_unmapped[1] is True:
                                     if is_forward:
                                         flag1 = sam_flag(['paired', 'first', 'mate_unmapped', 'mate_reverse'])
@@ -835,14 +837,18 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'second', 'mate_unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'unmapped', 'reverse'])
-                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[0][0],
+                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[0][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
-                                                                        output_sam_flag=flag1, mate_pos=my_read_data[0][0])
-                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[0][0],
+                                                                        output_sam_flag=flag1,
+                                                                        mate_pos=my_read_data[0][0])
+                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[0][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
-                                                                        output_sam_flag=flag2, mate_pos=my_read_data[0][0],
+                                                                        output_sam_flag=flag2,
+                                                                        mate_pos=my_read_data[0][0],
                                                                         aln_map_quality=0)
                                 elif is_unmapped[0] is True and is_unmapped[1] is False:
                                     if is_forward:
@@ -851,15 +857,19 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'second', 'unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'mate_unmapped', 'reverse'])
-                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[1][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
-                                                                        output_sam_flag=flag1, mate_pos=my_read_data[1][0],
+                                                                        output_sam_flag=flag1,
+                                                                        mate_pos=my_read_data[1][0],
                                                                         aln_map_quality=0)
-                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(list(ref_index2.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[1][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
-                                                                        output_sam_flag=flag2, mate_pos=my_read_data[1][0])
+                                                                        output_sam_flag=flag2,
+                                                                        mate_pos=my_read_data[1][0])
                         else:
                             print('\nError: Unexpected number of reads generated...\n')
                             sys.exit(1)
@@ -893,7 +903,7 @@ def main(raw_args=None):
         if save_vcf:
             print('Writing output VCF...')
             for k in sorted(all_variants_out.keys()):
-                current_ref = ref_index[chrom][0]
+                current_ref = chrom
                 my_id = '.'
                 my_quality = '.'
                 my_filter = 'PASS'
@@ -906,11 +916,13 @@ def main(raw_args=None):
         print('writing unmapped reads to bam file...')
         for umr in unmapped_records:
             if paired_end:
-                output_file_writer.write_bam_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3], output_sam_flag=umr[2],
+                output_file_writer.write_bam_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3],
+                                                    output_sam_flag=umr[2],
                                                     mate_pos=0,
                                                     aln_map_quality=0)
             else:
-                output_file_writer.write_bam_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3], output_sam_flag=umr[2],
+                output_file_writer.write_bam_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3],
+                                                    output_sam_flag=umr[2],
                                                     aln_map_quality=0)
 
     # close output files
