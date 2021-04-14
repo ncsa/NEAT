@@ -200,7 +200,7 @@ class OutputFileWriter:
             str(chrom) + '\t' + str(pos) + '\t' + str(id_str) + '\t' + str(ref) + '\t' + str(alt) + '\t' + str(
                 qual) + '\t' + str(filt) + '\t' + str(info) + '\n')
 
-    def write_bam_record(self, ref_id, read_name, pos_0, cigar, seq, qual, output_sam_flag,
+    def write_bam_record(self, chromosome, read_name, pos_0, cigar, seq, qual, output_sam_flag,
                          mate_pos=None, aln_map_quality=70):
 
         my_bin = reg2bin(pos_0, pos_0 + len(seq))
@@ -211,7 +211,7 @@ class OutputFileWriter:
         cig_letters = re.split(r"\d+", cigar_string)[1:]
         cig_numbers = [int(n) for n in re.findall(r"\d+", cigar_string)]
         cig_ops = len(cig_letters)
-        next_ref_id = ref_id
+        next_ref_id = chromosome
         if mate_pos is None:
             next_pos = 0
             my_t_len = 0
@@ -274,7 +274,7 @@ class OutputFileWriter:
 
         # a horribly compressed line, I'm sorry.
         # (ref_index, position, data)
-        self.bam_buffer.append((ref_id, pos_0, pack('<i', block_size) + pack('<i', ref_id) + pack('<i', pos_0) +
+        self.bam_buffer.append((chromosome, pos_0, pack('<i', block_size) + pack('<i', chromosome) + pack('<i', pos_0) +
                                 pack('<I', (my_bin << 16) + (my_map_quality << 8) + len(read_name) + 1) +
                                 pack('<I', (output_sam_flag << 16) + cig_ops) + pack('<i', seq_len) + pack('<i', next_ref_id) +
                                 pack('<i', next_pos) + pack('<i', my_t_len) + read_name.encode('utf-8') +

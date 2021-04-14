@@ -1,4 +1,4 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 # encoding: utf-8
 """ ////////////////////////////////////////////////////////////////////////////////
    ///                                                                          ///
@@ -24,23 +24,18 @@ import pickle
 import numpy as np
 import argparse
 import pathlib
+import timeit
+from Bio import SeqIO
 
 from source.input_checking import check_file_open, is_in_range
-from source.ref_func import index_ref, read_ref
+from source.ref_func import index_ref, read_ref, find_n_regions
 from source.vcf_func import parse_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
-from source.SequenceContainer import SequenceContainer, ReadContainer, parse_input_mutation_model
-
-"""
-Some constants needed for analysis
-"""
-
-# target window size for read sampling. How many times bigger than read/frag length
-WINDOW_TARGET_SCALE = 100
-
-# allowed nucleotides
-ALLOWED_NUCL = ['A', 'C', 'G', 'T']
+from source.SequenceContainer import SequenceContainer
+from source.input_file_reader import parse_input_mutation_model
+from source.ReadContainer import ReadContainer
+from source.constants_and_models import ALLOWED_NUCL
 
 
 def main(raw_args=None):
@@ -105,6 +100,13 @@ def main(raw_args=None):
     # TODO implement a broader debugging scheme for subclasses.
     parser.add_argument('-d', required=False, action='store_true', default=False, help='Activate Debug Mode')
     args = parser.parse_args(raw_args)
+
+    """
+    Some constants needed for analysis
+    """
+
+    # target window size for read sampling. How many times bigger than read/frag length
+    window_target_scale = 100
 
     """
     Set variables for processing
@@ -203,16 +205,17 @@ def main(raw_args=None):
         mut_rate = None
 
     if mut_rate != -1 and mut_rate is not None:
-        is_in_range(mut_rate, 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
+        is_in_range(mut_rate, 0.0, 0.3, 'Error: -M must be between 0 and 0.3')
 
     # sequencing error model
     if se_model is None:
         print('Using default sequencing error model.')
         se_model = sim_path / 'models/errorModel_toy.p'
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
-    else:
-        # probably need to do some sanity checking
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
+
+    # probably need to do some sanity checking
+
+    # Create read container.
+    se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
 
     # GC-bias model
     if gc_bias_model is None:
@@ -283,7 +286,16 @@ def main(raw_args=None):
     ref_index = index_ref(reference)
 
     # TODO check if this index can work, maybe it's faster
-    # ref_index2 = SeqIO.index(reference, 'fasta')
+    tt = time.time()
+    print(f'reading {reference}... ')
+
+    try:
+        ref_index2 = SeqIO.index(reference, 'fasta')
+    except IOError:
+        print("problem reading reference")
+        sys.exit(1)
+
+    print('{0:.3f} (sec)'.format(time.time() - tt))
 
     if paired_end:
         n_handling = ('random', fragment_size)
@@ -291,6 +303,8 @@ def main(raw_args=None):
         n_handling = ('ignore', read_len)
 
     indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
+
+    # Not needed in revision
     ref_list = [n[0] for n in ref_index]
 
     # parse input variants, if present
@@ -325,11 +339,11 @@ def main(raw_args=None):
         # some validation
         n_in_bed_only = 0
         n_in_ref_only = 0
-        for k in ref_list:
+        for k in ref_index2.keys():
             if k not in input_regions:
                 n_in_ref_only += 1
         for k in input_regions.keys():
-            if k not in ref_list:
+            if k not in ref_index2.keys():
                 n_in_bed_only += 1
                 del input_regions[k]
         if n_in_ref_only > 0:
@@ -410,14 +424,20 @@ def main(raw_args=None):
     read_name_count = 1
     unmapped_records = []
 
-    for chrom in range(len(ref_index)):
+# I think the next line could just be 'for chrom in ref_index2.keys()', not sure why he did it this way.
+    for chrom in ref_index2.keys():
 
         # read in reference sequence and notate blocks of Ns
-        (ref_sequence, n_regions) = read_ref(reference, ref_index[chrom], n_handling)
+        ref_sequence2 = ref_index2[chrom].seq
+        # I read in the ref above, and I think we can do without the read_ref function, but I need to check
+        # on the N-handling
+        (ref_sequence, n_regions) = read_ref(reference, ref_index[indices_by_ref_name[chrom]], n_handling)
+
+        n_regions2 = find_n_regions(ref_sequence2, n_handling)
 
         # count total bp we'll be spanning so we can get an idea of how far along we are
         # (for printing progress indicators)
-        total_bp_span = sum([n[1] - n[0] for n in n_regions['non_N']])
+        total_bp_span = sum([n[1] - n[0] for n in n_regions2['non_N']])
         current_progress = 0
         current_percent = 0
         have_printed100 = False
@@ -428,10 +448,10 @@ def main(raw_args=None):
                 - any alt allele contains anything other than allowed characters"""
         valid_variants_from_vcf = []
         n_skipped = [0, 0, 0]
-        if ref_index[chrom][0] in input_variants:
-            for n in input_variants[ref_index[chrom][0]]:
+        if chrom in input_variants:
+            for n in input_variants[chrom]:
                 span = (n[0], n[0] + len(n[1]))
-                r_seq = str(ref_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
+                r_seq = str(ref_sequence2[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
                 # Checks if there are any invalid nucleotides in the vcf items
                 any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist])
                 # Ensure reference sequence matches the nucleotide in the vcf
@@ -468,11 +488,11 @@ def main(raw_args=None):
         all_variants_out = {}
         sequences = None
         if paired_end:
-            target_size = WINDOW_TARGET_SCALE * fragment_size
+            target_size = window_target_scale * fragment_size
             overlap = fragment_size
             overlap_min_window_size = max(fraglen_distribution.values) + 10
         else:
-            target_size = WINDOW_TARGET_SCALE * read_len
+            target_size = window_target_scale * read_len
             overlap = read_len
             overlap_min_window_size = read_len + 10
 
@@ -757,8 +777,6 @@ def main(raw_args=None):
                                 flag1 = sam_flag(['unmapped'])
                                 unmapped_records.append((my_read_name + '/1', my_read_data[0], flag1))
 
-                        my_ref_index = indices_by_ref_name[ref_index[chrom][0]]
-
                         # write SE output
                         if len(my_read_data) == 1:
                             if not no_fastq:
@@ -773,14 +791,14 @@ def main(raw_args=None):
                                 if is_unmapped[0] is False:
                                     if is_forward:
                                         flag1 = 0
-                                        output_file_writer.write_bam_record(my_ref_index, my_read_name,
+                                        output_file_writer.write_bam_record(chrom, my_read_name,
                                                                             my_read_data[0][0],
                                                                             my_read_data[0][1], my_read_data[0][2],
                                                                             my_read_data[0][3],
                                                                             output_sam_flag=flag1)
                                     else:
                                         flag1 = sam_flag(['reverse'])
-                                        output_file_writer.write_bam_record(my_ref_index, my_read_name,
+                                        output_file_writer.write_bam_record(chrom, my_read_name,
                                                                             my_read_data[0][0],
                                                                             my_read_data[0][1], my_read_data[0][2],
                                                                             my_read_data[0][3],
@@ -801,12 +819,12 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'proper', 'second', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'proper', 'first', 'reverse'])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[0][0],
+                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[0][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[1][0])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[1][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
                                                                         output_sam_flag=flag2, mate_pos=my_read_data[0][0])
@@ -817,11 +835,11 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'second', 'mate_unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'unmapped', 'reverse'])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[0][0],
+                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[0][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1, mate_pos=my_read_data[0][0])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[0][0],
+                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[0][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
                                                                         output_sam_flag=flag2, mate_pos=my_read_data[0][0],
@@ -833,12 +851,12 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'second', 'unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'mate_unmapped', 'reverse'])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[1][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1, mate_pos=my_read_data[1][0],
                                                                         aln_map_quality=0)
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(chrom, my_read_name, my_read_data[1][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
                                                                         output_sam_flag=flag2, mate_pos=my_read_data[1][0])
