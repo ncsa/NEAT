@@ -328,11 +328,15 @@ def main(raw_args=None):
         in_ref_only = [k for k in ref_list if k not in input_regions]
         in_bed_only = [k for k in input_regions.keys() if k not in ref_list]
         if in_ref_only:
-            print(f'Warning: Reference contains sequences not found in targeted regions BED file: {in_ref_only}')
+            print(f'Warning: Reference contains sequences not found in targeted regions BED file.')
+            if debug:
+                print(f'found in reference only: {in_ref_only}')
         
         if in_bed_only:
             print(f'Warning: Targeted regions BED file contains sequence names '
-                  f'not found in reference (regions ignored: {in_bed_only}).')
+                  f'not found in reference (regions ignored).')
+            if debug:
+                print(f'Regions ignored: {in_bed_only}')
             for key in in_bed_only:
                 del input_regions[key]
 
