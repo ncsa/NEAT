@@ -709,7 +709,7 @@ def main(raw_args=None):
 
                         # are we discarding offtargets?
                         outside_boundaries = []
-                        if off_target_discard and input_bed is not None:
+                        if off_target_discard and input_regions is not None:
                             outside_boundaries += [bisect.bisect(input_regions[ref_index[chrom][0]], n[0]) % 2 for n
                                                    in my_read_data]
                             outside_boundaries += [
