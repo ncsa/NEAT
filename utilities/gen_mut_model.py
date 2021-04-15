@@ -3,6 +3,7 @@
 # Python 3 ready
 
 import os
+import sys
 import re
 import pickle
 import argparse
@@ -168,7 +169,7 @@ def main():
 
     if matching_variants.empty:
         print("There is no overlap between reference and variant file. This could be a chromosome naming problem")
-        exit(1)
+        sys.exit(1)
 
     # Rename header in dataframe for processing
     matching_variants = matching_variants.rename(columns={0: "CHROM", 1: 'chr_start', 2: 'ID', 3: 'REF', 4: 'ALT',
