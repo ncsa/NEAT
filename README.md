@@ -42,7 +42,7 @@ Table of Contents
 * Python >= 3.6
 * biopython >= 1.78
 * matplotlib >= 3.3.4 (optional, for plotting utilities)
-* matplotlib_venn >= 0.11.6 (optional, for plotting utilities)
+* matplotlib-venn >= 0.11.6 (optional, for plotting utilities)
 * pandas >= 1.2.1
 * numpy >= 1.19.5
 * pysam >= 0.16.0.1
