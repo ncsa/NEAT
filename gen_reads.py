@@ -532,6 +532,7 @@ def main(raw_args=None):
 
                 # adjust end-position of window based on inserted structural mutations
                 keep_going = True
+                buffer_added = 0
                 while keep_going:
                     keep_going = False
                     for n in structural_vars:
