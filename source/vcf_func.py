@@ -6,73 +6,73 @@ import random
 import pandas as pd
 
 
-def parse_line(vcf_line, col_dict, col_samp):
-
-
-    gt_per_samp = None
-    #	if available (i.e. we simulated it) look for WP in info
-    if len(col_samp) == 0 and 'INFO' in col_dict and 'WP=' in vcf_line[col_dict['INFO']]:
-        info = vcf_line[col_dict['INFO']] + ';'
-        gt_per_samp = [re.findall(r"WP=.*?(?=;)", info)[0][3:]]
-    else:
-        #	if no sample columns, check info for GT
-        if len(col_samp) == 0 and 'INFO' in col_dict and 'GT=' in vcf_line[col_dict['INFO']]:
-            info = vcf_line[col_dict['INFO']] + ';'
-            gt_per_samp = [re.findall(r"GT=.*?(?=;)", info)[0][3:]]
-        elif len(col_samp):
-            fmt = ':' + vcf_line[col_dict['FORMAT']] + ':'
-            if ':GT:' in fmt:
-                gt_ind = fmt.split(':').index('GT')
-                gt_per_samp = [vcf_line[col_samp[iii]].split(':')[gt_ind - 1] for iii in range(len(col_samp))]
-                for i in range(len(gt_per_samp)):
-                    gt_per_samp[i] = gt_per_samp[i].replace('.', '0')
-        if gt_per_samp is None:
-            gt_per_samp = [None] * max([len(col_samp), 1])
-
-    return alt_alleles, alt_freqs, gt_per_samp
-
-
 def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
-              include_homs: bool = False, include_fail: bool = False):
-    # this var was in the orig. May have just been a debugging thing.
-    # I think this is trying to implement a check on if the genotype
-    choose_random_ploid_if_no_gt_found = True
-    # Pseudocode for above line
+              include_homs: bool = False, include_fail: bool = False, debug: bool = False,
+              choose_random_ploid_if_no_gt_found: bool = True):
+
+    if debug:
+        print(f"Choosing random ploid if no GT found? {'yes' if choose_random_ploid_if_no_gt_found else 'no'}")
+
     tt = time.time()
     print('--------------------------------')
     print('reading input VCF...\n', flush=True)
 
+    # Don't probably need any of these
     col_dict = {}
     col_samp = []
     n_skipped = 0
     n_skipped_because_hash = 0
     all_vars = {}  # [ref][pos]
     samp_names = []
-    printed_warning = False
-    with open(vcf_path, 'r') as f:
-        lines = [line for line in f if not line.startswith('##')]
-        # sanity check
-        if not lines[0].startswith('#CHROM'):
-            print("WARNING: Improper vcf header row. Check and re-run.")
 
-        # NOTE: if the vcf that is read in does not match the proper format
+    # These I need
+    samp_cols = []
+    printed_warning = False
+
+    # Read in the raw vcf using pandas' csv reader.
+    with open(vcf_path, 'r') as f:
+        # quickest way I've found to read in the file:
+        lines = [line for line in f if not line.startswith('##')]
+        # Check to make sure header row is included
+        if not lines[0].startswith('#CHROM'):
+            print(f"ERROR: Improper vcf header row for {vcf_path}. Check and re-run.")
+            sys.exit(1)
+        # NOTE: if the vcf that is read in does not match the proper format, this read_csv command
+        # will throw an error. This means you can't have data with no column header.
         variants = pd.read_csv(
             io.StringIO(''.join(lines)),
             dtype={'#CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
-                   'QUAL': str, 'FILTER': str, 'INFO': str},
+                   'QUAL': str},
             sep='\t'
         ).rename(columns={'#CHROM': 'CHROM'})
 
     # the following section is just some sanity checking.
-    valid_headers = ['CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO']
-    for i in range(len(valid_headers)):
-        if valid_headers[i] != variants.columns[i]:
-            print(f"VCF must contain the following headers, in order: {valid_headers}")
+    min_headers = ['CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL']
+    for i in range(len(min_headers)):
+        if min_headers[i] != variants.columns[i]:
+            print(f"ERROR: VCF must contain the following headers, in order: {min_headers}")
             sys.exit(1)
+    if debug:
+        optional_headers = ['FILTER', 'INFO', 'FORMAT']
+        for j in range(len(optional_headers)):
+            if optional_headers[j] != variants.columns[j]:
+                print(f'Warning: missing optional header: {optional_headers[j]}.'
+                      f'Though not required, a full VCF with complete fields will be helpful.')
 
+    # Check for homs and fails, and drop those rows unless otherwise specified
+    if not include_homs:
+        variants = variants.drop(variants[(variants['ALT'] == '.') |
+                                          (variants['ALT'] == '') |
+                                          (variants.apply(lambda row: all(j == row.ALT for j in row.REF), axis=1))
+                                          ].index)
+    if not include_fail:
+        variants = variants.drop(variants[(variants['FILTER'] != 'PASS') &
+                                          (variants['FILTER'] != '.')
+                                          ].index)
+
+    # If FORMAT is present in the vcf, there must be corresponding Sample columns.
     if 'FORMAT' in variants.columns:
         samp_cols = variants.columns[list(variants.columns).index('FORMAT') + 1:]
-
         if len(samp_cols):
             if len(samp_cols) == 1 and not tumor_normal:
                 variants['sample_split'] = variants[samp_cols[0]].str.split(':')
@@ -97,67 +97,62 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                 variants['normal_sample_split'] = variants[samp_cols[0]].str.split(':')
                 variants['tumor_sample_split'] = variants[samp_cols[1]].str.split(':')
             else:
-                print('ERROR: Unconsidered case: you may have broken reality.')
+                print('ERROR: Unconsidered case: you may have broken reality. Check your VCF for the proper number'
+                      'of sample columns.')
                 sys.exit(1)
         else:
             print('ERROR: If FORMAT column is present in VCF, there must be at least one sample column.')
             sys.exit(1)
 
-    # Check for homs and fails, and drop those rows unless otherwise specified
-    if not include_homs:
-        variants = variants.drop(variants[(variants['ALT'] == '.') |
-                                          (variants['ALT'] == '') |
-                                          (variants.apply(lambda row: all(j == row.ALT for j in row.REF), axis=1))
-                                          ].index)
-    if not include_fail:
-        variants = variants.drop(variants[(variants['FILTER'] != 'PASS') &
-                                          (variants['FILTER'] != '.')
-                                          ].index)
-
+    # Split fields with multiple datapoints, if present, into lists
     variants['alt_split'] = variants['ALT'].str.split(',')
-    variants['info_split'] = variants['INFO'].str.split(';')
-    # TODO modify the format column
-    variants['format_split'] = variants['FORMAT'].str.split(':')
+    if 'INFO' in variants.columns:
+        variants['info_split'] = variants['INFO'].str.split(';')
+    if 'FORMAT' in variants.columns:
+        variants['format_split'] = variants['FORMAT'].str.split(':')
 
     # The following block of code looks for allele frequencies in the VCF.
+    # There may be a more clever way to look through these subfields, but I loop (just once) over all theh rows.
     new_column = []
     print_message = False
+    # TODO find a more efficient way than looping over the rows
     for row in variants.iterrows():
         af_numbers = []
-        wp_numbers = []
         gt_numbers = []
-        for info in row[1]['info_split']:
-            # Looking for allele frequency (AF) in the info field
-            if 'AF' in info:
-                # In case they try to do something like "AF=0.5;AF=0.25" instead of "AF=0.5,0.25"
-                if not print_message:
-                    print('Note: NEAT only uses the first AF in the info field of input VCF.')
-                    print_message = True
-                for i in info.split('=')[1].split(','):
-                    # If they didn't supply a number, but instead a '.' or a missing value or something, then
-                    # the try/except block should catch it.
-                    try:
-                        af_numbers.append(float(i))
-                    except ValueError:
-                        print(f"Warning: format is off for AF on this row: {list(row)} \n"
-                              f"Proceeding without AF for this record.")
-                        af_numbers.append(None)
-            # WP is NEAT's ploidy indicator.
-            elif 'WP' in info:
-                for j in info.split('=')[1].split(','):
-                    # If they didn't supply a number, but instead a '.' or a missing value or something, then
-                    # the try/except block should catch it.
-                    wp_numbers.append(j)
-        for format_item in row[1]['format_split']:
-            # GT is the usual genotype indicator. will also need to search for the FORMAT field for this
-            if 'GT' in format_item:
-                if tumor_normal:
-                    pass
-                else:
-                    # Append the corresponding item from the sample.
-                    gt_numbers.append(row[1]['sample_split'][row[1]['format_split'].index(format_item)])
-                    # We've found it, so we can quit looking.
-                    break
+        if 'INFO' in variants.columns:
+            for info in row[1]['info_split']:
+                # Looking for allele frequency (AF) in the info field
+                if 'AF' in info:
+                    # In case they try to do something like "AF=0.5;AF=0.25" instead of "AF=0.5,0.25"
+                    if not print_message:
+                        print('Note: NEAT only uses the first AF in the info field of input VCF.')
+                        print_message = True
+                    for i in info.split('=')[1].split(','):
+                        # If they didn't supply a number, but instead a '.' or a missing value or something, then
+                        # the try/except block should catch it.
+                        try:
+                            af_numbers.append(float(i))
+                        except ValueError:
+                            print(f"Warning: format is off for AF on this row: {list(row)} \n"
+                                  f"Proceeding without AF for this record.")
+                            af_numbers.append(None)
+                # WP is NEAT's ploidy indicator.
+                elif 'WP' in info:
+                    for j in info.split('=')[1].split(','):
+                        # If they didn't supply a number, but instead a '.' or a missing value or something, then
+                        # the try/except block should catch it.
+                        gt_numbers.append(j)
+        if 'FORMAT' in variants.columns and not gt_numbers:
+            for format_item in row[1]['format_split']:
+                # GT is the usual genotype indicator. will also need to search for the FORMAT field for this
+                if 'GT' in format_item:
+                    if tumor_normal:
+                        pass
+                    else:
+                        # Append the corresponding item from the sample.
+                        gt_numbers.append(row[1]['sample_split'][row[1]['format_split'].index(format_item)])
+                        # We've found it, so we can quit looking.
+                        break
 
         # Check that the data are consistent
         if af_numbers:
@@ -168,16 +163,13 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
         else:
             # Used None value if no AF was supplied
             af_numbers.extend([None] * max([len(row[1]['alt_split']), 1]))
-        if not wp_numbers:
-            wp_numbers.extend([None] * max([len(row[1]['alt_split']), 1]))
         if not gt_numbers:
-            gt_numbers.extend([None] * max([len(row[1]['alt_split']), 1]))
+            gt_numbers.extend([None] * max([len(samp_cols), 1]))
 
-        new_column.append([af_numbers, wp_numbers, gt_numbers])
+        new_column.append([af_numbers, gt_numbers])
     # Add the new data to the table
     variants['AF'] = pd.DataFrame(new_column)[0]
-    variants['WP'] = pd.DataFrame(new_column)[1]
-    variants['GT'] = pd.DataFrame(new_column)[2]
+    variants['GT'] = pd.DataFrame(new_column)[1]
 
 
 

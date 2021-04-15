@@ -301,12 +301,12 @@ def main(raw_args=None):
     input_variants = []
     if input_vcf is not None:
         if cancer:
-            (sample_names, input_variants) = parse_vcf(input_vcf, tumor_normal=True, ploidy=ploids)
+            (sample_names, input_variants) = parse_vcf(input_vcf, tumor_normal=True, ploidy=ploids, debug=debug)
             # TODO figure out what these were going to be used for
             tumor_ind = sample_names.index('TUMOR')
             normal_ind = sample_names.index('NORMAL')
         else:
-            (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids)
+            (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids, debug=debug)
         for k in sorted(input_variants.keys()):
             input_variants[k].sort()
 
