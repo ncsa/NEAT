@@ -6,6 +6,71 @@ import random
 import pandas as pd
 
 
+def parse_line(vcf_line, col_dict, col_samp):
+    # these were in the original. Not sure the point other than debugging.
+    include_homs = False
+    include_fail = False
+
+    # check if we want to proceed...
+    reference_allele = vcf_line[col_dict['REF']]
+    alternate_allele = vcf_line[col_dict['ALT']]
+    # enough columns?
+    if len(vcf_line) != len(col_dict):
+        return None
+    # exclude homs / filtered?
+    if not include_homs and alternate_allele == '.' or alternate_allele == '' or alternate_allele == reference_allele:
+        return None
+    if not include_fail and vcf_line[col_dict['FILTER']] != 'PASS' and vcf_line[col_dict['FILTER']] != '.':
+        return None
+
+    #	default vals
+    alt_alleles = [alternate_allele]
+    alt_freqs = []
+
+    gt_per_samp = []
+
+    #	any alt alleles?
+    alt_split = alternate_allele.split(',')
+    if len(alt_split) > 1:
+        alt_alleles = alt_split
+
+    #	check INFO for AF
+    af = None
+    if 'INFO' in col_dict and ';AF=' in ';' + vcf_line[col_dict['INFO']]:
+        info = vcf_line[col_dict['INFO']] + ';'
+        af = re.findall(r"AF=.*?(?=;)", info)[0][3:]
+    if af is not None:
+        af_splt = af.split(',')
+        while (len(af_splt) < len(alt_alleles)):  # are we lacking enough AF values for some reason?
+            af_splt.append(af_splt[-1])  # phone it in.
+        if len(af_splt) != 0 and af_splt[0] != '.' and af_splt[0] != '':  # missing data, yay
+            alt_freqs = [float(n) for n in af_splt]
+    else:
+        alt_freqs = [None] * max([len(alt_alleles), 1])
+
+    gt_per_samp = None
+    #	if available (i.e. we simulated it) look for WP in info
+    if len(col_samp) == 0 and 'INFO' in col_dict and 'WP=' in vcf_line[col_dict['INFO']]:
+        info = vcf_line[col_dict['INFO']] + ';'
+        gt_per_samp = [re.findall(r"WP=.*?(?=;)", info)[0][3:]]
+    else:
+        #	if no sample columns, check info for GT
+        if len(col_samp) == 0 and 'INFO' in col_dict and 'GT=' in vcf_line[col_dict['INFO']]:
+            info = vcf_line[col_dict['INFO']] + ';'
+            gt_per_samp = [re.findall(r"GT=.*?(?=;)", info)[0][3:]]
+        elif len(col_samp):
+            fmt = ':' + vcf_line[col_dict['FORMAT']] + ':'
+            if ':GT:' in fmt:
+                gt_ind = fmt.split(':').index('GT')
+                gt_per_samp = [vcf_line[col_samp[iii]].split(':')[gt_ind - 1] for iii in range(len(col_samp))]
+                for i in range(len(gt_per_samp)):
+                    gt_per_samp[i] = gt_per_samp[i].replace('.', '0')
+        if gt_per_samp is None:
+            gt_per_samp = [None] * max([len(col_samp), 1])
+
+    return alt_alleles, alt_freqs, gt_per_samp
+
+
 def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
               include_homs: bool = False, include_fail: bool = False, debug: bool = False,
               choose_random_ploid_if_no_gt_found: bool = True):
