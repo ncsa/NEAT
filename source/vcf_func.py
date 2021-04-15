@@ -189,7 +189,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                 # Looking for allele frequency (AF) in the info field
                 if 'AF' in info:
                     # In case they try to do something like "AF=0.5;AF=0.25" instead of "AF=0.5,0.25"
-                    if not print_message:
+                    if not print_message and debug:
                         print('Note: NEAT only uses the first AF in the info field of input VCF.')
                         print_message = True
                     for i in info.split('=')[1].split(','):
@@ -229,7 +229,10 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
             # Used None value if no AF was supplied
             af_numbers.extend([None] * max([len(row[1]['alt_split']), 1]))
         if not gt_numbers:
-            gt_numbers.extend([None] * max([len(samp_cols), 1]))
+            if choose_random_ploid_if_no_gt_found:
+                pass
+            else:
+                gt_numbers.extend([None] * max([len(samp_cols), 1]))
 
         new_column.append([af_numbers, gt_numbers])
     # Add the new data to the table
@@ -296,6 +299,30 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                         all_vars[chrom][pos] = (pos, ref, aa, af, gt_eval)
                     else:
                         n_skipped_because_hash += 1
+            else:
+                if line[1] != '#':
+                    cols = line[1:-1].split('\t')
+                    for i in range(len(cols)):
+                        if 'FORMAT' in col_dict:
+                            col_samp.append(i)
+                        col_dict[cols[i]] = i
+                    if len(col_samp):
+                        samp_names = cols[-len(col_samp):]
+                        if len(col_samp) == 1:
+                            pass
+                        elif len(col_samp) == 2 and tumor_normal:
+                            print('Detected 2 sample columns in input VCF, assuming tumor/normal.')
+                        else:
+                            print(
+                                'Warning: Multiple sample columns present in input VCF. By default genReads uses '
+                                'only the first column.')
+                    else:
+                        samp_names = ['Unknown']
+                    if tumor_normal:
+                        # tumorInd  = samp_names.index('TUMOR')
+                        # normalInd = samp_names.index('NORMAL')
+                        if 'NORMAL' not in samp_names or 'TUMOR' not in samp_names:
+                            print('\n\nERROR: Input VCF must have a "NORMAL" and "TUMOR" column.\n')
 
 
     vars_out = {}
