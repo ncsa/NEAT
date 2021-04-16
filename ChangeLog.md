@@ -12,6 +12,8 @@ NEAT is now a part of the NCSA github and active development will continue here.
 ## NEAT v3.0.1
 - Add setup.py
 - NEAT is now installable with pip
+- fixed some bugs related to the debug flag (-d)
+- fixed a bug related to reading in bed files
 
 ## TODOs for v3.1
 NEAT is still undergoing active development with many exciting upgrades planned. We also plan to bring the code up to full production scale and will continue to improve the following features (if you would like to [Contribute](CONTRIBUTING.md))
