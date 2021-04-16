@@ -9,7 +9,7 @@ NEAT is now a part of the NCSA github and active development will continue here.
 - For now, we've eliminated the "Jobs" option and the merge jobs function. We plan to implement multi-threading instead as a way to speed up NEAT's simulation process.
 - Added a basic bacterial wrapper that will simulate multiple generations of bacteria based on an input fasta, mutate them and then produce the fastqs, bams, and vcfs for the resultant bacterial population.
 
-## NEAT v3.0.1
+## NEAT v3.0.1 (master branch)
 - Add setup.py
 - NEAT is now installable with pip
 - fixed some bugs related to the debug flag (-d)
