@@ -9,6 +9,9 @@ NEAT is now a part of the NCSA github and active development will continue here.
 - For now, we've eliminated the "Jobs" option and the merge jobs function. We plan to implement multi-threading instead as a way to speed up NEAT's simulation process.
 - Added a basic bacterial wrapper that will simulate multiple generations of bacteria based on an input fasta, mutate them and then produce the fastqs, bams, and vcfs for the resultant bacterial population.
 
+## NEAT v3.0.1
+- Add setup.py
+- NEAT is now installable with pip
 
 ## TODOs for v3.1
 NEAT is still undergoing active development with many exciting upgrades planned. We also plan to bring the code up to full production scale and will continue to improve the following features (if you would like to [Contribute](CONTRIBUTING.md))
@@ -20,7 +23,7 @@ NEAT is still undergoing active development with many exciting upgrades planned.
 - Improvements and standardization for the utilities, across the board
 - VCF compare has some nice features and output, but is very slow to use. Can we improve this utility?
 
-For improvements, we have a lot of great ideas for general improvements aimed at better simulating bacteria, but we believe this same improvements will have applications in other species as well. 
+For improvements, we have a lot of great ideas for general improvements aimed at better simulating bacteria, but we believe this same improvements will have applications in other species as well.
 - Multiploidy - all right this has nothing to do with bacteria specifically, but it is a feature we would like to implement into gen_reads.
 - Structural Variants - model large scale structural variants with an eye toward intergenic SVs.
 - Transposable Elements - model transposons within the sequence
