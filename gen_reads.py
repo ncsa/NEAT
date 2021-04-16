@@ -1,4 +1,4 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 # encoding: utf-8
 """ ////////////////////////////////////////////////////////////////////////////////
    ///                                                                          ///
@@ -309,34 +309,36 @@ def main(raw_args=None):
 
     # parse input targeted regions, if present
     # TODO convert bed to pandas dataframe
+    # TODO handle case when bed doesn't have 'chr' and reference list does
     input_regions = {}
     if input_bed is not None:
         try:
             with open(input_bed, 'r') as f:
                 for line in f:
-                    [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-                    if my_chr not in input_regions:
-                        input_regions[my_chr] = [-1]
-                    input_regions[my_chr].extend([int(pos1), int(pos2)])
+                    if not line.startswith(('@', '#')):
+                        [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
+                        if my_chr not in input_regions:
+                            input_regions[my_chr] = [-1]
+                        input_regions[my_chr].extend([int(pos1), int(pos2)])
         except IOError:
             print("\nProblem reading input target BED file.\n")
             sys.exit(1)
 
         # some validation
-        n_in_bed_only = 0
-        n_in_ref_only = 0
-        for k in ref_list:
-            if k not in input_regions:
-                n_in_ref_only += 1
-        for k in input_regions.keys():
-            if k not in ref_list:
-                n_in_bed_only += 1
-                del input_regions[k]
-        if n_in_ref_only > 0:
-            print('Warning: Reference contains sequences not found in targeted regions BED file.')
-        if n_in_bed_only > 0:
-            print(
-                'Warning: Targeted regions BED file contains sequence names not found in reference (regions ignored).')
+        in_ref_only = [k for k in ref_list if k not in input_regions]
+        in_bed_only = [k for k in input_regions.keys() if k not in ref_list]
+        if in_ref_only:
+            print(f'Warning: Reference contains sequences not found in targeted regions BED file.')
+            if debug:
+                print(f'found in reference only: {in_ref_only}')
+        
+        if in_bed_only:
+            print(f'Warning: Targeted regions BED file contains sequence names '
+                  f'not found in reference (regions ignored).')
+            if debug:
+                print(f'Regions ignored: {in_bed_only}')
+            for key in in_bed_only:
+                del input_regions[key]
 
     # parse discard bed similarly
     # TODO convert to pandas dataframe
@@ -530,6 +532,7 @@ def main(raw_args=None):
 
                 # adjust end-position of window based on inserted structural mutations
                 keep_going = True
+                buffer_added = 0
                 while keep_going:
                     keep_going = False
                     for n in structural_vars:
@@ -567,7 +570,7 @@ def main(raw_args=None):
                 coverage_avg = None
                 coverage_dat = [gc_window_size, gc_scale_val, []]
                 target_hits = 0
-                if input_bed is None:
+                if not input_regions:
                     coverage_dat[2] = [1.0] * (end - start)
                 else:
                     if ref_index[chrom][0] not in input_regions:
@@ -608,7 +611,7 @@ def main(raw_args=None):
                 # construct sequence data that we will sample reads from
                 if sequences is None:
                     sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
-                                                  save_bam, [mut_model] * ploids, mut_rate, only_vcf)
+                                                  [mut_model] * ploids, mut_rate, only_vcf=only_vcf)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
                             [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
                         print("There's a cigar that's off.")
@@ -711,7 +714,7 @@ def main(raw_args=None):
 
                         # are we discarding offtargets?
                         outside_boundaries = []
-                        if off_target_discard and input_bed is not None:
+                        if off_target_discard and input_regions is not None:
                             outside_boundaries += [bisect.bisect(input_regions[ref_index[chrom][0]], n[0]) % 2 for n
                                                    in my_read_data]
                             outside_boundaries += [
