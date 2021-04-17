@@ -283,11 +283,7 @@ def main(raw_args=None):
     tt = time.time()
     print(f'reading {reference}... ')
 
-    try:
-        ref_index = SeqIO.index(reference, 'fasta')
-    except IOError:
-        print("problem reading reference")
-        sys.exit(1)
+    ref_index = SeqIO.index(reference, 'fasta')
 
     print('{0:.3f} (sec)'.format(time.time() - tt))
 
@@ -303,12 +299,14 @@ def main(raw_args=None):
         if cancer:
             (sample_names, input_variants) = parse_vcf(input_vcf, tumor_normal=True, ploidy=ploids, debug=debug)
             # TODO figure out what these were going to be used for
-            tumor_ind = sample_names.index('TUMOR')
-            normal_ind = sample_names.index('NORMAL')
+            tumor_ind = sample_names.index('tumor_sample_split')
+            normal_ind = sample_names.index('normal_sample_split')
         else:
             (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids, debug=debug)
         for k in sorted(input_variants.keys()):
             input_variants[k].sort()
+    # TODO input_variants is now a dataframe, so the following code needs to be adjusted accordingly
+
 
     # parse input targeted regions, if present
     # TODO convert bed to pandas dataframe
@@ -328,8 +326,8 @@ def main(raw_args=None):
             sys.exit(1)
 
         # some validation
-        in_ref_only = [k for k in ref_list if k not in input_regions]
-        in_bed_only = [k for k in input_regions.keys() if k not in ref_list]
+        in_ref_only = [k for k in ref_index.keys() if k not in input_regions]
+        in_bed_only = [k for k in input_regions.keys() if k not in ref_index]
         if in_ref_only:
             print(f'Warning: Reference contains sequences not found in targeted regions BED file.')
             if debug:
@@ -722,13 +720,8 @@ def main(raw_args=None):
 
                         # are we discarding offtargets?
                         outside_boundaries = []
-<<<<<<< HEAD
                         if off_target_discard and input_bed is not None:
                             outside_boundaries += [bisect.bisect(input_regions[chrom], n[0]) % 2 for n
-=======
-                        if off_target_discard and input_regions is not None:
-                            outside_boundaries += [bisect.bisect(input_regions[ref_index[chrom][0]], n[0]) % 2 for n
->>>>>>> 5b37450a2cd6b461be0e6bbf7989c9046400e388
                                                    in my_read_data]
                             outside_boundaries += [
                                 bisect.bisect(input_regions[chrom], n[0] + len(n[2])) % 2 for n in
