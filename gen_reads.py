@@ -294,7 +294,7 @@ def main(raw_args=None):
 
     # parse input variants, if present
     # TODO read this in as a pandas dataframe
-    input_variants = []
+    input_variants = None
     if input_vcf is not None:
         if cancer:
             (sample_names, input_variants) = parse_vcf(input_vcf, tumor_normal=True, ploidy=ploids, debug=debug)
@@ -303,14 +303,9 @@ def main(raw_args=None):
             normal_ind = sample_names.index('normal_sample_split')
         else:
             (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids, debug=debug)
-        for k in sorted(input_variants.keys()):
-            input_variants[k].sort()
     # TODO input_variants is now a dataframe, so the following code needs to be adjusted accordingly
 
-
     # parse input targeted regions, if present
-    # TODO convert bed to pandas dataframe
-    # TODO handle case when bed doesn't have 'chr' and reference list does
     input_regions = {}
     if input_bed is not None:
         try:
@@ -318,6 +313,8 @@ def main(raw_args=None):
                 for line in f:
                     if not line.startswith(('@', '#')):
                         [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
+                        if not my_chr.startswith('chr'):
+                            my_chr = 'chr' + my_chr
                         if my_chr not in input_regions:
                             input_regions[my_chr] = [-1]
                         input_regions[my_chr].extend([int(pos1), int(pos2)])
@@ -439,7 +436,8 @@ def main(raw_args=None):
         if chrom in input_variants:
             for n in input_variants[chrom]:
                 span = (n[0], n[0] + len(n[1]))
-                r_seq = str(ref_sequence2[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
+                # -1 because going from VCF coords to array coords
+                r_seq = str(ref_sequence2[span[0] - 1:span[1] - 1])
                 # Checks if there are any invalid nucleotides in the vcf items
                 any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist])
                 # Ensure reference sequence matches the nucleotide in the vcf

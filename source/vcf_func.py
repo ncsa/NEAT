@@ -34,14 +34,14 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
         if not lines[0].startswith('#CHROM'):
             print(f"ERROR: Improper vcf header row for {vcf_path}. Check and re-run.")
             sys.exit(1)
-        # NOTE: if the vcf that is read in does not match the proper format, this read_csv command
-        # will throw an error. This means you can't have data with no column header.
-        variants = pd.read_csv(
-            io.StringIO(''.join(lines)),
-            dtype={'#CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
-                   'QUAL': str},
-            sep='\t'
-        ).rename(columns={'#CHROM': 'CHROM'})
+    # NOTE: if the vcf that is read in does not match the proper format, this read_csv command
+    # will throw an error. This means you can't have data with no column header.
+    variants = pd.read_csv(
+        io.StringIO(''.join(lines)),
+        dtype={'#CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
+               'QUAL': str},
+        sep='\t'
+    ).rename(columns={'#CHROM': 'CHROM'})
 
     # the following section is just some sanity checking.
     min_headers = ['CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL']
@@ -226,6 +226,8 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
     n_skipped += len(variants[variants["POS"] <= 0].index)
     # Delete rows where they try to insert more than one variant
     variants = variants.loc[~variants.duplicated(subset=['CHROM', 'POS'])]
+
+    variants = variants.sort_values(by=['CHROM', 'POS'])
 
     print('found', sum([len(n) for n in all_vars.values()]), 'valid variants in input vcf.')
     print(' *', n_skipped, 'variants skipped: (qual filtered / ref genotypes / invalid syntax)')
