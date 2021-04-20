@@ -29,14 +29,13 @@ from Bio import SeqIO
 
 from source.input_checking import check_file_open, is_in_range
 from source.ref_func import index_ref, read_ref, find_n_regions
-from source.vcf_func import parse_vcf
+from source.vcf_func import parse_vcf, parse_vcf_alternate
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
 from source.input_file_reader import parse_input_mutation_model
 from source.ReadContainer import ReadContainer
 from source.constants_and_models import ALLOWED_NUCL
-
 
 def main(raw_args=None):
     """//////////////////////////////////////////////////
@@ -302,6 +301,7 @@ def main(raw_args=None):
             tumor_ind = sample_names.index('tumor_sample_split')
             normal_ind = sample_names.index('normal_sample_split')
         else:
+            parse_vcf_alternate(input_vcf, ploidy=ploids, debug=debug)
             (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids, debug=debug)
     # TODO input_variants is now a dataframe, so the following code needs to be adjusted accordingly
 

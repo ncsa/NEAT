@@ -1,14 +1,35 @@
 import io
 import sys
 import time
-import re
+import gzip
 import random
+import allel
 import pandas as pd
+import numpy as np
+import warnings
 
 
-def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
-              include_homs: bool = False, include_fail: bool = False, debug: bool = False,
-              choose_random_ploid_if_no_gt_found: bool = True):
+def parse_vcf_alternate(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
+                        include_homs: bool = False, include_fail: bool = False, debug: bool = False,
+                        choose_random_ploid_if_no_gt_found: bool = True):
+    """
+    Playing around with this idea, but the problem is that I don't think the allel package
+    is all the way there yet, so this might not work.
+
+    :param vcf_path:
+    :param tumor_normal:
+    :param ploidy:
+    :param include_homs:
+    :param include_fail:
+    :param debug:
+    :param choose_random_ploid_if_no_gt_found:
+    :return:
+    """
+
+    # Due to the complexity of reading in vcfs, allel gives a warning that is not helpful, so the default will
+    # be to suppress it.
+    if not debug:
+        warnings.filterwarnings('ignore')
 
     if debug:
         print(f"Choosing random ploid if no GT found? {'yes' if choose_random_ploid_if_no_gt_found else 'no'}")
@@ -19,29 +40,133 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
 
     n_skipped = 0
     n_skipped_because_hash = 0
+    samp_cols = []
     all_vars = {}  # [ref][pos]
 
     # These I need
-    samp_cols = []
     printed_warning = False
+    rows_to_delete = []
+
+    fields = ['CHROM', 'POS', 'REF', 'ALT', 'samples', 'FILTER',
+              'variants/AF', 'variants/WP', 'calldata/AF', 'calldata/GT']
+    variants = allel.read_vcf(vcf_path, fields=fields)
+
+    # Extract sample name columns then delete the sample names list from the dict
+    if 'samples' in variants.keys():
+        samp_cols = variants['samples'].tolist()
+        del variants['samples']
+
+    cols_to_check = ['variants/AF', 'variants/WP', 'calldata/AF', 'calldata/GT']
+    for key in cols_to_check:
+        # These values are lists of lists, but won't be in all vcfs, so
+        # this line just looks for empty fields
+        if key in variants.keys():
+            if not any([any(n) for n in variants[key].tolist()]):
+                del variants[key]
+            else:
+                if debug:
+                    # a message to let you know the key is fine, but meaningless unless you are debugging
+                    print(f'{key} is fine')
+
+    # Make a genotype table
+    if 'calldata/GT' in variants.keys():
+        gt_table = allel.GenotypeArray(variants['calldata/GT']).tolist()
+        gt_table = pd.DataFrame(gt_table)
+
+        # Delete homozygous to reference calls
+        for index, row in gt_table.iterrows():
+            if all([row[column] == [0, 0] for column in gt_table.columns]):
+                rows_to_delete.append(index)
+
+    # TODO figure out a way to filter out items
+
+    # Find sample columns
+    if len(samp_cols):
+        if len(samp_cols) == 1 and not tumor_normal:
+            pass
+        elif len(samp_cols) >= 1 and not tumor_normal:
+            print('More than one sample column present, only first sample column used.')
+            samp_cols = samp_cols[:1]
+        elif len(samp_cols) == 1 and tumor_normal:
+            print(f'Tumor-Normal samples require both a tumor and normal column in the VCF. \n'
+                  f'Supplied samples = {list(samp_cols)}')
+            sys.exit(1)
+        elif len(samp_cols) >= 1 and tumor_normal:
+            normals = [label for label in samp_cols if 'normal' in label.lower()]
+            tumors = [label for label in samp_cols if 'tumor' in label.lower()]
+            if not (tumors and normals):
+                print("ERROR: Input VCF for cancer must contain a columns with labels containing 'tumor' "
+                      "and 'normal' (case-insensitive).")
+                sys.exit(1)
+            if len(normals) > 1 or len(tumors) > 1:
+                print("WARNING: If more than one tumor or normal column is present, "
+                      "only the first of each is used.")
+            samp_cols = [normals[0], tumors[0]]
+        else:
+            print('ERROR: Unconsidered case: you may have broken reality. Check your VCF for the proper number'
+                  'of sample columns.')
+            sys.exit(1)
+    else:
+        if choose_random_ploid_if_no_gt_found:
+            gt_numbers = []
+            print('Warning: Found variants without a GT field, assuming heterozygous...')
+            # to fill in missing data we need to create entries for the max number of alts in the vcf
+            # TODO actually, this isn't what I needed to do. I need to fill in GTs for -1 entries
+            alt_len = np.max([np.count_nonzero(item) for item in variants['variants/ALT']])
+            for item in variants['variants/ALT']:
+                tmp_list = []
+                real_alts = np.count_nonzero(item)
+                # Create the 'real' genotype
+                for i in range(real_alts):
+                    tmp = [0] * ploidy
+                    tmp[random.randint(0, ploidy - 1)] = 1
+                    tmp_list.append(tmp)
+                # create the dummy genotype
+                remainder = alt_len - real_alts
+                if remainder:
+                    for j in range(remainder):
+                        tmp_list.append([-1, -1])
+
+                gt_numbers.append(tmp_list)
+            # Artificial genotype list
+            variants['calldata/GT'] = gt_numbers
+        else:
+            print('Warning: Found variants without a GT field, ignoring variants...')
+
+        # TODO trim unneccessary sequences from alleles
+
+
+    return samp_cols, variants
+
+
+def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
+              include_homs: bool = False, include_fail: bool = False, debug: bool = False,
+              choose_random_ploid_if_no_gt_found: bool = True):
 
     # Read in the raw vcf using pandas' csv reader.
-    # TODO make this able to read gzipped files
-    with open(vcf_path, 'r') as f:
-        # quickest way I've found to read in the file:
-        lines = [line for line in f if not line.startswith('##')]
-        # Check to make sure header row is included
-        if not lines[0].startswith('#CHROM'):
-            print(f"ERROR: Improper vcf header row for {vcf_path}. Check and re-run.")
-            sys.exit(1)
+    if vcf_path.endswith('.gz'):
+        f = gzip.open(vcf_path)
+    else:
+        f = open(vcf_path, 'r')
+
+    # quickest way I've found to read in the file:
+    lines = [line for line in f if not line.startswith('##')]
+    f.close()
+
+    # Check to make sure header row is included
+    if not lines[0].startswith('#CHROM'):
+        print(f"ERROR: Improper vcf header row for {vcf_path}. Check and re-run.")
+        sys.exit(1)
+    else:
+        lines[0] = lines[0].strip('#')
     # NOTE: if the vcf that is read in does not match the proper format, this read_csv command
     # will throw an error. This means you can't have data with no column header.
     variants = pd.read_csv(
         io.StringIO(''.join(lines)),
-        dtype={'#CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
+        dtype={'CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
                'QUAL': str},
         sep='\t'
-    ).rename(columns={'#CHROM': 'CHROM'})
+    )
 
     # the following section is just some sanity checking.
     min_headers = ['CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL']
@@ -69,6 +194,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
 
     # If FORMAT is present in the vcf, there must be corresponding Sample columns.
     if 'FORMAT' in variants.columns:
+        # VCF spec says that all columns after FORMAT are sample columns.
         samp_cols = variants.columns[list(variants.columns).index('FORMAT') + 1:]
         if len(samp_cols):
             if len(samp_cols) == 1 and not tumor_normal:
@@ -115,7 +241,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
     # There may be a more clever way to look through these subfields, but I loop (just once) over all the rows.
     new_column = []
     print_message = False
-    to_delete = []
+    rows_to_delete = []
     # TODO find a more efficient way than looping over the rows
     # Nan's give errors, so let's fill them out quick.
     variants = variants.fillna('.')
@@ -174,6 +300,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                             gt_numbers.append(row['sample_split'][row['format_split'].index(format_item)])
                             # We've found it, so we can quit looking.
                         break
+
             # If there is not GT or WP present, then we either choose a random ploid or skip
             else:
                 if choose_random_ploid_if_no_gt_found:
@@ -190,7 +317,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                     if not printed_warning:
                         print('Warning: Found variants without a GT field, ignoring variants...')
                         printed_warning = True
-                    to_delete.append(index)
+                    rows_to_delete.append(index)
         # Trim unnecessary sequences from alleles
         while (len(row['REF']) > 1) and \
                 (all([n[-1] == row['REF'] for n in row['alt_split']])) and \
@@ -207,20 +334,20 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
             # Used None value if no AF was supplied
             af_numbers.extend([None] * max([len(row['alt_split']), 1]))
         if not gt_numbers:
-            to_delete.append(index)
+            rows_to_delete.append(index)
         else:
             # drop variants that aren't actually used
             for gt in gt_numbers:
                 if gt == '0/0':
-                    to_delete.append(index)
+                    rows_to_delete.append(index)
         # Append column to form new AF and GT columns of the dataframe
         new_column.append([af_numbers, gt_numbers])
     # Add the new data to the table
     variants['AF'] = pd.DataFrame(new_column)[0]
     variants['GT'] = pd.DataFrame(new_column)[1]
     # drop rows with no genotype numbers
-    variants = variants.drop(to_delete)
-    n_skipped += len(to_delete)
+    variants = variants.drop(rows_to_delete)
+    n_skipped += len(rows_to_delete)
     # drop rows with position <= 0
     variants = variants.drop(variants[variants["POS"] <= 0].index)
     n_skipped += len(variants[variants["POS"] <= 0].index)
