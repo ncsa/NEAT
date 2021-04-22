@@ -53,7 +53,9 @@ Table of Contents
 ### From source
 
 ```
-git clone https://github.com/ncsa/neat-genreads
+git clone https://github.com/ncsa/NEAT.git
+
+UNTESTED:
 python -m pip install -e /path/to/NEAT/
 ```
 
