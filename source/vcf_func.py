@@ -110,23 +110,11 @@ def parse_vcf_alternate(vcf_path: str, tumor_normal: bool = False, ploidy: int =
         if choose_random_ploid_if_no_gt_found:
             gt_numbers = []
             print('Warning: Found variants without a GT field, assuming heterozygous...')
-            # to fill in missing data we need to create entries for the max number of alts in the vcf
-            # TODO actually, this isn't what I needed to do. I need to fill in GTs for -1 entries
-            alt_len = np.max([np.count_nonzero(item) for item in variants['variants/ALT']])
             for item in variants['variants/ALT']:
                 tmp_list = []
-                real_alts = np.count_nonzero(item)
-                # Create the 'real' genotype
-                for i in range(real_alts):
-                    tmp = [0] * ploidy
-                    tmp[random.randint(0, ploidy - 1)] = 1
-                    tmp_list.append(tmp)
-                # create the dummy genotype
-                remainder = alt_len - real_alts
-                if remainder:
-                    for j in range(remainder):
-                        tmp_list.append([-1, -1])
-
+                tmp = [0] * ploidy
+                tmp[random.randint(0, ploidy - 1)] = 1
+                tmp_list.append(tmp)
                 gt_numbers.append(tmp_list)
             # Artificial genotype list
             variants['calldata/GT'] = gt_numbers
@@ -134,6 +122,21 @@ def parse_vcf_alternate(vcf_path: str, tumor_normal: bool = False, ploidy: int =
             print('Warning: Found variants without a GT field, ignoring variants...')
 
         # TODO trim unneccessary sequences from alleles
+        af_numbers = []
+        alt_len = np.max([np.count_nonzero(item) for item in variants['variants/ALT']])
+        for item in variants['variants/ALT']:
+            tmp_list = []
+            real_alts = np.count_nonzero(item)
+            # Create the 'real' genotype
+            for i in range(real_alts):
+                tmp = [0] * ploidy
+                tmp[random.randint(0, ploidy - 1)] = 1
+                tmp_list.append(tmp)
+            # create the dummy genotype
+            remainder = alt_len - real_alts
+            if remainder:
+                for j in range(remainder):
+                    tmp_list.append([-1, -1])
 
 
     return samp_cols, variants
