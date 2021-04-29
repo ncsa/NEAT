@@ -282,9 +282,6 @@ def main(raw_args=None):
     # TODO check to see if this might work better as a dataframe or biopython object
     ref_index = index_ref(reference)
 
-    # TODO check if this index can work, maybe it's faster
-    # ref_index2 = SeqIO.index(reference, 'fasta')
-
     if paired_end:
         n_handling = ('random', fragment_size)
     else:
@@ -716,18 +713,20 @@ def main(raw_args=None):
 
                         # are we discarding offtargets?
                         outside_boundaries = []
-                        if off_target_discard and input_regions is not None:
-                            outside_boundaries += [bisect.bisect(input_regions[ref_index[chrom][0]], n[0]) % 2 for n
-                                                   in my_read_data]
-                            outside_boundaries += [
-                                bisect.bisect(input_regions[ref_index[chrom][0]], n[0] + len(n[2])) % 2 for n in
-                                my_read_data]
-                        if discard_bed is not None:
-                            outside_boundaries += [bisect.bisect(discard_regions[ref_index[chrom][0]], n[0]) % 2 for
-                                                   n in my_read_data]
-                            outside_boundaries += [
-                                bisect.bisect(discard_regions[ref_index[chrom][0]], n[0] + len(n[2])) % 2 for n in
-                                my_read_data]
+                        if off_target_discard and input_regions:
+                            if ref_index[chrom][0] in input_regions.keys():
+                                outside_boundaries += [bisect.bisect(input_regions[ref_index[chrom][0]], n[0]) % 2 for n
+                                                       in my_read_data]
+                                outside_boundaries += [
+                                    bisect.bisect(input_regions[ref_index[chrom][0]], n[0] + len(n[2])) % 2 for n in
+                                    my_read_data]
+                        if discard_regions:
+                            if ref_index[chrom][0] in discard_regions.keys():
+                                outside_boundaries += [bisect.bisect(discard_regions[ref_index[chrom][0]], n[0]) % 2 for
+                                                       n in my_read_data]
+                                outside_boundaries += [
+                                    bisect.bisect(discard_regions[ref_index[chrom][0]], n[0] + len(n[2])) % 2 for n in
+                                    my_read_data]
                         if len(outside_boundaries) and any(outside_boundaries):
                             continue
 
