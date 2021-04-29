@@ -19,7 +19,7 @@ NEAT is now a part of the NCSA github and active development will continue here.
 ## TODOs for v3.1
 NEAT is still undergoing active development with many exciting upgrades planned. We also plan to bring the code up to full production scale and will continue to improve the following features (if you would like to [Contribute](CONTRIBUTING.md))
 - Using Python's multithreading libraries, speed up NEAT's gen_reads tool significantly.
-- Take advantage of pandas library for reading in bed files and other files.
+- OR reprogram core functions of NEAT in C++.
 - Code optimization for all gen_reads files (in source folder)
 - Further cleanup to PEP8 standards
 - Refactor the code to integrate NEAT's utilities into the package
