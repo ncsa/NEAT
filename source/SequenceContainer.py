@@ -225,7 +225,7 @@ class SequenceContainer:
         if self.mut_rescale is None:
             self.mut_scalar = 1.0
         else:
-            self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data)))
+            self.mut_scalar = float(self.mut_rescale) / (mut_rate_sum / float(len(self.model_data)))
 
         # how are mutations spread to each ploid, based on their specified mut rates?
         self.ploid_mut_frac = [float(n[0]) / mut_rate_sum for n in self.model_data]

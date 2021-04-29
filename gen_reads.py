@@ -315,7 +315,7 @@ def main(raw_args=None):
         try:
             with open(input_bed, 'r') as f:
                 for line in f:
-                    if not line.startswith(('@', '#')):
+                    if not line.startswith(('@', '#', '\n')):
                         [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
                         if my_chr not in input_regions:
                             input_regions[my_chr] = [-1]
@@ -347,10 +347,11 @@ def main(raw_args=None):
         try:
             with open(discard_bed, 'r') as f:
                 for line in f:
-                    [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-                    if my_chr not in discard_regions:
-                        discard_regions[my_chr] = [-1]
-                    discard_regions[my_chr].extend([int(pos1), int(pos2)])
+                    if not line.startswith(('@', '#', '\n')):
+                        [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
+                        if my_chr not in discard_regions:
+                            discard_regions[my_chr] = [-1]
+                        discard_regions[my_chr].extend([int(pos1), int(pos2)])
         except IOError:
             print("\nProblem reading discard BED file.\n")
             sys.exit(1)
@@ -374,7 +375,7 @@ def main(raw_args=None):
                             mut_rate_values[my_chr] = [0.0]
                         mut_rate_regions[my_chr].extend([pos1, pos2])
                         # TODO figure out what the next line is supposed to do and fix
-                        mut_rate_values.extend([mut_rate * (pos2 - pos1)] * 2)
+                        mut_rate_values[my_chr].extend([mut_rate * (pos2 - pos1)] * 2)
         except IOError:
             print("\nProblem reading mutational BED file.\n")
             sys.exit(1)
@@ -558,7 +559,7 @@ def main(raw_args=None):
                 new_percent = int((current_progress * 100) / float(total_bp_span))
                 if new_percent > current_percent:
                     if new_percent <= 99 or (new_percent == 100 and not have_printed100):
-                        if new_percent % 10 == 1:
+                        if new_percent % 10 == 1 or new_percent == 100:
                             print('-', end='', flush=True)
                     current_percent = new_percent
                     if current_percent == 100:
@@ -588,7 +589,8 @@ def main(raw_args=None):
                     coverage_avg = 0.0
                     skip_this_window = True
 
-                # print len(coverage_dat[2]), sum(coverage_dat[2])
+                if debug:
+                    print(len(coverage_dat[2]), sum(coverage_dat[2]))
                 if sum(coverage_dat[2]) < low_cov_thresh:
                     coverage_avg = 0.0
                     skip_this_window = True
@@ -609,7 +611,7 @@ def main(raw_args=None):
                     continue
 
                 # construct sequence data that we will sample reads from
-                if sequences is None:
+                if not sequences:
                     sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
                                                   [mut_model] * ploids, mut_rate, only_vcf=only_vcf)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
