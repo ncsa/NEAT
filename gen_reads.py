@@ -318,7 +318,6 @@ def main(raw_args=None):
         for chrom in reference_chromosomes:
             if chrom in input_variants_chroms:
                 for index, row in input_variants[input_variants['CHROM'] == chrom].iterrows():
-
                     span = (row['POS'], row['POS'] + len(row['REF']))
                     # -1 because going from VCF coords to array coords
                     r_seq = str(ref_index[chrom].seq[span[0] - 1:span[1] - 1])
