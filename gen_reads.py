@@ -15,7 +15,6 @@
 /////////////////////////////////////////////////////////////////////////////// """
 
 import sys
-import copy
 import random
 import re
 import time
@@ -24,12 +23,12 @@ import pickle
 import numpy as np
 import argparse
 import pathlib
-import timeit
 from Bio import SeqIO
 
 from source.input_checking import check_file_open, is_in_range
-from source.ref_func import index_ref, read_ref, find_n_regions
-from source.vcf_func import parse_vcf, parse_vcf_alternate
+from source.ref_func import find_n_regions
+from source.bed_func import parse_bed
+from source.vcf_func import parse_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
@@ -120,7 +119,7 @@ def main(raw_args=None):
     # required args
     (reference, read_len, out_prefix) = (args.r, args.R, args.o)
     # various dataset parameters
-    (coverage, ploids, input_bed, discard_bed, se_model, se_rate, mut_model, mut_rate, mut_bed, input_vcf) = \
+    (coverage, ploids, target_bed, discard_bed, se_model, se_rate, mut_model, mut_rate, mut_bed, input_vcf) = \
         (args.c, args.p, args.tr, args.dr, args.e, args.E, args.m, args.M, args.Mb, args.v)
     # cancer params (disabled currently)
     # (cancer, cancer_model, cancer_purity) = (args.cancer, args.cm, args.cp)
@@ -150,7 +149,7 @@ def main(raw_args=None):
     # Check that files are real, if provided
     check_file_open(reference, 'ERROR: could not open reference, {}'.format(reference), required=True)
     check_file_open(input_vcf, 'ERROR: could not open input VCF, {}'.format(input_vcf), required=False)
-    check_file_open(input_bed, 'ERROR: could not open input BED, {}'.format(input_bed), required=False)
+    check_file_open(target_bed, 'ERROR: could not open input BED, {}'.format(target_bed), required=False)
 
     # if user specified no fastq, not fasta only, and no bam and no vcf, then print error and exit.
     if no_fastq and not fasta_instead and not save_bam and not save_vcf:
@@ -259,8 +258,7 @@ def main(raw_args=None):
         # Using artificial fragment length distribution, if the parameters were specified
         # fragment length distribution: normal distribution that goes out to +- 6 standard deviations
         elif fragment_size is not None and fragment_std is not None:
-            print(
-                'Using artificial fragment length distribution. mean=' + str(fragment_size) + ', std=' + str(
+            print('Using artificial fragment length distribution. mean=' + str(fragment_size) + ', std=' + str(
                     fragment_std))
             if fragment_std == 0:
                 fraglen_distribution = DiscreteDistribution([1], [fragment_size], degenerate_val=fragment_size)
@@ -283,6 +281,10 @@ def main(raw_args=None):
     print(f'reading {reference}... ')
 
     ref_index = SeqIO.index(reference, 'fasta')
+    reference_chromosomes = list(ref_index.keys())
+    begins_with_chr = False
+    if all(k.startswith('chr') for k in reference_chromosomes):
+        begins_with_chr = True
 
     print('{0:.3f} (sec)'.format(time.time() - tt))
 
@@ -294,88 +296,106 @@ def main(raw_args=None):
     # parse input variants, if present
     # TODO read this in as a pandas dataframe
     input_variants = None
-    if input_vcf is not None:
+    printed_warning = False
+    if input_vcf:
         if cancer:
             (sample_names, input_variants) = parse_vcf(input_vcf, tumor_normal=True, ploidy=ploids, debug=debug)
             # TODO figure out what these were going to be used for
             tumor_ind = sample_names.index('tumor_sample_split')
             normal_ind = sample_names.index('normal_sample_split')
         else:
-            parse_vcf_alternate(input_vcf, ploidy=ploids, debug=debug)
             (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids, debug=debug)
-    # TODO input_variants is now a dataframe, so the following code needs to be adjusted accordingly
+
+        # Remove any chromosomes that aren't in the reference.
+        input_variants_chroms = list(set(list(input_variants.CHROM)))
+        for item in input_variants_chroms:
+            if item not in reference_chromosomes and not printed_warning:
+                print(f'Warning: ignoring all input vcf records for {item} because it is not found in the reference.')
+                print(f'\tIf this is unexpected, check that that {item} matches reference name exactly.')
+                printed_warning = True
+                input_variants = input_variants[input_variants['CHROM'] != item]
+
+        for chrom in reference_chromosomes:
+            if chrom in input_variants_chroms:
+                for index, row in input_variants[input_variants['CHROM'] == chrom].iterrows():
+
+                    span = (row['POS'], row['POS'] + len(row['REF']))
+                    # -1 because going from VCF coords to array coords
+                    r_seq = str(ref_index[chrom].seq[span[0] - 1:span[1] - 1])
+                    # Checks if there are any invalid nucleotides in the vcf items
+                    any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in
+                                       [item for sublist in row['alt_split'] for item in sublist])
+                    # Ensure reference sequence matches the nucleotide in the vcf
+                    if r_seq != row[1]:
+                        n_skipped[0] += 1
+                        continue
+                    # Ensure that we aren't trying to insert into an N region
+                    elif 'N' in r_seq:
+                        n_skipped[1] += 1
+                        continue
+                    # Ensure that we don't insert any disallowed characters
+                    elif any_bad_nucl:
+                        n_skipped[2] += 1
+                        continue
+                    # If it passes the above tests, append to valid variants list
+                    valid_variants_from_vcf.append(row)
+
+                print('found', len(valid_variants_from_vcf), 'valid variants for ' +
+                      chrom + ' in input VCF...')
+                if any(n_skipped):
+                    print(sum(n_skipped), 'variants skipped...')
+                    print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
+                    print(' - [' + str(n_skipped[1]) + '] attempting to insert into N-region')
+                    print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
 
     # parse input targeted regions, if present
-    input_regions = {}
-    if input_bed is not None:
-        try:
-            with open(input_bed, 'r') as f:
-                for line in f:
-                    if not line.startswith(('@', '#')):
-                        [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-                        if not my_chr.startswith('chr'):
-                            my_chr = 'chr' + my_chr
-                        if my_chr not in input_regions:
-                            input_regions[my_chr] = [-1]
-                        input_regions[my_chr].extend([int(pos1), int(pos2)])
-        except IOError:
-            print("\nProblem reading input target BED file.\n")
-            sys.exit(1)
-
-        # some validation
-        in_ref_only = [k for k in ref_index.keys() if k not in input_regions]
-        in_bed_only = [k for k in input_regions.keys() if k not in ref_index]
-        if in_ref_only:
-            print(f'Warning: Reference contains sequences not found in targeted regions BED file.')
-            if debug:
-                print(f'found in reference only: {in_ref_only}')
-        
-        if in_bed_only:
-            print(f'Warning: Targeted regions BED file contains sequence names '
-                  f'not found in reference (regions ignored).')
-            if debug:
-                print(f'Regions ignored: {in_bed_only}')
-            for key in in_bed_only:
-                del input_regions[key]
+    target_regions = parse_bed(target_bed, reference_chromosomes, begins_with_chr, debug)
 
     # parse discard bed similarly
-    # TODO convert to pandas dataframe
-    discard_regions = {}
-    if discard_bed is not None:
-        try:
-            with open(discard_bed, 'r') as f:
-                for line in f:
-                    [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-                    if my_chr not in discard_regions:
-                        discard_regions[my_chr] = [-1]
-                    discard_regions[my_chr].extend([int(pos1), int(pos2)])
-        except IOError:
-            print("\nProblem reading discard BED file.\n")
-            sys.exit(1)
+    discard_regions = parse_bed(discard_bed, reference_chromosomes, begins_with_chr, debug)
 
     # parse input mutation rate rescaling regions, if present
-    # TODO convert to pandas dataframe
-    mut_rate_regions = {}
+    mut_rate_regions = parse_bed(mut_bed, reference_chromosomes, begins_with_chr, debug)
+
+    # Assuming there are mutation rate regions, this will require one extra value for later
+    # TODO figure out how to implement
     mut_rate_values = {}
-    if mut_bed is not None:
-        try:
-            with open(mut_bed, 'r') as f:
-                for line in f:
-                    [my_chr, pos1, pos2, meta_data] = line.strip().split('\t')[:4]
-                    mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
-                    (pos1, pos2) = (int(pos1), int(pos2))
-                    if len(mut_str) and (pos2 - pos1) > 1:
-                        # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
-                        mut_rate = max([0.0, min([float(mut_str[0][9:]), 0.3])])
-                        if my_chr not in mut_rate_regions:
-                            mut_rate_regions[my_chr] = [-1]
-                            mut_rate_values[my_chr] = [0.0]
-                        mut_rate_regions[my_chr].extend([pos1, pos2])
-                        # TODO figure out what the next line is supposed to do and fix
-                        mut_rate_values.extend([mut_rate * (pos2 - pos1)] * 2)
-        except IOError:
-            print("\nProblem reading mutational BED file.\n")
-            sys.exit(1)
+    printed_warning = False
+    if mut_rate_regions:
+        for key in mut_rate_regions.keys():
+            # We have to find each of the regions in each chromosome.
+            for region in mut_rate_regions[key][1:]:
+                try:
+                    meta_data = region[2]
+                except IndexError as e:
+                    print(sys.exc_info()[2])
+                    print(e)
+                    print("Malformed mutation bed file. Must be of the format 'chromosome\tpos1\tpos2\tmut_rate=X.XX'.")
+                # We allow for more than one mutation rate, but let's put in a warning so the user knows
+                # something is up with their mutation rate file
+                mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
+                if len(mut_str) > 1:
+                    print("Warning: found mutation rate record with more than one mut_rate value. "
+                          "Using the smallest number")
+                    if debug:
+                        print(f"Record with multiple mut_rates: {region}")
+                if not mut_str and (not printed_warning or debug):
+                    print(f"Warning: Mutation rate record(s) in bed {mut_bed} with no mutation rate in the file."
+                          f"Mutation rates must be in the fourth column and of the form 'mut_rate=X.XXX'."
+                          f"Skipping records with no mut_rate.")
+                    if debug:
+                        print(f"Record with a problem: {key}, {mut_rate_regions[key]}")
+                    printed_warning = True
+                    continue
+                (pos1, pos2) = region[0:2]
+                if pos2 - pos1 > 1:
+                    # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
+                    temp_rate = min([float(k.split('=')[1]) for k in mut_str])
+                    mut_rate = max([0.0, temp_rate])
+                    mut_rate = min([mut_rate, 0.3])
+                    if key not in mut_rate_values:
+                        mut_rate_values[key] = [0.0]
+                    mut_rate_values[key].append([mut_rate * (pos2 - pos1)] * 2)
 
     # initialize output files (part I)
     bam_header = None
@@ -389,6 +409,7 @@ def main(raw_args=None):
 
     # initialize output files (part II)
     # TODO figure out how to do this more efficiently. Write the files at the end.
+    #  At least move this down so the file isn't created and opened hours before there's anything to put in it.
     if cancer:
         output_file_writer = OutputFileWriter(out_prefix + '_normal', paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
@@ -415,14 +436,13 @@ def main(raw_args=None):
     for chrom in ref_index.keys():
 
         # read in reference sequence and notate blocks of Ns
-        ref_sequence2 = ref_index[chrom].seq
+        ref_sequence = ref_index[chrom].seq
 
-        n_regions2 = find_n_regions(ref_sequence2, n_handling)
-
+        n_regions = find_n_regions(ref_sequence, n_handling)
 
         # count total bp we'll be spanning so we can get an idea of how far along we are
         # (for printing progress indicators)
-        total_bp_span = sum([n[1] - n[0] for n in n_regions2['non_N']])
+        total_bp_span = sum([n[1] - n[0] for n in n_regions['non_N']])
         current_progress = 0
         current_percent = 0
         have_printed100 = False
@@ -433,35 +453,6 @@ def main(raw_args=None):
                 - any alt allele contains anything other than allowed characters"""
         valid_variants_from_vcf = []
         n_skipped = [0, 0, 0]
-        if chrom in input_variants:
-            for n in input_variants[chrom]:
-                span = (n[0], n[0] + len(n[1]))
-                # -1 because going from VCF coords to array coords
-                r_seq = str(ref_sequence2[span[0] - 1:span[1] - 1])
-                # Checks if there are any invalid nucleotides in the vcf items
-                any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist])
-                # Ensure reference sequence matches the nucleotide in the vcf
-                if r_seq != n[1]:
-                    n_skipped[0] += 1
-                    continue
-                # Ensure that we aren't trying to insert into an N region
-                elif 'N' in r_seq:
-                    n_skipped[1] += 1
-                    continue
-                # Ensure that we don't insert any disallowed characters
-                elif any_bad_nucl:
-                    n_skipped[2] += 1
-                    continue
-                # If it passes the above tests, append to valid variants list
-                valid_variants_from_vcf.append(n)
-
-            print('found', len(valid_variants_from_vcf), 'valid variants for ' +
-                  chrom + ' in input VCF...')
-            if any(n_skipped):
-                print(sum(n_skipped), 'variants skipped...')
-                print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
-                print(' - [' + str(n_skipped[1]) + '] attempting to insert into N-region')
-                print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
 
         # TODO add large random structural variants
 
@@ -494,8 +485,8 @@ def main(raw_args=None):
         print("[", end='', flush=True)
 
         # Applying variants to non-N regions
-        for i in range(len(n_regions2['non_N'])):
-            (initial_position, final_position) = n_regions2['non_N'][i]
+        for i in range(len(n_regions['non_N'])):
+            (initial_position, final_position) = n_regions['non_N'][i]
             number_target_windows = max([1, (final_position - initial_position) // target_size])
             base_pair_distance = int((final_position - initial_position) / float(number_target_windows))
 
@@ -528,21 +519,21 @@ def main(raw_args=None):
 
                 # determine which structural variants will affect our sampling window positions
                 structural_vars = []
-                for n in vars_in_window:
+                for row in vars_in_window:
                     # change: added abs() so that insertions are also buffered.
-                    buffer_needed = max([max([abs(len(n[1]) - len(alt_allele)), 1]) for alt_allele in n[2]])
+                    buffer_needed = max([max([abs(len(row[1]) - len(alt_allele)), 1]) for alt_allele in row[2]])
                     # -1 because going from VCF coords to array coords
-                    structural_vars.append((n[0] - 1, buffer_needed))
+                    structural_vars.append((row[0] - 1, buffer_needed))
 
                 # adjust end-position of window based on inserted structural mutations
                 keep_going = True
                 buffer_added = 0
                 while keep_going:
                     keep_going = False
-                    for n in structural_vars:
+                    for row in structural_vars:
                         # adding "overlap" here to prevent SVs from being introduced in overlap regions
                         # (which can cause problems if random mutations from the previous window land on top of them)
-                        delta = (end - 1) - (n[0] + n[1]) - 2 - overlap
+                        delta = (end - 1) - (row[0] + row[1]) - 2 - overlap
                         if delta < 0:
                             buffer_added = -delta
                             end += buffer_added
@@ -574,14 +565,14 @@ def main(raw_args=None):
                 coverage_avg = None
                 coverage_dat = [gc_window_size, gc_scale_val, []]
                 target_hits = 0
-                if not input_regions:
+                if not target_regions:
                     coverage_dat[2] = [1.0] * (end - start)
                 else:
-                    if chrom not in input_regions:
+                    if chrom not in target_regions:
                         coverage_dat[2] = [off_target_scalar] * (end - start)
                     else:
                         for j in range(start, end):
-                            if not (bisect.bisect(input_regions[chrom], j) % 2):
+                            if not (bisect.bisect(target_regions[chrom], j) % 2):
                                 coverage_dat[2].append(1.0)
                                 target_hits += 1
                             else:
@@ -614,7 +605,7 @@ def main(raw_args=None):
 
                 # construct sequence data that we will sample reads from
                 if sequences is None:
-                    sequences = SequenceContainer(start, ref_sequence2[start:end], ploids, overlap, read_len,
+                    sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
                                                   save_bam, [mut_model] * ploids, mut_rate, only_vcf)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
                             [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
@@ -622,7 +613,7 @@ def main(raw_args=None):
                         # pdb.set_trace()
                         sys.exit(1)
                 else:
-                    sequences.update(start, ref_sequence2[start:end], ploids, overlap, read_len, [mut_model] * ploids,
+                    sequences.update(start, ref_sequence[start:end], ploids, overlap, read_len, [mut_model] * ploids,
                                      mut_rate)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
                             [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
@@ -644,7 +635,7 @@ def main(raw_args=None):
 
                 # unused cancer stuff
                 if cancer:
-                    tumor_sequences = SequenceContainer(start, ref_sequence2[start:end], ploids, overlap, read_len,
+                    tumor_sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
                                                         [cancer_model] * ploids, mut_rate, coverage_dat)
                     tumor_sequences.insert_mutations(vars_cancer_from_prev_overlap + all_inserted_variants)
                     all_cancer_variants = tumor_sequences.random_mutations()
@@ -652,13 +643,13 @@ def main(raw_args=None):
                 # which variants do we need to keep for next time (because of window overlap)?
                 vars_from_prev_overlap = []
                 vars_cancer_from_prev_overlap = []
-                for n in all_inserted_variants:
-                    if n[0] >= end - overlap - 1:
-                        vars_from_prev_overlap.append(n)
+                for row in all_inserted_variants:
+                    if row[0] >= end - overlap - 1:
+                        vars_from_prev_overlap.append(row)
                 if cancer:
-                    for n in all_cancer_variants:
-                        if n[0] >= end - overlap - 1:
-                            vars_cancer_from_prev_overlap.append(n)
+                    for row in all_cancer_variants:
+                        if row[0] >= end - overlap - 1:
+                            vars_cancer_from_prev_overlap.append(row)
 
                 # if we're only producing VCF, no need to go through the hassle of generating reads
                 if only_vcf:
@@ -718,11 +709,11 @@ def main(raw_args=None):
 
                         # are we discarding offtargets?
                         outside_boundaries = []
-                        if off_target_discard and input_bed is not None:
-                            outside_boundaries += [bisect.bisect(input_regions[chrom], n[0]) % 2 for n
+                        if off_target_discard and target_bed is not None:
+                            outside_boundaries += [bisect.bisect(target_regions[chrom], n[0]) % 2 for n
                                                    in my_read_data]
                             outside_boundaries += [
-                                bisect.bisect(input_regions[chrom], n[0] + len(n[2])) % 2 for n in
+                                bisect.bisect(target_regions[chrom], n[0] + len(n[2])) % 2 for n in
                                 my_read_data]
                         if discard_bed is not None:
                             outside_boundaries += [bisect.bisect(discard_regions[chrom], n[0]) % 2 for
@@ -870,8 +861,8 @@ def main(raw_args=None):
                         output_file_writer.flush_buffers(bam_max=end + 1)
 
                 # tally up all the variants that got successfully introduced
-                for n in all_inserted_variants:
-                    all_variants_out[n] = True
+                for row in all_inserted_variants:
+                    all_variants_out[row] = True
 
                 # prepare indices of next window
                 start = next_start
@@ -919,6 +910,7 @@ def main(raw_args=None):
     output_file_writer.close_files()
     if cancer:
         output_file_writer_cancer.close_files()
+    ref_index.close()
 
 
 if __name__ == '__main__':
