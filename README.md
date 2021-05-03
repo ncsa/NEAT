@@ -71,13 +71,13 @@ The most commonly added options are --pe (to activate paired-end mode), --bam (t
 
 **A note on fasta files:** there are many different naming conventions depending on organism and data source. NEAT makes the following assumptions: 
 
-* Chromosome names follow a ">" character (per fasta spec), with no spaces allowed after ">".
+* Chromosome names follow a ">" character (per fasta spec).
 * Any characters after a ">" represent the chromosome name except the space character.
 * Anything after a space in the chromosome name is commentary and will be stripped out.
 * Chromosomes may or may not be preceded by "chr" characters. 
   * NEAT will attempt to detect this and maintain this feature.
 
-Therefore, any input BED files or VCF files must have chromosome names that match exactly to the fasta file names up to the first space or end of line, whichever comes first. For example, if the fasta contains: ">gi|83838383|pbl.3| This is my favorite chromosome", then corresponding BED and VCF files must use "gi|83838383|pbl.3|" as the chromosome name in the first column or NEAT will discard them. If you receive warnings about mismatches in chromosome names, check your input files for consistency. You may want to try renaming all instances of problem chromosomes to something more simple in all files, if you are having a consistent problem. 
+Therefore, any input BED files or VCF files must have contig names that match exactly to the fasta file names up to the first space or end of line, whichever comes first. For example, if the fasta contains: ">gi|83838383|pbl.3| This is my favorite chromosome", then corresponding BED and VCF files must use "gi|83838383|pbl.3|" as the contig name in the first column or NEAT will discard them. If you receive warnings about mismatches in chromosome names, check your input files for consistency. You may want to try renaming all instances of problem contigs to something more simple in all files, if you are having a consistent problem. However, please ensure that each contig of the fasta file still has a unique name.
 
 Option              |  Description
 --------------------|:--------------------
