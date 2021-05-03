@@ -28,11 +28,11 @@ def index_ref(reference_path: str) -> list:
 
     # check if the reference file already exists
     if absolute_reference_location.with_suffix('.fai').is_file():
-        # print('found index ' + str(absolute_reference_location.with_suffix('.fai')))
+        print('found index ' + str(absolute_reference_location.with_suffix('.fai')))
         index_filename = absolute_reference_location.with_suffix('.fai')
     elif absolute_reference_location.with_suffix(absolute_reference_location.suffix + '.fai').is_file():
-        # print('found index ' +
-        #       str(absolute_reference_location.with_suffix(absolute_reference_location.suffix + '.fai')))
+        print('found index ' +
+              str(absolute_reference_location.with_suffix(absolute_reference_location.suffix + '.fai')))
         index_filename = absolute_reference_location.with_suffix(absolute_reference_location.suffix + '.fai')
     else:
         pass
@@ -41,7 +41,7 @@ def index_ref(reference_path: str) -> list:
     if index_filename is not None:
         fai = open(index_filename, 'r')
         for line in fai:
-            splt = line[:-1].split('\t')
+            splt = line.strip().split('\t')
             # Defined as the number of bases in the contig
             seq_len = int(splt[1])
             # Defined as the byte index where the contig sequence begins
@@ -75,7 +75,7 @@ def index_ref(reference_path: str) -> list:
                 ref_indices.append((prev_r, prev_p, ref_file.tell() - len(data), seq_len))
             seq_len = 0
             prev_p = ref_file.tell()
-            prev_r = data[1:-1]
+            prev_r = data[1:].strip().split()
         else:
             seq_len += len(data) - 1
     ref_file.close()

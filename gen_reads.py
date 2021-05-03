@@ -241,6 +241,7 @@ def main(raw_args=None):
             try:
                 [potential_values, potential_prob] = pickle.load(open(fraglen_model, 'rb'))
             except IOError:
+                print(sys.exc_info()[2])
                 print('\nProblem loading the empirical fragment length model.\n')
                 sys.exit(1)
 
