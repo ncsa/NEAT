@@ -204,7 +204,7 @@ def extract_names(reference: str) -> list:
 
     for line in ref:
         if line.startswith(">"):
-            ref_names.append(line[1:].split(" ")[0].strip())
+            ref_names.append(line[1:].strip().split()[0])
 
     if not ref_names:
         print("Malformed fasta file. Missing properly formatted chromosome names.\n")

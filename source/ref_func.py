@@ -43,7 +43,7 @@ def index_ref(reference_path: str) -> list:
     if index_filename is not None:
         fai = open(index_filename, 'r')
         for line in fai:
-            splt = line[:-1].split('\t')
+            splt = line.strip().split('\t')
             # Defined as the number of bases in the contig
             seq_len = int(splt[1])
             # Defined as the byte index where the contig sequence begins
@@ -77,7 +77,7 @@ def index_ref(reference_path: str) -> list:
                 ref_indices.append((prev_r, prev_p, ref_file.tell() - len(data), seq_len))
             seq_len = 0
             prev_p = ref_file.tell()
-            prev_r = data[1:-1]
+            prev_r = data[1:].strip().split()[0]
         else:
             seq_len += len(data) - 1
     ref_file.close()
