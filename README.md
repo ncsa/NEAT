@@ -60,14 +60,24 @@ python -m pip install -e /path/to/NEAT/
 ```
 
 ## Usage
-Here's the simplest invocation of genReads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
+NEAT's core functionality is invoked using the gen_reads.py command. Here's the simplest invocation of gen_reads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
 
 ```
 gen_reads.py -r ref.fa -R 101 -o simulated_data
 ```
 
-The most commonly added options are --pe, --bam, --vcf, and -c.
+The most commonly added options are --pe (to activate paired-end mode), --bam (to output golden bam),
+    --vcf (to output golden vcf), and -c (to specify average coverage).
 
+**A note on fasta files:** there are many different naming conventions depending on organism and data source. NEAT makes the following assumptions: 
+
+* Chromosome names follow a ">" character (per fasta spec), with no spaces allowed after ">".
+* Any characters after a ">" represent the chromosome name except the space character.
+* Anything after a space in the chromosome name is commentary and will be stripped out.
+* Chromosomes may or may not be preceded by "chr" characters. 
+  * NEAT will attempt to detect this and maintain this feature.
+
+Therefore, any input BED files or VCF files must have chromosome names that match exactly to the fasta file names up to the first space or end of line, whichever comes first. For example, if the fasta contains: ">gi|83838383|pbl.3| This is my favorite chromosome", then corresponding BED and VCF files must use "gi|83838383|pbl.3|" as the chromosome name in the first column or NEAT will discard them. If you receive warnings about mismatches in chromosome names, check your input files for consistency. You may want to try renaming all instances of problem chromosomes to something more simple in all files, if you are having a consistent problem. 
 
 Option              |  Description
 --------------------|:--------------------
@@ -103,7 +113,7 @@ Option              |  Description
 
 ## Functionality
 
-![Diagram describing the way that genReads simulates datasets](docs/NEATNEAT.png "Diagram describing the way that NEAT simulates datasets")
+![Diagram describing the way that gen_reads simulates datasets](docs/NEATNEAT.png "Diagram describing the way that NEAT simulates datasets")
 
 NEAT produces simulated sequencing datasets. It creates FASTQ files with reads sampled from a provided reference genome, using sequencing error rates and mutation rates learned from real sequencing data. The strength of NEAT lies in the ability for the user to customize many sequencing parameters, produce 'golden,' true positive datasets. We are working on expanding the functionality even further to model more species, generate larger variants, model tumor/normal data and more!
 
