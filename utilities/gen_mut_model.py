@@ -67,8 +67,11 @@ def main():
                         help="only_use_these_regions.bed")
     parser.add_argument('--save-trinuc', required=False, action='store_true', default=False,
                         help='save trinucleotide counts for reference')
-    parser.add_argument('--human-sample', required=False, action='store_true', default=False,
-                        help='To skip unnumbered scaffolds in human references')
+    # TODO just have the contigs to process be an input
+    parser.add_argument('--use-whitelist', required=False, action='store_true', default=False,
+                        help='To skip unnumbered scaffolds in human references (this will only process contigs named '
+                             '"chr1", "chr1",...,"chr23", "chrX", etc., as commonly used int human chromosomes. Leave'
+                             'this flag off to process all contigs regardless of name.')
     parser.add_argument('--skip-common', required=False, action='store_true', default=False,
                         help='Do not save common snps + high mut regions')
     args = parser.parse_args()
@@ -76,7 +79,7 @@ def main():
     (ref, vcf, out_pickle, save_trinuc, skip_common) = (
         args.r, args.m, args.o, args.save_trinuc, args.skip_common)
 
-    is_human = args.human_sample
+    use_whitelist = args.use_whitelist
 
     # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
     TRINUC_REF_COUNT = {}
@@ -120,19 +123,15 @@ def main():
     except ValueError:
         print("Problems parsing reference file. Ensure reference is in proper fasta format")
 
-    # simplify naming and filter out actual human genomes from scaffolding
-    ref_dict = {}
-    for key in reference.keys():
-        key_split = key.split("|")
-        if is_human:
-            if key_split[0] in REF_WHITELIST:
-                ref_dict[key_split[0]] = reference[key]
-            else:
-                continue
-        else:
-            ref_dict[key_split[0]] = reference[key]
-
-    ref_list = list(ref_dict.keys())
+    # Filter out actual human genomes from scaffolding
+    if use_whitelist:
+        for key in reference.keys():
+            if key not in REF_WHITELIST:
+                del reference[key]
+        if not reference.keys():
+            print(f"No contigs on the white list, so no model will be produced.")
+            print(f"To use white list, contigs must be named as: {REF_WHITELIST}")
+            sys.exit(0)
 
     # Process VCF file. First check if it's been entered as a TSV
     if vcf[-3:] == 'tsv':
@@ -150,7 +149,7 @@ def main():
     variant_chroms = variants[0].to_list()
     variant_chroms = list(set(variant_chroms))
     matching_chromosomes = []
-    for ref_name in ref_list:
+    for ref_name in reference.keys():
         if ref_name not in variant_chroms:
             continue
         else:
@@ -158,18 +157,20 @@ def main():
 
     # Check to make sure there are some matches
     if not matching_chromosomes:
-        print("Found no chromosomes in common between VCF and Fasta. Please fix the chromosome names and try again")
-        exit(1)
+        print("Found no chromosomes in common between VCF and Fasta, so no model will be produced. "
+              "Please compare the chromosome names and try again.")
+        sys.exit(0)
 
     # Double check that there are matches
     try:
         matching_variants = variants[variants[0].isin(matching_chromosomes)]
     except ValueError:
-        print("Problem matching variants with reference.")
+        print("Problem matching variants with reference. No model produced.")
+        sys.exit(0)
 
     if matching_variants.empty:
-        print("There is no overlap between reference and variant file. This could be a chromosome naming problem")
-        sys.exit(1)
+        print("There is no overlap between reference and variant file. No model will be produced.")
+        sys.exit(0)
 
     # Rename header in dataframe for processing
     matching_variants = matching_variants.rename(columns={0: "CHROM", 1: 'chr_start', 2: 'ID', 3: 'REF', 4: 'ALT',
@@ -234,7 +235,7 @@ def main():
             sub_bed = matching_bed[matching_bed['chrom'] == ref_name]
             sub_regions = sub_bed['coords'].to_list()
             for sr in sub_regions:
-                sub_seq = ref_dict[ref_name][sr[0]: sr[1]].seq
+                sub_seq = reference[ref_name][sr[0]: sr[1]].seq
                 for trinuc in VALID_TRINUC:
                     if trinuc not in TRINUC_REF_COUNT:
                         TRINUC_REF_COUNT[trinuc] = 0
@@ -242,7 +243,7 @@ def main():
 
     elif not os.path.isfile(ref + '.trinucCounts'):
         for ref_name in matching_chromosomes:
-            sub_seq = ref_dict[ref_name].seq
+            sub_seq = reference[ref_name].seq
             for trinuc in VALID_TRINUC:
                 if trinuc not in TRINUC_REF_COUNT:
                     TRINUC_REF_COUNT[trinuc] = 0
@@ -254,14 +255,14 @@ def main():
     print('Creating mutational model...')
     for ref_name in matching_chromosomes:
         # Count the number of non-N nucleotides for the reference
-        TOTAL_REFLEN += len(ref_dict[ref_name].seq) - ref_dict[ref_name].seq.count('N')
+        TOTAL_REFLEN += len(reference[ref_name].seq) - reference[ref_name].seq.count('N')
 
         # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
         VDAT_COMMON = []
 
         # Create a view that narrows variants list to current ref
         variants_to_process = matching_variants[matching_variants["CHROM"] == ref_name].copy()
-        ref_sequence = str(ref_dict[ref_name].seq)
+        ref_sequence = str(reference[ref_name].seq)
 
         # we want only snps
         # so, no '-' characters allowed, and chrStart must be same as chrEnd
@@ -359,7 +360,7 @@ def main():
         for n in by_len:
             bi = int((n[1] - dist_thresh) / float(scaler)) * scaler
             bf = int((n[2] + dist_thresh) / float(scaler)) * scaler
-            candidate_regions.append((n[0] / float(bf - bi), max([0, bi]), min([len(ref_dict[ref_name]), bf])))
+            candidate_regions.append((n[0] / float(bf - bi), max([0, bi]), min([len(reference[ref_name]), bf])))
         minimum_value = np.percentile([n[0] for n in candidate_regions], percentile_clust)
         for n in candidate_regions:
             if n[0] >= minimum_value:
