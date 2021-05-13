@@ -85,12 +85,12 @@ plotMutModel.py                                         \
     -o path/to/pdf_plot_prefix
 ```
 
-# vcf_compare_OLD.py
+# vcf_compare.py
 
 Tool for comparing VCF files.
 
 ```
-vcf_compare_OLD.py                                               \
+vcf_compare.py                                               \
     --version          show program's version number and exit    \
     -h, --help         show this help message and exit           \
     -r <ref.fa>        * Reference Fasta                         \
