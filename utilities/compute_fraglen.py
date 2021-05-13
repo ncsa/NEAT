@@ -1,10 +1,10 @@
 #
 #
-#      Compute Fragment Length Model for gen_reads.source
-#                  compute_fraglen.source
+#      Compute Fragment Length Model for gen_reads.py
+#                  compute_fraglen.py
 #
 #
-#      Usage: samtools view normal.bam | source compute_fraglen.source
+#      Usage: samtools view normal.bam | python compute_fraglen.py
 #
 #
 # Upgraded 5/6/2020 to match Python 3 standards and refactored for easier reading
@@ -138,7 +138,7 @@ def main():
 
     :return: None
     """
-    parser = argparse.ArgumentParser(description="compute_fraglen.source",
+    parser = argparse.ArgumentParser(description="compute_fraglen.py",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-i', type=str, metavar="input", required=True, default=None,
                         help="Sam file input (samtools view name.bam > name.sam)")

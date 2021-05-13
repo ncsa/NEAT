@@ -1,11 +1,11 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 # encoding: utf-8
 
 # Python 3 ready
 
 """ **************************************************
 
-vcf_compare.source
+vcf_compare.py
 
 - compare vcf file produced by workflow to golden vcf produced by simulator
 
@@ -34,12 +34,12 @@ MAX_VAL = 9999999999999  # an unreasonably large value that no reference fasta c
 DESC = """%prog: vcf comparison script."""
 VERS = 0.1
 
-parser = argparse.ArgumentParser('source %prog [options] -r <ref.fa> -g <golden.vcf> -w <workflow.vcf>',
+parser = argparse.ArgumentParser('python %prog [options] -r <ref.fa> -g <golden.vcf> -w <workflow.vcf>',
                                  description=DESC,
                                  version="%prog v" + str(VERS),
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-parser.add_argument('-r', help='* Reference Fasta', dest='reff', action='store', metavar='<ref.fa>')
+parser.add_argument('-r', help='* Reference Fasta', dest='ref', action='store', metavar='<ref.fa>')
 parser.add_argument('-g', help='* Golden VCF', dest='golden_vcf', action='store', metavar='<golden.vcf>')
 parser.add_argument('-w', help='* Workflow VCF', dest='workflow_vcf', action='store', metavar='<workflow.vcf>')
 parser.add_argument('-o', help='* Output Prefix', dest='outfile', action='store', metavar='<prefix>')
@@ -65,7 +65,7 @@ parser.add_argument('--fast', help="No equivalent variant detection [%default]",
 
 (opts, args) = parser.parse_args()
 
-reference = opts.reff
+reference = opts.ref
 golden_vcf = opts.golden_vcf
 workflow_vcf = opts.workflow_vcf
 out_prefix = opts.outfile
@@ -294,7 +294,7 @@ def condense_by_pos(list_in):
         if c not in ind_count:
             ind_count[c] = 0
         ind_count[c] += 1
-    # non_unique_dict = {n:[] for n in sorted(ind_count.keys()) if ind_count[n] > 1}		# the source 2.7 way
+    # non_unique_dict = {n:[] for n in sorted(ind_count.keys()) if ind_count[n] > 1}		# the Python 2.7 way
     non_unique_dict = {}
     for n in sorted(ind_count.keys()):
         if ind_count[n] > 1:

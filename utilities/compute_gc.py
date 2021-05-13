@@ -1,12 +1,12 @@
 #
 #
-#   compute_gc.source
-#   Compute GC and coverage model for gen_reads.source
+#   compute_gc.py
+#   Compute GC and coverage model for gen_reads.py
 #
 #   Takes output file from bedtools genomecov to generate GC/coverage model
 #
 #   Usage: bedtools genomecov -d -ibam input.bam -g reference.fa > genomeCov.dat
-#          source compute_gc.source -r reference.fa -i genomeCov.dat -w [sliding window length] -o output_name.p
+#          python compute_gc.py -r reference.fa -i genomeCov.dat -w [sliding window length] -o output_name.p
 #
 #
 # Updated to Python 3 standards
@@ -122,7 +122,7 @@ def main():
         -w is the sliding window length. The default is 50, but you can declare any reasonable integer
     :return: None
     """
-    parser = argparse.ArgumentParser(description='compute_gc.source',
+    parser = argparse.ArgumentParser(description='compute_gc.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-i', type=str, required=True, metavar='input', help="input.genomecov")
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="reference.fasta")

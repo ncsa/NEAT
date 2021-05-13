@@ -1,4 +1,4 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 
 import gen_reads
 import argparse
