@@ -553,7 +553,7 @@ def main(raw_args=None):
                 new_percent = int((current_progress * 100) / float(total_bp_span))
                 if new_percent > current_percent:
                     if new_percent <= 99 or (new_percent == 100 and not have_printed100):
-                        if new_percent % 10 == 1:
+                        if new_percent % 10 == 1 or new_percent == 100:
                             print('-', end='', flush=True)
                     current_percent = new_percent
                     if current_percent == 100:
@@ -583,7 +583,8 @@ def main(raw_args=None):
                     coverage_avg = 0.0
                     skip_this_window = True
 
-                # print len(coverage_dat[2]), sum(coverage_dat[2])
+                if debug:
+                    print(len(coverage_dat[2]), sum(coverage_dat[2]))
                 if sum(coverage_dat[2]) < low_cov_thresh:
                     coverage_avg = 0.0
                     skip_this_window = True
@@ -604,7 +605,7 @@ def main(raw_args=None):
                     continue
 
                 # construct sequence data that we will sample reads from
-                if sequences is None:
+                if not sequences:
                     sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
                                                   save_bam, [mut_model] * ploids, mut_rate, only_vcf)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
@@ -721,6 +722,7 @@ def main(raw_args=None):
                             outside_boundaries += [
                                 bisect.bisect(discard_regions[chrom], n[0] + len(n[2])) % 2 for n in
                                 my_read_data]
+
                         if len(outside_boundaries) and any(outside_boundaries):
                             continue
 

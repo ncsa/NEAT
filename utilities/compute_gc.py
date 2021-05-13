@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #
 #
 #   compute_gc.py

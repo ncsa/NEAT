@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #
 #
 #      Compute Fragment Length Model for gen_reads.py

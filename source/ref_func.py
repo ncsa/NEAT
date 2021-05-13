@@ -76,6 +76,7 @@ def index_ref(reference_path: str) -> list:
             seq_len = 0
             prev_p = ref_file.tell()
             prev_r = data[1:].strip().split()
+
         else:
             seq_len += len(data) - 1
     ref_file.close()

@@ -59,7 +59,7 @@ class Bacterium:
 
         # Now we further have to fix the fasta file, which outputs in a form that doesn't make much sense,
         # so that it can be properly analyzed in the next generation by genreads.
-        temp_name_list = copy.deepcopy(self.chroms)
+        temp_name_list = self.chroms[:]
         temp_file = self.file.parents[0] / 'neat_temporary_fasta_file.fa'
         temp_file.touch()
         chromosome_name = ""
@@ -78,6 +78,7 @@ class Bacterium:
                             else:
                                 continue
                     if not chromosome_name:
+                        print(sys.exc_info()[2])
                         print("Something went wrong with the generated fasta file.\n")
                         sys.exit(1)
                 else:
@@ -197,15 +198,14 @@ def extract_names(reference: str) -> list:
     ref_names = []
     absolute_reference_path = pathlib.Path(reference)
     if absolute_reference_path.suffix == '.gz':
-        with gzip.open(absolute_reference_path, 'rt') as ref:
-            for line in ref:
-                if line.startswith(">"):
-                    ref_names.append(line[1:].rstrip())
+        ref = gzip.open(absolute_reference_path, 'rt')
     else:
-        with open(absolute_reference_path, 'r') as ref:
-            for line in ref:
-                if line.startswith(">"):
-                    ref_names.append(line[1:].rstrip())
+        ref = open(absolute_reference_path, 'r')
+
+    for line in ref:
+        if line.startswith(">"):
+            ref_names.append(line[1:].strip().split()[0])
+
     if not ref_names:
         print("Malformed fasta file. Missing properly formatted chromosome names.\n")
         sys.exit(1)
