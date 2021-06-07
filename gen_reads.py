@@ -572,7 +572,7 @@ def main(raw_args=None):
                         coverage_dat[2] = [off_target_scalar] * (end - start)
                     else:
                         for j in range(start, end):
-                            if not (bisect.bisect(target_regions[chrom], j) % 2):
+                            if not (bisect.bisect(target_regions[chrom][0], j) % 2):
                                 coverage_dat[2].append(1.0)
                                 target_hits += 1
                             else:
