@@ -22,6 +22,10 @@ import bisect
 import re
 import numpy as np
 import argparse
+import matplotlib
+import matplotlib.pyplot as mpl
+from matplotlib_venn import venn2, venn3
+import warnings
 
 from Bio.Seq import Seq
 
@@ -31,14 +35,11 @@ DEFAULT_QUAL = -666  # if we can't find a qual score, use this instead so we kno
 
 MAX_VAL = 9999999999999  # an unreasonably large value that no reference fasta could concievably be longer than
 
-DESC = """%prog: vcf comparison script."""
-VERS = 0.1
+VERS = 3.0
 
-parser = argparse.ArgumentParser('python %prog [options] -r <ref.fa> -g <golden.vcf> -w <workflow.vcf>',
-                                 description=DESC,
-                                 version="%prog v" + str(VERS),
+parser = argparse.ArgumentParser('vcf_compare.py',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
+parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERS}')
 parser.add_argument('-r', help='* Reference Fasta', dest='ref', action='store', metavar='<ref.fa>')
 parser.add_argument('-g', help='* Golden VCF', dest='golden_vcf', action='store', metavar='<golden.vcf>')
 parser.add_argument('-w', help='* Workflow VCF', dest='workflow_vcf', action='store', metavar='<workflow.vcf>')
@@ -47,85 +48,79 @@ parser.add_argument('-m', help='Mappability Track', dest='map_track', action='st
 parser.add_argument('-M', help='Maptrack Min Len', dest='map_track_min_len', action='store', metavar='<int>')
 parser.add_argument('-t', help='Targetted Regions', dest='target_reg', action='store', metavar='<regions.bed>')
 parser.add_argument('-T', help='Min Region Len', dest='min_reg_len', action='store', metavar='<int>')
-parser.add_argument('-c', help='Coverage Filter Threshold [%default]', dest='dp_thresh', default=15, action='store',
+parser.add_argument('-c', help='Coverage Filter Threshold', dest='dp_thresh', default=15, action='store',
                     metavar='<int>')
-parser.add_argument('-a', help='Allele Freq Filter Threshold [%default]', dest='af_thresh', default=0.3, action='store',
+parser.add_argument('-a', help='Allele Freq Filter Threshold', dest='af_thresh', default=0.3, action='store',
                     metavar='<float>')
 
-parser.add_argument('--vcf-out', help="Output Match/FN/FP variants [%default]", dest='vcf_out', default=False,
+parser.add_argument('--vcf-out', help="Output Match/FN/FP variants", dest='vcf_out', default=False,
                     action='store_true')
-parser.add_argument('--no-plot', help="No plotting [%default]", dest='no_plot', default=False, action='store_true')
-parser.add_argument('--incl-homs', help="Include homozygous ref calls [%default]", dest='include_homs', default=False,
+parser.add_argument('--no-plot', help="No plotting", dest='no_plot', default=False, action='store_true')
+parser.add_argument('--incl-homs', help="Include homozygous ref calls", dest='include_homs', default=False,
                     action='store_true')
-parser.add_argument('--incl-fail', help="Include calls that failed filters [%default]", dest='include_fail',
+parser.add_argument('--incl-fail', help="Include calls that failed filters", dest='include_fail',
                     default=False,
                     action='store_true')
-parser.add_argument('--fast', help="No equivalent variant detection [%default]", dest='fast', default=False,
+parser.add_argument('--fast', help="No equivalent variant detection", dest='fast', default=False,
                     action='store_true')
 
-(opts, args) = parser.parse_args()
+args = parser.parse_args()
 
-reference = opts.ref
-golden_vcf = opts.golden_vcf
-workflow_vcf = opts.workflow_vcf
-out_prefix = opts.outfile
-maptrack = opts.map_track
-min_read_len = opts.map_track_min_len
-bedfile = opts.target_reg
-dp_thresh = int(opts.dp_thresh)
-af_thresh = float(opts.af_thresh)
+reference = args.ref
+golden_vcf = args.golden_vcf
+workflow_vcf = args.workflow_vcf
+out_prefix = args.outfile
+maptrack = args.map_track
+min_read_len = args.map_track_min_len
+bedfile = args.target_reg
+dp_thresh = int(args.dp_thresh)
+af_thresh = float(args.af_thresh)
 
-vcf_out = opts.vcf_out
-no_plot = opts.no_plot
-include_homs = opts.include_homs
-include_fail = opts.include_fail
-fast = opts.fast
+vcf_out = args.vcf_out
+no_plot = args.no_plot
+include_homs = args.include_homs
+include_fail = args.include_fail
+fast = args.fast
 
 if len(sys.argv[1:]) == 0:
     parser.print_help()
-    exit(1)
+    sys.exit(1)
 
-if opts.MTRL is not None:
-    min_region_len = int(opts.min_reg_len)
+if args.min_reg_len:
+    min_region_len = int(args.min_reg_len)
 else:
     min_region_len = None
 
-if min_read_len is None:
+if not min_read_len:
     min_read_len = 0
 else:
     min_read_len = int(min_read_len)
 
-if reference is None:
+if not reference:
     print('Error: No reference provided.')
     sys.exit(1)
-if golden_vcf is None:
+if not golden_vcf:
     print('Error: No golden VCF provided.')
     sys.exit(1)
-if workflow_vcf is None:
+if not workflow_vcf:
     print('Error: No workflow VCF provided.')
     sys.exit(1)
-if out_prefix is None:
+if not out_prefix:
     print('Error: No output prefix provided.')
     sys.exit(1)
-if (bedfile is not None and min_region_len is None) or (bedfile is None and min_region_len is not None):
+if (bedfile and not min_region_len) or (not bedfile and min_region_len):
     print('Error: Both -t and -T must be specified')
     sys.exit(1)
 
-if no_plot is False:
-    import matplotlib
-
+if not no_plot:
     matplotlib.use('Agg')
-    import matplotlib.pyplot as mpl
-    from matplotlib_venn import venn2, venn3
-    import warnings
-
     warnings.filterwarnings("ignore", category=UserWarning, module='matplotlib_venn')
 
 AF_STEPS = 20
 AF_KEYS = np.linspace(0.0, 1.0, AF_STEPS + 1)
 
 
-def quantize_AF(af):
+def quantize_af(af):
     if af >= 1.0:
         return AF_STEPS
     elif af <= 0.0:
@@ -134,7 +129,9 @@ def quantize_AF(af):
         return int(af * AF_STEPS)
 
 
-VCF_HEADER = '##fileformat=VCFv4.1\n##reference=' + reference + '##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n'
+VCF_HEADER = '##fileformat=VCFv4.1\n##reference=' + reference + \
+             '##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n' \
+             '##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n'
 
 DP_TOKENS = ['DP', 'DPU', 'DPI']  # in the order that we'll look for them
 
