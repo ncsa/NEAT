@@ -16,7 +16,6 @@
 
 import sys
 import random
-import re
 import time
 import bisect
 import pickle
@@ -349,53 +348,13 @@ def main(raw_args=None):
                     print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
 
     # parse input targeted regions, if present
-    target_regions = parse_bed(target_bed, reference_chromosomes, begins_with_chr, debug)
+    target_regions = parse_bed(target_bed, reference_chromosomes, begins_with_chr, False, debug)
 
     # parse discard bed similarly
-    discard_regions = parse_bed(discard_bed, reference_chromosomes, begins_with_chr, debug)
+    discard_regions = parse_bed(discard_bed, reference_chromosomes, begins_with_chr, False, debug)
 
     # parse input mutation rate rescaling regions, if present
-    mut_rate_regions = parse_bed(mut_bed, reference_chromosomes, begins_with_chr, debug)
-
-    # Assuming there are mutation rate regions, this will require one extra value for later
-    # TODO figure out how to implement
-    mut_rate_values = {}
-    printed_warning = False
-    if mut_rate_regions:
-        for key in mut_rate_regions.keys():
-            # We have to find each of the regions in each chromosome.
-            for region in mut_rate_regions[key][1:]:
-                try:
-                    meta_data = region[2]
-                except IndexError as e:
-                    print(sys.exc_info()[2])
-                    print(e)
-                    print("Malformed mutation bed file. Must be of the format 'chromosome\tpos1\tpos2\tmut_rate=X.XX'.")
-                # We allow for more than one mutation rate, but let's put in a warning so the user knows
-                # something is up with their mutation rate file
-                mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
-                if len(mut_str) > 1:
-                    print("Warning: found mutation rate record with more than one mut_rate value. "
-                          "Using the smallest number")
-                    if debug:
-                        print(f"Record with multiple mut_rates: {region}")
-                if not mut_str and (not printed_warning or debug):
-                    print(f"Warning: Mutation rate record(s) in bed {mut_bed} with no mutation rate in the file."
-                          f"Mutation rates must be in the fourth column and of the form 'mut_rate=X.XXX'."
-                          f"Skipping records with no mut_rate.")
-                    if debug:
-                        print(f"Record with a problem: {key}, {mut_rate_regions[key]}")
-                    printed_warning = True
-                    continue
-                (pos1, pos2) = region[0:2]
-                if pos2 - pos1 > 1:
-                    # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
-                    temp_rate = min([float(k.split('=')[1]) for k in mut_str])
-                    mut_rate = max([0.0, temp_rate])
-                    mut_rate = min([mut_rate, 0.3])
-                    if key not in mut_rate_values:
-                        mut_rate_values[key] = [0.0]
-                    mut_rate_values[key].append([mut_rate * (pos2 - pos1)] * 2)
+    mutation_rate_regions, mutation_rate_values = parse_bed(mut_bed, reference_chromosomes, begins_with_chr, True, debug)
 
     # initialize output files (part I)
     bam_header = None
@@ -572,7 +531,7 @@ def main(raw_args=None):
                         coverage_dat[2] = [off_target_scalar] * (end - start)
                     else:
                         for j in range(start, end):
-                            if not (bisect.bisect(target_regions[chrom][0], j) % 2):
+                            if not (bisect.bisect(target_regions[chrom], j) % 2):
                                 coverage_dat[2].append(1.0)
                                 target_hits += 1
                             else:

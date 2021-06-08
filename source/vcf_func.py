@@ -61,6 +61,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                                           ].index)
 
     # If FORMAT is present in the vcf, there must be corresponding Sample columns.
+    samp_cols = []
     if 'FORMAT' in variants.columns:
         # VCF spec says that all columns after FORMAT are sample columns.
         samp_cols = variants.columns[list(variants.columns).index('FORMAT') + 1:]

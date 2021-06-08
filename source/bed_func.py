@@ -1,10 +1,13 @@
 import pathlib
 import gzip
 import sys
+import re
 
 
 def parse_bed(input_bed: str, chromosomes: list,
-              begins_with_chr: bool, debug: bool) -> dict:
+              begins_with_chr: bool,
+              mut_rate_regions: bool,
+              debug: bool) -> dict:
     """
     Will parse a bed file, returning a dictionary of chromosomes that are found in the reference,
     and the corresponding positions. Some beds may have metadata in the fourth column, in which case,
@@ -13,6 +16,7 @@ def parse_bed(input_bed: str, chromosomes: list,
     :param chromosomes: A list of chromosomes to check
     :param begins_with_chr: A true or false if this reference has human like chromosomes (chr1, chr2, etc), used because
     it's a common thing with human datasets to either use or not use "chr" before the number and no one seems to agree.
+    :param mut_rate_regions: A true or false if this bed has mut rate regions included.
     :param debug: True or false if we are in debugging mode and need more info
     :return: a dictionary of chromosomes, -1, pos1, and pos2
     """
@@ -32,10 +36,7 @@ def parse_bed(input_bed: str, chromosomes: list,
                     # Note: on targeted and discard regions, we really only need chrom, pos1, and pos2
                     # But for the mutation rate regions, we need a fourth column of meta_data,
                     # So we have to check them all, though it won't be used for targeted and discard regions
-                    meta_data_present = False
                     line_list = line.strip().split('\t')[:4]
-                    if len(line_list) > 3:
-                        meta_data_present = True
                     try:
                         [my_chr, pos1, pos2] = line_list[:3]
                     except ValueError as e:
@@ -61,9 +62,12 @@ def parse_bed(input_bed: str, chromosomes: list,
                         continue
                     # If it's in ref, add chrom to dict if needed, then add the positions.
                     if my_chr not in ret_dict:
-                        ret_dict[my_chr] = [-1]
+                        if not mut_rate_regions:
+                            ret_dict[my_chr] = [-1]
+                        else:
+                            ret_dict[my_chr] = []
                     # here we append the metadata, if present
-                    if meta_data_present:
+                    if mut_rate_regions:
                         ret_dict[my_chr].append([int(pos1), int(pos2), str(line_list[3])])
                     else:
                         ret_dict[my_chr].extend([int(pos1), int(pos2)])
@@ -75,7 +79,6 @@ def parse_bed(input_bed: str, chromosomes: list,
             print("Error: input bed files must be a valid bed files or a valid gzipped bed file. "
                   "Gzipped files must end in extension '.gz'")
             sys.exit(1)
-
 
         # some validation
         in_ref_only = [k for k in chromosomes if k not in ret_dict]
@@ -91,5 +94,57 @@ def parse_bed(input_bed: str, chromosomes: list,
                   f'the names in the BED file exactly match the names in the reference file.')
             if debug:
                 print(f'Regions ignored: {in_bed_only}')
+
+        if mut_rate_regions:
+            # Assuming there are mutation rate regions, this will require one extra value for the return
+            mut_rate_regions = {}
+            mut_rate_values = {}
+            printed_warning = False
+            if ret_dict:
+                for key in ret_dict.keys():
+                    # We have to find each of the regions in each chromosome.
+                    for region in ret_dict[key]:
+                        try:
+                            meta_data = region[2]
+                            # We allow for more than one mutation rate, but let's put in a warning so the user knows
+                            # something is up with their mutation rate file
+                            mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
+                            if len(mut_str) > 1:
+                                print("Warning: found mutation rate record with more than one mut_rate value. "
+                                      "Using the smallest number")
+                                if debug:
+                                    print(f"Record with multiple mut_rates: {region}")
+
+                                (pos1, pos2) = region[0:2]
+                                if pos2 - pos1 > 1:
+                                    # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
+                                    temp_rate = min([float(k.split('=')[1]) for k in mut_str])
+                                    mut_rate = max([0.0, temp_rate])
+                                    mut_rate = min([mut_rate, 0.3])
+                                    if key not in mut_rate_values:
+                                        mut_rate_values[key] = [0.0]
+                                    if key not in mut_rate_regions:
+                                        mut_rate_regions[key] = [-1]
+                                    mut_rate_values[key].extend([mut_rate * (pos2 - pos1)] * 2)
+                                    mut_rate_regions[key].extend([pos1, pos2])
+                                else:
+                                    print(f'Invalid region (end - start <= 0): {region}')
+                            if not mut_str and (not printed_warning or debug):
+                                print(
+                                    f"Warning: Mutation rate record(s) in bed {input_bed} with no mutation rate "
+                                    f"in the file. Mutation rates must be in the fourth column and of the form "
+                                    f"'mut_rate=X.XXX'. Skipping records with no mut_rate.")
+                                if debug:
+                                    print(f"Record with a problem: {key}, {ret_dict[key]}")
+                                printed_warning = True
+                                continue
+
+                        except IndexError as e:
+                            print(sys.exc_info()[2])
+                            print(e)
+                            print("Malformed mutation bed file. Must be of the format "
+                                  "'chromosome\tpos1\tpos2\tmut_rate=X.XX'.")
+
+            return mut_rate_regions, mut_rate_values
 
     return ret_dict
