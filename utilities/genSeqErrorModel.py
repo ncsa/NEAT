@@ -65,17 +65,24 @@ def func_plot(init_q, real_q, prob_q, q_range, actual_readlen):
         # xlim([yMin,yMax])        # ylim([M-xMax,M-xMin])
         # xticks()
         #    
-        mpl.figure(p + 1)        z = np.log10(current_data)        x, y = np.meshgrid(range(0, len(Z[0]) + 1), range(0, len(Z) + 1))        mpl.pcolormesh(x, y, z[::-1, :], vmin=v_min_log[0], vmax=v_min_log[1], cmap='jet')
-        mpl.xlim([q_range[0], q_range[1] + 1])        mpl.ylim([real_q - q_range[1] - 1, real_q - q_range[0]])
+        mpl.figure(p + 1)        
+        z = np.log10(current_data)        
+        x, y = np.meshgrid(range(0, len(Z[0]) + 1), range(0, len(Z) + 1))        
+        mpl.pcolormesh(x, y, z[::-1, :], vmin=v_min_log[0], vmax=v_min_log[1], cmap='jet')
+        mpl.xlim([q_range[0], q_range[1] + 1])       
+        mpl.ylim([real_q - q_range[1] - 1, real_q - q_range[0]])
         mpl.yticks(q_ticks_y, q_labels)
-        mpl.xticks(q_ticks_x, q_labels)        mpl.xlabel('\n' + r'$Q_{i+1}$')
-        mpl.ylabel(r'$Q_i$')        mpl.title('Q-Score Transition Frequencies [Read Pos:' + str(p) + ']')
-        cb = mpl.colorbar()        cb.set_ticks([-4, -3, -2, -1, 0])        cb.set_ticklabels([r'$10^{-4}$', r'$10^{-3}$', r'$10^{-2}$', r'$10^{-1}$', r'$10^{0}$'])    
+        mpl.xticks(q_ticks_x, q_labels)        
+        mpl.xlabel('\n' + r'$Q_{i+1}$')
+        mpl.ylabel(r'$Q_i$')        
+        mpl.title('Q-Score Transition Frequencies [Read Pos:' + str(p) + ']')
+        cb = mpl.colorbar()        
+        cb.set_ticks([-4, -3, -2, -1, 0])        
+        cb.set_ticklabels([r'$10^{-4}$', r'$10^{-3}$', r'$10^{-2}$', r'$10^{-1}$', r'$10^{0}$'])    
     # mpl.tight_layout()
     mpl.show()
 
 
-# Takes a gzip or sam file and returns the simulation's average error rate,
 def readfile(input_file, real_q, max_reads):
     
     print('reading ' + input_file + '...')
@@ -129,11 +136,10 @@ def readfile(input_file, real_q, max_reads):
         for i in range(actual_readlen):
             q = qualities_to_check[i]
             q_dict[q] = True
-            prev_q = q
             if i == 0:
                 prior_q[i][q] += 1
             else:
-                total_q[i][prev_q, q] += 1
+                total_q[i][q, q] += 1
                 prior_q[i][q] += 1    
 
         current_line += 1
@@ -142,12 +148,6 @@ def readfile(input_file, real_q, max_reads):
         if 0 < max_reads <= current_line:
             break    
     f.close()
-    return q_dict, actual_readlen, total_q, i, prior_q, q
-
-
-def parse_file(input_file, real_q, max_reads, n_samp, plot_stuff):
-
-    q_dict, actual_readlen, total_q, i, prior_q, q = readfile(input_file, real_q, max_reads)
 
     # some sanity checking again...
     q_range = [min(q_dict.keys()), max(q_dict.keys())]
@@ -158,31 +158,43 @@ def parse_file(input_file, real_q, max_reads, n_samp, plot_stuff):
         print('\nError: Read in Q-scores above specified maximum:', q_range[1], '>', real_q, '\n')
         exit(1)
 
+    return actual_readlen, total_q, prior_q, q_range
+
+
+"""
+Takes a gzip or sam file and returns the simulation's average error rate
+"""
+def parse_file(input_file, real_q, max_reads, n_samp, plot_stuff):
+
+    #Read input file
+    actual_readlen, total_q, prior_q, q_range = readfile(input_file, real_q, max_reads)
+
+    #Compute Probabilities
     print('computing probabilities...')
-    init_smooth = 0.
-    prob_smooth = 0.
 
     prob_q = [None] + [[[0. for m in range(real_q)] for n in range(real_q)] for p in range(actual_readlen - 1)]
     for p in range(1, actual_readlen):
         for i in range(real_q):
-            row_sum = float(np.sum(total_q[p][i, :])) + prob_smooth * real_q
+            row_sum = float(np.sum(total_q[p][i, :])) * real_q
             if row_sum <= 0.:
                 continue
             for j in range(real_q):
-                prob_q[p][i][j] = (total_q[p][i][j] + prob_smooth) / row_sum
+                prob_q[p][i][j] = total_q[p][i][j] / row_sum
 
     init_q = [[0. for m in range(real_q)] for n in range(actual_readlen)]
     for i in range(actual_readlen):
-        row_sum = float(np.sum(prior_q[i, :])) + init_smooth * real_q
+        row_sum = float(np.sum(prior_q[i, :])) * real_q
         if row_sum <= 0.:
             continue
         for j in range(real_q):
-            init_q[i][j] = (prior_q[i][j] + init_smooth) / row_sum
+            init_q[i][j] = prior_q[i][j] / row_sum
 
     # If plotstuff ..........
     if plot_stuff:
         func_plot(init_q, real_q, prob_q, q_range, actual_readlen)
 
+
+    # Calculate Average Error
     print('estimating average error rate via simulation...')
     q_scores = range(real_q)
     # print (len(init_q), len(init_q[0]))
