@@ -26,7 +26,7 @@ from source.probability import DiscreteDistribution
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 
-def func_plot(init_q, real_q, prob_q, q_range, actual_readlen):
+def func_plot(init_q, real_q, prob_q, q_range, actual_readlen) -> image:
     mpl.rcParams.update({'font.size': 14, 'font.weight': 'bold', 'lines.linewidth': 3})
     
     mpl.figure(1)
@@ -83,7 +83,16 @@ def func_plot(init_q, real_q, prob_q, q_range, actual_readlen):
     mpl.show()
 
 
-def readfile(input_file, real_q, max_reads):
+def readfile(input_file, real_q, max_reads) -> (int, list, numpy_array, list):
+    '''
+    Reads the input bam/sam/fastq file and extracts the vales required to compute simulation's average error rate
+    
+    :param input_file: name of the input file
+    :param real_q: maximum quality score (default: 41) + 1
+    :param max_reads: maximum number of reads to process (default: all or -1)
+
+    :return: (number of qualities to read, a list of total quality scores, a list pf prior quality_scores, a list containing (min,max) of quality scores)
+    '''
     
     print('reading ' + input_file + '...')
     is_aligned = False
@@ -161,10 +170,20 @@ def readfile(input_file, real_q, max_reads):
     return actual_readlen, total_q, prior_q, q_range
 
 
-"""
-Takes a gzip or sam file and returns the simulation's average error rate
-"""
-def parse_file(input_file, real_q, max_reads, n_samp, plot_stuff):
+
+
+def parse_file(input_file: str, real_q: int, max_reads: int, n_samp: int, plot: boolean) -> (list, list, float):
+    '''
+    Takes a gzip or sam file and returns the simulation's average error rate
+    
+    :param input_file: name of the input file
+    :param real_q: maximum quality score (default: 41) + 1
+    :param max_reads: maximum number of reads to process (default: all or -1)
+    :param n_samp: number of simulation iterations (default: 1000000)
+    :param plot: Need a plot?
+
+    :return: (2D matrix of initial quality scores, 3D matrix of computed probabilities, simulation's average error rate)
+    '''
 
     #Read input file
     actual_readlen, total_q, prior_q, q_range = readfile(input_file, real_q, max_reads)
@@ -190,7 +209,7 @@ def parse_file(input_file, real_q, max_reads, n_samp, plot_stuff):
             init_q[i][j] = prior_q[i][j] / row_sum
 
     # If plotstuff ..........
-    if plot_stuff:
+    if plot:
         func_plot(init_q, real_q, prob_q, q_range, actual_readlen)
 
 
@@ -235,7 +254,13 @@ def parse_file(input_file, real_q, max_reads, n_samp, plot_stuff):
     return init_q, prob_q, avg_err
 
 
-def func_parser():
+def func_parser() -> class_argparse:
+    '''
+    Defines what arguments the program requires, and argparse will figure out how to parse those out of sys.argv
+
+    :return: an instance of the argparse class that can be used to access command line arguments
+    '''
+
     parser = argparse.ArgumentParser(description='genSeqErrorModel.py')
     parser.add_argument('-i', type=str, required=True, metavar='<str>', help="* input_read1.fq[.gz] / input_read1.b/sam")
     parser.add_argument('-o', type=str, required=True, metavar='<str>', help="* output.p")
@@ -249,7 +274,12 @@ def func_parser():
     args = parser.parse_args()    
     return args
 
-def embed_defparams():
+def embed_defparams() -> list:
+    '''
+    Assigns some default sequencing error parameters
+
+    :return: A list consisting of seven error parameters set by this function
+    '''
     
     print('Using default sequencing error parameters...')
 
@@ -274,17 +304,32 @@ def embed_defparams():
 
 
 def main():
+    '''
+    Generates sequence error model for gen_reads.py
+
+    Required Parameters:
+        -i is the input file representing sequences (fasta/bam/sam/fastq)
+        -o is the prefix for the output 
+
+    Optional Parameters:
+        - see the func_parser function above
+
+    return: None
+    '''
     args = func_parser()
 
-    (infile, outfile, infile2, pile_up, off_q, max_q, max_reads, n_samp, plot_stuff) = (args.i, args.o, args.i2, args.p, args.q, args.Q, args.n, args.s, args.plot)
+    (infile, outfile) = args.i, args.o
+    (infile2, pile_up) = args.i2, args.p
+    (off_q, max_q, max_reads) = args.q, args.Q, args.n
+    (n_samp, plot) = args.s, args.plot
     
     real_q = max_q + 1
    
     if infile2 is None:
-        (init_q, prob_q, avg_err) = parse_file(infile, real_q, max_reads, n_samp, plot_stuff)
+        (init_q, prob_q, avg_err) = parse_file(infile, real_q, max_reads, n_samp, plot)
     else:
-        (init_q, prob_q, avg_err1) = parse_file(infile, real_q, max_reads, n_samp, plot_stuff)
-        (init_q2, prob_q2, avg_err2) = parse_file(infile2, real_q, max_reads, n_samp, plot_stuff)
+        (init_q, prob_q, avg_err1) = parse_file(infile, real_q, max_reads, n_samp, plot)
+        (init_q2, prob_q2, avg_err2) = parse_file(infile2, real_q, max_reads, n_samp, plot)
         avg_err = (avg_err1 + avg_err2) / 2.
 
 
