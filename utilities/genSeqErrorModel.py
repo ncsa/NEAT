@@ -22,9 +22,6 @@ import pysam
 from functools import reduce
 from source.probability import DiscreteDistribution
 
-# enables import from neighboring package
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-
 
 def func_plot(init_q, real_q, prob_q, q_range, actual_readlen):
     mpl.rcParams.update({'font.size': 14, 'font.weight': 'bold', 'lines.linewidth': 3})
@@ -82,7 +79,6 @@ def func_plot(init_q, real_q, prob_q, q_range, actual_readlen):
     # mpl.tight_layout()
     mpl.show()
 
-
 def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
     '''
     Reads the input bam/sam/fastq file and extracts the vales required to compute simulation's average error rate
@@ -93,11 +89,11 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
 
     :return: (number of qualities to read, a list of total quality scores, a list pf prior quality_scores, a list containing (min,max) of quality scores)
     '''
-    
+
+
     print('reading ' + input_file + '...')
     is_aligned = False
     lines_to_read = 0
-
     try:
         if input_file[-4:] == '.bam' or input_file[-4:] == '.sam':
             print('detected aligned file....')
@@ -113,34 +109,34 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
             f = pysam.FastxFile(input_file)
     except FileNotFoundError:
         print("Check input file. Must be fastq, gzipped fastq, or bam/sam file.")
-        sys.exit(1)    
+        sys.exit(1)
 
-
+    actual_readlen = 0
     q_dict = {}
     current_line = 0
-    quarters = lines_to_read // 4    
+    quarters = lines_to_read // 4
 
     if is_aligned:
         g = f.fetch()
     else:
-        g = f    
+        g = f
 
     for read in g:
         if is_aligned:
             qualities_to_check = read.query_alignment_qualities
         else:
             qualities_to_check = read.get_quality_array()
-        
-        actual_readlen = len(qualities_to_check) - 1
-        print('assuming read length is uniform...')
-        print('detected read length (from first read found):', actual_readlen)
-        prior_q = np.zeros([actual_readlen, real_q])
-        total_q = [None] + [np.zeros([real_q, real_q]) for n in range(actual_readlen - 1)]    
+        if actual_readlen == 0:
+            actual_readlen = len(qualities_to_check) - 1
+            print('assuming read length is uniform...')
+            print('detected read length (from first read found):', actual_readlen)
+            prior_q = np.zeros([actual_readlen, real_q])
+            total_q = [None] + [np.zeros([real_q, real_q]) for n in range(actual_readlen - 1)]
 
         # sanity-check readlengths
         if len(qualities_to_check) - 1 != actual_readlen:
             print('skipping read with unexpected length...')
-            continue    
+            continue
 
         for i in range(actual_readlen):
             q = qualities_to_check[i]
@@ -149,13 +145,14 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
                 prior_q[i][q] += 1
             else:
                 total_q[i][q, q] += 1
-                prior_q[i][q] += 1    
+                prior_q[i][q] += 1
 
         current_line += 1
         if current_line % quarters == 0:
             print(f'{(current_line/lines_to_read)*100:.0f}%')
         if 0 < max_reads <= current_line:
-            break    
+            break
+
     f.close()
 
     # some sanity checking again...
@@ -171,7 +168,6 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
 
 
 
-
 def parse_file(input_file: str, real_q: int, max_reads: int, n_samp: int, plot: bool) -> (list, list, float):
     '''
     Takes a gzip or sam file and returns the simulation's average error rate
@@ -181,38 +177,42 @@ def parse_file(input_file: str, real_q: int, max_reads: int, n_samp: int, plot: 
     :param max_reads: maximum number of reads to process (default: all or -1)
     :param n_samp: number of simulation iterations (default: 1000000)
     :param plot: Need a plot?
-
     :return: (2D matrix of initial quality scores, 3D matrix of computed probabilities, simulation's average error rate)
     '''
 
-    #Read input file
+    init_smooth = 0.
+    prob_smooth = 0.
+
+    # Read input file
     actual_readlen, total_q, prior_q, q_range = readfile(input_file, real_q, max_reads)
 
-    #Compute Probabilities
+
+    # Compute Probabilities
     print('computing probabilities...')
 
     prob_q = [None] + [[[0. for m in range(real_q)] for n in range(real_q)] for p in range(actual_readlen - 1)]
     for p in range(1, actual_readlen):
         for i in range(real_q):
-            row_sum = float(np.sum(total_q[p][i, :])) * real_q
+            row_sum = float(np.sum(total_q[p][i, :])) + prob_smooth * real_q
             if row_sum <= 0.:
                 continue
             for j in range(real_q):
-                prob_q[p][i][j] = total_q[p][i][j] / row_sum
+                prob_q[p][i][j] = (total_q[p][i][j] + prob_smooth) / row_sum
 
     init_q = [[0. for m in range(real_q)] for n in range(actual_readlen)]
     for i in range(actual_readlen):
-        row_sum = float(np.sum(prior_q[i, :])) * real_q
+        row_sum = float(np.sum(prior_q[i, :])) + init_smooth * real_q
         if row_sum <= 0.:
             continue
         for j in range(real_q):
-            init_q[i][j] = prior_q[i][j] / row_sum
+            init_q[i][j] = (prior_q[i][j] + init_smooth) / row_sum
 
-    # If plotstuff ..........
+
+    # Plotting .......
     if plot:
         func_plot(init_q, real_q, prob_q, q_range, actual_readlen)
 
-
+    
     # Calculate Average Error
     print('estimating average error rate via simulation...')
     q_scores = range(real_q)
@@ -251,8 +251,7 @@ def parse_file(input_file: str, real_q: int, max_reads: int, n_samp: int, plot: 
         avg_err += eVal * (count_dict[k] / tot_bases)
     print('AVG ERROR RATE:', avg_err)
 
-    return init_q, prob_q, avg_err, q_scores
-
+    return init_q, prob_q, avg_err
 
 def func_parser() -> argparse.Namespace:
     '''
@@ -272,7 +271,9 @@ def func_parser() -> argparse.Namespace:
     parser.add_argument('-s', type=int, required=False, metavar='<int>', default=1000000, help="number of simulation iterations (default: 1000000)")
     parser.add_argument('--plot', required=False, action='store_true', default=False, help='perform some optional plotting')
     args = parser.parse_args()    
+
     return args
+
 
 def embed_defparams() -> list:
     '''
@@ -310,30 +311,33 @@ def main():
     Required Parameters:
         -i is the input file representing sequences (fasta/bam/sam/fastq)
         -o is the prefix for the output 
-
+        
     Optional Parameters:
         - see the func_parser function above
 
     return: None
     '''
+
     args = func_parser()
 
     (infile, outfile) = args.i, args.o
     (infile2, pile_up) = args.i2, args.p
     (off_q, max_q, max_reads) = args.q, args.Q, args.n
     (n_samp, plot) = args.s, args.plot
-    
+
     real_q = max_q + 1
-   
+
+    q_scores = range(real_q)
+
     if infile2 is None:
-        (init_q, prob_q, avg_err, q_scores) = parse_file(infile, real_q, max_reads, n_samp, plot)
+        (init_q, prob_q, avg_err) = parse_file(infile, real_q, max_reads, n_samp, plot)
     else:
-        (init_q, prob_q, avg_err1, q_scores) = parse_file(infile, real_q, max_reads, n_samp, plot)
-        (init_q2, prob_q2, avg_err2, q_scores) = parse_file(infile2, real_q, max_reads, n_samp, plot)
+        (init_q, prob_q, avg_err1) = parse_file(infile, real_q, max_reads, n_samp, plot)
+        (init_q2, prob_q2, avg_err2) = parse_file(infile2, real_q, max_reads, n_samp, plot)
         avg_err = (avg_err1 + avg_err2) / 2.
 
-
-    #	embed some default sequencing error parameters if no pileup is provided
+    
+    #   embed some default sequencing error parameters if no pileup is provided
     if pile_up is None:
         err_params = embed_defparams()
     #	otherwise we need to parse a pileup and compute statistics!
@@ -341,6 +345,7 @@ def main():
         print('\nPileup parsing coming soon!\n')
         exit(1)
 
+    
     #	finally, let's save our output model
     outfile = pathlib.Path(outfile).with_suffix(".p")
     print('saving model...')
