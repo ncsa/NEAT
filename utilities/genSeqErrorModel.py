@@ -26,7 +26,7 @@ from source.probability import DiscreteDistribution
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 
-def func_plot(init_q, real_q, prob_q, q_range, actual_readlen) -> image:
+def func_plot(init_q, real_q, prob_q, q_range, actual_readlen):
     mpl.rcParams.update({'font.size': 14, 'font.weight': 'bold', 'lines.linewidth': 3})
     
     mpl.figure(1)
@@ -83,7 +83,7 @@ def func_plot(init_q, real_q, prob_q, q_range, actual_readlen) -> image:
     mpl.show()
 
 
-def readfile(input_file, real_q, max_reads) -> (int, list, numpy_array, list):
+def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
     '''
     Reads the input bam/sam/fastq file and extracts the vales required to compute simulation's average error rate
     
@@ -172,7 +172,7 @@ def readfile(input_file, real_q, max_reads) -> (int, list, numpy_array, list):
 
 
 
-def parse_file(input_file: str, real_q: int, max_reads: int, n_samp: int, plot: boolean) -> (list, list, float):
+def parse_file(input_file: str, real_q: int, max_reads: int, n_samp: int, plot: bool) -> (list, list, float):
     '''
     Takes a gzip or sam file and returns the simulation's average error rate
     
@@ -251,10 +251,10 @@ def parse_file(input_file: str, real_q: int, max_reads: int, n_samp: int, plot: 
         avg_err += eVal * (count_dict[k] / tot_bases)
     print('AVG ERROR RATE:', avg_err)
 
-    return init_q, prob_q, avg_err
+    return init_q, prob_q, avg_err, q_scores
 
 
-def func_parser() -> class_argparse:
+def func_parser() -> argparse.Namespace:
     '''
     Defines what arguments the program requires, and argparse will figure out how to parse those out of sys.argv
 
@@ -326,10 +326,10 @@ def main():
     real_q = max_q + 1
    
     if infile2 is None:
-        (init_q, prob_q, avg_err) = parse_file(infile, real_q, max_reads, n_samp, plot)
+        (init_q, prob_q, avg_err, q_scores) = parse_file(infile, real_q, max_reads, n_samp, plot)
     else:
-        (init_q, prob_q, avg_err1) = parse_file(infile, real_q, max_reads, n_samp, plot)
-        (init_q2, prob_q2, avg_err2) = parse_file(infile2, real_q, max_reads, n_samp, plot)
+        (init_q, prob_q, avg_err1, q_scores) = parse_file(infile, real_q, max_reads, n_samp, plot)
+        (init_q2, prob_q2, avg_err2, q_scores) = parse_file(infile2, real_q, max_reads, n_samp, plot)
         avg_err = (avg_err1 + avg_err2) / 2.
 
 
