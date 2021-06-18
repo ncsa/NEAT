@@ -316,6 +316,7 @@ def main(raw_args=None):
                 input_variants = input_variants[input_variants['CHROM'] != item]
 
         for chrom in reference_chromosomes:
+
             if chrom in input_variants_chroms:
                 for index, row in input_variants[input_variants['CHROM'] == chrom].iterrows():
                     span = (row['POS'], row['POS'] + len(row['REF']))
