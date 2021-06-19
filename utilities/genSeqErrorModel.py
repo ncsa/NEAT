@@ -4,7 +4,7 @@
 #   genSeqErrorModel.py
 #   Computes sequencing error model for gen_reads.py
 #
-#   What is input -> output       
+#   Can take fastq/bam/sam file as input and outputs a pickle file      
 #
 #   Usage: python genSeqErrorModel.py -i input_reads.fq -o path/to/output_name.p
 #
@@ -81,7 +81,7 @@ def func_plot(init_q, real_q, prob_q, q_range, actual_readlen):
 
 def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
     '''
-    Reads the input bam/sam/fastq file and extracts the vales required to compute simulation's average error rate
+    Reads the input fastq/bam/sam file and extracts the vales required to compute simulation's average error rate
     
     :param input_file: name of the input file
     :param real_q: maximum quality score (default: 41) + 1
@@ -170,7 +170,7 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
 
 def parse_file(input_file: str, real_q: int, max_reads: int, n_samp: int, plot: bool) -> (list, list, float):
     '''
-    Takes a gzip or sam file and returns the simulation's average error rate
+    Takes a fastq/bam/sam/(gzip) file and returns the simulation's average error rate
     
     :param input_file: name of the input file
     :param real_q: maximum quality score (default: 41) + 1
@@ -309,7 +309,7 @@ def main():
     Generates sequence error model for gen_reads.py
 
     Required Parameters:
-        -i is the input file representing sequences (fasta/bam/sam/fastq)
+        -i is the input file representing sequences (fastq/bam/sam)
         -o is the prefix for the output 
         
     Optional Parameters:
