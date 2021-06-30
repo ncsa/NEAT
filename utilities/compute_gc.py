@@ -10,7 +10,7 @@
 #          python compute_gc.py -r reference.fa -i genomeCov.dat -w [sliding window length] -o output_name.p
 #
 #
-# Updated to Python 3 standards
+# Python 3 ready
 
 import time
 import argparse
@@ -20,12 +20,12 @@ from Bio import SeqIO
 
 
 def process_fasta(file: str) -> dict:
-    """
+    '''
     Takes a fasta file, converts it into a dictionary of upper case sequences. Does some basic error checking,
     like the file is readable and the reference dictionary is not empty
     :param file: path to a fasta file
     :return: dictionary form of the sequences indexed by chromosome
-    """
+    '''
     ref_dict = {}
 
     try:
@@ -45,14 +45,14 @@ def process_fasta(file: str) -> dict:
 
 
 def process_genomecov(file: str, ref_dict: dict, window: int) -> dict:
-    """
+    '''
     Takes a genomecov file and converts it into a dictionary made up of 'window' sized sections 
     that record the number of GCs and the coverage measure for each section.
     :param file: path to a genomecov file
     :param ref_dict: dictionary created from using the process_fasta function
     :param window: Length of each section of base pairs to count in the reference dictionary
     :return: dictionary form of genomecov file based on window size and ref_dict data
-    """
+    '''
     gc_bins = {n: [] for n in range(window + 1)}
 
     # variables needed to parse coverage file
@@ -88,14 +88,14 @@ def process_genomecov(file: str, ref_dict: dict, window: int) -> dict:
 
 
 def calculate_coverage(bin_dict: dict, window: int) -> float:
-    """
+    '''
     Takes the dictionary created in process_genomecov and finds the average coverage value.
     Also ouputs the average coverage value for each window, along with the number of entries in that window.
     :param bin_dict: dictionary created from using the process_genomecov function
     :param window: Length of each section of base pairs to count, 
                    should be the same as the window value in process_genomecov
     :return: Average coverage value for the whole sample, along with average coverage values for each window.
-    """
+    '''
     running_total = 0
     all_mean = 0.0
     for k in sorted(bin_dict.keys()):
@@ -112,26 +112,35 @@ def calculate_coverage(bin_dict: dict, window: int) -> float:
 
     return all_mean / float(running_total)
 
-
-def main():
-    """
-    Reads in arguments and processes the inputs to a GC count for the sequence.
+def func_parser() -> argparse.Namespace:
+    '''
+    Defines what arguments the program requires, and argparse will figure out how to parse those out of sys.argv
     Parameters:
         -i is the genome coverage input file (genomecov)
         -r is the reference file (fasta)
         -o is the prefix for the output
         -w is the sliding window length. The default is 50, but you can declare any reasonable integer
-    :return: None
-    """
-    parser = argparse.ArgumentParser(description='compute_gc.py',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+
+    :return: an instance of the argparse class that can be used to access command line arguments
+    '''
+
+    parser = argparse.ArgumentParser(description='compute_gc.py', formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-i', type=str, required=True, metavar='input', help="input.genomecov")
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="reference.fasta")
-    parser.add_argument('-o', type=str, required=True, metavar='output prefix',
-                        help="prefix for output (/path/to/output)")
-    parser.add_argument('-w', type=int, required=False, metavar='sliding window',
-                        help="sliding window length [50]", default=50)
+    parser.add_argument('-o', type=str, required=True, metavar='output prefix', help="prefix for output (/path/to/output)")
+    parser.add_argument('-w', type=int, required=False, metavar='sliding window', help="sliding window length [50]", default=50)
     args = parser.parse_args()
+    
+    return args
+
+
+def main():
+    '''
+    Reads in arguments and processes the inputs to a GC count for the sequence.
+   
+    :return: None
+    '''
+    args = func_parser()
 
     (in_gcb, ref_file, window_size, out_p) = (args.i, args.r, args.w, args.o)
 

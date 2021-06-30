@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+#
+#
+#   repickle.py
+#   What is its purpose?
+#
+#   Can take a directory containing python pickle files and repickles them
+#
+#   Usage: python utilities/repickle.py path_to_dir
+#
+#
+#  Python 3 ready
+
+
 
 import sys
 import os
@@ -8,6 +21,9 @@ import pickle
 
 
 def main():
+    '''
+    Repickles every pickle file in the given directory
+    '''
     dir_to_repickle = pathlib.Path(sys.argv[1])
 
     if not dir_to_repickle.is_dir():

@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 #
 #
-#      Compute Fragment Length Model for gen_reads.py
-#                  compute_fraglen.py
+#   compute_fraglen.py   
+#   Compute Fragment Length Model for gen_reads.py
+#                  
+#   Takes as input path to a BAM/SAM file and outputs a pickle file
+#
+#   Usage: samtools view normal.bam | python compute_fraglen.py
 #
 #
-#      Usage: samtools view normal.bam | python compute_fraglen.py
-#
-#
-# Upgraded 5/6/2020 to match Python 3 standards and refactored for easier reading
+# Python 3 ready
 
 import pickle
 import argparse
@@ -24,7 +25,7 @@ else:
 
 
 def median(datalist: list) -> float:
-    """
+    '''
     Finds the median of a list of data. For this function, the data are expected to be a list of
     numbers, either float or int.
     :param datalist: the list of data to find the median of. This should be a set of numbers.
@@ -35,7 +36,7 @@ def median(datalist: list) -> float:
     25993
     >>> median([1,2,4,6,8,12,14,15,17,21])
     10.0
-    """
+    '''
     # using integer division here gives the index of the midpoint, due to zero-based indexing.
     midpoint = len(datalist)//2
 
@@ -49,7 +50,7 @@ def median(datalist: list) -> float:
 
 
 def median_absolute_deviation(datalist: list) -> float:
-    """
+    '''
     Calculates the absolute value of the median deviation from the median for each element of of a datalist. 
     Then returns the median of these values.
     :param datalist: A list of data to find the MAD of
@@ -60,7 +61,7 @@ def median_absolute_deviation(datalist: list) -> float:
     5.5
     >>> median_absolute_deviation([0,2])
     1.0
-    """
+    '''
     my_median = median(datalist)
     deviations = []
     for item in datalist:
@@ -73,12 +74,12 @@ def median_absolute_deviation(datalist: list) -> float:
 
 
 def count_frags(file: str) -> list:
-    """
+    '''
     Takes a sam file input and creates a list of the number of reads that are paired,
     first in the pair, confidently mapped and whose pair is mapped to the same reference
     :param file: A sam input file
     :return: A list of the tlens from the bam/sam file
-    """
+    '''
     filter_mapqual = 10  # only consider reads that are mapped with at least this mapping quality
     count_list = []
 
@@ -103,12 +104,12 @@ def count_frags(file: str) -> list:
 
 
 def compute_probs(datalist: list) -> (list, list):
-    """
+    '''
     Computes the probabilities for fragments with at least 100 pairs supporting it and that are at least 10 median
     deviations from the median.
     :param datalist: A list of fragments with counts
     :return: A list of values that meet the criteria and a list of their associated probabilities
-    """
+    '''
     FILTER_MINREADS = 100  # only consider fragment lengths that have at least this many read pairs supporting it
     FILTER_MEDDEV_M = 10  # only consider fragment lengths this many median deviations above the median
     values = []
@@ -126,9 +127,23 @@ def compute_probs(datalist: list) -> (list, list):
     probabilities = [n / count_sum for n in probabilities]
     return values, probabilities
 
+def func_parser() -> argparse.Namespace:
+    '''
+    Defines what arguments the program requires, and argparse will figure out how to parse those out of sys.argv
+
+    :return: an instance of the argparse class that can be used to access command line arguments
+    '''
+
+    parser = argparse.ArgumentParser(description="compute_fraglen.py", formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+    parser.add_argument('-i', type=str, metavar="input", required=True, default=None, help="Sam file input (samtools view name.bam > name.sam)")
+    parser.add_argument('-o', type=str, metavar="output", required=True, default=None, help="Prefix for output")
+
+    args = parser.parse_args()
+
+    return args
 
 def main():
-    """
+    '''
     Main function takes 2 arguments:
         input - a path to a sam or bam file input. Note that sam files can be formed by applying samtools to a bam file
         in the following way: samtools view nameof.bam > nameof.sam
@@ -138,14 +153,10 @@ def main():
         into a pickle file on completion of the analysis
 
     :return: None
-    """
-    parser = argparse.ArgumentParser(description="compute_fraglen.py",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
-    parser.add_argument('-i', type=str, metavar="input", required=True, default=None,
-                        help="Sam file input (samtools view name.bam > name.sam)")
-    parser.add_argument('-o', type=str, metavar="output", required=True, default=None, help="Prefix for output")
+    '''
 
-    args = parser.parse_args()
+    args = func_parser() 
+
     input_file = args.i
     output_prefix = args.o
     output = output_prefix + '.p'
