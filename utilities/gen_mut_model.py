@@ -38,21 +38,7 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
     return out_list
 
 
-#####################################
-#				main()				#
-#####################################
-
-
-def main():
-    # Some constants we'll need later
-    REF_WHITELIST = [str(n) for n in range(1, 30)] + ['x', 'y', 'X', 'Y', 'mt', 'Mt', 'MT']
-    REF_WHITELIST += ['chr' + n for n in REF_WHITELIST]
-    VALID_NUCL = ['A', 'C', 'G', 'T']
-    VALID_TRINUC = [VALID_NUCL[i] + VALID_NUCL[j] + VALID_NUCL[k] for i in range(len(VALID_NUCL)) for j in
-                    range(len(VALID_NUCL)) for k in range(len(VALID_NUCL))]
-    # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
-    VCF_DEFAULT_POP_FREQ = 0.00001
-
+def func_parser() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='gen_mut_model.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-r', type=str, required=True, metavar='/path/to/reference.fasta',
@@ -75,11 +61,29 @@ def main():
     parser.add_argument('--skip-common', required=False, action='store_true', default=False,
                         help='Do not save common snps + high mut regions')
     args = parser.parse_args()
+    return args
 
-    (ref, vcf, out_pickle, save_trinuc, skip_common) = (
-        args.r, args.m, args.o, args.save_trinuc, args.skip_common)
 
-    use_whitelist = args.use_whitelist
+#####################################
+#				main()				#
+#####################################
+
+
+def main():
+    # Some constants we'll need later
+    REF_WHITELIST = [str(n) for n in range(1, 30)] + ['x', 'y', 'X', 'Y', 'mt', 'Mt', 'MT']
+    REF_WHITELIST += ['chr' + n for n in REF_WHITELIST]
+    VALID_NUCL = ['A', 'C', 'G', 'T']
+    VALID_TRINUC = [VALID_NUCL[i] + VALID_NUCL[j] + VALID_NUCL[k] for i in range(len(VALID_NUCL)) for j in
+                    range(len(VALID_NUCL)) for k in range(len(VALID_NUCL))]
+    # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
+    VCF_DEFAULT_POP_FREQ = 0.00001
+
+    args = func_parser()
+
+    (ref, vcf) = (args.r, args.m)
+    (out_pickle, save_trinuc) = (args.o, args.save_trinuc)
+    (skip_common, use_whitelist) = (args.skip_common, args.use_whitelist)
 
     # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
     TRINUC_REF_COUNT = {}
@@ -95,82 +99,19 @@ def main():
     TOTAL_REFLEN = 0
     # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
     COMMON_VARIANTS = []
-    # tabulate how many unique donors we've encountered (this is useful for identifying common variants)
-    TOTAL_DONORS = {}
     # identify regions that have significantly higher local mutation rates than the average
     HIGH_MUT_REGIONS = []
 
     # Process bed file,
-    is_bed = False
-    my_bed = None
-    if args.b is not None:
-        print('Processing bed file...')
-        try:
-            my_bed = pd.read_csv(args.b, sep='\t', header=None, index_col=None)
-            is_bed = True
-        except ValueError:
-            print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
-
-        my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
-        # Adding a couple of columns we'll need for later calculations
-        my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
-        my_bed['track_len'] = my_bed.end - my_bed.start + 1
+    is_bed, my_bed = process_bedfile(args)
 
     # Process reference file
-    print('Processing reference...')
-    try:
-        reference = SeqIO.to_dict(SeqIO.parse(ref, "fasta"))
-    except ValueError:
-        print("Problems parsing reference file. Ensure reference is in proper fasta format")
+    reference = filter_genomes(REF_WHITELIST, ref, use_whitelist)
 
-    # Filter out actual human genomes from scaffolding
-    if use_whitelist:
-        for key in reference.keys():
-            if key not in REF_WHITELIST:
-                del reference[key]
-        if not reference.keys():
-            print(f"No contigs on the white list, so no model will be produced.")
-            print(f"To use white list, contigs must be named as: {REF_WHITELIST}")
-            sys.exit(0)
+    variants, variant_chroms, matching_chromosomes = match(vcf, reference)
 
-    # Process VCF file. First check if it's been entered as a TSV
-    if vcf[-3:] == 'tsv':
-        print("Warning! TSV file must follow VCF specifications.")
-
-    # Pre-parsing to find all the matching chromosomes between ref and vcf
-    print('Processing VCF file...')
-    try:
-        variants = pd.read_csv(vcf, sep='\t', comment='#', index_col=None, header=None)
-    except ValueError:
-        print("VCF must be in standard VCF format with tab-separated columns")
-
-    # Narrow chromosomes to those matching the reference
-    # This is in part to make sure the names match
-    variant_chroms = variants[0].to_list()
-    variant_chroms = list(set(variant_chroms))
-    matching_chromosomes = []
-    for ref_name in reference.keys():
-        if ref_name not in variant_chroms:
-            continue
-        else:
-            matching_chromosomes.append(ref_name)
-
-    # Check to make sure there are some matches
-    if not matching_chromosomes:
-        print("Found no chromosomes in common between VCF and Fasta, so no model will be produced. "
-              "Please compare the chromosome names and try again.")
-        sys.exit(0)
-
-    # Double check that there are matches
-    try:
-        matching_variants = variants[variants[0].isin(matching_chromosomes)]
-    except ValueError:
-        print("Problem matching variants with reference. No model produced.")
-        sys.exit(0)
-
-    if matching_variants.empty:
-        print("There is no overlap between reference and variant file. No model will be produced.")
-        sys.exit(0)
+   
+    matching_variants = checking_matches(variants, matching_chromosomes)
 
     # Rename header in dataframe for processing
     matching_variants = matching_variants.rename(columns={0: "CHROM", 1: 'chr_start', 2: 'ID', 3: 'REF', 4: 'ALT',
@@ -211,19 +152,7 @@ def main():
     matching_variants['INFO'] = new_info
 
     # Now we check that the bed and vcf have matching regions
-    # This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
-    if is_bed:
-        bed_chroms = list(set(my_bed['chrom']))
-        matching_bed_keys = list(set(bed_chroms) & set(variant_chroms))
-        try:
-            matching_bed = my_bed[my_bed['chrom'].isin(matching_bed_keys)]
-        except ValueError:
-            print('Problem matching bed chromosomes to variant file.')
-
-        if matching_bed.empty:
-            print("There is no overlap between bed and variant file. "
-                  "This could be a chromosome naming problem")
-            exit(1)
+    matching_bed = check_matching_regions(is_bed, my_bed, variant_chroms)
 
     # Count Trinucleotides in reference, based on bed or not
     print('Counting trinucleotides in reference...')
@@ -500,6 +429,100 @@ def main():
                     'COMMON_VARIANTS': COMMON_VARIANTS,
                     'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
     pickle.dump(OUT_DICT, open(out_pickle, "wb"))
+
+def check_matching_regions(is_bed, my_bed, variant_chroms):
+    # This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
+    if is_bed:
+        bed_chroms = list(set(my_bed['chrom']))
+        matching_bed_keys = list(set(bed_chroms) & set(variant_chroms))
+        try:
+            matching_bed = my_bed[my_bed['chrom'].isin(matching_bed_keys)]
+        except ValueError:
+            print('Problem matching bed chromosomes to variant file.')
+
+        if matching_bed.empty:
+            print("There is no overlap between bed and variant file. "
+                  "This could be a chromosome naming problem")
+            exit(1)
+    return matching_bed
+
+def checking_matches(variants, matching_chromosomes):
+    # Check to make sure there are some matches
+    if not matching_chromosomes:
+        print("Found no chromosomes in common between VCF and Fasta, so no model will be produced. "
+              "Please compare the chromosome names and try again.")
+        sys.exit(0)
+
+    # Double check that there are matches
+    try:
+        matching_variants = variants[variants[0].isin(matching_chromosomes)]
+    except ValueError:
+        print("Problem matching variants with reference. No model produced.")
+        sys.exit(0)
+
+    if matching_variants.empty:
+        print("There is no overlap between reference and variant file. No model will be produced.")
+        sys.exit(0)
+    return matching_variants
+
+def match(vcf, reference):
+    # Process VCF file. First check if it's been entered as a TSV
+    if vcf[-3:] == 'tsv':
+        print("Warning! TSV file must follow VCF specifications.")
+
+    # Pre-parsing to find all the matching chromosomes between ref and vcf
+    print('Processing VCF file...')
+    try:
+        variants = pd.read_csv(vcf, sep='\t', comment='#', index_col=None, header=None)
+    except ValueError:
+        print("VCF must be in standard VCF format with tab-separated columns")
+
+    # Narrow chromosomes to those matching the reference
+    # This is in part to make sure the names match
+    variant_chroms = variants[0].to_list()
+    variant_chroms = list(set(variant_chroms))
+    matching_chromosomes = []
+    for ref_name in reference.keys():
+        if ref_name not in variant_chroms:
+            continue
+        else:
+            matching_chromosomes.append(ref_name)
+    return variants,variant_chroms,matching_chromosomes
+
+def filter_genomes(REF_WHITELIST, ref, use_whitelist):
+    print('Processing reference...')
+    try:
+        reference = SeqIO.to_dict(SeqIO.parse(ref, "fasta"))
+    except ValueError:
+        print("Problems parsing reference file. Ensure reference is in proper fasta format")
+
+    # Filter out actual human genomes from scaffolding
+    if use_whitelist:
+        for key in reference.keys():
+            if key not in REF_WHITELIST:
+                del reference[key]
+        if not reference.keys():
+            print(f"No contigs on the white list, so no model will be produced.")
+            print(f"To use white list, contigs must be named as: {REF_WHITELIST}")
+            sys.exit(0)
+    return reference
+
+def process_bedfile(args):
+    is_bed = False
+    my_bed = None
+    if args.b is not None:
+        print('Processing bed file...')
+        try:
+            my_bed = pd.read_csv(args.b, sep='\t', header=None, index_col=None)
+            is_bed = True
+        except ValueError:
+            print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
+
+        my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
+        # Adding a couple of columns we'll need for later calculations
+        my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
+        my_bed['track_len'] = my_bed.end - my_bed.start + 1
+    return is_bed,my_bed
 
 
 if __name__ == "__main__":
