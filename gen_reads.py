@@ -22,6 +22,8 @@ import pickle
 import numpy as np
 import argparse
 import pathlib
+
+import pandas as pd
 from Bio import SeqIO
 
 from source.input_checking import check_file_open, is_in_range
@@ -129,7 +131,7 @@ def main(raw_args=None):
                                                                              args.discard_offtarget,
                                                                              args.force_coverage, args.rescale_qual)
     # important flags
-    (save_bam, save_vcf, fasta_instead, no_fastq) = \
+    (save_bam, save_vcf, create_fasta, no_fastq) = \
         (args.bam, args.vcf, args.fa, args.no_fastq)
 
     # sequencing model parameters
@@ -151,14 +153,18 @@ def main(raw_args=None):
     check_file_open(target_bed, 'ERROR: could not open input BED, {}'.format(target_bed), required=False)
 
     # if user specified no fastq, not fasta only, and no bam and no vcf, then print error and exit.
-    if no_fastq and not fasta_instead and not save_bam and not save_vcf:
+    if no_fastq and not create_fasta and not save_bam and not save_vcf:
         print('\nERROR: No files would be written.\n')
         sys.exit(1)
+
+    if create_fasta:
+        no_fastq = True
+        print("Writing output in FASTA format...")
 
     if no_fastq:
         print('Bypassing FASTQ generation...')
 
-    only_vcf = no_fastq and save_vcf and not save_bam and not fasta_instead
+    only_vcf = no_fastq and save_vcf and not save_bam and not create_fasta
     if only_vcf:
         print('Only producing VCF output...')
 
@@ -168,7 +174,7 @@ def main(raw_args=None):
 
     # If user specified mean/std, or specified an empirical model, then the reads will be paired_ended
     # If not, then we're doing single-end reads.
-    if (fragment_size is not None and fragment_std is not None) or (fraglen_model is not None) and not fasta_instead:
+    if (fragment_size is not None and fragment_std is not None) or (fraglen_model is not None) and not create_fasta:
         paired_end = True
     else:
         paired_end = False
@@ -316,7 +322,7 @@ def main(raw_args=None):
                 input_variants = input_variants[input_variants['CHROM'] != item]
 
         for chrom in reference_chromosomes:
-
+            n_skipped = [0, 0, 0]
             if chrom in input_variants_chroms:
                 for index, row in input_variants[input_variants['CHROM'] == chrom].iterrows():
                     span = (row['POS'], row['POS'] + len(row['REF']))
@@ -326,21 +332,22 @@ def main(raw_args=None):
                     any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in
                                        [item for sublist in row['alt_split'] for item in sublist])
                     # Ensure reference sequence matches the nucleotide in the vcf
-                    if r_seq != row[1]:
+                    if r_seq != row['REF']:
                         n_skipped[0] += 1
+                        input_variants.drop(index, inplace=True)
                         continue
                     # Ensure that we aren't trying to insert into an N region
                     elif 'N' in r_seq:
                         n_skipped[1] += 1
+                        input_variants.drop(index, inplace=True)
                         continue
                     # Ensure that we don't insert any disallowed characters
                     elif any_bad_nucl:
                         n_skipped[2] += 1
+                        input_variants.drop(index, inplace=True)
                         continue
-                    # If it passes the above tests, append to valid variants list
-                    valid_variants_from_vcf.append(row)
 
-                print('found', len(valid_variants_from_vcf), 'valid variants for ' +
+                print('found', len(input_variants), 'valid variants for ' +
                       chrom + ' in input VCF...')
                 if any(n_skipped):
                     print(sum(n_skipped), 'variants skipped...')
@@ -355,7 +362,8 @@ def main(raw_args=None):
     discard_regions = parse_bed(discard_bed, reference_chromosomes, begins_with_chr, False, debug)
 
     # parse input mutation rate rescaling regions, if present
-    mutation_rate_regions, mutation_rate_values = parse_bed(mut_bed, reference_chromosomes, begins_with_chr, True, debug)
+    mutation_rate_regions, mutation_rate_values = parse_bed(mut_bed, reference_chromosomes,
+                                                            begins_with_chr, True, debug)
 
     # initialize output files (part I)
     bam_header = None
@@ -370,18 +378,22 @@ def main(raw_args=None):
     # initialize output files (part II)
     # TODO figure out how to do this more efficiently. Write the files at the end.
     #  At least move this down so the file isn't created and opened hours before there's anything to put in it.
+    # The cancer part currently does nothing. The code is unreachable as written
     if cancer:
         output_file_writer = OutputFileWriter(out_prefix + '_normal', paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              no_fastq=no_fastq, fasta_instead=fasta_instead)
+                                              no_fastq=no_fastq, write_fasta=create_fasta,
+                                              save_bam=save_bam, save_vcf=save_vcf)
         output_file_writer_cancer = OutputFileWriter(out_prefix + '_tumor', paired=paired_end, bam_header=bam_header,
                                                      vcf_header=vcf_header,
-                                                     no_fastq=no_fastq, fasta_instead=fasta_instead)
+                                                     no_fastq=no_fastq, write_fasta=create_fasta,
+                                                     save_bam=save_bam, save_vcf=save_vcf)
     else:
         output_file_writer = OutputFileWriter(out_prefix, paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
                                               no_fastq=no_fastq,
-                                              fasta_instead=fasta_instead)
+                                              write_fasta=create_fasta,
+                                              save_bam=save_bam, save_vcf=save_vcf)
     # Using pathlib to make this more machine agnostic
     out_prefix_name = pathlib.Path(out_prefix).name
 
@@ -436,7 +448,7 @@ def main(raw_args=None):
         print('--------------------------------')
         if only_vcf:
             print('generating vcf...')
-        elif fasta_instead:
+        elif create_fasta:
             print('generating mutated fasta...')
         else:
             print('sampling reads...')
@@ -747,7 +759,7 @@ def main(raw_args=None):
                                                                             output_sam_flag=flag1)
                         # write PE output
                         elif len(my_read_data) == 2:
-                            if no_fastq is not True:
+                            if not no_fastq:
                                 output_file_writer.write_fastq_record(my_read_name, my_read_data[0][2],
                                                                       my_read_data[0][3],
                                                                       read2=my_read_data[1][2],

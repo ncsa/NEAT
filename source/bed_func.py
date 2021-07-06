@@ -6,7 +6,7 @@ import re
 
 def parse_bed(input_bed: str, chromosomes: list,
               begins_with_chr: bool,
-              mut_rate_regions: bool,
+              mut_rate_present: bool,
               debug: bool) -> dict:
     """
     Will parse a bed file, returning a dictionary of chromosomes that are found in the reference,
@@ -16,7 +16,7 @@ def parse_bed(input_bed: str, chromosomes: list,
     :param chromosomes: A list of chromosomes to check
     :param begins_with_chr: A true or false if this reference has human like chromosomes (chr1, chr2, etc), used because
     it's a common thing with human datasets to either use or not use "chr" before the number and no one seems to agree.
-    :param mut_rate_regions: A true or false if this bed has mut rate regions included.
+    :param mut_rate_present: A true or false if this bed has mut rate regions included.
     :param debug: True or false if we are in debugging mode and need more info
     :return: a dictionary of chromosomes, -1, pos1, and pos2
     """
@@ -62,12 +62,12 @@ def parse_bed(input_bed: str, chromosomes: list,
                         continue
                     # If it's in ref, add chrom to dict if needed, then add the positions.
                     if my_chr not in ret_dict:
-                        if not mut_rate_regions:
+                        if not mut_rate_present:
                             ret_dict[my_chr] = [-1]
                         else:
                             ret_dict[my_chr] = []
                     # here we append the metadata, if present
-                    if mut_rate_regions:
+                    if mut_rate_present:
                         ret_dict[my_chr].append([int(pos1), int(pos2), str(line_list[3])])
                     else:
                         ret_dict[my_chr].extend([int(pos1), int(pos2)])
@@ -95,7 +95,7 @@ def parse_bed(input_bed: str, chromosomes: list,
             if debug:
                 print(f'Regions ignored: {in_bed_only}')
 
-        if mut_rate_regions:
+        if mut_rate_present:
             # Assuming there are mutation rate regions, this will require one extra value for the return
             mut_rate_regions = {}
             mut_rate_values = {}
@@ -146,5 +146,8 @@ def parse_bed(input_bed: str, chromosomes: list,
                                   "'chromosome\tpos1\tpos2\tmut_rate=X.XX'.")
 
             return mut_rate_regions, mut_rate_values
-
-    return ret_dict
+    # Return empty dicts if there is no file to process.
+    if mut_rate_present:
+        return {}, {}
+    else:
+        return ret_dict

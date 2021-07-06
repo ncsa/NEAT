@@ -240,4 +240,4 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
     print(f' * {n_skipped_because_hash} variants skipped due to multiple variants found per position')
     print(f'vcf reading took: {int(time.time() - tt)} (sec)')
     print('--------------------------------')
-    return list(samp_cols), variants.explode()
+    return list(samp_cols), variants
