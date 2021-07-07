@@ -430,6 +430,7 @@ def main():
                     'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
     pickle.dump(OUT_DICT, open(out_pickle, "wb"))
 
+
 def check_matching_regions(is_bed, my_bed, variant_chroms):
     # This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
     if is_bed:
@@ -444,7 +445,10 @@ def check_matching_regions(is_bed, my_bed, variant_chroms):
             print("There is no overlap between bed and variant file. "
                   "This could be a chromosome naming problem")
             exit(1)
-    return matching_bed
+        return matching_bed
+    else:
+        return None
+
 
 def checking_matches(variants, matching_chromosomes):
     # Check to make sure there are some matches
