@@ -1,6 +1,16 @@
 #!/usr/bin/env python
-
+#
+#
+#   gen_mut_model.py
+#   What's the purpose of the file?
+#
+#   Input -> Output      
+#
+#   Usage: 
+#
+#
 # Python 3 ready
+
 
 import os
 import sys
@@ -155,30 +165,7 @@ def main():
     matching_bed = check_matching_regions(is_bed, my_bed, variant_chroms)
 
     # Count Trinucleotides in reference, based on bed or not
-    print('Counting trinucleotides in reference...')
-
-    if is_bed:
-        print("since you're using a bed input, we have to count trinucs in bed region even if "
-              "you already have a trinuc count file for the reference...")
-        for ref_name in matching_chromosomes:
-            sub_bed = matching_bed[matching_bed['chrom'] == ref_name]
-            sub_regions = sub_bed['coords'].to_list()
-            for sr in sub_regions:
-                sub_seq = reference[ref_name][sr[0]: sr[1]].seq
-                for trinuc in VALID_TRINUC:
-                    if trinuc not in TRINUC_REF_COUNT:
-                        TRINUC_REF_COUNT[trinuc] = 0
-                    TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
-
-    elif not os.path.isfile(ref + '.trinucCounts'):
-        for ref_name in matching_chromosomes:
-            sub_seq = reference[ref_name].seq
-            for trinuc in VALID_TRINUC:
-                if trinuc not in TRINUC_REF_COUNT:
-                    TRINUC_REF_COUNT[trinuc] = 0
-                TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
-    else:
-        print('Found trinucCounts file, using that.')
+    count_trinucleotides(VALID_TRINUC, ref, TRINUC_REF_COUNT, is_bed, reference, matching_chromosomes, matching_bed)
 
     # Load and process variants in each reference sequence individually, for memory reasons...
     print('Creating mutational model...')
@@ -305,24 +292,8 @@ def main():
                     HIGH_MUT_REGIONS[i - 1][0], HIGH_MUT_REGIONS[i - 1][1], HIGH_MUT_REGIONS[i][2], avg_mut_rate)
                 del HIGH_MUT_REGIONS[i]
 
-    # if we didn't count ref trinucs because we found file, read in ref counts from file now
-    if os.path.isfile(ref + '.trinucCounts'):
-        print('reading pre-computed trinuc counts...')
-        f = open(ref + '.trinucCounts', 'r')
-        for line in f:
-            splt = line.strip().split('\t')
-            TRINUC_REF_COUNT[splt[0]] = int(splt[1])
-        f.close()
-    # otherwise, save trinuc counts to file, if desired
-    elif save_trinuc:
-        if is_bed:
-            print('unable to save trinuc counts to file because using input bed region...')
-        else:
-            print('saving trinuc counts to file...')
-            f = open(ref + '.trinucCounts', 'w')
-            for trinuc in sorted(TRINUC_REF_COUNT.keys()):
-                f.write(trinuc + '\t' + str(TRINUC_REF_COUNT[trinuc]) + '\n')
-            f.close()
+    
+    counts_from_file(ref, save_trinuc, TRINUC_REF_COUNT, is_bed)
 
     # if for some reason we didn't find any valid input variants, exit gracefully...
     total_var = SNP_COUNT + sum(INDEL_COUNT.values())
@@ -341,33 +312,10 @@ def main():
     # frequency of snp transitions, given a snp occurs.
     SNP_TRANS_FREQ = {}
 
-    for trinuc in sorted(TRINUC_REF_COUNT.keys()):
-        my_count = 0
-        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
-            if k[0] == trinuc:
-                my_count += TRINUC_TRANSITION_COUNT[k]
-        TRINUC_MUT_PROB[trinuc] = my_count / float(TRINUC_REF_COUNT[trinuc])
-        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
-            if k[0] == trinuc:
-                TRINUC_TRANS_PROBS[k] = TRINUC_TRANSITION_COUNT[k] / float(my_count)
-
-    for n1 in VALID_NUCL:
-        rolling_tot = sum([SNP_TRANSITION_COUNT[(n1, n2)] for n2 in VALID_NUCL if (n1, n2) in SNP_TRANSITION_COUNT])
-        for n2 in VALID_NUCL:
-            key2 = (n1, n2)
-            if key2 in SNP_TRANSITION_COUNT:
-                SNP_TRANS_FREQ[key2] = SNP_TRANSITION_COUNT[key2] / float(rolling_tot)
+    compute_probabilities(VALID_NUCL, TRINUC_REF_COUNT, TRINUC_TRANSITION_COUNT, SNP_TRANSITION_COUNT, TRINUC_MUT_PROB, TRINUC_TRANS_PROBS, SNP_TRANS_FREQ)
 
     # compute average snp and indel frequencies
-    SNP_FREQ = SNP_COUNT / float(total_var)
-    AVG_INDEL_FREQ = 1. - SNP_FREQ
-    INDEL_FREQ = {k: (INDEL_COUNT[k] / float(total_var)) / AVG_INDEL_FREQ for k in INDEL_COUNT.keys()}
-
-    if is_bed:
-        track_sum = float(my_bed['track_len'].sum())
-        AVG_MUT_RATE = total_var / track_sum
-    else:
-        AVG_MUT_RATE = total_var / float(TOTAL_REFLEN)
+    SNP_FREQ, AVG_INDEL_FREQ, INDEL_FREQ, AVG_MUT_RATE = compute_frequencies(SNP_COUNT, INDEL_COUNT, TOTAL_REFLEN, is_bed, my_bed, total_var)
 
     #	if values weren't found in data, appropriately append null entries
     print_trinuc_warning = False
@@ -429,6 +377,83 @@ def main():
                     'COMMON_VARIANTS': COMMON_VARIANTS,
                     'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
     pickle.dump(OUT_DICT, open(out_pickle, "wb"))
+
+    
+def compute_frequencies(SNP_COUNT, INDEL_COUNT, TOTAL_REFLEN, is_bed, my_bed, total_var):
+    SNP_FREQ = SNP_COUNT / float(total_var)
+    AVG_INDEL_FREQ = 1. - SNP_FREQ
+    INDEL_FREQ = {k: (INDEL_COUNT[k] / float(total_var)) / AVG_INDEL_FREQ for k in INDEL_COUNT.keys()}
+
+    if is_bed:
+        track_sum = float(my_bed['track_len'].sum())
+        AVG_MUT_RATE = total_var / track_sum
+    else:
+        AVG_MUT_RATE = total_var / float(TOTAL_REFLEN)
+    return SNP_FREQ,AVG_INDEL_FREQ,INDEL_FREQ,AVG_MUT_RATE
+
+def compute_probabilities(VALID_NUCL, TRINUC_REF_COUNT, TRINUC_TRANSITION_COUNT, SNP_TRANSITION_COUNT, TRINUC_MUT_PROB, TRINUC_TRANS_PROBS, SNP_TRANS_FREQ):
+    for trinuc in sorted(TRINUC_REF_COUNT.keys()):
+        my_count = 0
+        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
+            if k[0] == trinuc:
+                my_count += TRINUC_TRANSITION_COUNT[k]
+        TRINUC_MUT_PROB[trinuc] = my_count / float(TRINUC_REF_COUNT[trinuc])
+        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
+            if k[0] == trinuc:
+                TRINUC_TRANS_PROBS[k] = TRINUC_TRANSITION_COUNT[k] / float(my_count)
+
+    for n1 in VALID_NUCL:
+        rolling_tot = sum([SNP_TRANSITION_COUNT[(n1, n2)] for n2 in VALID_NUCL if (n1, n2) in SNP_TRANSITION_COUNT])
+        for n2 in VALID_NUCL:
+            key2 = (n1, n2)
+            if key2 in SNP_TRANSITION_COUNT:
+                SNP_TRANS_FREQ[key2] = SNP_TRANSITION_COUNT[key2] / float(rolling_tot)
+
+def counts_from_file(ref, save_trinuc, TRINUC_REF_COUNT, is_bed):
+    # if we didn't count ref trinucs because we found file, read in ref counts from file now
+    if os.path.isfile(ref + '.trinucCounts'):
+        print('reading pre-computed trinuc counts...')
+        f = open(ref + '.trinucCounts', 'r')
+        for line in f:
+            splt = line.strip().split('\t')
+            TRINUC_REF_COUNT[splt[0]] = int(splt[1])
+        f.close()
+    # otherwise, save trinuc counts to file, if desired
+    elif save_trinuc:
+        if is_bed:
+            print('unable to save trinuc counts to file because using input bed region...')
+        else:
+            print('saving trinuc counts to file...')
+            f = open(ref + '.trinucCounts', 'w')
+            for trinuc in sorted(TRINUC_REF_COUNT.keys()):
+                f.write(trinuc + '\t' + str(TRINUC_REF_COUNT[trinuc]) + '\n')
+            f.close()
+
+def count_trinucleotides(VALID_TRINUC, ref, TRINUC_REF_COUNT, is_bed, reference, matching_chromosomes, matching_bed):
+    print('Counting trinucleotides in reference...')
+
+    if is_bed:
+        print("since you're using a bed input, we have to count trinucs in bed region even if "
+              "you already have a trinuc count file for the reference...")
+        for ref_name in matching_chromosomes:
+            sub_bed = matching_bed[matching_bed['chrom'] == ref_name]
+            sub_regions = sub_bed['coords'].to_list()
+            for sr in sub_regions:
+                sub_seq = reference[ref_name][sr[0]: sr[1]].seq
+                for trinuc in VALID_TRINUC:
+                    if trinuc not in TRINUC_REF_COUNT:
+                        TRINUC_REF_COUNT[trinuc] = 0
+                    TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+
+    elif not os.path.isfile(ref + '.trinucCounts'):
+        for ref_name in matching_chromosomes:
+            sub_seq = reference[ref_name].seq
+            for trinuc in VALID_TRINUC:
+                if trinuc not in TRINUC_REF_COUNT:
+                    TRINUC_REF_COUNT[trinuc] = 0
+                TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+    else:
+        print('Found trinucCounts file, using that.')
 
 
 def check_matching_regions(is_bed, my_bed, variant_chroms):

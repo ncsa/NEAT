@@ -82,6 +82,7 @@ def func_plot(init_q, real_q, prob_q, q_range, actual_readlen):
     # mpl.tight_layout()
     mpl.show()
 
+
 def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
     """
     Reads the input fastq/bam/sam file and extracts the vales required to compute simulation's average error rate
@@ -92,7 +93,6 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
 
     :return: (number of qualities to read, a list of total quality scores, a list pf prior quality_scores, a list containing (min,max) of quality scores)
     """
-
 
     print('reading ' + input_file + '...')
     is_aligned = False
@@ -106,7 +106,6 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
             f = pysam.AlignmentFile(input_file)
             try:
                 g = f.fetch()
-                qualities_to_check = read.query_alignment_qualities
             except ValueError:
                 print('Please generate an index file for BAM using Samtools')
                 sys.exit(1)
@@ -118,7 +117,6 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
                     lines_to_read += 1
             f = pysam.FastxFile(input_file)
             g = f
-            qualities_to_check = read.get_quality_array()
     except FileNotFoundError:
         print("Check input file. Must be fastq, gzipped fastq, or bam/sam file.")
         sys.exit(1)
@@ -128,7 +126,11 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
     current_line = 0
     quarters = lines_to_read // 4
    
-    for read in g:            
+    for read in g:     
+        if is_aligned:
+            qualities_to_check = read.query_alignment_qualities
+        else:
+            qualities_to_check = read.get_quality_array()       
         if actual_readlen == 0:
             actual_readlen = len(qualities_to_check) - 1
             print('assuming read length is uniform...')
