@@ -6,8 +6,7 @@
 #
 #   Takes output file from bedtools genomecov to generate GC/coverage model
 #
-#   Usage: bedtools genomecov -d -ibam input.bam -g reference.fa > genomeCov.dat
-#          python compute_gc.py -r reference.fa -i genomeCov.dat -w [sliding window length] -o output_name.p
+#   Usage: python compute_gc.py -i input.genomecov -r reference.fa -o output_prefix
 #
 #
 # Python 3 ready
@@ -129,7 +128,7 @@ def func_parser() -> argparse.Namespace:
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-i', type=str, required=True, metavar='input', help="input.genomecov")
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="reference.fasta")
-    parser.add_argument('-o', type=str, required=True, metavar='output prefix',
+    parser.add_argument('-o', type=str, required=True, metavar='output_prefix',
                         help="prefix for output (/path/to/output)")
     parser.add_argument('-w', type=int, required=False, metavar='sliding window',
                         help="sliding window length [50]", default=50)

@@ -7,9 +7,10 @@
 #   Takes as input path to a BAM or SAM file and outputs a pickle file with fragment length statistics for input
 #   into gen_reads.py
 #
-#   Usage: compute_fraglen.py -i /path/to/file.bam(.sam) -o output_prefix
+#   Usage: python compute_fraglen.py -i /path/to/file.bam(.sam) -o output_prefix
 #
-
+#
+# Python 3 ready
 
 import pickle
 import argparse
