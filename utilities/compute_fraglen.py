@@ -139,7 +139,7 @@ def func_parser() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="compute_fraglen.py",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-i', type=str, metavar="input", required=True, default=None,
-                        help="Sam file input (samtools view name.bam > name.sam)")
+                        help="Input file name - file.bam(.sam)")
     parser.add_argument('-o', type=str, metavar="output", required=True, default=None, help="Prefix for output")
 
     args = parser.parse_args()
