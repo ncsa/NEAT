@@ -258,3 +258,4 @@ if __name__ == '__main__':
     start_time = time()
     main()
     print(f'Finished bacterial wrapper in {time() - start_time} seconds.')
+    print('Goodbye!')
