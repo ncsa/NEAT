@@ -6,7 +6,7 @@
 #
 #   Takes an integer as input and generates a String   
 #
-#   Usage: 
+#   Usage: python generate_random_dna.py
 #
 #
 # Python 3 ready
