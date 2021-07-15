@@ -6,20 +6,24 @@
 #
 #   Takes an input BAM file   
 #
-#   Usage: python validateBam.py /path/to/BAM_file
+#   Usage: python validateBam.py -i /path/to/BAM_file
 #
 #
 # Python 3 ready
 
 import sys
 import os
+import _io
 import gzip
 import argparse
 from struct import unpack
 from contextlib import redirect_stdout
 
 
-def get_bytes(fmt: str, amt: int,f):
+def get_bytes(fmt: str, amt: int, f: _io.BufferedReader):
+    """
+    Reads the associated number of bytes for different elements
+    """
     if fmt == '<i' or fmt == '<I':
         my_size = 4
     elif fmt == '<c' or fmt == '<b' or fmt == '<B':
@@ -32,6 +36,7 @@ def get_bytes(fmt: str, amt: int,f):
         if not f_read:
             return None
         return unpack(fmt, f_read)[0]
+
     else:
         f_read = f.read(my_size * amt)
         if not f_read:
@@ -39,9 +44,11 @@ def get_bytes(fmt: str, amt: int,f):
         return unpack(fmt, f_read)
 
 
-def examine_alignemnt(f):
+def examine_alignemnt(f: _io.BufferedReader):
     """
     Examines each block from the input file for various elements of the sequences 
+
+    :param f: BufferedReader reading the input file  
 
     :return: None    
     """
@@ -93,7 +100,7 @@ def main():
     """
     Validates a given BAM file for the alignment
 
-    return: Generates an output file - valBAM_out.txt containing references read from BAM file
+    :return: Generates an output file - valBAM_out.txt containing references read from BAM file
     """
 
     args = func_parser()
@@ -103,7 +110,8 @@ def main():
 
     # check eof
     IN_BAM = args.i
-    f = open(IN_BAM, 'rb')
+    f = _io.open(IN_BAM, 'rb')
+    
 
     f.seek(os.path.getsize(IN_BAM) - 28)
     EOF = [format(n, '02x') for n in f.read()]
