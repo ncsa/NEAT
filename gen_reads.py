@@ -37,6 +37,7 @@ from source.input_file_reader import parse_input_mutation_model
 from source.ReadContainer import ReadContainer
 from source.constants_and_models import ALLOWED_NUCL
 
+
 def main(raw_args=None):
     """//////////////////////////////////////////////////
     ////////////    PARSE INPUT ARGUMENTS    ////////////

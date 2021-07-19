@@ -62,7 +62,7 @@ aln_N = 0
 while True:
     aln_N += 1
     block_size = get_bytes('<i', 1)
-    if block_size == None:
+    if block_size is None:
         break
     print('[' + str(aln_N) + ']:', 'block_size:', block_size)
     print('-- refID:', get_bytes('<i', 1))
