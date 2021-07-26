@@ -13,6 +13,7 @@
 
 import sys
 import argparse
+import gzip
 from Bio import SeqIO
 
 
@@ -38,8 +39,13 @@ def main():
     """
     
     args = func_parser();
+
+    inp_file = args.i
+    
     try:
-        for record in SeqIO.parse(args.i, "fastq"):
+        if inp_file[-3:] == '.gz':
+            inp_file = gzip.open(inp_file,'rt')
+        for record in SeqIO.parse(inp_file, "fastq"):
             pass
         print('\n' + args.i +' Verified!')
     except Exception as e: 
