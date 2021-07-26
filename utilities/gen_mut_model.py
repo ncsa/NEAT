@@ -2,11 +2,11 @@
 #
 #
 #   gen_mut_model.py
-#   What's the purpose of the file?
+#   Learns the mutation model from input data from the trinucleotide context
 #
-#   Input -> Output      
+#   Takes fasta and VCF files as input and generates a pickle file   
 #
-#   Usage: 
+#   Usage: python gen_mut_model.py -r /path/to/reference.fasta -m /path/to/mutations.vcf -o /path/to/output/and/prefix
 #
 #
 # Python 3 ready
@@ -17,6 +17,7 @@ import sys
 import re
 import pickle
 import argparse
+from matplotlib.pyplot import boxplot
 import numpy as np
 from Bio import SeqIO
 import pandas as pd
@@ -30,8 +31,10 @@ import pandas as pd
 def cluster_list(list_to_cluster: list, delta: float) -> list:
     """
     Clusters a sorted list
+
     :param list_to_cluster: a sorted list
     :param delta: the value to compare list items to
+
     :return: a clustered list of values
     """
     out_list = [[list_to_cluster[0]]]
@@ -47,8 +50,218 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
         previous_value = item
     return out_list
 
+   
+def compute_frequencies(SNP_COUNT: int, INDEL_COUNT: dict, TOTAL_REFLEN: int, is_bed: bool, my_bed: pd.core.frame.DataFrame, total_var: int) -> (float, float, float, float):
+    """
+    Compute average snp and indel frequencies
+    """
+    SNP_FREQ = SNP_COUNT / float(total_var)
+    AVG_INDEL_FREQ = 1. - SNP_FREQ
+    INDEL_FREQ = {k: (INDEL_COUNT[k] / float(total_var)) / AVG_INDEL_FREQ for k in INDEL_COUNT.keys()}
+
+    if is_bed:
+        track_sum = float(my_bed['track_len'].sum())
+        AVG_MUT_RATE = total_var / track_sum
+    else:
+        AVG_MUT_RATE = total_var / float(TOTAL_REFLEN)
+    return SNP_FREQ,AVG_INDEL_FREQ,INDEL_FREQ,AVG_MUT_RATE
+
+def compute_probabilities(VALID_NUCL: list, TRINUC_REF_COUNT: dict, TRINUC_TRANSITION_COUNT: dict, SNP_TRANSITION_COUNT: dict, TRINUC_MUT_PROB: dict, TRINUC_TRANS_PROBS: dict, SNP_TRANS_FREQ: dict) -> None:
+    """
+    Computes:
+    - Frequency that each trinuc mutated into anything else: TRINUC_MUT_PROB 
+    - Frequency that a trinuc mutates into another trinuc, given that it mutated: TRINUC_TRANS_PROBS 
+    - Frequency of snp transitions, given a snp occurs: SNP_TRANS_FREQ
+    """
+    for trinuc in sorted(TRINUC_REF_COUNT.keys()):
+        my_count = 0
+        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
+            if k[0] == trinuc:
+                my_count += TRINUC_TRANSITION_COUNT[k]
+        TRINUC_MUT_PROB[trinuc] = my_count / float(TRINUC_REF_COUNT[trinuc])
+        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
+            if k[0] == trinuc:
+                TRINUC_TRANS_PROBS[k] = TRINUC_TRANSITION_COUNT[k] / float(my_count)
+
+    for n1 in VALID_NUCL:
+        rolling_tot = sum([SNP_TRANSITION_COUNT[(n1, n2)] for n2 in VALID_NUCL if (n1, n2) in SNP_TRANSITION_COUNT])
+        for n2 in VALID_NUCL:
+            key2 = (n1, n2)
+            if key2 in SNP_TRANSITION_COUNT:
+                SNP_TRANS_FREQ[key2] = SNP_TRANSITION_COUNT[key2] / float(rolling_tot)
+
+def counts_from_file(ref: str, save_trinuc: bool, TRINUC_REF_COUNT: dict, is_bed: bool) -> None:
+    """
+    Read in ref counts from file now if we didn't count ref trinucs before
+    Otherwise, save trinuc counts to file, if desired
+    """
+    
+    if os.path.isfile(ref + '.trinucCounts'):
+        print('reading pre-computed trinuc counts...')
+        f = open(ref + '.trinucCounts', 'r')
+        for line in f:
+            splt = line.strip().split('\t')
+            TRINUC_REF_COUNT[splt[0]] = int(splt[1])
+        f.close()
+    
+    elif save_trinuc:
+        if is_bed:
+            print('unable to save trinuc counts to file because using input bed region...')
+        else:
+            print('saving trinuc counts to file...')
+            f = open(ref + '.trinucCounts', 'w')
+            for trinuc in sorted(TRINUC_REF_COUNT.keys()):
+                f.write(trinuc + '\t' + str(TRINUC_REF_COUNT[trinuc]) + '\n')
+            f.close()
+
+def count_trinucleotides(VALID_TRINUC: list, ref: str, TRINUC_REF_COUNT: dict, is_bed: bool, reference: dict, matching_chromosomes: list, matching_bed: pd.core.frame.DataFrame) -> None:
+    """
+    Count trinucleotides in reference
+    """
+    print('Counting trinucleotides in reference...')
+
+    if is_bed:
+        print("since you're using a bed input, we have to count trinucs in bed region even if "
+              "you already have a trinuc count file for the reference...")
+        for ref_name in matching_chromosomes:
+            sub_bed = matching_bed[matching_bed['chrom'] == ref_name]
+            sub_regions = sub_bed['coords'].to_list()
+            for sr in sub_regions:
+                sub_seq = reference[ref_name][sr[0]: sr[1]].seq
+                for trinuc in VALID_TRINUC:
+                    if trinuc not in TRINUC_REF_COUNT:
+                        TRINUC_REF_COUNT[trinuc] = 0
+                    TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+
+    elif not os.path.isfile(ref + '.trinucCounts'):
+        for ref_name in matching_chromosomes:
+            sub_seq = reference[ref_name].seq
+            for trinuc in VALID_TRINUC:
+                if trinuc not in TRINUC_REF_COUNT:
+                    TRINUC_REF_COUNT[trinuc] = 0
+                TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+    else:
+        print('Found trinucCounts file, using that.')
+
+
+def check_matching_regions(is_bed: bool, my_bed:  pd.core.frame.DataFrame, variant_chroms: list) -> pd.core.frame.DataFrame:
+    """
+    Check if bed and VCF has matching regions
+    This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
+    """
+
+    if is_bed:
+        bed_chroms = list(set(my_bed['chrom']))
+        matching_bed_keys = list(set(bed_chroms) & set(variant_chroms))
+        try:
+            matching_bed = my_bed[my_bed['chrom'].isin(matching_bed_keys)]
+        except ValueError:
+            print('Problem matching bed chromosomes to variant file.')
+
+        if matching_bed.empty:
+            print("There is no overlap between bed and variant file. "
+                  "This could be a chromosome naming problem")
+            exit(1)
+        return matching_bed
+    else:
+        return None
+
+
+def checking_matches(variants: pd.core.frame.DataFrame, matching_chromosomes: list) -> pd.core.frame.DataFrame:
+    """ 
+    Check to make sure there are some matching chromosomes between VCF and Fasta
+    """
+    if not matching_chromosomes:
+        print("Found no chromosomes in common between VCF and Fasta, so no model will be produced. "
+              "Please compare the chromosome names and try again.")
+        sys.exit(0)
+
+    # Double check that there are matches
+    try:
+        matching_variants = variants[variants[0].isin(matching_chromosomes)]
+    except ValueError:
+        print("Problem matching variants with reference. No model produced.")
+        sys.exit(0)
+
+    if matching_variants.empty:
+        print("There is no overlap between reference and variant file. No model will be produced.")
+        sys.exit(0)
+    return matching_variants
+
+def match(vcf: str, reference: dict) -> (pd.core.frame.DataFrame, list, list):
+    """
+    Finds the matching chromosomes
+    """
+    # Process VCF file. First check if it's been entered as a TSV
+    if vcf[-3:] == 'tsv':
+        print("Warning! TSV file must follow VCF specifications.")
+
+    # Pre-parsing to find all the matching chromosomes between ref and vcf
+    print('Processing VCF file...')
+    try:
+        variants = pd.read_csv(vcf, sep='\t', comment='#', index_col=None, header=None)
+    except ValueError:
+        print("VCF must be in standard VCF format with tab-separated columns")
+
+    # Narrow chromosomes to those matching the reference
+    # This is in part to make sure the names match
+    variant_chroms = variants[0].to_list()
+    variant_chroms = list(set(variant_chroms))
+    matching_chromosomes = []
+    for ref_name in reference.keys():
+        if ref_name not in variant_chroms:
+            continue
+        else:
+            matching_chromosomes.append(ref_name)
+    return variants,variant_chroms,matching_chromosomes
+
+def filter_genomes(REF_WHITELIST: list, ref: str, use_whitelist: bool) -> dict:
+    """
+    Filter out actual human genomes from scaffolding
+    """
+    print('Processing reference...')
+    try:
+        reference = SeqIO.to_dict(SeqIO.parse(ref, "fasta"))
+    except ValueError:
+        print("Problems parsing reference file. Ensure reference is in proper fasta format")
+
+    if use_whitelist:
+        for key in reference.keys():
+            if key not in REF_WHITELIST:
+                del reference[key]
+        if not reference.keys():
+            print(f"No contigs on the white list, so no model will be produced.")
+            print(f"To use white list, contigs must be named as: {REF_WHITELIST}")
+            sys.exit(0)
+    return reference
+
+def process_bedfile(args: argparse.Namespace) -> (bool, pd.core.frame.DataFrame):
+    """
+    Parse bedfile to read the contents into a Pandas Dataframe
+    """
+    is_bed = False
+    my_bed = None
+    if args.b is not None:
+        print('Processing bed file...')
+        try:
+            my_bed = pd.read_csv(args.b, sep='\t', header=None, index_col=None)
+            is_bed = True
+        except ValueError:
+            print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
+
+        my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
+        # Adding a couple of columns we'll need for later calculations
+        my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
+        my_bed['track_len'] = my_bed.end - my_bed.start + 1
+    return is_bed,my_bed
+
 
 def func_parser() -> argparse.Namespace:
+    """
+    Defines what arguments the program requires, and argparse will figure out how to parse those out of sys.argv
+
+    :return: an instance of the argparse class that can be used to access command line arguments
+    """
     parser = argparse.ArgumentParser(description='gen_mut_model.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-r', type=str, required=True, metavar='/path/to/reference.fasta',
@@ -72,11 +285,6 @@ def func_parser() -> argparse.Namespace:
                         help='Do not save common snps + high mut regions')
     args = parser.parse_args()
     return args
-
-
-#####################################
-#				main()				#
-#####################################
 
 
 def main():
@@ -163,6 +371,7 @@ def main():
 
     # Now we check that the bed and vcf have matching regions
     matching_bed = check_matching_regions(is_bed, my_bed, variant_chroms)
+    
 
     # Count Trinucleotides in reference, based on bed or not
     count_trinucleotides(VALID_TRINUC, ref, TRINUC_REF_COUNT, is_bed, reference, matching_chromosomes, matching_bed)
@@ -333,9 +542,6 @@ def main():
             'Warning: Some trinucleotides transitions were not encountered in the input dataset, '
             'probabilities of 0.0 have been assigned to these events.')
 
-    #
-    #	print some stuff
-    #
     for k in sorted(TRINUC_MUT_PROB.keys()):
         print('p(' + k + ' mutates) =', TRINUC_MUT_PROB[k])
 
@@ -357,9 +563,8 @@ def main():
     print('overall average mut rate:', AVG_MUT_RATE)
     print('total variants processed:', total_var)
 
-    #
+
     # save variables to file
-    #
     if skip_common:
         OUT_DICT = {'AVG_MUT_RATE': AVG_MUT_RATE,
                     'SNP_FREQ': SNP_FREQ,
@@ -377,182 +582,6 @@ def main():
                     'COMMON_VARIANTS': COMMON_VARIANTS,
                     'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
     pickle.dump(OUT_DICT, open(out_pickle, "wb"))
-
-    
-def compute_frequencies(SNP_COUNT, INDEL_COUNT, TOTAL_REFLEN, is_bed, my_bed, total_var):
-    SNP_FREQ = SNP_COUNT / float(total_var)
-    AVG_INDEL_FREQ = 1. - SNP_FREQ
-    INDEL_FREQ = {k: (INDEL_COUNT[k] / float(total_var)) / AVG_INDEL_FREQ for k in INDEL_COUNT.keys()}
-
-    if is_bed:
-        track_sum = float(my_bed['track_len'].sum())
-        AVG_MUT_RATE = total_var / track_sum
-    else:
-        AVG_MUT_RATE = total_var / float(TOTAL_REFLEN)
-    return SNP_FREQ,AVG_INDEL_FREQ,INDEL_FREQ,AVG_MUT_RATE
-
-def compute_probabilities(VALID_NUCL, TRINUC_REF_COUNT, TRINUC_TRANSITION_COUNT, SNP_TRANSITION_COUNT, TRINUC_MUT_PROB, TRINUC_TRANS_PROBS, SNP_TRANS_FREQ):
-    for trinuc in sorted(TRINUC_REF_COUNT.keys()):
-        my_count = 0
-        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
-            if k[0] == trinuc:
-                my_count += TRINUC_TRANSITION_COUNT[k]
-        TRINUC_MUT_PROB[trinuc] = my_count / float(TRINUC_REF_COUNT[trinuc])
-        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
-            if k[0] == trinuc:
-                TRINUC_TRANS_PROBS[k] = TRINUC_TRANSITION_COUNT[k] / float(my_count)
-
-    for n1 in VALID_NUCL:
-        rolling_tot = sum([SNP_TRANSITION_COUNT[(n1, n2)] for n2 in VALID_NUCL if (n1, n2) in SNP_TRANSITION_COUNT])
-        for n2 in VALID_NUCL:
-            key2 = (n1, n2)
-            if key2 in SNP_TRANSITION_COUNT:
-                SNP_TRANS_FREQ[key2] = SNP_TRANSITION_COUNT[key2] / float(rolling_tot)
-
-def counts_from_file(ref, save_trinuc, TRINUC_REF_COUNT, is_bed):
-    # if we didn't count ref trinucs because we found file, read in ref counts from file now
-    if os.path.isfile(ref + '.trinucCounts'):
-        print('reading pre-computed trinuc counts...')
-        f = open(ref + '.trinucCounts', 'r')
-        for line in f:
-            splt = line.strip().split('\t')
-            TRINUC_REF_COUNT[splt[0]] = int(splt[1])
-        f.close()
-    # otherwise, save trinuc counts to file, if desired
-    elif save_trinuc:
-        if is_bed:
-            print('unable to save trinuc counts to file because using input bed region...')
-        else:
-            print('saving trinuc counts to file...')
-            f = open(ref + '.trinucCounts', 'w')
-            for trinuc in sorted(TRINUC_REF_COUNT.keys()):
-                f.write(trinuc + '\t' + str(TRINUC_REF_COUNT[trinuc]) + '\n')
-            f.close()
-
-def count_trinucleotides(VALID_TRINUC, ref, TRINUC_REF_COUNT, is_bed, reference, matching_chromosomes, matching_bed):
-    print('Counting trinucleotides in reference...')
-
-    if is_bed:
-        print("since you're using a bed input, we have to count trinucs in bed region even if "
-              "you already have a trinuc count file for the reference...")
-        for ref_name in matching_chromosomes:
-            sub_bed = matching_bed[matching_bed['chrom'] == ref_name]
-            sub_regions = sub_bed['coords'].to_list()
-            for sr in sub_regions:
-                sub_seq = reference[ref_name][sr[0]: sr[1]].seq
-                for trinuc in VALID_TRINUC:
-                    if trinuc not in TRINUC_REF_COUNT:
-                        TRINUC_REF_COUNT[trinuc] = 0
-                    TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
-
-    elif not os.path.isfile(ref + '.trinucCounts'):
-        for ref_name in matching_chromosomes:
-            sub_seq = reference[ref_name].seq
-            for trinuc in VALID_TRINUC:
-                if trinuc not in TRINUC_REF_COUNT:
-                    TRINUC_REF_COUNT[trinuc] = 0
-                TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
-    else:
-        print('Found trinucCounts file, using that.')
-
-
-def check_matching_regions(is_bed, my_bed, variant_chroms):
-    # This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
-    if is_bed:
-        bed_chroms = list(set(my_bed['chrom']))
-        matching_bed_keys = list(set(bed_chroms) & set(variant_chroms))
-        try:
-            matching_bed = my_bed[my_bed['chrom'].isin(matching_bed_keys)]
-        except ValueError:
-            print('Problem matching bed chromosomes to variant file.')
-
-        if matching_bed.empty:
-            print("There is no overlap between bed and variant file. "
-                  "This could be a chromosome naming problem")
-            exit(1)
-        return matching_bed
-    else:
-        return None
-
-
-def checking_matches(variants, matching_chromosomes):
-    # Check to make sure there are some matches
-    if not matching_chromosomes:
-        print("Found no chromosomes in common between VCF and Fasta, so no model will be produced. "
-              "Please compare the chromosome names and try again.")
-        sys.exit(0)
-
-    # Double check that there are matches
-    try:
-        matching_variants = variants[variants[0].isin(matching_chromosomes)]
-    except ValueError:
-        print("Problem matching variants with reference. No model produced.")
-        sys.exit(0)
-
-    if matching_variants.empty:
-        print("There is no overlap between reference and variant file. No model will be produced.")
-        sys.exit(0)
-    return matching_variants
-
-def match(vcf, reference):
-    # Process VCF file. First check if it's been entered as a TSV
-    if vcf[-3:] == 'tsv':
-        print("Warning! TSV file must follow VCF specifications.")
-
-    # Pre-parsing to find all the matching chromosomes between ref and vcf
-    print('Processing VCF file...')
-    try:
-        variants = pd.read_csv(vcf, sep='\t', comment='#', index_col=None, header=None)
-    except ValueError:
-        print("VCF must be in standard VCF format with tab-separated columns")
-
-    # Narrow chromosomes to those matching the reference
-    # This is in part to make sure the names match
-    variant_chroms = variants[0].to_list()
-    variant_chroms = list(set(variant_chroms))
-    matching_chromosomes = []
-    for ref_name in reference.keys():
-        if ref_name not in variant_chroms:
-            continue
-        else:
-            matching_chromosomes.append(ref_name)
-    return variants,variant_chroms,matching_chromosomes
-
-def filter_genomes(REF_WHITELIST, ref, use_whitelist):
-    print('Processing reference...')
-    try:
-        reference = SeqIO.to_dict(SeqIO.parse(ref, "fasta"))
-    except ValueError:
-        print("Problems parsing reference file. Ensure reference is in proper fasta format")
-
-    # Filter out actual human genomes from scaffolding
-    if use_whitelist:
-        for key in reference.keys():
-            if key not in REF_WHITELIST:
-                del reference[key]
-        if not reference.keys():
-            print(f"No contigs on the white list, so no model will be produced.")
-            print(f"To use white list, contigs must be named as: {REF_WHITELIST}")
-            sys.exit(0)
-    return reference
-
-def process_bedfile(args):
-    is_bed = False
-    my_bed = None
-    if args.b is not None:
-        print('Processing bed file...')
-        try:
-            my_bed = pd.read_csv(args.b, sep='\t', header=None, index_col=None)
-            is_bed = True
-        except ValueError:
-            print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
-
-        my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
-        # Adding a couple of columns we'll need for later calculations
-        my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
-        my_bed['track_len'] = my_bed.end - my_bed.start + 1
-    return is_bed,my_bed
-
 
 if __name__ == "__main__":
     main()
