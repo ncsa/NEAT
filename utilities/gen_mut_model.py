@@ -51,46 +51,51 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
     return out_list
 
    
-def compute_frequencies(SNP_COUNT: int, INDEL_COUNT: dict, TOTAL_REFLEN: int, is_bed: bool, my_bed: pd.core.frame.DataFrame, total_var: int) -> (float, float, float, float):
+def compute_frequencies(snp_count: int, indel_count: dict, total_reflen: int, is_bed: bool,
+                        my_bed: pd.DataFrame, total_var: int) -> (float, float, float, float):
     """
     Compute average snp and indel frequencies
     """
-    SNP_FREQ = SNP_COUNT / float(total_var)
-    AVG_INDEL_FREQ = 1. - SNP_FREQ
-    INDEL_FREQ = {k: (INDEL_COUNT[k] / float(total_var)) / AVG_INDEL_FREQ for k in INDEL_COUNT.keys()}
+    snp_freq = snp_count / float(total_var)
+    avg_indel_freq = 1. - snp_freq
+    indel_freq = {k: (indel_count[k] / float(total_var)) / avg_indel_freq for k in indel_count.keys()}
 
     if is_bed:
         track_sum = float(my_bed['track_len'].sum())
-        AVG_MUT_RATE = total_var / track_sum
+        avg_mut_rate = total_var / track_sum
     else:
-        AVG_MUT_RATE = total_var / float(TOTAL_REFLEN)
-    return SNP_FREQ,AVG_INDEL_FREQ,INDEL_FREQ,AVG_MUT_RATE
+        avg_mut_rate = total_var / float(total_reflen)
+    return snp_freq, avg_indel_freq, indel_freq, avg_mut_rate
 
-def compute_probabilities(VALID_NUCL: list, TRINUC_REF_COUNT: dict, TRINUC_TRANSITION_COUNT: dict, SNP_TRANSITION_COUNT: dict, TRINUC_MUT_PROB: dict, TRINUC_TRANS_PROBS: dict, SNP_TRANS_FREQ: dict) -> None:
+
+def compute_probabilities(valid_nucl: list, trinuc_ref_count: dict, trinuc_transition_count: dict,
+                          snp_transition_count: dict, trinuc_mut_prob: dict, trinuc_trans_probs: dict,
+                          snp_trans_freq: dict) -> None:
     """
     Computes:
     - Frequency that each trinuc mutated into anything else: TRINUC_MUT_PROB 
     - Frequency that a trinuc mutates into another trinuc, given that it mutated: TRINUC_TRANS_PROBS 
     - Frequency of snp transitions, given a snp occurs: SNP_TRANS_FREQ
     """
-    for trinuc in sorted(TRINUC_REF_COUNT.keys()):
+    for trinuc in sorted(trinuc_ref_count.keys()):
         my_count = 0
-        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
+        for k in sorted(trinuc_transition_count.keys()):
             if k[0] == trinuc:
-                my_count += TRINUC_TRANSITION_COUNT[k]
-        TRINUC_MUT_PROB[trinuc] = my_count / float(TRINUC_REF_COUNT[trinuc])
-        for k in sorted(TRINUC_TRANSITION_COUNT.keys()):
+                my_count += trinuc_transition_count[k]
+        trinuc_mut_prob[trinuc] = my_count / float(trinuc_ref_count[trinuc])
+        for k in sorted(trinuc_transition_count.keys()):
             if k[0] == trinuc:
-                TRINUC_TRANS_PROBS[k] = TRINUC_TRANSITION_COUNT[k] / float(my_count)
+                trinuc_trans_probs[k] = trinuc_transition_count[k] / float(my_count)
 
-    for n1 in VALID_NUCL:
-        rolling_tot = sum([SNP_TRANSITION_COUNT[(n1, n2)] for n2 in VALID_NUCL if (n1, n2) in SNP_TRANSITION_COUNT])
-        for n2 in VALID_NUCL:
+    for n1 in valid_nucl:
+        rolling_tot = sum([snp_transition_count[(n1, n2)] for n2 in valid_nucl if (n1, n2) in snp_transition_count])
+        for n2 in valid_nucl:
             key2 = (n1, n2)
-            if key2 in SNP_TRANSITION_COUNT:
-                SNP_TRANS_FREQ[key2] = SNP_TRANSITION_COUNT[key2] / float(rolling_tot)
+            if key2 in snp_transition_count:
+                snp_trans_freq[key2] = snp_transition_count[key2] / float(rolling_tot)
 
-def counts_from_file(ref: str, save_trinuc: bool, TRINUC_REF_COUNT: dict, is_bed: bool) -> None:
+
+def counts_from_file(ref: str, save_trinuc: bool, trinuc_ref_count: dict, is_bed: bool) -> None:
     """
     Read in ref counts from file now if we didn't count ref trinucs before
     Otherwise, save trinuc counts to file, if desired
@@ -101,7 +106,7 @@ def counts_from_file(ref: str, save_trinuc: bool, TRINUC_REF_COUNT: dict, is_bed
         f = open(ref + '.trinucCounts', 'r')
         for line in f:
             splt = line.strip().split('\t')
-            TRINUC_REF_COUNT[splt[0]] = int(splt[1])
+            trinuc_ref_count[splt[0]] = int(splt[1])
         f.close()
     
     elif save_trinuc:
@@ -110,11 +115,13 @@ def counts_from_file(ref: str, save_trinuc: bool, TRINUC_REF_COUNT: dict, is_bed
         else:
             print('saving trinuc counts to file...')
             f = open(ref + '.trinucCounts', 'w')
-            for trinuc in sorted(TRINUC_REF_COUNT.keys()):
-                f.write(trinuc + '\t' + str(TRINUC_REF_COUNT[trinuc]) + '\n')
+            for trinuc in sorted(trinuc_ref_count.keys()):
+                f.write(trinuc + '\t' + str(trinuc_ref_count[trinuc]) + '\n')
             f.close()
 
-def count_trinucleotides(VALID_TRINUC: list, ref: str, TRINUC_REF_COUNT: dict, is_bed: bool, reference: dict, matching_chromosomes: list, matching_bed: pd.core.frame.DataFrame) -> None:
+
+def count_trinucleotides(valid_trinuc: list, ref: str, trinuc_ref_count: dict, is_bed: bool, reference: dict,
+                         matching_chromosomes: list, matching_bed: pd.DataFrame) -> None:
     """
     Count trinucleotides in reference
     """
@@ -128,23 +135,23 @@ def count_trinucleotides(VALID_TRINUC: list, ref: str, TRINUC_REF_COUNT: dict, i
             sub_regions = sub_bed['coords'].to_list()
             for sr in sub_regions:
                 sub_seq = reference[ref_name][sr[0]: sr[1]].seq
-                for trinuc in VALID_TRINUC:
-                    if trinuc not in TRINUC_REF_COUNT:
-                        TRINUC_REF_COUNT[trinuc] = 0
-                    TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+                for trinuc in valid_trinuc:
+                    if trinuc not in trinuc_ref_count:
+                        trinuc_ref_count[trinuc] = 0
+                    trinuc_ref_count[trinuc] += sub_seq.count_overlap(trinuc)
 
     elif not os.path.isfile(ref + '.trinucCounts'):
         for ref_name in matching_chromosomes:
             sub_seq = reference[ref_name].seq
-            for trinuc in VALID_TRINUC:
-                if trinuc not in TRINUC_REF_COUNT:
-                    TRINUC_REF_COUNT[trinuc] = 0
-                TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+            for trinuc in valid_trinuc:
+                if trinuc not in trinuc_ref_count:
+                    trinuc_ref_count[trinuc] = 0
+                trinuc_ref_count[trinuc] += sub_seq.count_overlap(trinuc)
     else:
         print('Found trinucCounts file, using that.')
 
 
-def check_matching_regions(is_bed: bool, my_bed:  pd.core.frame.DataFrame, variant_chroms: list) -> pd.core.frame.DataFrame:
+def check_matching_regions(is_bed: bool, my_bed:  pd.DataFrame, variant_chroms: list) -> pd.DataFrame:
     """
     Check if bed and VCF has matching regions
     This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
@@ -167,7 +174,7 @@ def check_matching_regions(is_bed: bool, my_bed:  pd.core.frame.DataFrame, varia
         return None
 
 
-def checking_matches(variants: pd.core.frame.DataFrame, matching_chromosomes: list) -> pd.core.frame.DataFrame:
+def checking_matches(variants: pd.DataFrame, matching_chromosomes: list) -> pd.DataFrame:
     """ 
     Check to make sure there are some matching chromosomes between VCF and Fasta
     """
@@ -188,7 +195,8 @@ def checking_matches(variants: pd.core.frame.DataFrame, matching_chromosomes: li
         sys.exit(0)
     return matching_variants
 
-def match(vcf: str, reference: dict) -> (pd.core.frame.DataFrame, list, list):
+
+def match(vcf: str, reference: dict) -> (pd.DataFrame, list, list):
     """
     Finds the matching chromosomes
     """
@@ -213,9 +221,10 @@ def match(vcf: str, reference: dict) -> (pd.core.frame.DataFrame, list, list):
             continue
         else:
             matching_chromosomes.append(ref_name)
-    return variants,variant_chroms,matching_chromosomes
+    return variants, variant_chroms, matching_chromosomes
 
-def filter_genomes(REF_WHITELIST: list, ref: str, use_whitelist: bool) -> dict:
+
+def filter_genomes(ref_whitelist: list, ref: str, use_whitelist: bool) -> dict:
     """
     Filter out actual human genomes from scaffolding
     """
@@ -227,15 +236,16 @@ def filter_genomes(REF_WHITELIST: list, ref: str, use_whitelist: bool) -> dict:
 
     if use_whitelist:
         for key in reference.keys():
-            if key not in REF_WHITELIST:
+            if key not in ref_whitelist:
                 del reference[key]
         if not reference.keys():
             print(f"No contigs on the white list, so no model will be produced.")
-            print(f"To use white list, contigs must be named as: {REF_WHITELIST}")
+            print(f"To use white list, contigs must be named as: {ref_whitelist}")
             sys.exit(0)
     return reference
 
-def process_bedfile(args: argparse.Namespace) -> (bool, pd.core.frame.DataFrame):
+
+def process_bedfile(args: argparse.Namespace) -> (bool, pd.DataFrame):
     """
     Parse bedfile to read the contents into a Pandas Dataframe
     """
@@ -253,7 +263,7 @@ def process_bedfile(args: argparse.Namespace) -> (bool, pd.core.frame.DataFrame)
         # Adding a couple of columns we'll need for later calculations
         my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
         my_bed['track_len'] = my_bed.end - my_bed.start + 1
-    return is_bed,my_bed
+    return is_bed, my_bed
 
 
 def func_parser() -> argparse.Namespace:
@@ -328,7 +338,6 @@ def main():
 
     variants, variant_chroms, matching_chromosomes = match(vcf, reference)
 
-   
     matching_variants = checking_matches(variants, matching_chromosomes)
 
     # Rename header in dataframe for processing
@@ -521,12 +530,14 @@ def main():
     # frequency of snp transitions, given a snp occurs.
     SNP_TRANS_FREQ = {}
 
-    compute_probabilities(VALID_NUCL, TRINUC_REF_COUNT, TRINUC_TRANSITION_COUNT, SNP_TRANSITION_COUNT, TRINUC_MUT_PROB, TRINUC_TRANS_PROBS, SNP_TRANS_FREQ)
+    compute_probabilities(VALID_NUCL, TRINUC_REF_COUNT, TRINUC_TRANSITION_COUNT, SNP_TRANSITION_COUNT,
+                          TRINUC_MUT_PROB, TRINUC_TRANS_PROBS, SNP_TRANS_FREQ)
 
     # compute average snp and indel frequencies
-    SNP_FREQ, AVG_INDEL_FREQ, INDEL_FREQ, AVG_MUT_RATE = compute_frequencies(SNP_COUNT, INDEL_COUNT, TOTAL_REFLEN, is_bed, my_bed, total_var)
+    SNP_FREQ, AVG_INDEL_FREQ, INDEL_FREQ, AVG_MUT_RATE = compute_frequencies(SNP_COUNT, INDEL_COUNT,
+                                                                             TOTAL_REFLEN, is_bed, my_bed, total_var)
 
-    #	if values weren't found in data, appropriately append null entries
+    # if values weren't found in data, appropriately append null entries
     print_trinuc_warning = False
     for trinuc in VALID_TRINUC:
         trinuc_mut = [trinuc[0] + n + trinuc[2] for n in VALID_NUCL if n != trinuc[1]]
@@ -566,14 +577,14 @@ def main():
 
     # save variables to file
     if skip_common:
-        OUT_DICT = {'AVG_MUT_RATE': AVG_MUT_RATE,
+        out_dict = {'AVG_MUT_RATE': AVG_MUT_RATE,
                     'SNP_FREQ': SNP_FREQ,
                     'SNP_TRANS_FREQ': SNP_TRANS_FREQ,
                     'INDEL_FREQ': INDEL_FREQ,
                     'TRINUC_MUT_PROB': TRINUC_MUT_PROB,
                     'TRINUC_TRANS_PROBS': TRINUC_TRANS_PROBS}
     else:
-        OUT_DICT = {'AVG_MUT_RATE': AVG_MUT_RATE,
+        out_dict = {'AVG_MUT_RATE': AVG_MUT_RATE,
                     'SNP_FREQ': SNP_FREQ,
                     'SNP_TRANS_FREQ': SNP_TRANS_FREQ,
                     'INDEL_FREQ': INDEL_FREQ,
@@ -581,7 +592,8 @@ def main():
                     'TRINUC_TRANS_PROBS': TRINUC_TRANS_PROBS,
                     'COMMON_VARIANTS': COMMON_VARIANTS,
                     'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
-    pickle.dump(OUT_DICT, open(out_pickle, "wb"))
+    pickle.dump(out_dict, open(out_pickle, "wb"))
+
 
 if __name__ == "__main__":
     main()
