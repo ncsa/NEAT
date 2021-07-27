@@ -109,7 +109,10 @@ def calculate_coverage(bin_dict: dict, window: int) -> float:
             running_total += my_len
             bin_dict[k] = my_mean
 
-    return all_mean / float(running_total)
+    if running_total:
+        return all_mean / float(running_total)
+    else:
+        return 0.0
 
 
 def func_parser() -> argparse.Namespace:
