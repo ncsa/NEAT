@@ -17,7 +17,6 @@ import sys
 import re
 import pickle
 import argparse
-from matplotlib.pyplot import boxplot
 import numpy as np
 from Bio import SeqIO
 import pandas as pd
@@ -289,7 +288,7 @@ def func_parser() -> argparse.Namespace:
     # TODO just have the contigs to process be an input
     parser.add_argument('--use-whitelist', required=False, action='store_true', default=False,
                         help='To skip unnumbered scaffolds in human references (this will only process contigs named '
-                             '"chr1", "chr1",...,"chr23", "chrX", etc., as commonly used int human chromosomes. Leave'
+                             '"chr1", "chr1",...,"chr23", "chrX", etc., as commonly used in human chromosomes. Leave'
                              'this flag off to process all contigs regardless of name.')
     parser.add_argument('--skip-common', required=False, action='store_true', default=False,
                         help='Do not save common snps + high mut regions')
@@ -568,12 +567,10 @@ def main():
     for k in sorted(SNP_TRANS_FREQ.keys()):
         print('p(' + k[0] + ' --> ' + k[1] + ' | SNP occurs) =', SNP_TRANS_FREQ[k])
 
-
     print('p(snp)   =', SNP_FREQ)
     print('p(indel) =', AVG_INDEL_FREQ)
     print('overall average mut rate:', AVG_MUT_RATE)
     print('total variants processed:', total_var)
-
 
     # save variables to file
     if skip_common:
