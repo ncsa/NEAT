@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 #
 #
-#      Compute Fragment Length Model for gen_reads.py
-#                  compute_fraglen.py
+#   compute_fraglen.py   
+#   Compute Fragment Length Model for gen_reads.py
+#                  
+#   Takes as input path to a BAM or SAM file and outputs a pickle file with fragment length statistics for input
+#   into gen_reads.py
+#
+#   Usage: python compute_fraglen.py -i /path/to/file.bam(.sam) -o output_prefix
 #
 #
-#      Usage: samtools view normal.bam | python compute_fraglen.py
-#
-#
-# Upgraded 5/6/2020 to match Python 3 standards and refactored for easier reading
+# Python 3 ready
 
 import pickle
 import argparse
@@ -41,14 +43,14 @@ def median(datalist: list) -> float:
 
     # Once we've found the midpoint, we calculate the median, which is just the middle value if there are an
     # odd number of values, or the average of the two middle values if there are an even number
+    return_median = datalist[midpoint]
     if len(datalist) % 2 == 0:
-        median = (datalist[midpoint] + datalist[midpoint-1])/2
-    else:
-        median = datalist[midpoint]
-    return median
+        return_median = (datalist[midpoint] + datalist[midpoint-1])/2
+
+    return return_median
 
 
-def median_absolute_deviation(datalist: list) -> float:
+def median_absolute_deviation(datalist: list) -> list:
     """
     Calculates the absolute value of the median deviation from the median for each element of of a datalist. 
     Then returns the median of these values.
@@ -79,6 +81,7 @@ def count_frags(file: str) -> list:
     :param file: A sam input file
     :return: A list of the tlens from the bam/sam file
     """
+
     filter_mapqual = 10  # only consider reads that are mapped with at least this mapping quality
     count_list = []
 
@@ -127,6 +130,24 @@ def compute_probs(datalist: list) -> (list, list):
     return values, probabilities
 
 
+def func_parser() -> argparse.Namespace:
+    """
+    Defines what arguments the program requires, and argparse will figure out how to parse those out of sys.argv
+
+    :return: an instance of the argparse class that can be used to access command line arguments
+    """
+
+    parser = argparse.ArgumentParser(description="compute_fraglen.py",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+    parser.add_argument('-i', type=str, metavar="input", required=True, default=None,
+                        help="Input file name - file.bam(.sam)")
+    parser.add_argument('-o', type=str, metavar="output", required=True, default=None, help="Prefix for output")
+
+    args = parser.parse_args()
+
+    return args
+
+
 def main():
     """
     Main function takes 2 arguments:
@@ -139,13 +160,9 @@ def main():
 
     :return: None
     """
-    parser = argparse.ArgumentParser(description="compute_fraglen.py",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
-    parser.add_argument('-i', type=str, metavar="input", required=True, default=None,
-                        help="Sam file input (samtools view name.bam > name.sam)")
-    parser.add_argument('-o', type=str, metavar="output", required=True, default=None, help="Prefix for output")
 
-    args = parser.parse_args()
+    args = func_parser() 
+
     input_file = args.i
     output_prefix = args.o
     output = output_prefix + '.p'
