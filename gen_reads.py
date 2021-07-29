@@ -15,9 +15,7 @@
 /////////////////////////////////////////////////////////////////////////////// """
 
 import sys
-import copy
 import random
-import re
 import time
 import bisect
 import pickle
@@ -25,22 +23,19 @@ import numpy as np
 import argparse
 import pathlib
 
+import pandas as pd
+from Bio import SeqIO
+
 from source.input_checking import check_file_open, is_in_range
-from source.ref_func import index_ref, read_ref
+from source.ref_func import find_n_regions
+from source.bed_func import parse_bed
 from source.vcf_func import parse_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
-from source.SequenceContainer import SequenceContainer, ReadContainer, parse_input_mutation_model
-
-"""
-Some constants needed for analysis
-"""
-
-# target window size for read sampling. How many times bigger than read/frag length
-WINDOW_TARGET_SCALE = 100
-
-# allowed nucleotides
-ALLOWED_NUCL = ['A', 'C', 'G', 'T']
+from source.SequenceContainer import SequenceContainer
+from source.input_file_reader import parse_input_mutation_model
+from source.ReadContainer import ReadContainer
+from source.constants_and_models import ALLOWED_NUCL
 
 
 def main(raw_args=None):
@@ -107,6 +102,13 @@ def main(raw_args=None):
     args = parser.parse_args(raw_args)
 
     """
+    Some constants needed for analysis
+    """
+
+    # target window size for read sampling. How many times bigger than read/frag length
+    window_target_scale = 100
+
+    """
     Set variables for processing
     """
 
@@ -119,7 +121,7 @@ def main(raw_args=None):
     # required args
     (reference, read_len, out_prefix) = (args.r, args.R, args.o)
     # various dataset parameters
-    (coverage, ploids, input_bed, discard_bed, se_model, se_rate, mut_model, mut_rate, mut_bed, input_vcf) = \
+    (coverage, ploids, target_bed, discard_bed, se_model, se_rate, mut_model, mut_rate, mut_bed, input_vcf) = \
         (args.c, args.p, args.tr, args.dr, args.e, args.E, args.m, args.M, args.Mb, args.v)
     # cancer params (disabled currently)
     # (cancer, cancer_model, cancer_purity) = (args.cancer, args.cm, args.cp)
@@ -130,7 +132,7 @@ def main(raw_args=None):
                                                                              args.discard_offtarget,
                                                                              args.force_coverage, args.rescale_qual)
     # important flags
-    (save_bam, save_vcf, fasta_instead, no_fastq) = \
+    (save_bam, save_vcf, create_fasta, no_fastq) = \
         (args.bam, args.vcf, args.fa, args.no_fastq)
 
     # sequencing model parameters
@@ -149,17 +151,21 @@ def main(raw_args=None):
     # Check that files are real, if provided
     check_file_open(reference, 'ERROR: could not open reference, {}'.format(reference), required=True)
     check_file_open(input_vcf, 'ERROR: could not open input VCF, {}'.format(input_vcf), required=False)
-    check_file_open(input_bed, 'ERROR: could not open input BED, {}'.format(input_bed), required=False)
+    check_file_open(target_bed, 'ERROR: could not open input BED, {}'.format(target_bed), required=False)
 
     # if user specified no fastq, not fasta only, and no bam and no vcf, then print error and exit.
-    if no_fastq and not fasta_instead and not save_bam and not save_vcf:
+    if no_fastq and not create_fasta and not save_bam and not save_vcf:
         print('\nERROR: No files would be written.\n')
         sys.exit(1)
+
+    if create_fasta:
+        no_fastq = True
+        print("Writing output in FASTA format...")
 
     if no_fastq:
         print('Bypassing FASTQ generation...')
 
-    only_vcf = no_fastq and save_vcf and not save_bam and not fasta_instead
+    only_vcf = no_fastq and save_vcf and not save_bam and not create_fasta
     if only_vcf:
         print('Only producing VCF output...')
 
@@ -169,7 +175,7 @@ def main(raw_args=None):
 
     # If user specified mean/std, or specified an empirical model, then the reads will be paired_ended
     # If not, then we're doing single-end reads.
-    if (fragment_size is not None and fragment_std is not None) or (fraglen_model is not None) and not fasta_instead:
+    if (fragment_size is not None and fragment_std is not None) or (fraglen_model is not None) and not create_fasta:
         paired_end = True
     else:
         paired_end = False
@@ -203,16 +209,17 @@ def main(raw_args=None):
         mut_rate = None
 
     if mut_rate != -1 and mut_rate is not None:
-        is_in_range(mut_rate, 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
+        is_in_range(mut_rate, 0.0, 0.3, 'Error: -M must be between 0 and 0.3')
 
     # sequencing error model
     if se_model is None:
         print('Using default sequencing error model.')
         se_model = sim_path / 'models/errorModel_toy.p'
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
-    else:
-        # probably need to do some sanity checking
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
+
+    # probably need to do some sanity checking
+
+    # Create read container.
+    se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
 
     # GC-bias model
     if gc_bias_model is None:
@@ -240,6 +247,7 @@ def main(raw_args=None):
             try:
                 [potential_values, potential_prob] = pickle.load(open(fraglen_model, 'rb'))
             except IOError:
+                print(sys.exc_info()[2])
                 print('\nProblem loading the empirical fragment length model.\n')
                 sys.exit(1)
 
@@ -257,8 +265,7 @@ def main(raw_args=None):
         # Using artificial fragment length distribution, if the parameters were specified
         # fragment length distribution: normal distribution that goes out to +- 6 standard deviations
         elif fragment_size is not None and fragment_std is not None:
-            print(
-                'Using artificial fragment length distribution. mean=' + str(fragment_size) + ', std=' + str(
+            print('Using artificial fragment length distribution. mean=' + str(fragment_size) + ', std=' + str(
                     fragment_std))
             if fragment_std == 0:
                 fraglen_distribution = DiscreteDistribution([1], [fragment_size], degenerate_val=fragment_size)
@@ -276,130 +283,118 @@ def main(raw_args=None):
     Process Inputs
     """
 
-    # index reference: [(0: chromosome name, 1: byte index where the contig seq begins,
-    #                    2: byte index where the next contig begins, 3: contig seq length),
-    #                    (repeat for every chrom)]
-    # TODO check to see if this might work better as a dataframe or biopython object
-    ref_index = index_ref(reference)
+    # TODO check if this index can work, maybe it's faster
+    tt = time.time()
+    print(f'reading {reference}... ')
+
+    ref_index = SeqIO.index(reference, 'fasta')
+    reference_chromosomes = list(ref_index.keys())
+    begins_with_chr = False
+    if all(k.startswith('chr') for k in reference_chromosomes):
+        begins_with_chr = True
+
+    print('{0:.3f} (sec)'.format(time.time() - tt))
 
     if paired_end:
         n_handling = ('random', fragment_size)
     else:
         n_handling = ('ignore', read_len)
 
-    indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
-    ref_list = [n[0] for n in ref_index]
-
     # parse input variants, if present
     # TODO read this in as a pandas dataframe
-    input_variants = []
-    if input_vcf is not None:
+    input_variants = None
+    printed_warning = False
+    if input_vcf:
         if cancer:
-            (sample_names, input_variants) = parse_vcf(input_vcf, tumor_normal=True, ploidy=ploids)
+            (sample_names, input_variants) = parse_vcf(input_vcf, tumor_normal=True, ploidy=ploids, debug=debug)
             # TODO figure out what these were going to be used for
-            tumor_ind = sample_names.index('TUMOR')
-            normal_ind = sample_names.index('NORMAL')
+            tumor_ind = sample_names.index('tumor_sample_split')
+            normal_ind = sample_names.index('normal_sample_split')
         else:
-            (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids)
-        for k in sorted(input_variants.keys()):
-            input_variants[k].sort()
+            (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids, debug=debug)
+
+        # Remove any chromosomes that aren't in the reference.
+        input_variants_chroms = list(set(list(input_variants.CHROM)))
+        for item in input_variants_chroms:
+            if item not in reference_chromosomes and not printed_warning:
+                print(f'Warning: ignoring all input vcf records for {item} because it is not found in the reference.')
+                print(f'\tIf this is unexpected, check that that {item} matches reference name exactly.')
+                printed_warning = True
+                input_variants = input_variants[input_variants['CHROM'] != item]
+
+        for chrom in reference_chromosomes:
+            n_skipped = [0, 0, 0]
+            if chrom in input_variants_chroms:
+                for index, row in input_variants[input_variants['CHROM'] == chrom].iterrows():
+                    span = (row['POS'], row['POS'] + len(row['REF']))
+                    # -1 because going from VCF coords to array coords
+                    r_seq = str(ref_index[chrom].seq[span[0] - 1:span[1] - 1])
+                    # Checks if there are any invalid nucleotides in the vcf items
+                    any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in
+                                       [item for sublist in row['alt_split'] for item in sublist])
+                    # Ensure reference sequence matches the nucleotide in the vcf
+                    if r_seq != row['REF']:
+                        n_skipped[0] += 1
+                        input_variants.drop(index, inplace=True)
+                        continue
+                    # Ensure that we aren't trying to insert into an N region
+                    elif 'N' in r_seq:
+                        n_skipped[1] += 1
+                        input_variants.drop(index, inplace=True)
+                        continue
+                    # Ensure that we don't insert any disallowed characters
+                    elif any_bad_nucl:
+                        n_skipped[2] += 1
+                        input_variants.drop(index, inplace=True)
+                        continue
+
+                print('found', len(input_variants), 'valid variants for ' +
+                      chrom + ' in input VCF...')
+                if any(n_skipped):
+                    print(sum(n_skipped), 'variants skipped...')
+                    print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
+                    print(' - [' + str(n_skipped[1]) + '] attempting to insert into N-region')
+                    print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
 
     # parse input targeted regions, if present
-    # TODO convert bed to pandas dataframe
-    # TODO handle case when bed doesn't have 'chr' and reference list does
-    input_regions = {}
-    if input_bed is not None:
-        try:
-            with open(input_bed, 'r') as f:
-                for line in f:
-                    if not line.startswith(('@', '#', '\n')):
-                        [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-                        if my_chr not in input_regions:
-                            input_regions[my_chr] = [-1]
-                        input_regions[my_chr].extend([int(pos1), int(pos2)])
-        except IOError:
-            print("\nProblem reading input target BED file.\n")
-            sys.exit(1)
-
-        # some validation
-        in_ref_only = [k for k in ref_list if k not in input_regions]
-        in_bed_only = [k for k in input_regions.keys() if k not in ref_list]
-        if in_ref_only:
-            print(f'Warning: Reference contains sequences not found in targeted regions BED file.')
-            if debug:
-                print(f'found in reference only: {in_ref_only}')
-        
-        if in_bed_only:
-            print(f'Warning: Targeted regions BED file contains sequence names '
-                  f'not found in reference (regions ignored).')
-            if debug:
-                print(f'Regions ignored: {in_bed_only}')
-            for key in in_bed_only:
-                del input_regions[key]
+    target_regions = parse_bed(target_bed, reference_chromosomes, begins_with_chr, False, debug)
 
     # parse discard bed similarly
-    # TODO convert to pandas dataframe
-    discard_regions = {}
-    if discard_bed is not None:
-        try:
-            with open(discard_bed, 'r') as f:
-                for line in f:
-                    if not line.startswith(('@', '#', '\n')):
-                        [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-                        if my_chr not in discard_regions:
-                            discard_regions[my_chr] = [-1]
-                        discard_regions[my_chr].extend([int(pos1), int(pos2)])
-        except IOError:
-            print("\nProblem reading discard BED file.\n")
-            sys.exit(1)
+    discard_regions = parse_bed(discard_bed, reference_chromosomes, begins_with_chr, False, debug)
 
     # parse input mutation rate rescaling regions, if present
-    # TODO convert to pandas dataframe
-    mut_rate_regions = {}
-    mut_rate_values = {}
-    if mut_bed is not None:
-        try:
-            with open(mut_bed, 'r') as f:
-                for line in f:
-                    [my_chr, pos1, pos2, meta_data] = line.strip().split('\t')[:4]
-                    mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
-                    (pos1, pos2) = (int(pos1), int(pos2))
-                    if len(mut_str) and (pos2 - pos1) > 1:
-                        # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
-                        mut_rate = max([0.0, min([float(mut_str[0][9:]), 0.3])])
-                        if my_chr not in mut_rate_regions:
-                            mut_rate_regions[my_chr] = [-1]
-                            mut_rate_values[my_chr] = [0.0]
-                        mut_rate_regions[my_chr].extend([pos1, pos2])
-                        # TODO figure out what the next line is supposed to do and fix
-                        mut_rate_values[my_chr].extend([mut_rate * (pos2 - pos1)] * 2)
-        except IOError:
-            print("\nProblem reading mutational BED file.\n")
-            sys.exit(1)
+    mutation_rate_regions, mutation_rate_values = parse_bed(mut_bed, reference_chromosomes,
+                                                            begins_with_chr, True, debug)
 
     # initialize output files (part I)
     bam_header = None
     if save_bam:
         # TODO wondering if this is actually needed in the bam_header
-        bam_header = [copy.deepcopy(ref_index)]
+        # The info is needed, but may exist in the index biopython creates.
+        bam_header = ref_index
     vcf_header = None
     if save_vcf:
         vcf_header = [reference]
 
     # initialize output files (part II)
     # TODO figure out how to do this more efficiently. Write the files at the end.
+    #  At least move this down so the file isn't created and opened hours before there's anything to put in it.
+    # The cancer part currently does nothing. The code is unreachable as written
     if cancer:
         output_file_writer = OutputFileWriter(out_prefix + '_normal', paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              no_fastq=no_fastq, fasta_instead=fasta_instead)
+                                              no_fastq=no_fastq, write_fasta=create_fasta,
+                                              save_bam=save_bam, save_vcf=save_vcf)
         output_file_writer_cancer = OutputFileWriter(out_prefix + '_tumor', paired=paired_end, bam_header=bam_header,
                                                      vcf_header=vcf_header,
-                                                     no_fastq=no_fastq, fasta_instead=fasta_instead)
+                                                     no_fastq=no_fastq, write_fasta=create_fasta,
+                                                     save_bam=save_bam, save_vcf=save_vcf)
     else:
         output_file_writer = OutputFileWriter(out_prefix, paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
                                               no_fastq=no_fastq,
-                                              fasta_instead=fasta_instead)
+                                              write_fasta=create_fasta,
+                                              save_bam=save_bam, save_vcf=save_vcf)
     # Using pathlib to make this more machine agnostic
     out_prefix_name = pathlib.Path(out_prefix).name
 
@@ -407,13 +402,16 @@ def main(raw_args=None):
     LET'S GET THIS PARTY STARTED...
     """
     # keep track of the number of reads we've sampled, for read-names
+    # TODO this sounds vaguely unnecessary
     read_name_count = 1
     unmapped_records = []
 
-    for chrom in range(len(ref_index)):
+    for chrom in ref_index.keys():
 
         # read in reference sequence and notate blocks of Ns
-        (ref_sequence, n_regions) = read_ref(reference, ref_index[chrom], n_handling)
+        ref_sequence = ref_index[chrom].seq
+
+        n_regions = find_n_regions(ref_sequence, n_handling)
 
         # count total bp we'll be spanning so we can get an idea of how far along we are
         # (for printing progress indicators)
@@ -428,34 +426,6 @@ def main(raw_args=None):
                 - any alt allele contains anything other than allowed characters"""
         valid_variants_from_vcf = []
         n_skipped = [0, 0, 0]
-        if ref_index[chrom][0] in input_variants:
-            for n in input_variants[ref_index[chrom][0]]:
-                span = (n[0], n[0] + len(n[1]))
-                r_seq = str(ref_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
-                # Checks if there are any invalid nucleotides in the vcf items
-                any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist])
-                # Ensure reference sequence matches the nucleotide in the vcf
-                if r_seq != n[1]:
-                    n_skipped[0] += 1
-                    continue
-                # Ensure that we aren't trying to insert into an N region
-                elif 'N' in r_seq:
-                    n_skipped[1] += 1
-                    continue
-                # Ensure that we don't insert any disallowed characters
-                elif any_bad_nucl:
-                    n_skipped[2] += 1
-                    continue
-                # If it passes the above tests, append to valid variants list
-                valid_variants_from_vcf.append(n)
-
-            print('found', len(valid_variants_from_vcf), 'valid variants for ' +
-                  ref_index[chrom][0] + ' in input VCF...')
-            if any(n_skipped):
-                print(sum(n_skipped), 'variants skipped...')
-                print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
-                print(' - [' + str(n_skipped[1]) + '] attempting to insert into N-region')
-                print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
 
         # TODO add large random structural variants
 
@@ -468,18 +438,18 @@ def main(raw_args=None):
         all_variants_out = {}
         sequences = None
         if paired_end:
-            target_size = WINDOW_TARGET_SCALE * fragment_size
+            target_size = window_target_scale * fragment_size
             overlap = fragment_size
             overlap_min_window_size = max(fraglen_distribution.values) + 10
         else:
-            target_size = WINDOW_TARGET_SCALE * read_len
+            target_size = window_target_scale * read_len
             overlap = read_len
             overlap_min_window_size = read_len + 10
 
         print('--------------------------------')
         if only_vcf:
             print('generating vcf...')
-        elif fasta_instead:
+        elif create_fasta:
             print('generating mutated fasta...')
         else:
             print('sampling reads...')
@@ -522,21 +492,21 @@ def main(raw_args=None):
 
                 # determine which structural variants will affect our sampling window positions
                 structural_vars = []
-                for n in vars_in_window:
+                for row in vars_in_window:
                     # change: added abs() so that insertions are also buffered.
-                    buffer_needed = max([max([abs(len(n[1]) - len(alt_allele)), 1]) for alt_allele in n[2]])
+                    buffer_needed = max([max([abs(len(row[1]) - len(alt_allele)), 1]) for alt_allele in row[2]])
                     # -1 because going from VCF coords to array coords
-                    structural_vars.append((n[0] - 1, buffer_needed))
+                    structural_vars.append((row[0] - 1, buffer_needed))
 
                 # adjust end-position of window based on inserted structural mutations
                 keep_going = True
                 buffer_added = 0
                 while keep_going:
                     keep_going = False
-                    for n in structural_vars:
+                    for row in structural_vars:
                         # adding "overlap" here to prevent SVs from being introduced in overlap regions
                         # (which can cause problems if random mutations from the previous window land on top of them)
-                        delta = (end - 1) - (n[0] + n[1]) - 2 - overlap
+                        delta = (end - 1) - (row[0] + row[1]) - 2 - overlap
                         if delta < 0:
                             buffer_added = -delta
                             end += buffer_added
@@ -568,14 +538,14 @@ def main(raw_args=None):
                 coverage_avg = None
                 coverage_dat = [gc_window_size, gc_scale_val, []]
                 target_hits = 0
-                if not input_regions:
+                if not target_regions:
                     coverage_dat[2] = [1.0] * (end - start)
                 else:
-                    if ref_index[chrom][0] not in input_regions:
+                    if chrom not in target_regions:
                         coverage_dat[2] = [off_target_scalar] * (end - start)
                     else:
                         for j in range(start, end):
-                            if not (bisect.bisect(input_regions[ref_index[chrom][0]], j) % 2):
+                            if not (bisect.bisect(target_regions[chrom], j) % 2):
                                 coverage_dat[2].append(1.0)
                                 target_hits += 1
                             else:
@@ -610,7 +580,7 @@ def main(raw_args=None):
                 # construct sequence data that we will sample reads from
                 if not sequences:
                     sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
-                                                  [mut_model] * ploids, mut_rate, only_vcf=only_vcf)
+                                                  save_bam, [mut_model] * ploids, mut_rate, only_vcf)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
                             [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
                         print("There's a cigar that's off.")
@@ -647,13 +617,13 @@ def main(raw_args=None):
                 # which variants do we need to keep for next time (because of window overlap)?
                 vars_from_prev_overlap = []
                 vars_cancer_from_prev_overlap = []
-                for n in all_inserted_variants:
-                    if n[0] >= end - overlap - 1:
-                        vars_from_prev_overlap.append(n)
+                for row in all_inserted_variants:
+                    if row[0] >= end - overlap - 1:
+                        vars_from_prev_overlap.append(row)
                 if cancer:
-                    for n in all_cancer_variants:
-                        if n[0] >= end - overlap - 1:
-                            vars_cancer_from_prev_overlap.append(n)
+                    for row in all_cancer_variants:
+                        if row[0] >= end - overlap - 1:
+                            vars_cancer_from_prev_overlap.append(row)
 
                 # if we're only producing VCF, no need to go through the hassle of generating reads
                 if only_vcf:
@@ -713,24 +683,23 @@ def main(raw_args=None):
 
                         # are we discarding offtargets?
                         outside_boundaries = []
-                        if off_target_discard and input_regions:
-                            if ref_index[chrom][0] in input_regions.keys():
-                                outside_boundaries += [bisect.bisect(input_regions[ref_index[chrom][0]], n[0]) % 2 for n
-                                                       in my_read_data]
-                                outside_boundaries += [
-                                    bisect.bisect(input_regions[ref_index[chrom][0]], n[0] + len(n[2])) % 2 for n in
-                                    my_read_data]
-                        if discard_regions:
-                            if ref_index[chrom][0] in discard_regions.keys():
-                                outside_boundaries += [bisect.bisect(discard_regions[ref_index[chrom][0]], n[0]) % 2 for
-                                                       n in my_read_data]
-                                outside_boundaries += [
-                                    bisect.bisect(discard_regions[ref_index[chrom][0]], n[0] + len(n[2])) % 2 for n in
-                                    my_read_data]
+                        if off_target_discard and target_bed is not None:
+                            outside_boundaries += [bisect.bisect(target_regions[chrom], n[0]) % 2 for n
+                                                   in my_read_data]
+                            outside_boundaries += [
+                                bisect.bisect(target_regions[chrom], n[0] + len(n[2])) % 2 for n in
+                                my_read_data]
+                        if discard_bed is not None:
+                            outside_boundaries += [bisect.bisect(discard_regions[chrom], n[0]) % 2 for
+                                                   n in my_read_data]
+                            outside_boundaries += [
+                                bisect.bisect(discard_regions[chrom], n[0] + len(n[2])) % 2 for n in
+                                my_read_data]
+
                         if len(outside_boundaries) and any(outside_boundaries):
                             continue
 
-                        my_read_name = out_prefix_name + '-' + ref_index[chrom][0] + '-' + str(read_name_count)
+                        my_read_name = out_prefix_name + '-' + chrom + '-' + str(read_name_count)
                         read_name_count += len(my_read_data)
 
                         # if desired, replace all low-quality bases with Ns
@@ -761,8 +730,6 @@ def main(raw_args=None):
                                 flag1 = sam_flag(['unmapped'])
                                 unmapped_records.append((my_read_name + '/1', my_read_data[0], flag1))
 
-                        my_ref_index = indices_by_ref_name[ref_index[chrom][0]]
-
                         # write SE output
                         if len(my_read_data) == 1:
                             if not no_fastq:
@@ -777,21 +744,23 @@ def main(raw_args=None):
                                 if is_unmapped[0] is False:
                                     if is_forward:
                                         flag1 = 0
-                                        output_file_writer.write_bam_record(my_ref_index, my_read_name,
+                                        output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
+                                                                            my_read_name,
                                                                             my_read_data[0][0],
                                                                             my_read_data[0][1], my_read_data[0][2],
                                                                             my_read_data[0][3],
                                                                             output_sam_flag=flag1)
                                     else:
                                         flag1 = sam_flag(['reverse'])
-                                        output_file_writer.write_bam_record(my_ref_index, my_read_name,
+                                        output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
+                                                                            my_read_name,
                                                                             my_read_data[0][0],
                                                                             my_read_data[0][1], my_read_data[0][2],
                                                                             my_read_data[0][3],
                                                                             output_sam_flag=flag1)
                         # write PE output
                         elif len(my_read_data) == 2:
-                            if no_fastq is not True:
+                            if not no_fastq:
                                 output_file_writer.write_fastq_record(my_read_name, my_read_data[0][2],
                                                                       my_read_data[0][3],
                                                                       read2=my_read_data[1][2],
@@ -805,15 +774,18 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'proper', 'second', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'proper', 'first', 'reverse'])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[0][0],
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[0][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[1][0])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[1][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
-                                                                        output_sam_flag=flag2, mate_pos=my_read_data[0][0])
+                                                                        output_sam_flag=flag2,
+                                                                        mate_pos=my_read_data[0][0])
                                 elif is_unmapped[0] is False and is_unmapped[1] is True:
                                     if is_forward:
                                         flag1 = sam_flag(['paired', 'first', 'mate_unmapped', 'mate_reverse'])
@@ -821,14 +793,18 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'second', 'mate_unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'unmapped', 'reverse'])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[0][0],
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[0][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
-                                                                        output_sam_flag=flag1, mate_pos=my_read_data[0][0])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[0][0],
+                                                                        output_sam_flag=flag1,
+                                                                        mate_pos=my_read_data[0][0])
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[0][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
-                                                                        output_sam_flag=flag2, mate_pos=my_read_data[0][0],
+                                                                        output_sam_flag=flag2,
+                                                                        mate_pos=my_read_data[0][0],
                                                                         aln_map_quality=0)
                                 elif is_unmapped[0] is True and is_unmapped[1] is False:
                                     if is_forward:
@@ -837,15 +813,19 @@ def main(raw_args=None):
                                     else:
                                         flag1 = sam_flag(['paired', 'second', 'unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'mate_unmapped', 'reverse'])
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[1][0],
                                                                         my_read_data[0][1], my_read_data[0][2],
                                                                         my_read_data[0][3],
-                                                                        output_sam_flag=flag1, mate_pos=my_read_data[1][0],
+                                                                        output_sam_flag=flag1,
+                                                                        mate_pos=my_read_data[1][0],
                                                                         aln_map_quality=0)
-                                    output_file_writer.write_bam_record(my_ref_index, my_read_name, my_read_data[1][0],
+                                    output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
+                                                                        my_read_name, my_read_data[1][0],
                                                                         my_read_data[1][1], my_read_data[1][2],
                                                                         my_read_data[1][3],
-                                                                        output_sam_flag=flag2, mate_pos=my_read_data[1][0])
+                                                                        output_sam_flag=flag2,
+                                                                        mate_pos=my_read_data[1][0])
                         else:
                             print('\nError: Unexpected number of reads generated...\n')
                             sys.exit(1)
@@ -856,8 +836,8 @@ def main(raw_args=None):
                         output_file_writer.flush_buffers(bam_max=end + 1)
 
                 # tally up all the variants that got successfully introduced
-                for n in all_inserted_variants:
-                    all_variants_out[n] = True
+                for row in all_inserted_variants:
+                    all_variants_out[row] = True
 
                 # prepare indices of next window
                 start = next_start
@@ -879,7 +859,7 @@ def main(raw_args=None):
         if save_vcf:
             print('Writing output VCF...')
             for k in sorted(all_variants_out.keys()):
-                current_ref = ref_index[chrom][0]
+                current_ref = chrom
                 my_id = '.'
                 my_quality = '.'
                 my_filter = 'PASS'
@@ -892,17 +872,20 @@ def main(raw_args=None):
         print('writing unmapped reads to bam file...')
         for umr in unmapped_records:
             if paired_end:
-                output_file_writer.write_bam_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3], output_sam_flag=umr[2],
+                output_file_writer.write_bam_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3],
+                                                    output_sam_flag=umr[2],
                                                     mate_pos=0,
                                                     aln_map_quality=0)
             else:
-                output_file_writer.write_bam_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3], output_sam_flag=umr[2],
+                output_file_writer.write_bam_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3],
+                                                    output_sam_flag=umr[2],
                                                     aln_map_quality=0)
 
     # close output files
     output_file_writer.close_files()
     if cancer:
         output_file_writer_cancer.close_files()
+    ref_index.close()
 
 
 if __name__ == '__main__':
