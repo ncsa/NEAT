@@ -537,8 +537,7 @@ class SequenceContainer:
         for i in range(len(all_indels_ins)):
             rolling_adj = 0
             # TODO looking to remove cigar string calculations
-            if self.produce_bam:
-                temp_symbol_list = CigarString.string_to_list(str(len(self.sequences[i])) + "M")
+            temp_symbol_list = CigarString.string_to_list(str(len(self.sequences[i])) + "M")
 
             for j in range(len(all_indels_ins[i])):
                 v_pos = all_indels_ins[i][j][0] + rolling_adj
@@ -554,36 +553,36 @@ class SequenceContainer:
                     # alter reference sequence
                     self.sequences[i] = self.sequences[i][:v_pos] + Seq(all_indels_ins[i][j][2]) + \
                                         self.sequences[i][v_pos2:]
-                    if self.produce_bam:
-                        # notate indel positions for cigar computation
-                        if indel_length > 0:
-                            temp_symbol_list = temp_symbol_list[:v_pos + 1] + ['I'] * indel_length \
-                                                  + temp_symbol_list[v_pos2 + 1:]
-                        elif indel_length < 0:
-                            temp_symbol_list[v_pos + 1] = "D" * abs(indel_length) + "M"
+                    # notate indel positions for cigar computation
+                    if indel_length > 0:
+                        temp_symbol_list = temp_symbol_list[:v_pos + 1] + ['I'] * indel_length \
+                                              + temp_symbol_list[v_pos2 + 1:]
+                    elif indel_length < 0:
+                        temp_symbol_list[v_pos + 1] = "D" * abs(indel_length) + "M"
 
-            if self.produce_bam:
-                # pre-compute cigar strings
-                for j in range(len(temp_symbol_list) - self.read_len):
-                    self.all_cigar[i].append(temp_symbol_list[j:j + self.read_len])
+            # I tried making this section down to line 586 bam-only, but it breaks everything downstream. I think we
+            # may need a fundamental algo change.
+            # pre-compute cigar strings
+            for j in range(len(temp_symbol_list) - self.read_len):
+                self.all_cigar[i].append(temp_symbol_list[j:j + self.read_len])
 
-                # TODO do we need fm_pos at all?
-                # create some data structures we will need later:
-                # --- self.fm_pos[ploid][pos]: position of the left-most matching base (IN REFERENCE COORDINATES, i.e.
-                #       corresponding to the unmodified reference genome)
-                # --- self.fm_span[ploid][pos]: number of reference positions spanned by a read originating from
-                #       this coordinate
-                md_so_far = 0
-                for j in range(len(temp_symbol_list)):
-                    self.fm_pos[i].append(md_so_far)
-                    # fix an edge case with deletions
-                    if 'D' in temp_symbol_list[j]:
-                        self.fm_pos[i][-1] += temp_symbol_list[j].count('D')
-                    # compute number of ref matches for each read
-                    # This line gets hit a lot and is relatively slow. Might look for an improvement
-                    span_dif = len([n for n in temp_symbol_list[j: j + self.read_len] if 'M' in n])
-                    self.fm_span[i].append(self.fm_pos[i][-1] + span_dif)
-                    md_so_far += temp_symbol_list[j].count('M') + temp_symbol_list[j].count('D')
+            # TODO do we need fm_pos at all?
+            # create some data structures we will need later:
+            # --- self.fm_pos[ploid][pos]: position of the left-most matching base (IN REFERENCE COORDINATES, i.e.
+            #       corresponding to the unmodified reference genome)
+            # --- self.fm_span[ploid][pos]: number of reference positions spanned by a read originating from
+            #       this coordinate
+            md_so_far = 0
+            for j in range(len(temp_symbol_list)):
+                self.fm_pos[i].append(md_so_far)
+                # fix an edge case with deletions
+                if 'D' in temp_symbol_list[j]:
+                    self.fm_pos[i][-1] += temp_symbol_list[j].count('D')
+                # compute number of ref matches for each read
+                # This line gets hit a lot and is relatively slow. Might look for an improvement
+                span_dif = len([n for n in temp_symbol_list[j: j + self.read_len] if 'M' in n])
+                self.fm_span[i].append(self.fm_pos[i][-1] + span_dif)
+                md_so_far += temp_symbol_list[j].count('M') + temp_symbol_list[j].count('D')
 
         # tally up all the variants we handled...
         count_dict = {}
