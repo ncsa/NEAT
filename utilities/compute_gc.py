@@ -6,11 +6,10 @@
 #
 #   Takes output file from bedtools genomecov to generate GC/coverage model
 #
-#   Usage: bedtools genomecov -d -ibam input.bam -g reference.fa > genomeCov.dat
-#          python compute_gc.py -r reference.fa -i genomeCov.dat -w [sliding window length] -o output_name.p
+#   Usage: python compute_gc.py -i input.genomecov -r reference.fa -o output_prefix
 #
 #
-# Updated to Python 3 standards
+# Python 3 ready
 
 import time
 import argparse
@@ -110,28 +109,44 @@ def calculate_coverage(bin_dict: dict, window: int) -> float:
             running_total += my_len
             bin_dict[k] = my_mean
 
-    return all_mean / float(running_total)
+    if running_total:
+        return all_mean / float(running_total)
+    else:
+        return 0.0
 
 
-def main():
+def func_parser() -> argparse.Namespace:
     """
-    Reads in arguments and processes the inputs to a GC count for the sequence.
+    Defines what arguments the program requires, and argparse will figure out how to parse those out of sys.argv
     Parameters:
         -i is the genome coverage input file (genomecov)
         -r is the reference file (fasta)
         -o is the prefix for the output
         -w is the sliding window length. The default is 50, but you can declare any reasonable integer
-    :return: None
+
+    :return: an instance of the argparse class that can be used to access command line arguments
     """
+
     parser = argparse.ArgumentParser(description='compute_gc.py',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-i', type=str, required=True, metavar='input', help="input.genomecov")
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="reference.fasta")
-    parser.add_argument('-o', type=str, required=True, metavar='output prefix',
+    parser.add_argument('-o', type=str, required=True, metavar='output_prefix',
                         help="prefix for output (/path/to/output)")
     parser.add_argument('-w', type=int, required=False, metavar='sliding window',
                         help="sliding window length [50]", default=50)
     args = parser.parse_args()
+    
+    return args
+
+
+def main():
+    """
+    Reads in arguments and processes the inputs to a GC count for the sequence.
+   
+    :return: None
+    """
+    args = func_parser()
 
     (in_gcb, ref_file, window_size, out_p) = (args.i, args.r, args.w, args.o)
 

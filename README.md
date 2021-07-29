@@ -63,7 +63,7 @@ python -m pip install -e /path/to/NEAT/
 NEAT's core functionality is invoked using the gen_reads.py command. Here's the simplest invocation of gen_reads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
 
 ```
-gen_reads.py -r ref.fa -R 101 -o simulated_data
+gen_reads.py -r sample_data/ecoli.fa -R 101 -o simulated_data
 ```
 
 The most commonly added options are --pe (to activate paired-end mode), --bam (to output golden bam),
