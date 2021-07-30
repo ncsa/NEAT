@@ -764,7 +764,7 @@ def main(raw_args=None):
                                 output_file_writer.write_fastq_record(my_read_name, my_read_data[0][2],
                                                                       my_read_data[0][3],
                                                                       read2=my_read_data[1][2],
-                                                                      qual2=my_read_data[1][3],
+                                                                      quality2=my_read_data[1][3],
                                                                       orientation=is_forward)
                             if save_bam:
                                 if is_unmapped[0] is False and is_unmapped[1] is False:

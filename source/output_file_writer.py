@@ -169,7 +169,7 @@ class OutputFileWriter:
         # Assuming we wanted the bam and there's nothing wrong with the header, then we will proceed with creating the
         # bam file. If the header is empty and we wanted it, that is a bug we need to catch right here.
         if save_bam and bam_header:
-            writing_bam = True
+            self.writing_bam = True
         elif save_bam and not bam_header:
             print("Something wrong with VCF header.")
             sys.exit(1)
