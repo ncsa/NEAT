@@ -16,6 +16,9 @@ import pickle
 import argparse
 import platform
 import sys
+import time
+import numpy as np
+from statsmodels import robust
 
 os = platform.system()
 if os != 'Windows':
@@ -112,17 +115,25 @@ def compute_probs(datalist: list) -> (list, list):
     :param datalist: A list of fragments with counts
     :return: A list of values that meet the criteria and a list of their associated probabilities
     """
-    FILTER_MINREADS = 100  # only consider fragment lengths that have at least this many read pairs supporting it
-    FILTER_MEDDEV_M = 10  # only consider fragment lengths this many median deviations above the median
+
+    # For shorter datasets, we just use the entire dataset
+    filter_minreads = 0
+    filter_meddev_m = 10
+    # If it's longer, than filter as below
+    if len(datalist) > 10000:
+        # only consider fragment lengths that have at least this many read pairs supporting it
+        filter_minreads = 100
+        # only consider fragment lengths this many median deviations above the median
+        filter_meddev_m = 10
     values = []
     probabilities = []
     med = median(datalist)
     mad = median_absolute_deviation(datalist)
 
     for item in list(set(datalist)):
-        if 0 < item <= med + FILTER_MEDDEV_M * mad:
+        if 0 < item <= med + filter_meddev_m * mad:
             data_count = datalist.count(item)
-            if data_count >= FILTER_MINREADS:
+            if data_count >= filter_minreads:
                 values.append(item)
                 probabilities.append(data_count)
     count_sum = float(sum(probabilities))
@@ -168,6 +179,16 @@ def main():
     output = output_prefix + '.p'
 
     all_tlens = count_frags(input_file)
+
+    # If no valide t-lens were found,
+    if not all_tlens:
+        print("No paired end data detected in this file, or quality scores too low to make a determination.")
+        time.sleep(3)
+        print("Exiting.")
+        sys.exit(0)
+
+
+
     print('\nSaving model...')
     out_vals, out_probs = compute_probs(all_tlens)
     # Print statements for debugging:

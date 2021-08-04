@@ -4,4 +4,5 @@ matplotlib==3.3.4
 matplotlib-venn==0.11.6
 pandas==1.2.1
 pysam==0.16.0.1
+statsmodels==0.12.2
 
