@@ -15,4 +15,5 @@ jobs:
         run: |
           ls ${{ github.workspace }}
           cd ${{ github.workspace }}/utilities
+          python validateBam.py -i ../sample_data/baby.bam
       - run: echo "🍏 This job's status is ${{ job.status }}."
