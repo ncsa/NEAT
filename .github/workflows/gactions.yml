@@ -38,3 +38,15 @@ jobs:
            cd ${{ github.workspace }}/utilities
            python validateFQ.py -i ../sample_data/baby.fastq
        - run: echo "🍏 This job's status is ${{ job.status }}."
+
+      
+  job-compute_fraglen:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Check out repository code
+         uses: actions/checkout@v2
+       - name: Execute compute_fraglen.py
+         run: |
+           cd ${{ github.workspace }}/utilities
+           python compute_fraglen.py -i ../sample_data/baby.bam -o fraglenop
+       - run: echo "🍏 This job's status is ${{ job.status }}."
