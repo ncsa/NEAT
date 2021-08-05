@@ -1,8 +1,5 @@
 name: CI for Utilities
-on:
-  pull_request:
-    branches:
-      - sushma-4-CI
+on: pull_request
 jobs:
   Explore-GitHub-Actions:
     runs-on: ubuntu-latest
