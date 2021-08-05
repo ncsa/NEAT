@@ -21,9 +21,19 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
-      - name: List files in the repository
+      - name: Execute validateBAM.py
         run: |
-          ls ${{ github.workspace }}
           cd ${{ github.workspace }}/utilities
           python validateBam.py -i ../sample_data/baby.bam
+      - run: echo "🍏 This job's status is ${{ job.status }}."
+      
+    job-valFQ:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Execute validateFQ.py
+        run: |
+          cd ${{ github.workspace }}/utilities
+          python validateFQ.py -i ../sample_data/baby.fastq
       - run: echo "🍏 This job's status is ${{ job.status }}."
