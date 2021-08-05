@@ -39,7 +39,7 @@ jobs:
            python validateFQ.py -i ../sample_data/baby.fastq
        - run: echo "🍏 This job's status is ${{ job.status }}."
        
-   job-valFQ:
+ job-valFQ:
     runs-on: ubuntu-latest
     steps:
        - name: Check out repository code
