@@ -16,9 +16,10 @@ import pickle
 import argparse
 import platform
 import sys
+import os.path
 
-os = platform.system()
-if os != 'Windows':
+ops = platform.system()
+if ops != 'Windows':
     import pysam
 else:
     print("Pysam is a required module for this utility and currently does not have a Windows version. Please re-run"
@@ -163,7 +164,16 @@ def main():
 
     args = func_parser() 
 
-    input_file = args.i
+    checkinp = args.i
+
+     
+    if checkinp[-4:] == '.bam':
+        if not os.path.isfile(checkinp+'.bai'):
+            command = 'samtools index ' + checkinp
+            os.system(command)
+    
+    input_file = checkinp
+
     output_prefix = args.o
     output = output_prefix + '.p'
 
