@@ -47,6 +47,8 @@ jobs:
        - name: Execute validateFQ.py
          run: |
            pip install numpy
+           pip install matplotlib
+           pip install pysam
            cd ${{ github.workspace }}/utilities
            python genSeqErrorModel.py -i ../sample_data/baby.fastq -o genseqop.p 
        - run: echo "🍏 This job's status is ${{ job.status }}."
