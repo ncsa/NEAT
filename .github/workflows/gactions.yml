@@ -52,5 +52,4 @@ jobs:
            pip install source
            cd ${{ github.workspace }}/utilities
            python genSeqErrorModel.py -i ../sample_data/baby.fastq -o genseqop.p 
-       - run: echo "🍏 This job's status is ${{ job.status }}."
      
