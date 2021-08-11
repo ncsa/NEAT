@@ -28,7 +28,7 @@ jobs:
       - run: echo "🍏 This job's status is ${{ job.status }}."
       
   job-valFQ:
-    if: (jobs.one.status == 'success')
+    if: (jobs.Github-Actions.status == 'success')
     runs-on: ubuntu-latest
     steps:
        - name: Check out repository code
@@ -36,7 +36,6 @@ jobs:
        - name: Execute validateFQ.py
          run: |
            pip install biopython
-           
            cd ${{ github.workspace }}/utilities
            python validateFQ.py -i ../sample_data/baby.fastq
        - run: echo "🍏 This job's status is ${{ job.status }}."
