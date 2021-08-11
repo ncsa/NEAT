@@ -20,6 +20,8 @@ jobs:
     needs: Github-Actions
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
       - name: Execute validateBAM.py
         run: |
           cd ${{ github.workspace }}/utilities
