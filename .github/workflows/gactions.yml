@@ -12,6 +12,7 @@ jobs:
          run: |
            pip install numpy
            pip install biopython
+           pip install pandas
            cd ${{ github.workspace }}/utilities
            python gen_mut_model.py -r ../sample_data/ecoli.fa -m ../sample_data/small.vcf -o testgmm  
        - run: echo "🍏 This job's status is ${{ job.status }}."
