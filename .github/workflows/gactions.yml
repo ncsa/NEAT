@@ -39,17 +39,13 @@ jobs:
            python validateFQ.py -i ../sample_data/baby.fastq
        - run: echo "🍏 This job's status is ${{ job.status }}."
 
-  job-genSeqError:
+  job-genmut:
     runs-on: ubuntu-latest
     steps:
        - name: Check out repository code
          uses: actions/checkout@v2
        - name: Execute validateFQ.py
          run: |
-           pip install numpy
-           pip install matplotlib
-           pip install pysam
-           pip install source
            cd ${{ github.workspace }}/utilities
-           python genSeqErrorModel.py -i ../sample_data/baby.fastq -o genseqop.p 
-     
+           python gen_mut_model.py -r ../sample_data/ecoli.fa -m ../sample_data/small.vcf -o testgmm  
+       - run: echo "🍏 This job's status is ${{ job.status }}."
