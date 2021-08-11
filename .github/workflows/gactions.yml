@@ -36,6 +36,7 @@ jobs:
        - name: Execute validateFQ.py
          run: |
            pip install biopython
+           
            cd ${{ github.workspace }}/utilities
            python validateFQ.py -i ../sample_data/baby.fastq
        - run: echo "🍏 This job's status is ${{ job.status }}."
