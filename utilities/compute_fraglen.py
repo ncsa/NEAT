@@ -116,19 +116,26 @@ def compute_probs(datalist: list) -> (list, list):
     :return: A list of values that meet the criteria and a list of their associated probabilities
     """
 
-    # For shorter datasets, we just use the entire dataset
-    filter_minreads = 0
+    # only consider fragment lengths that have at least this many read pairs supporting it
+    filter_minreads = 100
+    # only consider fragment lengths this many median deviations above the median
     filter_meddev_m = 10
-    # If it's longer, than filter as below
-    if len(datalist) > 10000:
-        # only consider fragment lengths that have at least this many read pairs supporting it
-        filter_minreads = 100
-        # only consider fragment lengths this many median deviations above the median
-        filter_meddev_m = 10
+
+    item_count = {}
     values = []
     probabilities = []
     med = median(datalist)
     mad = median_absolute_deviation(datalist)
+
+    # count up the number of each list item
+    for item in datalist:
+        if item not in item_count:
+            item_count[item] = 1
+        else:
+            item_count[item] += 1
+
+    for item in item_count:
+        pass
 
     for item in list(set(datalist)):
         if 0 < item <= med + filter_meddev_m * mad:
@@ -136,6 +143,8 @@ def compute_probs(datalist: list) -> (list, list):
             if data_count >= filter_minreads:
                 values.append(item)
                 probabilities.append(data_count)
+    if not values:
+        values = datalist
     count_sum = float(sum(probabilities))
     probabilities = [n / count_sum for n in probabilities]
     return values, probabilities
