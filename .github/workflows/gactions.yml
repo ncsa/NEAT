@@ -46,6 +46,7 @@ jobs:
          uses: actions/checkout@v2
        - name: Execute validateFQ.py
          run: |
+           pip install numpy
            cd ${{ github.workspace }}/utilities
            python gen_mut_model.py -r ../sample_data/ecoli.fa -m ../sample_data/small.vcf -o testgmm  
        - run: echo "🍏 This job's status is ${{ job.status }}."
