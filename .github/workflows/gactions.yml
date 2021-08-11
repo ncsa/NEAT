@@ -44,11 +44,25 @@ jobs:
     steps:
        - name: Check out repository code
          uses: actions/checkout@v2
-       - name: Execute validateFQ.py
+       - name: Execute gen_mut_model.py
          run: |
            pip install numpy
            pip install biopython
            pip install pandas
            cd ${{ github.workspace }}/utilities
            python gen_mut_model.py -r ../sample_data/ecoli.fa -m ../sample_data/small.vcf -o testgmm  
+       - run: echo "🍏 This job's status is ${{ job.status }}."
+
+  job-computegc:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Check out repository code
+         uses: actions/checkout@v2
+       - name: Execute compute_gc.py
+         run: |
+           pip install numpy
+           pip install biopython
+           pip install pandas
+           cd ${{ github.workspace }}/utilities
+           python compute_gc.py -i ../sample_data/small.genomecov -r ../sample_data/ecoli.fa -o gcop  
        - run: echo "🍏 This job's status is ${{ job.status }}."
