@@ -58,11 +58,25 @@ jobs:
     steps:
        - name: Check out repository code
          uses: actions/checkout@v2
-       - name: Execute computegc.py
+       - name: Execute compute_gc.py
          run: |
            pip install numpy
            pip install biopython
            pip install pandas
            cd ${{ github.workspace }}/utilities
            python compute_gc.py -i ../sample_data/small.genomecov -r ../sample_data/ecoli.fa -o gcop  
+       - run: echo "🍏 This job's status is ${{ job.status }}."
+
+  job-genSeq:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Check out repository code
+         uses: actions/checkout@v2
+       - name: Execute genSeqErrorModel.py
+         run: |
+           pip install numpy
+           pip install biopython
+           pip install pandas
+           cd ${{ github.workspace }}/utilities
+           python genSeqErrorModel.py -i ../sample_data/baby.fastq -o genseop
        - run: echo "🍏 This job's status is ${{ job.status }}."
