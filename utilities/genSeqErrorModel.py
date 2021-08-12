@@ -21,7 +21,7 @@ import pysam
 from functools import reduce
 
 # enables import from neighboring package
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+# sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from source.probability import DiscreteDistribution
 
