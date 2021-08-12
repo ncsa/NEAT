@@ -58,7 +58,7 @@ jobs:
     steps:
        - name: Check out repository code
          uses: actions/checkout@v2
-       - name: Execute compute_gc.py
+       - name: Execute computegc.py
          run: |
            pip install numpy
            pip install biopython
