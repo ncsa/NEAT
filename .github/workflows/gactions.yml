@@ -78,6 +78,7 @@ jobs:
            pip install biopython
            pip install pandas
            pip install matplotlib
+           pip install pysam
            cd ${{ github.workspace }}/utilities
            python genSeqErrorModel.py -i ../sample_data/baby.fastq -o genseop
        - run: echo "🍏 This job's status is ${{ job.status }}."
