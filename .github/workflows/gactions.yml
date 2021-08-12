@@ -80,5 +80,5 @@ jobs:
            pip install matplotlib
            pip install pysam
            cd ${{ github.workspace }}/utilities
-           python genSeqErrorModel.py -i ../sample_data/baby.fastq -o genseop
+           python genSeqErrorModel.py -i ../sample_data/baby.fastq -o genseop2
        - run: echo "🍏 This job's status is ${{ job.status }}."
