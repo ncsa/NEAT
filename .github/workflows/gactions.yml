@@ -2,7 +2,7 @@ name: CI for Utilities
 on:
   pull_request:
     paths:
-      - '!utilities/**'
+      - 'utilities/**'
       
 jobs:
   Github-Actions:
