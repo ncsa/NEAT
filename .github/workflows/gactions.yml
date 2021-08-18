@@ -1,5 +1,8 @@
 name: CI for Utilities
-on: pull_request
+on:
+  pull_request
+   paths:
+    - 'utilities/**'
 jobs:
   Github-Actions:
     runs-on: ubuntu-latest
