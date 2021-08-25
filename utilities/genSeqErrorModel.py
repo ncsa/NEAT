@@ -18,6 +18,7 @@ import pickle
 import matplotlib.pyplot as mpl
 import pathlib
 import pysam
+import os.path
 from functools import reduce
 
 # enables import from neighboring package
@@ -101,13 +102,16 @@ def readfile(input_file, real_q, max_reads) -> (int, list, np.ndarray, list):
         if input_file[-4:] == '.bam' or input_file[-4:] == '.sam':
             print('detected aligned file....')
             is_aligned = True
+            if input_file[-4:] == '.bam' and not os.path.isfile(input_file+'.bai'):
+                    command = 'samtools index ' + input_file    
+                    os.system(command) 
             stats = pysam.idxstats(input_file).strip().split('\n')
             lines_to_read = reduce(lambda x, y: x + y, [eval('+'.join(l.rstrip('\n').split('\t')[2:])) for l in stats])
             f = pysam.AlignmentFile(input_file)
-            try:
+            try: 
                 g = f.fetch()
             except ValueError:
-                print('Please generate an index file for BAM using Samtools')
+                print('Could not retrieve index file')
                 sys.exit(1)
 
         else:
