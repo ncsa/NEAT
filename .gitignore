@@ -1,4 +1,5 @@
 # Ignore filetypes
+/.idea/
 *.pyc
 /python2env/
 /.ipynb_checkpoints/
