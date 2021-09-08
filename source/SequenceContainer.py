@@ -5,6 +5,7 @@ import sys
 
 import numpy as np
 from Bio.Seq import Seq
+from Bio.Seq import MutableSeq
 
 from source.neat_cigar import CigarString
 from source.probability import DiscreteDistribution, poisson_list
@@ -515,7 +516,7 @@ class SequenceContainer:
 
         # MODIFY REFERENCE STRING: SNPS
         for i in range(len(all_snps)):
-            temp = self.sequences[i].tomutable()
+            temp = MutableSeq(self.sequences[i])
             for j in range(len(all_snps[i])):
                 v_pos = all_snps[i][j][0]
 
@@ -526,7 +527,7 @@ class SequenceContainer:
                     sys.exit(1)
                 else:
                     temp[v_pos] = all_snps[i][j][2]
-            self.sequences[i] = temp.toseq()
+            self.sequences[i] = Seq(temp)
 
         # organize the indels we want to insert
         for i in range(len(all_indels)):
@@ -753,9 +754,9 @@ class SequenceContainer:
 
                 else:  # substitution errors, much easier by comparison...
                     if str(read[3][e_pos + sse_adj[e_pos]]) == error[3]:
-                        temp = read[3].tomutable()
+                        temp = MutableSeq(read[3])
                         temp[e_pos + sse_adj[e_pos]] = error[4]
-                        read[3] = temp.toseq()
+                        read[3] = Seq(temp)
                     else:
                         print('\nError, ref does not match alt while attempting to insert substitution error!\n')
                         sys.exit(1)
