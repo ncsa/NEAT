@@ -127,7 +127,7 @@ class OutputFileWriter:
         # Assuming we wanted the vcf and there's nothing wrong with the header, then we will proceed with creating the
         # vcf file. If the header is empty and we wanted it, that is a bug we need to catch right here.
         if save_vcf and vcf_header:
-            writing_vcf = True
+            self.writing_vcf = True
         elif save_vcf and not vcf_header:
             print("Something wrong with VCF header.")
             sys.exit(1)
@@ -220,14 +220,14 @@ class OutputFileWriter:
             (read2, quality2) = (read1, quality1)
             (read1, quality1) = (read2_tmp.reverse_complement(), qual2_tmp[::-1])
 
-        if self.fasta_instead:
-            self.fq1_buffer.append('>' + read_name + '/1\n' + str(read1) + '\n')
+        if self.write_fasta:
+            self.output1_buffer.append('>' + read_name + '/1\n' + str(read1) + '\n')
             if read2 is not None:
-                self.fq2_buffer.append('>' + read_name + '/2\n' + str(read2) + '\n')
+                self.output2_buffer.append('>' + read_name + '/2\n' + str(read2) + '\n')
         else:
-            self.fq1_buffer.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
+            self.output1_buffer.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
             if read2 is not None:
-                self.fq2_buffer.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
+                self.output2_buffer.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
 
     def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info):
         self.vcf_file.write(
