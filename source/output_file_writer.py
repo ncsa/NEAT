@@ -211,15 +211,23 @@ class OutputFileWriter:
 
     def write_fastq_record(self, read_name, read1, quality1, read2=None, quality2=None, orientation=None):
         # Since read1 and read2 are Seq objects from Biopython, they have reverse_complement methods built-in
-        if read2 and orientation:
+        (read1, quality1) = (read1, quality1)
+        if read2 is not None and orientation is True:
             (read2, quality2) = (read2.reverse_complement(), quality2[::-1])
-        elif read2 and not orientation:
-            (read1, quality1) = (read2.reverse_complement(), quality2[::-1])
+        elif read2 is not None and orientation is False:
+            read2_tmp = read2
+            qual2_tmp = quality2
             (read2, quality2) = (read1, quality1)
+            (read1, quality1) = (read2_tmp.reverse_complement(), qual2_tmp[::-1])
 
-        self.output1_buffer.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
-        if read2:
-            self.output2_buffer.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
+        if self.fasta_instead:
+            self.fq1_buffer.append('>' + read_name + '/1\n' + str(read1) + '\n')
+            if read2 is not None:
+                self.fq2_buffer.append('>' + read_name + '/2\n' + str(read2) + '\n')
+        else:
+            self.fq1_buffer.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
+            if read2 is not None:
+                self.fq2_buffer.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
 
     def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info):
         self.vcf_file.write(
