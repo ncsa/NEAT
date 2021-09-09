@@ -580,7 +580,7 @@ def main(raw_args=None):
                 # construct sequence data that we will sample reads from
                 if not sequences:
                     sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
-                                                  save_bam, [mut_model] * ploids, mut_rate, only_vcf)
+                                                  [mut_model] * ploids, mut_rate, only_vcf)
                     if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
                             [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
                         print("There's a cigar that's off.")

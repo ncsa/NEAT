@@ -12,6 +12,7 @@ from source.probability import DiscreteDistribution, poisson_list
 from source.constants_and_models import ALLOWED_NUCL, DEFAULT_MODEL_1, ALL_IND, COV_FRAGLEN_PERCENTILE, TRI_IND
 from source.constants_and_models import LARGE_NUMBER, MAX_MUTFRAC, IGNORE_TRINUC, MAX_ATTEMPTS, NUC_IND
 
+
 # TODO This whole file is in desperate need of refactoring
 # TODO 1st step will be to make all cigar strings optional, since that is only needed for bams
 
@@ -21,7 +22,7 @@ class SequenceContainer:
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, produce_bam=False, mut_models=None,
+    def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None,
                  mut_rate=None, only_vcf=False):
 
         # initialize basic variables
@@ -29,14 +30,12 @@ class SequenceContainer:
         self.x = x_offset
         self.ploidy = ploidy
         self.read_len = read_len
-        self.produce_bam = produce_bam
         self.sequences = [sequence] * self.ploidy
         self.seq_len = len(sequence)
         self.indel_list = [[]] * self.ploidy
         self.snp_list = [[]] * self.ploidy
         self.fm_pos = [[]] * self.ploidy
         self.fm_span = [[]] * self.ploidy
-        self.black_list = [np.zeros(self.seq_len, dtype='<i4')] * self.ploidy
         self.all_cigar = [[]] * self.ploidy
 
         # Blacklist explanation:
@@ -90,8 +89,9 @@ class SequenceContainer:
                                 DiscreteDistribution(n[7], n[6]), []])
             for m in n[8]:
                 # noinspection PyTypeChecker
-                self.models[-1][6].append([DiscreteDistribution(m[0], ALLOWED_NUCL), DiscreteDistribution(m[1], ALLOWED_NUCL),
-                                           DiscreteDistribution(m[2], ALLOWED_NUCL), DiscreteDistribution(m[3], ALLOWED_NUCL)])
+                self.models[-1][6].append(
+                    [DiscreteDistribution(m[0], ALLOWED_NUCL), DiscreteDistribution(m[1], ALLOWED_NUCL),
+                     DiscreteDistribution(m[2], ALLOWED_NUCL), DiscreteDistribution(m[3], ALLOWED_NUCL)])
             self.models[-1].append([m for m in n[9]])
 
         # initialize poisson attributes
@@ -119,11 +119,10 @@ class SequenceContainer:
         self.coverage_distribution = None
         self.fraglen_ind_map = None
 
-    def update_basic_vars(self, x_offset, sequence, ploidy, window_overlap, read_len, produce_bam=False):
+    def update_basic_vars(self, x_offset, sequence, ploidy, window_overlap, read_len):
         self.x = x_offset
         self.ploidy = ploidy
         self.read_len = read_len
-        self.produce_bam = produce_bam
         self.sequences = [sequence] * self.ploidy
         self.seq_len = len(sequence)
         self.indel_list = [[]] * self.ploidy
@@ -166,8 +165,10 @@ class SequenceContainer:
                                 DiscreteDistribution(n[7], n[6]), []])
             for m in n[8]:
                 # noinspection PyTypeChecker
-                self.models[-1][6].append([DiscreteDistribution(m[0], ALLOWED_NUCL), DiscreteDistribution(m[1], ALLOWED_NUCL),
-                                           DiscreteDistribution(m[2], ALLOWED_NUCL), DiscreteDistribution(m[3], ALLOWED_NUCL)])
+                self.models[-1][6].append([DiscreteDistribution(m[0], ALLOWED_NUCL),
+                                           DiscreteDistribution(m[1], ALLOWED_NUCL),
+                                           DiscreteDistribution(m[2], ALLOWED_NUCL),
+                                           DiscreteDistribution(m[3], ALLOWED_NUCL)])
             self.models[-1].append([m for m in n[9]])
 
     def update_trinuc_bias(self):
@@ -179,7 +180,7 @@ class SequenceContainer:
             self.trinuc_bias[p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
                                                        range(self.win_buffer + 1, self.seq_len - 1))
 
-    def init_coverage(self, coverage_data, frag_dist=None):
+    def init_coverage_new(self, coverage_data, frag_dist=None):
         """
         Initializes coverage for the sequence container. Only makes changes if we are not in vcf-only mode.
 
@@ -187,8 +188,10 @@ class SequenceContainer:
         :param frag_dist: A probability distribution of the fragment size.
         :return: Mean coverage value
         """
+        # TODO This new form of init_coverage is attempting to divorce the process from the cigar string creation,
+        #  but will require some further investigation.
 
-        # TODO this section is also quite slow and will need further investigation
+        # TODO this section is also quite slow
         # If we're only creating a vcf, skip some expensive initialization related to coverage depth
         if not self.only_vcf:
             (self.window_size, gc_scalars, target_cov_vals) = coverage_data
@@ -227,6 +230,7 @@ class SequenceContainer:
                         tr_cov_vals[i].append(sum(target_cov_vals[self.fm_pos[i][j]:self.fm_span[i][j]]) / float(
                             self.fm_span[i][j] - self.fm_pos[i][j]))
                         prev_val = self.fm_pos[i][j]
+                    # TODO add debug attribute to this class to activate statements like this
                     # Debug statement
                     # print(f'({i, j}), {self.all_cigar[i][j]}, {self.fm_pos[i][j]}, {self.fm_span[i][j]}')
 
@@ -245,7 +249,144 @@ class SequenceContainer:
                     coverage_vals.append(coverage_vector[j + self.read_len] - coverage_vector[j])
                 # Below is Zach's attempt to fix this. The commented out line is the original
                 # avg_out.append(np.mean(coverage_vals) / float(self.read_len))
-                avg_out.append(np.mean(coverage_vals)/float(min([self.read_len, max_coord])))
+                avg_out.append(np.mean(coverage_vals) / float(min([self.read_len, max_coord])))
+                # Debug statement
+                # print(f'{avg_out}, {np.mean(avg_out)}')
+
+                if frag_dist is None:
+                    # Debug statement
+                    # print(f'++++, {max_coord}, {len(self.sequences[i])}, '
+                    #       f'{len(self.all_cigar[i])}, {len(coverage_vals)}')
+                    self.coverage_distribution.append(DiscreteDistribution(coverage_vals, range(len(coverage_vals))))
+
+                # fragment length nightmare
+                else:
+                    current_thresh = 0.
+                    index_list = [0]
+                    for j in range(len(frag_dist.cum_prob)):
+                        if frag_dist.cum_prob[j] >= current_thresh + COV_FRAGLEN_PERCENTILE / 100.0:
+                            current_thresh = frag_dist.cum_prob[j]
+                            index_list.append(j)
+                    flq = [frag_dist.values[nnn] for nnn in index_list]
+                    if frag_dist.values[-1] not in flq:
+                        flq.append(frag_dist.values[-1])
+                    flq.append(LARGE_NUMBER)
+
+                    self.fraglen_ind_map = {}
+                    for j in frag_dist.values:
+                        b_ind = bisect.bisect(flq, j)
+                        if abs(flq[b_ind - 1] - j) <= abs(flq[b_ind] - j):
+                            self.fraglen_ind_map[j] = flq[b_ind - 1]
+                        else:
+                            self.fraglen_ind_map[j] = flq[b_ind]
+
+                    self.coverage_distribution.append({})
+                    for flv in sorted(list(set(self.fraglen_ind_map.values()))):
+                        buffer_val = self.read_len
+                        for j in frag_dist.values:
+                            if self.fraglen_ind_map[j] == flv and j > buffer_val:
+                                buffer_val = j
+                        max_coord = min([len(self.sequences[i]) - buffer_val - 1,
+                                         len(self.all_cigar[i]) - buffer_val + self.read_len - 2])
+                        # print 'BEFORE:', len(self.sequences[i])-buffer_val
+                        # print 'AFTER: ', len(self.all_cigar[i])-buffer_val+self.read_len-2
+                        # print 'AFTER2:', max_coord
+                        coverage_vals = []
+                        for j in range(0, max_coord):
+                            coverage_vals.append(
+                                coverage_vector[j + self.read_len] - coverage_vector[j] + coverage_vector[j + flv] -
+                                coverage_vector[
+                                    j + flv - self.read_len])
+
+                        # EXPERIMENTAL
+                        # quantized_cov_vals = quantize_list(coverage_vals)
+                        # self.coverage_distribution[i][flv] = \
+                        #     DiscreteDistribution([n[2] for n in quantized_cov_vals],
+                        #                          [(n[0], n[1]) for n in quantized_cov_vals])
+
+                        # TESTING
+                        # import matplotlib.pyplot as mpl
+                        # print len(coverage_vals),'-->',len(quantized_cov_vals)
+                        # mpl.figure(0)
+                        # mpl.plot(range(len(coverage_vals)), coverage_vals)
+                        # for qcv in quantized_cov_vals:
+                        # mpl.plot([qcv[0], qcv[1]+1], [qcv[2],qcv[2]], 'r')
+                        # mpl.show()
+                        # sys.exit(1)
+
+                        self.coverage_distribution[i][flv] = DiscreteDistribution(coverage_vals,
+                                                                                  range(len(coverage_vals)))
+
+            return np.mean(avg_out)
+
+    def init_coverage(self, coverage_data, frag_dist=None):
+        """
+        Initializes coverage for the sequence container. Only makes changes if we are not in vcf-only mode.
+        :param coverage_data: A tuple containing the window size, gc scalars and target coverage values.
+        :param frag_dist: A probability distribution of the fragment size.
+        :return: Mean coverage value
+        """
+
+        # TODO this section is also quite slow and will need further investigation
+        # If we're only creating a vcf, skip some expensive initialization related to coverage depth
+        if not self.only_vcf:
+            (self.window_size, gc_scalars, target_cov_vals) = coverage_data
+            gc_cov_vals = [[] for _ in self.sequences]
+            tr_cov_vals = [[] for _ in self.sequences]
+            avg_out = []
+            self.coverage_distribution = []
+            for i in range(len(self.sequences)):
+                # Zach implemented a change here but I can't remember if I changed it back for some reason.
+                # If second line below doesn't work, reactivate the first line.
+                # max_coord = min([len(self.sequences[i]) - self.read_len, len(self.all_cigar[i]) - self.read_len])
+                max_coord = min([len(self.sequences[i]) - self.read_len, len(self.all_cigar[i]) - 1])
+
+                # Trying to fix a problem wherein the above line gives a negative answer
+                if max_coord <= 0:
+                    max_coord = min([len(self.sequences[i]), len(self.all_cigar[i])])
+
+                # compute gc-bias
+                j = 0
+                while j + self.window_size < len(self.sequences[i]):
+                    gc_c = self.sequences[i][j:j + self.window_size].count('G') + \
+                           self.sequences[i][j:j + self.window_size].count('C')
+                    gc_cov_vals[i].extend([gc_scalars[gc_c]] * self.window_size)
+                    j += self.window_size
+                gc_c = self.sequences[i][-self.window_size:].count('G') + \
+                       self.sequences[i][-self.window_size:].count('C')
+                gc_cov_vals[i].extend([gc_scalars[gc_c]] * (len(self.sequences[i]) - len(gc_cov_vals[i])))
+
+                # Targeted values
+                tr_cov_vals[i].append(target_cov_vals[0])
+                prev_val = self.fm_pos[i][0]
+                for j in range(1, max_coord):
+                    if self.fm_pos[i][j] is None:
+                        tr_cov_vals[i].append(target_cov_vals[prev_val])
+                    elif self.fm_span[i][j] - self.fm_pos[i][j] <= 1:
+                        tr_cov_vals[i].append(target_cov_vals[prev_val])
+                    else:
+                        tr_cov_vals[i].append(sum(target_cov_vals[self.fm_pos[i][j]:self.fm_span[i][j]]) / float(
+                            self.fm_span[i][j] - self.fm_pos[i][j]))
+                        prev_val = self.fm_pos[i][j]
+                    # Debug statement
+                    # print(f'({i, j}), {self.all_cigar[i][j]}, {self.fm_pos[i][j]}, {self.fm_span[i][j]}')
+
+                # shift by half of read length
+                if len(tr_cov_vals[i]) > int(self.read_len / 2.):
+                    tr_cov_vals[i] = [0.0] * int(self.read_len // 2) + tr_cov_vals[i][:-int(self.read_len / 2.)]
+                # fill in missing indices
+                tr_cov_vals[i].extend([0.0] * (len(self.sequences[i]) - len(tr_cov_vals[i])))
+
+                #
+                coverage_vector = np.cumsum([tr_cov_vals[i][nnn] *
+                                             gc_cov_vals[i][nnn] for nnn in range(len(tr_cov_vals[i]))])
+                coverage_vals = []
+                # TODO if max_coord is <=0, this is a problem
+                for j in range(0, max_coord):
+                    coverage_vals.append(coverage_vector[j + self.read_len] - coverage_vector[j])
+                # Below is Zach's attempt to fix this. The commented out line is the original
+                # avg_out.append(np.mean(coverage_vals) / float(self.read_len))
+                avg_out.append(np.mean(coverage_vals) / float(min([self.read_len, max_coord])))
                 # Debug statement
                 # print(f'{avg_out}, {np.mean(avg_out)}')
 
@@ -471,7 +612,7 @@ class SequenceContainer:
                     all_indels[p].append(my_indel)
 
         # add random snps
-        all_snps = [[] for _ in self.sequences]
+        all_snps = [[]] * self.ploidy
         for i in range(self.ploidy):
             for j in range(self.snps_to_add[i]):
                 # insert homozygous SNP
@@ -557,12 +698,10 @@ class SequenceContainer:
                     # notate indel positions for cigar computation
                     if indel_length > 0:
                         temp_symbol_list = temp_symbol_list[:v_pos + 1] + ['I'] * indel_length \
-                                              + temp_symbol_list[v_pos2 + 1:]
+                                           + temp_symbol_list[v_pos2 + 1:]
                     elif indel_length < 0:
                         temp_symbol_list[v_pos + 1] = "D" * abs(indel_length) + "M"
 
-            # I tried making this section down to line 586 bam-only, but it breaks everything downstream. I think we
-            # may need a fundamental algo change.
             # pre-compute cigar strings
             for j in range(len(temp_symbol_list) - self.read_len):
                 self.all_cigar[i].append(temp_symbol_list[j:j + self.read_len])
@@ -647,18 +786,15 @@ class SequenceContainer:
         """
         read_out = []
         for read in reads_to_sample:
-            if self.produce_bam:
-                try:
-                    my_cigar = self.all_cigar[my_ploid][read[0]]
-                except IndexError:
-                    print('Index error when attempting to find cigar string.')
-                    print(my_ploid, len(self.all_cigar[my_ploid]), read[0])
-                    if frag_len is not None:
-                        print((r_pos1, r_pos2))
-                        print(frag_len, self.fraglen_ind_map[frag_len])
-                    sys.exit(1)
-            else:
-                my_cigar = ''
+            try:
+                my_cigar = self.all_cigar[my_ploid][read[0]]
+            except IndexError:
+                print('Index error when attempting to find cigar string.')
+                print(my_ploid, len(self.all_cigar[my_ploid]), read[0])
+                if frag_len is not None:
+                    print((r_pos1, r_pos2))
+                    print(frag_len, self.fraglen_ind_map[frag_len])
+                sys.exit(1)
             total_d = sum([error[1] for error in read[2] if error[0] == 'D'])
             total_i = sum([error[1] for error in read[2] if error[0] == 'I'])
             avail_b = len(self.sequences[my_ploid]) - read[0] - self.read_len - 1
@@ -683,8 +819,7 @@ class SequenceContainer:
 
             skip_indels = False
 
-            if self.produce_bam:
-                extra_cigar_val = []
+            extra_cigar_val = []
 
             for error in sorted_errors:
                 e_len = error[1]
@@ -699,14 +834,13 @@ class SequenceContainer:
                         # code, which is simplified. May need to fix this all at some point
                         first_time = False
                         fill_to_go = total_d - total_i + 1
-                        if self.produce_bam:
-                            if fill_to_go > 0:
-                                try:
-                                    extra_cigar_val = self.all_cigar[my_ploid][read[0] + fill_to_go][-fill_to_go:]
-                                except IndexError:
-                                    # Applying the deletions we want requires going beyond region boundaries.
-                                    # Skip all indel errors
-                                    skip_indels = True
+                        if fill_to_go > 0:
+                            try:
+                                extra_cigar_val = self.all_cigar[my_ploid][read[0] + fill_to_go][-fill_to_go:]
+                            except IndexError:
+                                # Applying the deletions we want requires going beyond region boundaries.
+                                # Skip all indel errors
+                                skip_indels = True
 
                     if skip_indels:
                         continue
@@ -718,17 +852,16 @@ class SequenceContainer:
                         pf = e_pos + my_adj + e_len + 1
                         if str(read[3][pi:pf]) == str(error[3]):
                             read[3] = read[3][:pi + 1] + read[3][pf:]
-                            if self.produce_bam:
-                                my_cigar = my_cigar[:pi + 1] + my_cigar[pf:]
-                                # weird edge case with del at very end of region. Make a guess and add a "M"
-                                if pi + 1 == len(my_cigar):
-                                    my_cigar.append('M')
+                            my_cigar = my_cigar[:pi + 1] + my_cigar[pf:]
+                            # weird edge case with del at very end of region. Make a guess and add a "M"
+                            if pi + 1 == len(my_cigar):
+                                my_cigar.append('M')
 
-                                try:
-                                    my_cigar[pi + 1] = 'D' * e_len + my_cigar[pi + 1]
-                                except IndexError:
-                                    print("Bug!! Index error on expanded cigar")
-                                    sys.exit(1)
+                            try:
+                                my_cigar[pi + 1] = 'D' * e_len + my_cigar[pi + 1]
+                            except IndexError:
+                                print("Bug!! Index error on expanded cigar")
+                                sys.exit(1)
 
                         else:
                             print('\nError, ref does not match alt while attempting to insert deletion error!\n')
@@ -742,8 +875,7 @@ class SequenceContainer:
                         my_adj = sse_adj[e_pos]
                         if str(read[3][e_pos + my_adj]) == error[3]:
                             read[3] = read[3][:e_pos + my_adj] + error[4] + read[3][e_pos + my_adj + 1:]
-                            if self.produce_bam:
-                                my_cigar = my_cigar[:e_pos + my_adj] + ['I'] * e_len + my_cigar[e_pos + my_adj:]
+                            my_cigar = my_cigar[:e_pos + my_adj] + ['I'] * e_len + my_cigar[e_pos + my_adj:]
                         else:
                             print('\nError, ref does not match alt while attempting to insert insertion error!\n')
                             print('---', chr(read[3][e_pos + my_adj]), '!=', error[3])
@@ -762,7 +894,7 @@ class SequenceContainer:
                         sys.exit(1)
 
             if any_indel_err:
-                if len(my_cigar) and self.produce_bam:
+                if len(my_cigar):
                     my_cigar = (my_cigar + extra_cigar_val)[:self.read_len]
 
                 read[3] = read[3][:self.read_len]
@@ -771,4 +903,3 @@ class SequenceContainer:
 
         # read_out[i] = (pos, cigar, read_string, qual_string)
         return read_out
-
