@@ -214,8 +214,10 @@ class OutputFileWriter:
         if read2 and orientation:
             (read2, quality2) = (read2.reverse_complement(), quality2[::-1])
         elif read2 and not orientation:
-            (read1, quality1) = (read2.reverse_complement(), quality2[::-1])
+            read2_tmp = read2
+            qual2_tmp = quality2
             (read2, quality2) = (read1, quality1)
+            (read1, quality1) = (read2_tmp.reverse_complement(), qual2_tmp[::-1])
 
         self.output1_buffer.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
         if read2:
