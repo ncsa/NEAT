@@ -22,6 +22,7 @@ import pickle
 import numpy as np
 import argparse
 import pathlib
+from copy import deepcopy
 
 import pandas as pd
 from Bio import SeqIO
@@ -79,9 +80,7 @@ def main(raw_args=None):
                         help='empirical fragment length distribution')
     parser.add_argument('--gc-model', type=str, required=False, metavar='<str>', default=None,
                         help='empirical GC coverage bias distribution')
-    parser.add_argument('--bam', required=False, action='store_true', default=False, help='output golden BAM file ('
-                                                                                          'Note that this will '
-                                                                                          'drastically slow NEAT down)')
+    parser.add_argument('--bam', required=False, action='store_true', default=False, help='output golden BAM file')
     parser.add_argument('--vcf', required=False, action='store_true', default=False, help='output golden VCF file')
     parser.add_argument('--fa', required=False, action='store_true', default=False,
                         help='output FASTA instead of FASTQ')
@@ -106,6 +105,7 @@ def main(raw_args=None):
     """
 
     # target window size for read sampling. How many times bigger than read/frag length
+    # Todo investigate different or variable values for this
     window_target_scale = 100
 
     """
@@ -371,7 +371,7 @@ def main(raw_args=None):
     if save_bam:
         # TODO wondering if this is actually needed in the bam_header
         # The info is needed, but may exist in the index biopython creates.
-        bam_header = ref_index
+        bam_header = [deepcopy(ref_index)]
     vcf_header = None
     if save_vcf:
         vcf_header = [reference]
@@ -425,7 +425,6 @@ def main(raw_args=None):
                 - don't match the reference base at their specified position
                 - any alt allele contains anything other than allowed characters"""
         valid_variants_from_vcf = []
-        n_skipped = [0, 0, 0]
 
         # TODO add large random structural variants
 
@@ -747,7 +746,8 @@ def main(raw_args=None):
                                         output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                             my_read_name,
                                                                             my_read_data[0][0],
-                                                                            my_read_data[0][1], my_read_data[0][2],
+                                                                            my_read_data[0][1],
+                                                                            my_read_data[0][2],
                                                                             my_read_data[0][3],
                                                                             output_sam_flag=flag1)
                                     else:
@@ -755,7 +755,8 @@ def main(raw_args=None):
                                         output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
                                                                             my_read_name,
                                                                             my_read_data[0][0],
-                                                                            my_read_data[0][1], my_read_data[0][2],
+                                                                            my_read_data[0][1],
+                                                                            my_read_data[0][2],
                                                                             my_read_data[0][3],
                                                                             output_sam_flag=flag1)
                         # write PE output
@@ -775,14 +776,18 @@ def main(raw_args=None):
                                         flag1 = sam_flag(['paired', 'proper', 'second', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'proper', 'first', 'reverse'])
                                     output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
-                                                                        my_read_name, my_read_data[0][0],
-                                                                        my_read_data[0][1], my_read_data[0][2],
+                                                                        my_read_name,
+                                                                        my_read_data[0][0],
+                                                                        my_read_data[0][1],
+                                                                        my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[1][0])
                                     output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
-                                                                        my_read_name, my_read_data[1][0],
-                                                                        my_read_data[1][1], my_read_data[1][2],
+                                                                        my_read_name,
+                                                                        my_read_data[1][0],
+                                                                        my_read_data[1][1],
+                                                                        my_read_data[1][2],
                                                                         my_read_data[1][3],
                                                                         output_sam_flag=flag2,
                                                                         mate_pos=my_read_data[0][0])
@@ -794,14 +799,18 @@ def main(raw_args=None):
                                         flag1 = sam_flag(['paired', 'second', 'mate_unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'unmapped', 'reverse'])
                                     output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
-                                                                        my_read_name, my_read_data[0][0],
-                                                                        my_read_data[0][1], my_read_data[0][2],
+                                                                        my_read_name,
+                                                                        my_read_data[0][0],
+                                                                        my_read_data[0][1],
+                                                                        my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[0][0])
                                     output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
-                                                                        my_read_name, my_read_data[0][0],
-                                                                        my_read_data[1][1], my_read_data[1][2],
+                                                                        my_read_name,
+                                                                        my_read_data[0][0],
+                                                                        my_read_data[1][1],
+                                                                        my_read_data[1][2],
                                                                         my_read_data[1][3],
                                                                         output_sam_flag=flag2,
                                                                         mate_pos=my_read_data[0][0],
@@ -814,15 +823,19 @@ def main(raw_args=None):
                                         flag1 = sam_flag(['paired', 'second', 'unmapped', 'mate_reverse'])
                                         flag2 = sam_flag(['paired', 'first', 'mate_unmapped', 'reverse'])
                                     output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
-                                                                        my_read_name, my_read_data[1][0],
-                                                                        my_read_data[0][1], my_read_data[0][2],
+                                                                        my_read_name,
+                                                                        my_read_data[1][0],
+                                                                        my_read_data[0][1],
+                                                                        my_read_data[0][2],
                                                                         my_read_data[0][3],
                                                                         output_sam_flag=flag1,
                                                                         mate_pos=my_read_data[1][0],
                                                                         aln_map_quality=0)
                                     output_file_writer.write_bam_record(list(ref_index.keys()).index(chrom),
-                                                                        my_read_name, my_read_data[1][0],
-                                                                        my_read_data[1][1], my_read_data[1][2],
+                                                                        my_read_name,
+                                                                        my_read_data[1][0],
+                                                                        my_read_data[1][1],
+                                                                        my_read_data[1][2],
                                                                         my_read_data[1][3],
                                                                         output_sam_flag=flag2,
                                                                         mate_pos=my_read_data[1][0])

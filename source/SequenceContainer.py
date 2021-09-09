@@ -24,7 +24,7 @@ class SequenceContainer:
 
     def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None,
                  mut_rate=None, only_vcf=False):
-
+        # TODO check that sequence is a Seq object
         # initialize basic variables
         self.only_vcf = only_vcf
         self.x = x_offset
@@ -67,6 +67,8 @@ class SequenceContainer:
         if self.mut_rescale is None:
             self.mut_scalar = 1.0
         else:
+            # This is integer division in the working version. Surely that's not supposed to be though.
+            # Just double checked and the difference in output is that both are floats but one is rounded.
             self.mut_scalar = float(self.mut_rescale) / (mut_rate_sum / float(len(self.model_data)))
 
         # how are mutations spread to each ploid, based on their specified mut rates?
@@ -154,6 +156,7 @@ class SequenceContainer:
         if self.mut_rescale is None:
             self.mut_scalar = 1.0
         else:
+            # Originally this was
             self.mut_scalar = float(self.mut_rescale) / (mut_rate_sum / float(len(self.model_data)))
 
         # how are mutations spread to each ploid, based on their specified mut rates?
