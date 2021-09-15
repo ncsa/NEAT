@@ -3,6 +3,8 @@ import time
 import os
 import re
 import random
+import gzip
+
 
 def parse_line(vcf_line, col_dict, col_samp):
     # these were in the original. Not sure the point other than debugging.
@@ -85,7 +87,13 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
     all_vars = {}  # [ref][pos]
     samp_names = []
     printed_warning = False
-    f = open(vcf_path, 'r')
+
+    f = None
+    if vcf_path.endswith('.gz'):
+        f = gzip.open(vcf_path)
+    else:
+        f = open(vcf_path, 'r')
+
     for line in f:
 
         if line[0] != '#':
