@@ -52,7 +52,8 @@ def main(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="Path to reference fasta")
-    parser.add_argument('-R', type=int, required=True, metavar='read length', help="The desired read length")
+    parser.add_argument('-R', type=int, required=True, metavar='read length',
+                        help="The desired read length for fastq output")
     parser.add_argument('-o', type=str, required=True, metavar='output_prefix',
                         help="Prefix for the output files (can be a path)")
     parser.add_argument('-c', type=float, required=False, metavar='coverage', default=10.0,
@@ -89,7 +90,7 @@ def main(raw_args=None):
     parser.add_argument('--vcf', required=False, action='store_true', default=False, help='output golden VCF file')
     parser.add_argument('--fa', required=False, action='store_true', default=False,
                         help='output FASTA instead of FASTQ')
-    parser.add_argument('--rng', type=int, required=False, metavar='<int>', default=-1,
+    parser.add_argument('--rng', type=int, required=False, metavar='<int>', default=None,
                         help='rng seed value; identical RNG value should produce identical runs of the program, so '
                              'things like read locations, variant positions, error positions, etc, '
                              'should all be the same.')
@@ -116,6 +117,9 @@ def main(raw_args=None):
     low_cov_thresh = 50
 
     # required args
+    reference = args.r
+    read_len = args.R
+
     (reference, read_len, out_prefix) = (args.r, args.R, args.o)
     # various dataset parameters
     (coverage, ploids, input_bed, discard_bed, se_model, se_rate, mut_model, mut_rate, mut_bed, input_vcf) = \
@@ -172,7 +176,7 @@ def main(raw_args=None):
         paired_end = False
 
     if rng_seed == -1:
-        rng_seed = random.randint(1, 99999999)
+        rng_seed = None
     random.seed(rng_seed)
 
     is_in_range(read_len, 10, 1000000, 'Error: -R must be between 10 and 1,000,000')
@@ -205,7 +209,7 @@ def main(raw_args=None):
     # sequencing error model
     if se_model is None:
         print('Using default sequencing error model.')
-        se_model = sim_path / 'models/errorModel_toy.p'
+        se_model = sim_path / 'models/errorModel_default.p'
         se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
     else:
         # probably need to do some sanity checking
@@ -214,7 +218,7 @@ def main(raw_args=None):
     # GC-bias model
     if gc_bias_model is None:
         print('Using default gc-bias model.')
-        gc_bias_model = sim_path / 'models/gcBias_toy.p'
+        gc_bias_model = sim_path / 'models/gcBias_default.p'
         try:
             [gc_scale_count, gc_scale_val] = pickle.load(open(gc_bias_model, 'rb'))
         except IOError:
