@@ -31,7 +31,9 @@ from source.ref_func import index_ref, read_ref
 from source.vcf_func import parse_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
-from source.SequenceContainer import SequenceContainer, ReadContainer, parse_input_mutation_model
+from source.SequenceContainer import SequenceContainer
+from source.ReadContainer import ReadContainer
+from source.input_file_reader import parse_input_mutation_model
 
 """
 Some constants needed for analysis
