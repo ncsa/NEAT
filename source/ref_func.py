@@ -5,10 +5,9 @@ import gzip
 import pathlib
 import random
 from Bio.Seq import Seq
-from Bio import SeqIO
+from Bio.Seq import MutableSeq
 
-OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True}
-ALLOWED_NUCL = ['A', 'C', 'G', 'T']
+from source.constants_and_models import ALLOWED_NUCL, OK_CHR_ORD
 
 
 def index_ref(reference_path: str) -> list:
@@ -43,7 +42,7 @@ def index_ref(reference_path: str) -> list:
     if index_filename is not None:
         fai = open(index_filename, 'r')
         for line in fai:
-            splt = line[:-1].split('\t')
+            splt = line.strip().split('\t')
             # Defined as the number of bases in the contig
             seq_len = int(splt[1])
             # Defined as the byte index where the contig sequence begins
@@ -77,7 +76,8 @@ def index_ref(reference_path: str) -> list:
                 ref_indices.append((prev_r, prev_p, ref_file.tell() - len(data), seq_len))
             seq_len = 0
             prev_p = ref_file.tell()
-            prev_r = data[1:-1]
+            prev_r = data[1:].strip().split()
+
         else:
             seq_len += len(data) - 1
     ref_file.close()
@@ -101,12 +101,11 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
     # for seq_record in SeqIO.parse(ref_file, "fasta"):
     #     pass
 
-
     ref_file.seek(ref_inds_i[1])
     my_dat = ''.join(ref_file.read(ref_inds_i[2] - ref_inds_i[1]).split('\n'))
     my_dat = Seq(my_dat.upper())
     # Mutable seqs have a number of disadvantages. I'm going to try making them immutable and see if that helps
-    # my_dat = my_dat.tomutable()
+    # my_dat = MutableSeq(my_dat)
 
     # find N regions
     # data explanation: my_dat[n_atlas[0][0]:n_atlas[0][1]] = solid block of Ns
@@ -133,9 +132,9 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
             n_info['all'].extend(region)
             if region[1] - region[0] <= n_handling[1]:
                 for i in range(region[0], region[1]):
-                    temp = my_dat.tomutable()
+                    temp = MutableSeq(my_dat)
                     temp[i] = random.choice(ALLOWED_NUCL)
-                    my_dat = temp.toseq()
+                    my_dat = Seq(temp)
             else:
                 n_info['big'].extend(region)
     elif n_handling[0] == 'allChr' and n_handling[2] in OK_CHR_ORD:
@@ -143,9 +142,9 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
             n_info['all'].extend(region)
             if region[1] - region[0] <= n_handling[1]:
                 for i in range(region[0], region[1]):
-                    temp = my_dat.tomutable()
+                    temp = MutableSeq(my_dat)
                     temp[i] = n_handling[2]
-                    my_dat = temp.toseq()
+                    my_dat = Seq(temp)
             else:
                 n_info['big'].extend(region)
     elif n_handling[0] == 'ignore':
@@ -178,10 +177,87 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
     return my_dat, n_info
 
 
+def find_n_regions(input_sequence: Seq, n_handling: tuple, n_unknowns: bool = False):
+    """
+    Finds N regions in the sequence
+    :param input_sequence: Biopython Seq object containing the sequence to scan.
+    :param n_handling: tuple describing the n handling parameters
+    :param n_unknowns: Eliminate unknowns True/False
+    :return:
+    """
+    # data explanation: my_dat[n_atlas[0][0]:n_atlas[0][1]] = solid block of Ns
+    my_dat = MutableSeq(input_sequence)
+    prev_ni = 0
+    n_count = 0
+    n_atlas = []
+    for i in range(len(my_dat)):
+        # the or part will always be false because n_unknowns is always false
+        if my_dat[i] == 'N' or (n_unknowns and my_dat[i] not in OK_CHR_ORD):
+            if n_count == 0:
+                prev_ni = i
+            n_count += 1
+            if i == len(my_dat) - 1:
+                n_atlas.append((prev_ni, prev_ni + n_count))
+        else:
+            if n_count > 0:
+                n_atlas.append((prev_ni, prev_ni + n_count))
+            n_count = 0
+
+    # handle N base-calls as desired
+    # random is for paired end, ignore for single end allChr is never used.
+    n_info = {'all': [], 'big': [], 'non_N': []}
+    if n_handling[0] == 'random':
+        for region in n_atlas:
+            n_info['all'].extend(region)
+            if region[1] - region[0] <= n_handling[1]:
+                for i in range(region[0], region[1]):
+                    my_dat[i] = random.choice(ALLOWED_NUCL)
+            else:
+                n_info['big'].extend(region)
+
+    # this block of code is never used because 'allChr' is not used.
+    # The current code options are n_handling = ('random', fragment_size) and
+    # n_handling = ('ignore', read_len). Looking at this block it would replace
+    # all N's with whatever base is in the third position of n_handling, so it  would
+    # have to look something like n_handling = ('allChr', fragment_size, 'A').
+    # Bottom line, this part may be deletable
+    elif n_handling[0] == 'allChr' and n_handling[2] in OK_CHR_ORD:
+        for region in n_atlas:
+            n_info['all'].extend(region)
+            if region[1] - region[0] <= n_handling[1]:
+                for i in range(region[0], region[1]):
+                    my_dat[i] = n_handling[2]
+            else:
+                n_info['big'].extend(region)
+
+    elif n_handling[0] == 'ignore':
+        for region in n_atlas:
+            n_info['all'].extend(region)
+            n_info['big'].extend(region)
+    else:
+        print('\nERROR: UNKNOWN N_HANDLING MODE\n')
+        sys.exit(1)
+
+    habitable_regions = []
+    if not n_info['big']:
+        n_info['non_N'] = [(0, len(my_dat))]
+    else:
+        for i in range(0, len(n_info['big']), 2):
+            if i == 0:
+                habitable_regions.append((0, n_info['big'][0]))
+            else:
+                habitable_regions.append((n_info['big'][i - 1], n_info['big'][i]))
+        habitable_regions.append((n_info['big'][-1], len(my_dat)))
+    for n in habitable_regions:
+        if n[0] != n[1]:
+            n_info['non_N'].append(n)
+
+    return n_info
+
+
 def get_all_ref_regions(ref_path, ref_inds, n_handling, save_output=False):
     """
     Find all non-N regions in reference sequence ahead of time, for computing jobs in parallel
-
     :param ref_path:
     :param ref_inds:
     :param n_handling:
@@ -218,7 +294,6 @@ def get_all_ref_regions(ref_path, ref_inds, n_handling, save_output=False):
 def partition_ref_regions(in_regions, ref_inds, my_job, n_jobs):
     """
     Find which of the non-N regions are going to be used for this job
-
     :param in_regions:
     :param ref_inds:
     :param my_job:

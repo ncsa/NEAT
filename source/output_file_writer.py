@@ -2,9 +2,12 @@ from struct import pack
 import Bio.bgzf as bgzf
 import pathlib
 import re
+import sys
+import logging
 
 from source.neat_cigar import CigarString
 
+# TODO make this a configurable option
 BAM_COMPRESSION_LEVEL = 6
 
 
@@ -92,31 +95,45 @@ BUFFER_BATCH_SIZE = 8000  # write out to file after this many reads
 # TODO find a better way to write output files
 class OutputFileWriter:
     def __init__(self, out_prefix, paired=False, bam_header=None, vcf_header=None,
-                 no_fastq=False, fasta_instead=False):
+                 write_fastq=True, write_fasta=False, write_bam=False, write_vcf=False):
 
-        self.fasta_instead = fasta_instead
         # TODO Eliminate paired end as an option for fastas. Plan is to create a write fasta method.
-        if self.fasta_instead:
-            fq1 = pathlib.Path(out_prefix + '.fasta.gz')
-            fq2 = None
-        else:
-            fq1 = pathlib.Path(out_prefix + '_read1.fq.gz')
-            fq2 = pathlib.Path(out_prefix + '_read2.fq.gz')
-        bam = pathlib.Path(out_prefix + '_golden.bam')
-        vcf = pathlib.Path(out_prefix + '_golden.vcf.gz')
+        self.write_fastq = write_fastq
+        self.write_fasta = write_fasta
+        self.write_bam = write_bam
+        self.write_vcf = write_vcf
+        output1 = None
+        output2 = None
+        if self.write_fasta:
+            output1 = out_prefix.parent / (out_prefix.name + '.fasta.gz')
+        elif paired and self.write_fastq:
+            output1 = out_prefix.parent / (out_prefix.name + '_read1.fq.gz')
+            output2 = out_prefix.parent / (out_prefix.name + '_read2.fq.gz')
+        elif self.write_fastq:
+            output1 = out_prefix.parent / (out_prefix.name + '.fq.gz')
+        if self.write_bam:
+            bam = out_prefix.parent / (out_prefix.name + '_golden.bam')
+        if self.write_vcf:
+            vcf = out_prefix.parent / (out_prefix.name + '_golden.vcf.gz')
 
         # TODO Make a fasta-specific method
-        self.no_fastq = no_fastq
-        if not self.no_fastq:
-            self.fq1_file = bgzf.open(fq1, 'w')
-
-            self.fq2_file = None
-            if paired:
-                self.fq2_file = bgzf.open(fq2, 'w')
+        self.output1_file = None
+        self.output2_file = None
+        if output1:
+            self.output1_file = bgzf.open(output1, 'w')
+        if output2:
+            self.output2_file = bgzf.open(output2, 'w')
 
         # VCF OUTPUT
         self.vcf_file = None
-        if vcf_header is not None:
+        # Assuming we wanted the vcf and there's nothing wrong with the header, then we will proceed with creating the
+        # vcf file. If the header is empty and we wanted it, that is a bug we need to catch right here.
+        if self.write_vcf and not vcf_header:
+            print("ERROR: Something wrong with VCF header.")
+            logging.error("Something wrong with VCF header.")
+            sys.exit(1)
+
+        if self.write_vcf:
             self.vcf_file = bgzf.open(vcf, 'wb')
 
             # WRITE VCF HEADER
@@ -149,60 +166,74 @@ class OutputFileWriter:
 
         # BAM OUTPUT
         self.bam_file = None
-        if bam_header is not None:
+        # Assuming we wanted the bam and there's nothing wrong with the header, then we will proceed with creating the
+        # bam file. If the header is empty and we wanted it, that is a bug we need to catch right here.
+        if self.write_bam and not bam_header:
+            print("Something wrong with VCF header.")
+            logging.error("")
+            sys.exit(1)
+
+        if self.write_bam:
             self.bam_file = bgzf.BgzfWriter(bam, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
 
             # WRITE BAM HEADER
             self.bam_file.write("BAM\1")
             header = '@HD\tVN:1.5\tSO:coordinate\n'
-            for n in bam_header[0]:
-                header += '@SQ\tSN:' + n[0] + '\tLN:' + str(n[3]) + '\n'
+            for key in bam_header.keys():
+                header += '@SQ\tSN:' + str(key) + '\tLN:' + str(len(bam_header[key])) + '\n'
             header += '@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n'
             header_bytes = len(header)
-            num_refs = len(bam_header[0])
+            num_refs = len(bam_header)
             self.bam_file.write(pack('<i', header_bytes))
             self.bam_file.write(header)
             self.bam_file.write(pack('<i', num_refs))
 
-            for n in bam_header[0]:
-                l_name = len(n[0]) + 1
+            for key in bam_header.keys():
+                l_name = len(key) + 1
                 self.bam_file.write(pack('<i', l_name))
-                self.bam_file.write(n[0] + '\0')
-                self.bam_file.write(pack('<i', n[3]))
+                self.bam_file.write(key + '\0')
+                self.bam_file.write(pack('<i', len(bam_header[key])))
 
         # buffers for more efficient writing
-        self.fq1_buffer = []
-        self.fq2_buffer = []
+        self.output1_buffer = []
+        self.output2_buffer = []
         self.bam_buffer = []
 
-    # TODO add write_fasta_record
+    def write_fasta_record(self, read_name, read):
+        """
+        Needs to take the input given and make a fasta record. We need to figure out how to get it into standard fasta
+        format for this to work
+        """
+        # TODO This will make a technically correct but not standard fasta file.
+        #  We either need to recombine this in another step, or think of a better way to do this
+        self.output1_buffer.append('>' + read_name + '/1\n' + str(read) + '\n')
 
-    def write_fastq_record(self, read_name, read1, qual1, read2=None, qual2=None, orientation=None):
+    def write_fastq_record(self, read_name, read1, quality1, read2=None, quality2=None, orientation=None):
         # Since read1 and read2 are Seq objects from Biopython, they have reverse_complement methods built-in
-        (read1, quality1) = (read1, qual1)
+        (read1, quality1) = (read1, quality1)
         if read2 is not None and orientation is True:
-            (read2, quality2) = (read2.reverse_complement(), qual2[::-1])
+            (read2, quality2) = (read2.reverse_complement(), quality2[::-1])
         elif read2 is not None and orientation is False:
             read2_tmp = read2
-            qual2_tmp = qual2
-            (read2, quality2) = (read1, qual1)
+            qual2_tmp = quality2
+            (read2, quality2) = (read1, quality1)
             (read1, quality1) = (read2_tmp.reverse_complement(), qual2_tmp[::-1])
 
-        if self.fasta_instead:
-            self.fq1_buffer.append('>' + read_name + '/1\n' + str(read1) + '\n')
+        if self.write_fasta:
+            self.output1_buffer.append('>' + read_name + '/1\n' + str(read1) + '\n')
             if read2 is not None:
-                self.fq2_buffer.append('>' + read_name + '/2\n' + str(read2) + '\n')
+                self.output2_buffer.append('>' + read_name + '/2\n' + str(read2) + '\n')
         else:
-            self.fq1_buffer.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
+            self.output1_buffer.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
             if read2 is not None:
-                self.fq2_buffer.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
+                self.output2_buffer.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
 
     def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info):
         self.vcf_file.write(
             str(chrom) + '\t' + str(pos) + '\t' + str(id_str) + '\t' + str(ref) + '\t' + str(alt) + '\t' + str(
                 qual) + '\t' + str(filt) + '\t' + str(info) + '\n')
 
-    def write_bam_record(self, ref_id, read_name, pos_0, cigar, seq, qual, output_sam_flag,
+    def write_bam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag,
                          mate_pos=None, aln_map_quality=70):
 
         my_bin = reg2bin(pos_0, pos_0 + len(seq))
@@ -213,7 +244,7 @@ class OutputFileWriter:
         cig_letters = re.split(r"\d+", cigar_string)[1:]
         cig_numbers = [int(n) for n in re.findall(r"\d+", cigar_string)]
         cig_ops = len(cig_letters)
-        next_ref_id = ref_id
+        next_ref_id = chromosome_index
         if mate_pos is None:
             next_pos = 0
             my_t_len = 0
@@ -276,20 +307,28 @@ class OutputFileWriter:
 
         # a horribly compressed line, I'm sorry.
         # (ref_index, position, data)
-        self.bam_buffer.append((ref_id, pos_0, pack('<i', block_size) + pack('<i', ref_id) + pack('<i', pos_0) +
-                                pack('<I', (my_bin << 16) + (my_map_quality << 8) + len(read_name) + 1) +
-                                pack('<I', (output_sam_flag << 16) + cig_ops) + pack('<i', seq_len) + pack('<i', next_ref_id) +
-                                pack('<i', next_pos) + pack('<i', my_t_len) + read_name.encode('utf-8') +
-                                b'\0' + encoded_cig + encoded_seq + encoded_qual.encode('utf-8')))
+        self.bam_buffer.append(
+            (chromosome_index, pos_0, pack('<i', block_size) + pack('<i', chromosome_index) + pack('<i', pos_0) +
+             pack('<I', (my_bin << 16) + (my_map_quality << 8) + len(read_name) + 1) +
+             pack('<I', (output_sam_flag << 16) + cig_ops) + pack('<i', seq_len) +
+             pack('<i', next_ref_id) +
+             pack('<i', next_pos) + pack('<i', my_t_len) + read_name.encode('utf-8') +
+             b'\0' + encoded_cig + encoded_seq + encoded_qual.encode('utf-8')))
 
     def flush_buffers(self, bam_max=None, last_time=False):
-        if (len(self.fq1_buffer) >= BUFFER_BATCH_SIZE or len(self.bam_buffer) >= BUFFER_BATCH_SIZE) or (
-                len(self.fq1_buffer) and last_time) or (len(self.bam_buffer) and last_time):
-            # fq
-            if not self.no_fastq:
-                self.fq1_file.write(''.join(self.fq1_buffer))
-                if len(self.fq2_buffer):
-                    self.fq2_file.write(''.join(self.fq2_buffer))
+        if (len(self.output1_buffer) >= BUFFER_BATCH_SIZE or len(self.bam_buffer) >= BUFFER_BATCH_SIZE) or (
+                len(self.output1_buffer) and last_time) or (len(self.bam_buffer) and last_time):
+            # fasta
+            # TODO this is a potential place to reorg the fasta file before it's written
+            if self.write_fasta:
+                self.output1_file.write(''.join.output1_buffer)
+
+            # fastq
+            elif self.write_fastq:
+                self.output1_file.write(''.join(self.output1_buffer))
+                if len(self.output2_buffer):
+                    self.output2_file.write(''.join(self.output2_buffer))
+
             # bam
             if len(self.bam_buffer):
                 bam_data = sorted(self.bam_buffer)
@@ -312,16 +351,16 @@ class OutputFileWriter:
                         self.bam_buffer = []
                     else:
                         self.bam_buffer = bam_data[ind_to_stop_at:]
-            self.fq1_buffer = []
-            self.fq2_buffer = []
+            self.output1_buffer = []
+            self.output2_buffer = []
 
     def close_files(self):
         self.flush_buffers(last_time=True)
-        if not self.no_fastq:
-            self.fq1_file.close()
-            if self.fq2_file is not None:
-                self.fq2_file.close()
-        if self.vcf_file is not None:
+        if self.output1_file:
+            self.output1_file.close()
+        if self.output2_file:
+            self.output2_file.close()
+        if self.vcf_file:
             self.vcf_file.close()
-        if self.bam_file is not None:
+        if self.bam_file:
             self.bam_file.close()
