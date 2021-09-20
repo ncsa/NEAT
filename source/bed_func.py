@@ -1,8 +1,8 @@
 import pathlib
 import gzip
-import sys
 import re
 import logging
+from source.error_handling import will_exit
 
 
 def parse_bed(input_bed: str, chromosomes: list,
@@ -45,8 +45,7 @@ def parse_bed(input_bed: str, chromosomes: list,
                         logging.error(f"Improperly formatted bed file line {line}")
                         if debug:
                             logging.error(e)
-                        print('Quitting NEAT...')
-                        sys.exit(1)
+                        will_exit(1)
                     # Trying not to 'fix' bed files, but an easy case is if the vcf uses 'chr' and the bed doesn't, in
                     # which we frequently see in human data, we'll just put chr on there. Anything more complicated
                     # will be on the user to correct their beds first.
@@ -83,7 +82,7 @@ def parse_bed(input_bed: str, chromosomes: list,
                           "Gzipped files must end in extension '.gz'")
             if debug:
                 logging.error(e)
-            sys.exit(1)
+            will_exit(1)
 
         # some validation
         in_ref_only = [k for k in chromosomes if k not in ret_dict]

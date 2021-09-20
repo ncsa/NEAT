@@ -20,22 +20,26 @@ import pickle
 import logging
 from copy import deepcopy
 import multiprocessing
-from tempfile import TemporaryDirectory
+import tempfile
 import pandas as pd
 from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.Seq import MutableSeq
 from types import SimpleNamespace
 
 from source.constants_and_models import VERSION, LOW_COVERAGE_THRESHOLD
 from source.input_file_reader import parse_input_mutation_model
 from source.ReadContainer import ReadContainer
+from source.error_handling import will_exit, print_and_log
 
-from source.ref_func import find_n_regions, index_ref, read_ref
+from source.ref_func import find_n_regions
 from source.bed_func import parse_bed
 from source.vcf_func import parse_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
 from source.constants_and_models import ALLOWED_NUCL
+from source.neat_cigar import CigarString
 
 # Constants
 NEAT_PATH = pathlib.Path(__file__).resolve().parent
@@ -51,12 +55,9 @@ def print_start_info() -> datetime.datetime:
     """
     starttime = datetime.datetime.now()
     print('\n-----------------------------------------------------------')
-    print(f"NEAT multithreaded version, v{VERSION}, is running.")
-    print(f'Started: {str(starttime)}.')
-    logging.info(f'NEAT multithreaded version, v{VERSION} started.')
+    print_and_log(f"NEAT multithreaded version, v{VERSION}, is running.", 'info')
+    print(f'INFO - Started: {str(starttime)}.')
     return starttime
-
-
 
 
 def run(opts):
@@ -84,109 +85,79 @@ def print_configuration(args, options):
     """
     Prints out file names and multithreading info
     """
-    print(f'\nRun Configuration...')
+    print_and_log(f'Run Configuration...', 'INFO')
     potential_filetypes = ['vcf', 'bam', 'fasta', 'fastq']
     log = ''
     for suffix in potential_filetypes:
         key = f'produce_{suffix}'
         if options.args[key]:
             log += f' {suffix} '
-    print(f'Producing the following files: {log.strip()}')
-    logging.info(f'Producing the following files: {log.strip()}')
-    print(f'Input file: {options.reference}')
-    logging.info(f'Input file: {options.reference}')
-    print(f'Output files: {args.output}.<{log}>')
-    logging.info(f'Output files: {args.output}.<{log}>')
+    print_and_log(f'Producing the following files: {log.strip()}', 'INFO')
+    print_and_log(f'Input file: {options.reference}', 'INFO')
+    print_and_log(f'Output files: {args.output}.<{log}>', 'INFO')
     if options.threads == 1:
-        print(f"Single threading - 1 thread.")
+        print_and_log(f"Single threading - 1 thread.", 'info')
     else:
-        print(f'Multithreading - {options.threads} threads')
+        print_and_log(f'Multithreading - {options.threads} threads', 'info')
     logging.info(f'Threads: {options.threads}')
     if options.paired_ended:
-        print(f'Running in paired-ended mode.')
-        logging.info(f'paired-ended')
+        print_and_log(f'Running in paired-ended mode.', 'INFO')
         if options.fragment_model:
-            print(f'Using fragment length model: {options.fragment_model}')
-            logging.info(f'Using fragment length model: {options.fragment_model}')
+            print_and_log(f'Using fragment length model: {options.fragment_model}', 'INFO')
         else:
-            print(f'Using fragment model based on mean={options.fragment_mean}, '
-                  f'st dev={options.fragment_st_dev}')
-            logging.info(f'Using fragment model based on mean={options.fragment_mean}, '
-                         f'st dev={options.fragment_st_dev}')
+            print_and_log(f'Using fragment model based on mean={options.fragment_mean}, '
+                          f'st dev={options.fragment_st_dev}', 'INFO')
     else:
-        print(f'Running in single-ended mode.')
-        logging.info(f'Running in single ended.')
-    print(f'Using a read length of {options.read_len}')
-    logging.info(f'Using a read length of {options.read_len}')
-    print(f'Average coverage: {options.coverage}')
-    logging.info(f'Average coverage: {options.coverage}')
-    print(f'Using error model: {options.error_model}')
-    logging.info(f'Error model: {options.error_model}')
+        print_and_log(f'Running in single-ended mode.', 'INFO')
+    print_and_log(f'Using a read length of {options.read_len}', 'INFO')
+    print_and_log(f'Average coverage: {options.coverage}', 'INFO')
+    print_and_log(f'Using error model: {options.error_model}', 'INFO')
     if options.avg_seq_error:
-        print(f'User defined average sequencing error rate: {options.avg_seq_error}.')
-        logging.info(f'Average sequencing error rate: {options.avg_seq_error}.')
+        print_and_log(f'User defined average sequencing error rate: {options.avg_seq_error}.', 'INFO')
     if options.rescale_qualities:
-        print(f'Quality scores will be rescaled to match avg seq error rate.')
-        logging.info(f'Quality scores rescaled')
-    print(f'Ploidy value: {options.ploidy}')
-    logging.info(f'Ploidy value: {options.ploidy}')
+        print_and_log(f'Quality scores will be rescaled to match avg seq error rate.', 'INFO')
+    print_and_log(f'Ploidy value: {options.ploidy}', 'INFO')
     if options.include_vcf:
-        print(f'Vcf of variants to include: {options.include_vcf}')
-        logging.info(f'Vcf of variants to include: {options.include_vcf}')
+        print_and_log(f'Vcf of variants to include: {options.include_vcf}', 'INFO')
     if options.target_bed:
-        print(f'BED of regions to target: {options.target_bed}')
-        print(f'Off-target coverage rate: {options.off_target_coverage}')
-        print(f'Discarding off target regions: {options.discard_offtarget}')
-        logging.info(f'BED of regions to target: {options.target_bed}')
-        logging.info(f'Off-target coverage rate: {options.off_target_coverage}')
-        logging.info(f'Discarding off target regions: {options.discard_offtarget}')
+        print_and_log(f'BED of regions to target: {options.target_bed}', 'INFO')
+        print_and_log(f'Off-target coverage rate: {options.off_target_coverage}', 'INFO')
+        print_and_log(f'Discarding off target regions: {options.discard_offtarget}', 'INFO')
     if options.discard_bed:
-        print(f'BED of regions to discard: {options.discard_bed}')
-        logging.info(f'BED of regions to discard: {options.discard_bed}')
+        print_and_log(f'BED of regions to discard: {options.discard_bed}', 'INFO')
     if options.mutation_model:
-        print(f'Using mutation model in file: {options.mutation_model}')
-        logging.info(f'BED of regions to target: {options.mutation_model}')
+        print_and_log(f'Using mutation model in file: {options.mutation_model}', 'INFO')
     if options.mutation_rate:
-        print(f'Rescaling average mutation rate to: {options.mutation_rate}')
-        logging.info(f'Rescaling average mutation rate to: {options.mutation_rate}')
+        print_and_log(f'Rescaling average mutation rate to: {options.mutation_rate}', 'INFO')
     if options.mutation_bed:
-        print(f'BED of mutation rates of different regions: {options.mutation_bed}')
-        logging.info(f'BED of mutation rates of different regions: {options.mutation_bed}')
+        print_and_log(f'BED of mutation rates of different regions: {options.mutation_bed}', 'INFO')
     if options.n_cutoff:
-        print(f'N-cutoff quality score: {options.n_cutoff}')
-        logging.info(f'N-cutoff quality score: {options.n_cutoff}')
+        print_and_log(f'N-cutoff quality score: {options.n_cutoff}', 'INFO')
     if options.gc_model:
-        print(f'Using GC model: {options.gc_model}')
-        logging.info(f'Using GC model: {options.gc_model}')
+        print_and_log(f'Using GC model: {options.gc_model}', 'INFO')
     if options.force_coverage:
-        print(f'Ignoring models and forcing coverage value.')
-        logging.info(f'Ignoring models and forcing coverage value.')
+        print_and_log(f'Ignoring models and forcing coverage value.', 'INFO')
     if options.debug:
-        print(f'Debug Mode Activated.')
-        logging.info(f'Debug Mode Activated.')
+        print_and_log(f'Debug Mode Activated.', 'INFO')
     if options.rng_value:
-        print(f'RNG seed value: {options.rng_value}')
-        logging.info(f'RNG seed value: {options.rng_value}')
+        print_and_log(f'RNG seed value: {options.rng_value}', 'INFO')
 
 
 def pickle_load_model(file, mssg) -> list:
     try:
         return pickle.load(file)
     except IOError as e:
-        print(mssg)
-        logging.error(e)
-        logging.error(mssg)
-        sys.exit(1)
+        print_and_log(mssg, 'error')
+        logging.error(str(e))
+        will_exit(1)
     except EOFError as e:
-        print(mssg)
-        logging.error(e)
-        logging.error(mssg)
-        sys.exit(1)
+        print_and_log(mssg, 'error')
+        logging.error(str(e))
+        will_exit(1)
     except ValueError as e:
-        print(mssg)
-        logging.error(e)
-        logging.error(mssg)
-        sys.exit(1)
+        print_and_log(mssg, 'error')
+        logging.error(str(e))
+        will_exit(1)
 
 
 # class representing the options
@@ -246,25 +217,18 @@ class Options(SimpleNamespace):
     def check_and_log_error(keyname, value_to_check, lowval, highval):
         if lowval != "exists" and highval:
             if not (lowval <= value_to_check <= highval):
-                print(f'\nERROR: @{keyname} must be between {lowval} and {highval}.')
-                print(f'\nNothing written, quitting NEAT.')
-                print('-----------------------------------------------------------------------')
-                logging.error(f'ERROR: @{keyname} must be between {lowval} and {highval}.')
-                sys.exit(1)
+                print_and_log(f'@{keyname} must be between {lowval} and {highval}.', 'error')
+                will_exit(1)
         elif lowval == "exists":
             if not pathlib.Path(value_to_check).is_file():
-                print(f'\nERROR: the file given to @{keyname} does not exist')
-                print(f'\nNothing written, quitting NEAT.')
-                print('-----------------------------------------------------------------------')
-                logging.error(f'ERROR: the file given to @{keyname} does not exist')
-                sys.exit(1)
+                print_and_log(f'the file given to @{keyname} does not exist', 'error')
+                will_exit(1)
         elif not lowval and not highval:
             # This indicates a boolean and we have nothing to check
             pass
         else:
-            print(f'\nUndeclared criteria {lowval, highval} in Options definitions.')
-            logging.error(f'Undeclared criteria {lowval, highval} in Options definitions.')
-            sys.exit(1)
+            print_and_log(f'Undeclared criteria {lowval, highval} in Options definitions.', 'error')
+            will_exit(1)
 
     def read(self):
         for line in open(self.config_file):
@@ -292,18 +256,16 @@ class Options(SimpleNamespace):
                         try:
                             temp = int(line_split[1])
                         except ValueError:
-                            print(f'\nThe value for {key} must be an integer. No decimals allowed.')
-                            logging.error(f'The value for {key} must be an integer. No decimals allowed.')
-                            sys.exit(1)
+                            print_and_log(f'The value for {key} must be an integer. No decimals allowed.', 'error')
+                            will_exit(1)
                         self.check_and_log_error(key, temp, criteria1, criteria2)
                         self.args[key] = temp
                     elif type_of_var == 'float':
                         try:
                             temp = float(line_split[1])
                         except ValueError:
-                            print(f'\nThe value for {key} must be a float.')
-                            logging.error(f'The value for {key} must be a float.')
-                            sys.exit(1)
+                            print_and_log(f'The value for {key} must be a float.', 'error')
+                            will_exit(1)
                         self.check_and_log_error(key, temp, criteria1, criteria2)
                         self.args[key] = temp
                     elif type_of_var == 'boolean':
@@ -315,15 +277,12 @@ class Options(SimpleNamespace):
                             else:
                                 raise ValueError
                         except ValueError:
-                            print(f'\nBoolean key @{key} '
-                                  f'requires a value of "true" or "false" (case insensitive).')
-                            logging.error(f'Boolean key @{key} '
-                                          f'requires  a value of "true" or "false" (case insensitive).')
-                            sys.exit(1)
+                            print_and_log(f'\nBoolean key @{key} requires a value of "true" or "false" '
+                                          f'(case insensitive).', 'error')
+                            will_exit(1)
                     else:
-                        print(f'\nBUG: Undefined type in the Options dictionary: {type_of_var}.')
-                        logging.error(f'BUG: Undefined type in the Options dictionary: {type_of_var}.')
-                        sys.exit(1)
+                        print_and_log(f'BUG: Undefined type in the Options dictionary: {type_of_var}.', 'critical')
+                        will_exit(1)
         # Anything we skipped in the config gets the default value
         # No need to check since these are already CAREFULLY vetted
         for key, (_, default, criteria1, criteria2) in self.defs.items():
@@ -339,10 +298,8 @@ class Options(SimpleNamespace):
         """
 
         if self.args['produce_fasta']:
-            print("\nFASTA mode active.")
-            print("NOTE: At the moment, NEAT can produce a FASTA or FASTQ files, not both.")
-            logging.info("FASTA mode active.")
-            logging.info("NOTE: At the moment, NEAT can produce a FASTA OR FASTQ files, not both.")
+            print_and_log("\nFASTA mode active.", 'info')
+            print_and_log("NOTE: At the moment, NEAT can produce a FASTA or FASTQ files, not both.", 'info')
             # Turn off fastq and paired-ended mode for now
             self.args['produce_fastq'] = False
             self.args['paired_ended'] = False
@@ -351,47 +308,38 @@ class Options(SimpleNamespace):
             self.args['fragment_st_dev'] = None
         if not self.args['produce_bam'] and not self.args['produce_vcf'] \
                 and not self.args['produce_fasta'] and not self.args['produce_fastq']:
-            print('\nERROR: No files would be produced, all file types turned off')
-            logging.error('ERROR: No files would be produced, all file types turned off')
-            sys.exit(1)
+            print_and_log('No files would be produced, as all file types are set to false', 'error')
+            will_exit(1)
         if not self.args['produce_fastq']:
-            print("\nBypassing FASTQ generation.")
-            logging.info("Bypassing FASTQ generation.")
+            print_and_log("Bypassing FASTQ generation.", 'info')
         if self.args['produce_vcf'] and (not self.args['produce_fastq'] and not self.args['produce_bam']
                                          and not self.args['produce_fasta']):
-            print('Only producing VCF output.')
-            logging.info('Only producing VCF output')
+            print_and_log('Only producing VCF output.', 'info')
         if self.args['produce_bam'] and (not self.args['produce_fastq'] and not self.args['produce_vcf']
                                          and not self.args['produce_fasta']):
-            print('Only producing BAM output.')
-            logging.info('Only producing BAM output')
+            print_and_log('Only producing BAM output.', 'info')
 
         # This next section just checks all the paired ended stuff
         flagged = False
         if self.args['paired_ended']:
-            print("\nPaired-ended mode")
-            logging.info('Paired-ended mode')
+            print_and_log("\nPaired-ended mode", 'info')
             if self.args['fragment_model']:
-                print(f"\nUsing fragment length model {self.args['fragment_model']} to produce paired ended reads")
-                logging.info(f"Using fragment length model {self.args['fragment_model']} to produce paired ended reads")
+                print_and_log(f"Using fragment length model {self.args['fragment_model']} to produce paired ended reads")
                 self.args['fragment_mean'] = None
                 self.args['fragment_st_dev'] = None
             elif self.args['fragment_mean']:
                 if self.args['fragment_st_dev']:
-                    print(f"\nUsing fragment length mean = {self.args['fragment_mean']}, "
-                          f"standard deviation = {self.args['fragment_st_dev']} to produce paired ended reads.")
-                    logging.info(f"Using fragment length mean = {self.args['fragment_mean']}, "
-                                 f"standard deviation = {self.args['fragment_st_dev']} to produce paired ended reads.")
+                    print_and_log(f"Using fragment length mean = {self.args['fragment_mean']}, "
+                                  f"standard deviation = {self.args['fragment_st_dev']} "
+                                  f"to produce paired ended reads.", 'info')
                 else:
                     flagged = True
             else:
                 flagged = True
         if flagged:
-            print("\nERROR: For paired ended mode, you need either a "
-                  "@fragment_model or both @fragment_mean and @fragment_st_dev")
-            logging.error("ERROR: For paired ended mode, you need either a "
-                          "@fragment_model or both @fragment_mean and @fragment_st_dev")
-            sys.exit(1)
+            print_and_log("For paired ended mode, you need either a "
+                          "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
+            will_exit(1)
 
 
 # class representing a chromosome mutation
@@ -431,9 +379,8 @@ def main(raw_args=None):
     starttime = print_start_info()
 
     if not args.conf.is_file():
-        print(f'\nError: configuration file ({args.conf}) cannot be found.')
-        logging.error(f'Error: configuration file ({args.conf}) cannot be found.')
-        sys.exit(1)
+        print_and_log(f'Configuration file ({args.conf}) cannot be found.', 'error')
+        will_exit(1)
 
     # Reads in the user-entered options from the config file and performs
     # some basic checks and corrections.
@@ -459,6 +406,8 @@ def main(raw_args=None):
         cancer_model = parse_input_mutation_model(options.cancer_model, 2)
 
     # Implements sequencing error model
+    mssg = "Problem loading Sequencing error model data @error_model"
+    error_data = pickle_load_model(open(options.error_model, 'rb'), mssg)
     sequencing_error_class = ReadContainer(options.read_len, options.error_model,
                                            options.avg_seq_error)
     if options.debug:
@@ -518,8 +467,7 @@ def main(raw_args=None):
     if options.debug:
         logging.info("Process Inputs")
 
-    print(f'Reading {options.reference}...')
-    logging.info(f'Reading {options.reference}...')
+    print_and_log(f'Reading {options.reference}...', 'info')
 
     ref_index = SeqIO.index(str(options.reference), 'fasta')
     reference_chromosomes = list(ref_index.keys())
@@ -558,13 +506,14 @@ def main(raw_args=None):
         input_variants_chroms = list(set(list(input_variants.CHROM)))
         for item in input_variants_chroms:
             if item not in reference_chromosomes and not printed_warning:
-                print(f'Warning: ignoring all input vcf records for {item} because it is not found in the reference.')
-                print(f'\tIf this is unexpected, check that that {item} matches reference name exactly.')
-                logging.warning("Ignoring all input vcf records for {item} because it is not found in the reference.")
-                logging.warning(f"\tIf this is unexpected, check that that {item} matches reference name exactly.")
+                print_and_log(f'Warning: ignoring all input vcf records for {item} '
+                              f'because it is not found in the reference.', 'warning')
+                print_and_log(f'\tIf this is unexpected, check that that {item} '
+                              f'matches reference name exactly.', 'warning')
                 printed_warning = True
                 input_variants = input_variants[input_variants['CHROM'] != item]
 
+        # Check the variants and classify as needed
         for chrom in reference_chromosomes:
             n_skipped = [0, 0, 0]
             if chrom in input_variants_chroms:
@@ -591,17 +540,12 @@ def main(raw_args=None):
                         input_variants.drop(index, inplace=True)
                         continue
 
-                print(f'Found {len(input_variants)} valid variants for {chrom} in @include_vcf.')
-                logging.info(f'Found {len(input_variants)} valid variants for {chrom} in @include_vcf.')
+                print_and_log(f'Found {len(input_variants)} valid variants for {chrom} in @include_vcf.', 'info')
                 if any(n_skipped):
-                    print(f'variants skipped: {sum(n_skipped)}')
-                    print(f' - [{str(n_skipped[0])}] ref allele did not match reference')
-                    print(f' - [{str(n_skipped[1])}] attempted to insert into N-region')
-                    print(f' - [{str(n_skipped[2])}] alt allele contained non-ACGT characters')
-                    logging.info(f'variants skipped: {sum(n_skipped)}')
-                    logging.info(f' - [{str(n_skipped[0])}] ref allele did not match reference')
-                    logging.info(f' - [{str(n_skipped[1])}] attempted to insert into N-region')
-                    logging.info(f' - [{str(n_skipped[2])}] alt allele contained non-ACGT characters')
+                    print_and_log(f'variants skipped: {sum(n_skipped)}', 'info')
+                    print_and_log(f' - [{str(n_skipped[0])}] ref allele did not match reference', 'info')
+                    print_and_log(f' - [{str(n_skipped[1])}] attempted to insert into N-region', 'info')
+                    print_and_log(f' - [{str(n_skipped[2])}] alt allele contained non-ACGT characters', 'info')
 
     # parse input targeted regions, if present
     target_regions = parse_bed(options.target_bed, reference_chromosomes, begins_with_chr, False, options.debug)
@@ -623,7 +567,7 @@ def main(raw_args=None):
     bam_header = None
     vcf_header = None
     if options.produce_bam:
-        bam_header = [deepcopy(list(ref_index))]
+        bam_header = ref_index
     if options.produce_vcf:
         vcf_header = [options.reference]
 
@@ -631,10 +575,11 @@ def main(raw_args=None):
     out_prefix_parent_dir = pathlib.Path(pathlib.Path(args.output).resolve().parent)
     if not out_prefix_parent_dir.is_dir():
         if options.debug:
-            print(f'Creating output dir: {out_prefix_parent_dir}')
-            logging.info(f'Creating output dir: {out_prefix_parent_dir}')
+            print_and_log(f'Creating output dir: {out_prefix_parent_dir}', 'info')
         out_prefix_parent_dir.mkdir(parents=True, exist_ok=True)
 
+    # Creates files and sets up objects for files that can be written to as needed.
+    # Also creates headers for bam and vcf.
     if options.cancer:
         output_normal = out_prefix_parent_dir / f'{out_prefix_name}_normal'
         output_tumor = out_prefix_parent_dir / f'{out_prefix_name}_tumor'
@@ -645,7 +590,8 @@ def main(raw_args=None):
                                               write_fastq=options.produce_fastq,
                                               write_fasta=options.produce_fasta,
                                               write_bam=options.produce_bam,
-                                              write_vcf=options.produce_vcf)
+                                              write_vcf=options.produce_vcf
+                                              )
         output_file_writer_cancer = OutputFileWriter(output_tumor,
                                                      paired=options.paired_ended,
                                                      bam_header=bam_header,
@@ -667,15 +613,7 @@ def main(raw_args=None):
                                               write_vcf=options.produce_vcf
                                               )
 
-    output_file_writer.flush_buffers()
-    if options.cancer:
-        output_file_writer_cancer.flush_buffers()
-
-    print(f'Output files created.')
-    logging.info(f'Output files created')
-
-    # close files for now
-    output_file_writer.close_files()
+    print_and_log(f'Output files created.', 'info')
 
     """
     Begin Analysis
@@ -683,13 +621,29 @@ def main(raw_args=None):
     if options.debug:
         logging.info("Beginning Analysis")
 
+    sequence = Seq("GATTACA")
+    output_file_writer.write_fastq_record("bob", sequence, "BABBABA")
+
+    output_file_writer.write_bam_record(23, 'bob', 25, "MMMMMDD", Seq("GATTACACA"), "BABBABABA", 1)
+
+    output_file_writer.close_bam_file()
+
+    # Step 1 (CAVA 469 - 475) - Find break points in the input file
+
+    # Step 2 (CAVA 477 - 484) - Initialize simulation
+
+    # Step 3 (CAVA 486 - 493) - Running simulation
+
+    # Step 4 (CAVA 496 - 497) - Merging tmp files
+
+    # Step 5 (CAVA 500 - 501) - Printing out summary and end time
+
     # We'll perform the analysis within a temp directory.
-    with TemporaryDirectory(prefix="sillyboy", dir=options.temp_dir) as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="sillyboy", dir=options.temp_dir) as temp_dir:
         pass
 
-    print(f'NEAT completed in {datetime.datetime.now() - starttime}')
-    print("Have a nice day!")
-    logging.info("Have a nice day!")
+    print_and_log(f'NEAT completed in {datetime.datetime.now() - starttime}', 'info')
+    print_and_log("Have a nice day!", 'info')
     print('-------------------------------------------------------------------\n')
 
 

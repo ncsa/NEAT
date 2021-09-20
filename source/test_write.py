@@ -3,6 +3,7 @@
 import pathlib
 import gzip
 from timeit import default_timer as timer
+from source.error_handling import will_exit
 
 
 class OutputFileWriter1:

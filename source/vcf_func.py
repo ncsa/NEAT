@@ -5,6 +5,7 @@ import gzip
 import random
 import logging
 import pandas as pd
+from source.error_handling import will_exit
 
 
 def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
@@ -27,7 +28,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
     if not lines[0].startswith('#CHROM'):
         print(f"ERROR: Improper vcf header row for {vcf_path}. Check and re-run.")
         logging.error(f"Improper vcf header row for {vcf_path}. Check and re-run.")
-        sys.exit(1)
+        will_exit(1)
     else:
         lines[0] = lines[0].strip('#')
     # NOTE: if the vcf that is read in does not match the proper format, this read_csv command
@@ -45,8 +46,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
         if min_headers[i] != variants.columns[i]:
             print(f"ERROR: VCF must contain the following headers, in order: {min_headers}")
             logging.error(f"VCF must contain the following headers, in order: {min_headers}")
-            print('Quitting NEAT...')
-            sys.exit(1)
+            will_exit(1)
     if debug:
         optional_headers = ['FILTER', 'INFO', 'FORMAT']
         for j in range(len(optional_headers)):
@@ -86,8 +86,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                       f'Supplied samples = {list(samp_cols)}')
                 logging.error(f"Tumor-Normal samples require both a tumor and normal column in the VCF. \n"
                               f"Supplied samples = {list(samp_cols)}")
-                print("Quitting NEAT...")
-                sys.exit(1)
+                will_exit(1)
             elif len(samp_cols) >= 1 and tumor_normal:
                 normals = [label for label in samp_cols if 'normal' in label.lower()]
                 tumors = [label for label in samp_cols if 'tumor' in label.lower()]
@@ -96,8 +95,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                           "and 'normal' (case-insensitive).")
                     logging.error("Input VCF for cancer must contain a column with a label containing 'tumor' "
                                   "and 'normal' (case-insensitive).")
-                    print("Quitting NEAT...")
-                    sys.exit(1)
+                    will_exit(1)
                 if len(normals) > 1 or len(tumors) > 1:
                     print("WARNING: If more than one tumor or normal column is present, "
                           "only the first of each is used.")
@@ -113,13 +111,11 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                 logging.error("Unconsidered case: you may have broken reality. Check your VCF for the proper number"
                               "of sample columns.")
                 logging.error("Reality: Broken")
-                print("Quitting NEAT...")
-                sys.exit(1)
+                will_exit(1)
         else:
             print('ERROR: If FORMAT column is present in VCF, there must be at least one sample column.')
             logging.error("If FORMAT column is present in VCF, there must be at least one sample column.")
-            print("Quitting NEAT...")
-            sys.exit(1)
+            will_exit(1)
     else:
         if debug:
             print("Warning: Input VCF files must have a FORMAT and SAMPLE column for variant insert to work.")
@@ -232,8 +228,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                       f"{list(row)}")
                 logging.error(f"allele frequency (AF) field in INFO must match number of alternate alleles: "
                               f"{list(row)}")
-                print("Quitting NEAT...")
-                sys.exit(1)
+                will_exit(1)
         else:
             # Used None value if no AF was supplied
             af_numbers.extend([None] * max([len(row['alt_split']), 1]))

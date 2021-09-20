@@ -5,19 +5,8 @@ and issues an error if there is something wrong.
 
 import pathlib
 import sys
-
-
-def required_field(variable_to_test: any, err_string: str) -> None:
-    """
-    If required field variable_to_test is empty, issues an error. Otherwise this does nothing
-
-    :param variable_to_test: Any input type
-    :param err_string: A string with the error message
-    :return: None
-    """
-    if variable_to_test is None:
-        print('\n' + err_string + '\n')
-        sys.exit(1)
+import logging
+from source.error_handling import will_exit
 
 
 def check_file_open(filename: str, err_string: str, required: bool = False) -> None:
@@ -32,25 +21,15 @@ def check_file_open(filename: str, err_string: str, required: bool = False) -> N
     if required or filename is not None:
         if filename is None:
             print('\n' + err_string + '\n')
-            sys.exit(1)
+            logging.error(err_string)
+            will_exit(1)
         else:
             try:
                 pathlib.Path(filename).resolve(strict=True)
             except FileNotFoundError:
                 print('\n' + err_string + '\n')
-                sys.exit(1)
-
-
-def check_dir(directory: str, err_string: str) -> None:
-    """
-    Checks that directory exists and is a directory
-    :param directory: string of the directory path
-    :param err_string: string of the error in case it is not a directory or doesn't exist
-    :return: None
-    """
-    if not pathlib.Path(directory).is_dir():
-        print('\n' + err_string + '\n')
-        raise NotADirectoryError
+                logging.error(err_string)
+                will_exit(1)
 
 
 def is_in_range(value: float, lower_bound: float, upper_bound: float, err_string: str) -> None:
@@ -66,4 +45,5 @@ def is_in_range(value: float, lower_bound: float, upper_bound: float, err_string
     """
     if value < lower_bound or value > upper_bound:
         print('\n' + err_string + '\n')
-        sys.exit(1)
+        logging.error(err_string)
+        will_exit(1)
