@@ -260,6 +260,32 @@ class OutputFileWriter:
             f.write(str(chrom) + '\t' + str(pos) + '\t' + str(id_str) + '\t' + str(ref) + '\t' + str(alt) + '\t' +
                     str(qual) + '\t' + str(filt) + '\t' + str(info) + '\n')
 
+    def write_sam_record(self, chromosome, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
+                         mate_pos=None, aln_map_quality: int = 70):
+        """
+        okay, this might be a tricky bit because we have to keep track of when the last record for the chromosome
+        has been reached. Once it has, we have to update the RNEXT field to something else.  Have to think on this.
+
+        I'll look more closely at how Zach originally handled this.
+        I don't see any real reason this can't be calculated in the moin body of the code then just input into
+        this functiion. Outside will have info about the chromosome and stuff.
+        """
+        if mate_pos is None:
+            next_pos = 0
+            my_t_len = 0
+        else:
+            next_pos = mate_pos
+            if next_pos > pos_0:
+                my_t_len = next_pos - pos_0 + len(seq)
+            else:
+                my_t_len = next_pos - pos_0 - len(seq)
+
+        record = f'{read_name}\t{output_sam_flag}\t{chromosome}\t{pos_0+1}\t' \
+                 f'{aln_map_quality}\t{cigar}\t{rnext}\t{mate_pos}\t{my_t_len}\t{seq}\t{qual}\n'
+
+        with open(self.sam_fn, 'a') as f:
+            f.write(record)
+
     def write_bam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag,
                          mate_pos=None, aln_map_quality: int = 70):
         """
@@ -271,6 +297,8 @@ class OutputFileWriter:
         or in the main code.
         """
         if self.bam_first_write:
+            # First time we open the file, let's write it. This is due to a limitation in bgzf where it cannot append
+            # items like you can with open.
             self.bam_first_write = False
             self.bam_file = bgzf.BgzfWriter(self.bam_fn, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
             self.bam_file.write("BAM\1")
@@ -361,6 +389,14 @@ class OutputFileWriter:
                              pack('<i', next_ref_id) +
                              pack('<i', next_pos) + pack('<i', my_t_len) + read_name.encode('utf-8') +
                              b'\0' + encoded_cig + encoded_seq + encoded_qual.encode('utf-8')))
+
+    def sort_sam_file(self):
+        """
+        Forthcoming. This is needed for both bams and sams. This function should go ahead and sort the
+        sam but also output it as bam so we don't have to do that part. Need to time sorting and converting
+        sam to bam versus just sorting the bam.
+        """
+        pass
 
     def close_bam_file(self):
         if self.bam_file:
