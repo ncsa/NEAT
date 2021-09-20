@@ -624,7 +624,8 @@ def main(raw_args=None):
     sequence = Seq("GATTACA")
     output_file_writer.write_fastq_record("bob", sequence, "BABBABA")
 
-    output_file_writer.write_bam_record(23, 'bob', 25, "MMMMMDD", Seq("GATTACACA"), "BABBABABA", 1)
+    cig = ['M'] * 101
+    output_file_writer.write_bam_record(0, 'debug_neat-chrY-1', 2782028, cig, Seq('TTGGGAACACTCCTTAAACTTCAAAGAGAAGGCTCAAGGCCATTAAGAAAGACCTGTTGGGGTGCCATCCTTCCATCTGGCTTAGTCAGTTCTTAAAAAGA'), 'GCEGG6GDGG?FGG@\'%EGGGE@EGGE:FGEGFGGAGG?GGAGFFGGFGGGACFFGGDCGGC&/DG<EGGGG=-GEGGEG0DFF9F&D?G=:9DGFAG:6A', 99, 2782226, 70)
 
     output_file_writer.close_bam_file()
 
