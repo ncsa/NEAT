@@ -3,8 +3,10 @@ import pickle
 import sys
 import numpy as np
 import random
+import logging
 from source.probability import DiscreteDistribution
 from source.constants_and_models import ALLOWED_NUCL, NUC_IND
+from source.error_handling import will_exit
 
 
 class ReadContainer:
@@ -21,8 +23,9 @@ class ReadContainer:
         try:
             error_dat = pickle.load(open(model_path, 'rb'), encoding="bytes")
         except IOError:
-            print("\nProblem opening the sequencing error model.\n")
-            sys.exit(1)
+            print("\nProblem opening the sequencing error model.")
+            logging.error("Problem opening the sequencing error model.")
+            will_exit(1)
 
         self.uniform = False
 

@@ -1,9 +1,9 @@
 import random
 import bisect
 import copy
-import sys
 from typing import Union
 import logging
+from source.error_handling import will_exit
 
 import numpy as np
 
@@ -31,9 +31,8 @@ class DiscreteDistribution:
         # some sanity checking
         if not len(weights) or not len(values):
             print('\nError: weight or value vector given to DiscreteDistribution() are 0-length.')
-            print('Quitting NEAT...')
             logging.error('Weight or value vector given to DiscreteDistribution() are 0-length.')
-            sys.exit(1)
+            will_exit(1)
 
         self.method = method
         sum_weight = float(sum(weights))
@@ -49,7 +48,7 @@ class DiscreteDistribution:
             if len(self.values) != len(self.weights):
                 print('\nError: length and weights and values vectors must be the same.\n')
                 logging.error('Length and weights and values vectors must be the same.')
-                sys.exit(1)
+                will_exit(1)
             self.degenerate = degenerate_val
 
             if self.method == 'alias':
@@ -85,7 +84,7 @@ class DiscreteDistribution:
             else:
                 print("\nError: Unknown discreet distribution method.\n")
                 logging.error("Unknown discreet distribution method.")
-                sys.exit(1)
+                will_exit(1)
 
     def __str__(self):
         return str(self.weights) + ' ' + str(self.values) + ' ' + self.method
