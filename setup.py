@@ -40,6 +40,7 @@ setuptools.setup(
     scripts=[
         'gen_reads.py',
         'bacterial_genreads_wrapper.py',
+        'gen_reads_parallel.py',
         'utilities/compute_fraglen.py',
         'utilities/compute_gc.py',
         'utilities/genSeqErrorModel.py',
