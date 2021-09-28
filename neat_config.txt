@@ -16,7 +16,7 @@
 @read_len = .
 
 # Number of threads to request for NEAT. The recommended amount is the number of chromosomes in
-# your input fasta plus 1.
+# your input fasta plus 1. Any more than that will not improve performance much.
 # type = int | required: no | default = 1
 @threads = .
 

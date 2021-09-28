@@ -1,12 +1,8 @@
-import pathlib
-import pickle
-import sys
 import numpy as np
 import random
-import logging
 from source.probability import DiscreteDistribution
 from source.constants_and_models import ALLOWED_NUCL, NUC_IND
-from source.error_handling import will_exit
+from source.error_handling import premature_exit, print_and_log
 
 
 class ReadContainer:
@@ -14,46 +10,40 @@ class ReadContainer:
     Container for read data: computes quality scores and positions to insert errors
     """
 
-    def __init__(self, read_len, error_model, rescaled_error, rescale_qual=False):
+    def __init__(self, read_len, error_model, rescaled_error, rescale_qual=False, debug=False):
 
         self.read_len = read_len
         self.rescale_qual = rescale_qual
 
-        model_path = pathlib.Path(error_model)
-        try:
-            error_dat = pickle.load(open(model_path, 'rb'), encoding="bytes")
-        except IOError:
-            print("\nProblem opening the sequencing error model.")
-            logging.error("Problem opening the sequencing error model.")
-            will_exit(1)
-
         self.uniform = False
 
         # uniform-error SE reads (e.g., PacBio)
-        if len(error_dat) == 4:
+        if len(error_model) == 4:
             self.uniform = True
-            [q_scores, off_q, avg_error, error_params] = error_dat
+            [q_scores, off_q, avg_error, error_params] = error_model
             self.uniform_q_score = min([max(q_scores), int(-10. * np.log10(avg_error) + 0.5)])
-            print('Reading in uniform sequencing error model... (q=' + str(self.uniform_q_score) + '+' + str(
-                off_q) + ', p(err)={0:0.2f}%)'.format(100. * avg_error))
+            print_and_log(f'Reading in uniform sequencing error model... (q={self.uniform_q_score}+{off_q}, '
+                          f'p(err)={(100. * avg_error):0.2f}%)', 'info')
 
         # only 1 q-score model present, use same model for both strands
-        elif len(error_dat) == 6:
-            [init_q1, prob_q1, q_scores, off_q, avg_error, error_params] = error_dat
+        elif len(error_model) == 6:
+            [init_q1, prob_q1, q_scores, off_q, avg_error, error_params] = error_model
             self.pe_models = False
 
         # found a q-score model for both forward and reverse strands
-        elif len(error_dat) == 8:
-            [init_q1, prob_q1, init_q2, prob_q2, q_scores, off_q, avg_error, error_params] = error_dat
+        elif len(error_model) == 8:
+            [init_q1, prob_q1, init_q2, prob_q2, q_scores, off_q, avg_error, error_params] = error_model
             self.pe_models = True
             if len(init_q1) != len(init_q2) or len(prob_q1) != len(prob_q2):
-                print('\nError: R1 and R2 quality score models are of different length.\n')
-                sys.exit(1)
+                print_and_log(f'R1 and R2 quality score models are of different length.', 'error')
+                premature_exit(1)
 
         # This serves as a sanity check for the input model
         else:
-            print('\nError: Something wrong with error model.\n')
-            sys.exit(1)
+            print_and_log('Something wrong with error model.', 'error')
+            if debug:
+                print_and_log(f"error model had a length of {len(error_model)}", 'debug')
+            premature_exit(1)
 
         self.q_err_rate = [0.] * (max(q_scores) + 1)
         for q in q_scores:
@@ -76,23 +66,23 @@ class ReadContainer:
         else:
             self.error_scale = rescaled_error / avg_error
             if not self.rescale_qual:
-                print('Warning: Quality scores no longer exactly representative of error probability. '
-                      'Error model scaled by {0:.3f} to match desired rate...'.format(self.error_scale))
+                print_and_log(f'Quality scores no longer exactly representative of error probability. '
+                              f'Error model scaled by {self.error_scale:.3f} to match desired rate...', 'warning')
             if self.uniform:
                 if rescaled_error <= 0.:
                     self.uniform_q_score = max(q_scores)
                 else:
                     self.uniform_q_score = min([max(q_scores), int(-10. * np.log10(rescaled_error) + 0.5)])
-                print(' - Uniform quality score scaled to match specified error rate (q=' + str(
-                    self.uniform_qscore) + '+' + str(self.off_q) + ', p(err)={0:0.2f}%)'.format(100. * rescaled_error))
+                print_and_log(f'Uniform quality score scaled to match specified error rate '
+                              f'(q={self.uniform_qscore}+{self.off_q}, p(err)={(100. * rescaled_error):0.2f}%)', 'info')
 
         if not self.uniform:
             # adjust length to match desired read length
             if self.read_len == len(init_q1):
                 self.q_ind_remap = range(self.read_len)
             else:
-                print('Warning: Read length of error model (' + str(len(init_q1)) + ') does not match -R value (' + str(
-                    self.read_len) + '), rescaling model...')
+                print_and_log(f'Read length of error model ({len(init_q1)}) '
+                              f'does not match -R value ({self.read_len}), rescaling model...', 'warning')
                 self.q_ind_remap = [max([1, len(init_q1) * n // read_len]) for n in range(read_len)]
 
             # initialize probability distributions

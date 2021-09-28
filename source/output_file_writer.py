@@ -3,11 +3,11 @@ from Bio import bgzf
 import gzip
 import pathlib
 import re
-import logging
+import shutil
 import tempfile
 import pysam
 
-from source.error_handling import will_exit, print_and_log
+from source.error_handling import premature_exit, print_and_log
 from source.neat_cigar import CigarString
 
 # Some Constants
@@ -108,16 +108,16 @@ def try_to_touch(file_name: pathlib.Path):
 
 
 class OutputFileWriter:
-    def __init__(self, out_prefix, paired=False, bam_header=None, vcf_header=None,
-                 write_fastq=True, write_fasta=False, write_bam=False, write_vcf=False):
-
+    def __init__(self, out_prefix, bam_header=None, vcf_header=None, options_file=None):
         # set the booleans
-        self.write_fastq = write_fastq
-        self.write_fasta = write_fasta
-        self.write_bam = write_bam
-        self.write_vcf = write_vcf
+        self.write_fastq = options_file.produce_fastq
+        self.write_fasta = options_file.produce_fasta
+        self.write_bam = options_file.produce_bam
+        self.write_vcf = options_file.produce_vcf
+        self.paired = options_file.paired_ended
         self.vcf_header = vcf_header
         self.bam_header = bam_header
+        self.debug = options_file.debug
         # Set the file names
         self.fasta_fn = None
         self.fastq1_fn = None
@@ -134,39 +134,41 @@ class OutputFileWriter:
         # They could potentially also be tripped by faulty input files.
         if self.write_vcf and not self.vcf_header:
             print_and_log("Something wrong with VCF header.", 'error')
-            will_exit(1)
+            premature_exit(1)
         if self.write_bam and not self.bam_header:
             print_and_log("Something wrong with BAM header.", 'error')
-            will_exit(1)
+            premature_exit(1)
 
         # Set up filenames based on booleans
         files_to_write = []
         if self.write_fasta:
-            self.fasta_fn = out_prefix.parent / (out_prefix.name + '.fasta.gz')
+            self.fasta_fn = out_prefix.parent / f'{out_prefix.name}.fasta.gz'
             files_to_write.append(self.fasta_fn)
-        if paired and self.write_fastq:
-            self.fastq1_fn = out_prefix.parent / (out_prefix.name + '_read1.fq.gz')
-            self.fastq2_fn = out_prefix.parent / (out_prefix.name + '_read2.fq.gz')
+        if self.paired and self.write_fastq:
+            self.fastq1_fn = out_prefix.parent / f'{out_prefix.name}_read1.fq.gz'
+            self.fastq2_fn = out_prefix.parent / f'{out_prefix.name}_read2.fq.gz'
             files_to_write.extend([self.fastq1_file, self.fastq2_file])
         elif self.write_fastq:
-            self.fastq1_fn = out_prefix.parent / (out_prefix.name + '.fq.gz')
+            self.fastq1_fn = out_prefix.parent / f'{out_prefix.name}.fq.gz'
             files_to_write.append(self.fastq1_fn)
         if self.write_bam:
-            self.bam_fn = out_prefix.parent / (out_prefix.name + '_golden.bam')
+            self.bam_fn = out_prefix.parent / f'{out_prefix.name}_golden.bam'
             self.bam_first_write = True
             self.sam_temp_dir = tempfile.TemporaryDirectory(prefix="sam_")
-            sam_temp_prefix = pathlib.Path(self.sam_temp_dir.name)
-            self.sam_fn = sam_temp_prefix / (out_prefix.name + '_temp.sam')
+            self.sam_pref = pathlib.Path(self.sam_temp_dir.name)
+            self.sam_fn = self.sam_pref / f'{out_prefix.name}_temp.sam'
             self.bam_keys = list(bam_header.keys())
+            files_to_write.append(self.sam_fn)
             files_to_write.append(self.bam_fn)
         if self.write_vcf:
-            self.vcf_fn = out_prefix.parent / (out_prefix.name + '_golden.vcf.gz')
+            self.vcf_fn = out_prefix.parent / f'{out_prefix.name}_golden.vcf.gz'
             files_to_write.append(self.vcf_fn)
 
+        self.files_to_write = files_to_write
+
         # Create files as applicable
-        for file in files_to_write:
-            if file != self.bam_fn:
-                try_to_touch(file)
+        for file in self.files_to_write:
+            try_to_touch(file)
 
         # Initialize the vcf and write the header, if applicable
         if self.write_vcf:
@@ -260,7 +262,7 @@ class OutputFileWriter:
             f.write(str(chrom) + '\t' + str(pos) + '\t' + str(id_str) + '\t' + str(ref) + '\t' + str(alt) + '\t' +
                     str(qual) + '\t' + str(filt) + '\t' + str(info) + '\n')
 
-    def write_sam_record(self, chromosome, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
+    def write_sam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
                          mate_pos=None, aln_map_quality: int = 70):
         """
         okay, this might be a tricky bit because we have to keep track of when the last record for the chromosome
@@ -270,17 +272,15 @@ class OutputFileWriter:
         I don't see any real reason this can't be calculated in the moin body of the code then just input into
         this functiion. Outside will have info about the chromosome and stuff.
         """
-        if mate_pos is None:
-            next_pos = 0
-            my_t_len = 0
-        else:
-            next_pos = mate_pos
-            if next_pos > pos_0:
-                my_t_len = next_pos - pos_0 + len(seq)
-            else:
-                my_t_len = next_pos - pos_0 - len(seq)
 
-        record = f'{read_name}\t{output_sam_flag}\t{chromosome}\t{pos_0+1}\t' \
+        my_t_len = 0
+        if mate_pos:
+            if mate_pos > pos_0:
+                my_t_len = mate_pos - pos_0 + len(seq)
+            else:
+                my_t_len = mate_pos - pos_0 - len(seq)
+
+        record = f'{read_name}\t{output_sam_flag}\t{chromosome_index}\t{pos_0 + 1}\t' \
                  f'{aln_map_quality}\t{cigar}\t{rnext}\t{mate_pos}\t{my_t_len}\t{seq}\t{qual}\n'
 
         with open(self.sam_fn, 'a') as f:
@@ -340,7 +340,9 @@ class OutputFileWriter:
         if seq_len & 1:
             seq += '='
         for i in range(encoded_len):
-            # print(seq[2*i], seq[2*i+1])
+            if self.debug:
+                # Note: trying to remove all this part
+                print_and_log(f'{seq[2 * i]}, {seq[2 * i + 1]}', 'debug')
             encoded_seq.extend(
                 pack('<B', (SEQ_PACKED[seq[2 * i].capitalize()] << 4) + SEQ_PACKED[seq[2 * i + 1].capitalize()]))
 
@@ -390,13 +392,24 @@ class OutputFileWriter:
                              pack('<i', next_pos) + pack('<i', my_t_len) + read_name.encode('utf-8') +
                              b'\0' + encoded_cig + encoded_seq + encoded_qual.encode('utf-8')))
 
-    def sort_sam_file(self):
+    def sort_and_convert_sam_file(self):
         """
-        Forthcoming. This is needed for both bams and sams. This function should go ahead and sort the
-        sam but also output it as bam so we don't have to do that part. Need to time sorting and converting
-        sam to bam versus just sorting the bam.
+        Convert sam to bam
         """
-        pass
+        samout_fn = self.bam_fn.parent / (self.bam_fn.stem + "_fromsam" + self.bam_fn.suffix)
+        if self.debug:
+            shutil.copyfile(self.sam_fn, '/home/joshfactorial/Documents/neat_outputs/test.sam')
+        pysam.sort("-o", str(samout_fn), str(self.sam_fn))
+        self.sam_temp_dir.cleanup()
+
+    def sort_bam(self):
+        if self.bam_file:
+            self.bam_file.close()
+        with tempfile.TemporaryDirectory() as tempdir:
+            output = pathlib.Path(tempdir)
+            output = output / 'sorted.bam'
+            pysam.sort("-o", str(output), str(self.bam_fn))
+            shutil.copyfile(output, self.bam_fn)
 
     def close_bam_file(self):
         if self.bam_file:

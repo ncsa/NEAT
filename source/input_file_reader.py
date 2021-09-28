@@ -1,9 +1,8 @@
 import copy
 import pickle
 import numpy as np
-import logging
 from source.constants_and_models import DEFAULT_MODEL_1, DEFAULT_MODEL_2, TRI_IND, NUC_IND, ALL_TRI, ALL_IND
-from source.error_handling import will_exit
+from source.error_handling import premature_exit, print_and_log
 
 
 def parse_input_mutation_model(model=None, which_default=1):
@@ -17,9 +16,8 @@ def parse_input_mutation_model(model=None, which_default=1):
     elif which_default == 2:
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_2]
     else:
-        print('\nError: Unknown default mutation model specified\n')
-        logging.error('Error: Unknown default mutation model specified')
-        will_exit(1)
+        print_and_log('Unknown default mutation model specified.', 'error')
+        premature_exit(1)
 
     if model is not None:
         pickle_dict = pickle.load(open(model, "rb"))

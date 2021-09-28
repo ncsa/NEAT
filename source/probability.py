@@ -2,12 +2,10 @@ import random
 import bisect
 import copy
 from typing import Union
-import logging
-from source.error_handling import will_exit
+from source.error_handling import premature_exit, print_and_log
+from source.constants_and_models import LOW_PROBABILITY_THRESHOLD
 
 import numpy as np
-
-LOW_PROB_THRESH = 1e-12
 
 
 def mean_ind_of_weighted_list(candidate_list: list) -> int:
@@ -25,20 +23,20 @@ def mean_ind_of_weighted_list(candidate_list: list) -> int:
             return i
 
 
+# TODO get rid of this class and let a python module handle the discrete distributions
 class DiscreteDistribution:
     def __init__(self, weights, values, degenerate_val=None, method='bisect'):
 
         # some sanity checking
         if not len(weights) or not len(values):
-            print('\nError: weight or value vector given to DiscreteDistribution() are 0-length.')
-            logging.error('Weight or value vector given to DiscreteDistribution() are 0-length.')
-            will_exit(1)
+            print_and_log('Weight or value vector given to DiscreteDistribution() are 0-length.', 'error')
+            premature_exit(1)
 
         self.method = method
         sum_weight = float(sum(weights))
 
         # if probability of all input events is 0, consider it degenerate and always return the first value
-        if sum_weight < LOW_PROB_THRESH:
+        if sum_weight < LOW_PROBABILITY_THRESHOLD:
             self.degenerate = values[0]
         else:
             self.weights = [n / sum_weight for n in weights]
@@ -46,9 +44,8 @@ class DiscreteDistribution:
             # possibly some thing from another class?
             self.values = copy.deepcopy(values)
             if len(self.values) != len(self.weights):
-                print('\nError: length and weights and values vectors must be the same.\n')
-                logging.error('Length and weights and values vectors must be the same.')
-                will_exit(1)
+                print_and_log('Length and weights and values vectors must be the same.', 'error')
+                premature_exit(1)
             self.degenerate = degenerate_val
 
             if self.method == 'alias':
@@ -82,9 +79,8 @@ class DiscreteDistribution:
                 self.cum_prob.insert(0, 0.)
 
             else:
-                print("\nError: Unknown discreet distribution method.\n")
-                logging.error("Unknown discreet distribution method.")
-                will_exit(1)
+                print_and_log("Unknown discreet distribution method.", 'critical')
+                premature_exit(1)
 
     def __str__(self):
         return str(self.weights) + ' ' + str(self.values) + ' ' + self.method
