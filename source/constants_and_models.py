@@ -8,8 +8,9 @@ These used to be free-floating in gen_reads. Some of these might be better as in
 """
 Constants needed for runs
 """
-VERSION = 3.0
+VERSION = 4.0
 LOW_COVERAGE_THRESHOLD = 50
+LOW_PROBABILITY_THRESHOLD = 1e-12
 
 """
 Constants needed for analysis

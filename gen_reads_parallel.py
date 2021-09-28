@@ -14,6 +14,7 @@ import argparse
 import datetime
 import pathlib
 import random
+import time
 import gzip
 import numpy as np
 import pickle
@@ -30,7 +31,7 @@ from types import SimpleNamespace
 from source.constants_and_models import VERSION, LOW_COVERAGE_THRESHOLD
 from source.input_file_reader import parse_input_mutation_model
 from source.ReadContainer import ReadContainer
-from source.error_handling import will_exit, print_and_log
+from source.error_handling import premature_exit, print_and_log
 
 from source.ref_func import find_n_regions
 from source.bed_func import parse_bed
@@ -56,29 +57,75 @@ def print_start_info() -> datetime.datetime:
     starttime = datetime.datetime.now()
     print('\n-----------------------------------------------------------')
     print_and_log(f"NEAT multithreaded version, v{VERSION}, is running.", 'info')
-    print(f'INFO - Started: {str(starttime)}.')
+    print_and_log(f'Started: {str(starttime)}.', 'info')
     return starttime
 
 
-def run(opts):
-    """
+def print_end_info(options, starting_time):
+    endtime = datetime.datetime.now()
+    list_to_iterate = options.files_to_write
+    if options.cancer:
+        list_to_iterate += options.caner_files_to_write
+    print_and_log("\nWrote the following files:", 'info')
+    i = 1
+    for item in list_to_iterate:
+        print_and_log(f"\t{i}. {item}", 'info')
+        i += 1
+    print_and_log("NEAT finished successfully.", "info")
+    print_and_log(f"Total runtime: {str(endtime-starting_time)}", 'info')
+    print("-------------------------------------------------------------------------")
 
-    """
-    pass
+
+def find_file_breaks(options, reference_index):
+    total_length = 0
+    length_dict = {}
+    for chrom in reference_index:
+        total_length += len(reference_index[chrom])
+        length_dict[chrom] = len(reference_index[chrom])
+
+    # sort the dictionary by values. This command turns the dict into a list of tuples (.items()), then
+    # sorts on the value in each dictionary item (lambda x: x[1]), making a list
+    # of sorted tuples, then converts that back to a dict. This sorts so that the longest chroms are first.
+    length_dict = dict(sorted(length_dict.items(), key=lambda x: x[1], reverse=True))
+
+    # we need a positive integer delta to compare items to.
+    delta = max(1, (total_length + 1) // options.threads)
+    # Add items one at a time to partition list until the total length is greater than delta.
+    partitions = []
+    temp_partition = []
+    for item in length_dict:
+        if sum([length_dict[x] for x in temp_partition]) + length_dict[item] >= delta:
+            temp_partition.append(item)
+            partitions.append(temp_partition)
+            temp_partition = []
+            continue
+        else:
+            temp_partition.append(item)
+    partitions.append(temp_partition)
+    # Throw out any empty partitions
+    partitions = [x for x in partitions if x]
+    return partitions
 
 
-def find_chromosomes(reference: pathlib.Path):
+def init_progress_info():
     """
+    This initiates a printout of progress info to stdout. This won't log, because I don't think that will work.
+    """
+    sys.stdout.write('\rINFO - Simulating reads ... 0.0%')
 
-    """
-    pass
+
+def print_progress_info(counter, total):
+    x = round(100*counter/total, 1)
+    x = min(x, 100.0)
+    sys.stdout.write(f'\rINFO - Simulating reads ... {x}%')
+    sys.stdout.flush()
 
 
-def read_chroms(reference: pathlib.Path):
-    """
-    Input is a fasta reference file. The output is a list of chromosomes.
-    """
-    pass
+def finalize_progress_info():
+    sys.stdout.write('\rINFO - Simulating reads ... 100.001%')
+    sys.stdout.flush()
+    print(' - Done')
+    print_and_log('Simulation complete, writing files.', 'info')
 
 
 def print_configuration(args, options):
@@ -99,7 +146,6 @@ def print_configuration(args, options):
         print_and_log(f"Single threading - 1 thread.", 'info')
     else:
         print_and_log(f'Multithreading - {options.threads} threads', 'info')
-    logging.info(f'Threads: {options.threads}')
     if options.paired_ended:
         print_and_log(f'Running in paired-ended mode.', 'INFO')
         if options.fragment_model:
@@ -148,16 +194,16 @@ def pickle_load_model(file, mssg) -> list:
         return pickle.load(file)
     except IOError as e:
         print_and_log(mssg, 'error')
-        logging.error(str(e))
-        will_exit(1)
+        print_and_log(str(e), 'error')
+        premature_exit(1)
     except EOFError as e:
         print_and_log(mssg, 'error')
-        logging.error(str(e))
-        will_exit(1)
+        print_and_log(str(e), 'error')
+        premature_exit(1)
     except ValueError as e:
         print_and_log(mssg, 'error')
-        logging.error(str(e))
-        will_exit(1)
+        print_and_log(str(e), 'error')
+        premature_exit(1)
 
 
 # class representing the options
@@ -205,12 +251,24 @@ class Options(SimpleNamespace):
         self.defs['debug'] = ('boolean', False, None, None)
         self.defs['rng_value'] = ('int', None, None, None)
 
+        # Cancer options (not yet implemented)
+        self.cancer = False
+        self.cancer_model = False
+        self.cancer_purity = False
+
         # Read the config file
         self.args = {}
         self.read()
-        # Some options checking to clean up the args dict
+        # Some options checking to clean up the args dict. Also keep track of what files to create.
+        self.args['output_files'] = []
         self.check_options()
 
+        self.__dict__.update(self.args)
+
+    def set_value(self, key, value):
+        if key in self.defs.keys():
+            self.check_and_log_error(key, value, self.defs[key][2], self.defs[key][3])
+        self.args[key] = value
         self.__dict__.update(self.args)
 
     @staticmethod
@@ -218,17 +276,17 @@ class Options(SimpleNamespace):
         if lowval != "exists" and highval:
             if not (lowval <= value_to_check <= highval):
                 print_and_log(f'@{keyname} must be between {lowval} and {highval}.', 'error')
-                will_exit(1)
+                premature_exit(1)
         elif lowval == "exists":
             if not pathlib.Path(value_to_check).is_file():
-                print_and_log(f'the file given to @{keyname} does not exist', 'error')
-                will_exit(1)
+                print_and_log(f'The file given to @{keyname} does not exist', 'error')
+                premature_exit(1)
         elif not lowval and not highval:
             # This indicates a boolean and we have nothing to check
             pass
         else:
-            print_and_log(f'Undeclared criteria {lowval, highval} in Options definitions.', 'error')
-            will_exit(1)
+            print_and_log(f'Problem criteria ({lowval, highval}) in Options definitions for {keyname}.', 'critical')
+            premature_exit(1)
 
     def read(self):
         for line in open(self.config_file):
@@ -257,7 +315,7 @@ class Options(SimpleNamespace):
                             temp = int(line_split[1])
                         except ValueError:
                             print_and_log(f'The value for {key} must be an integer. No decimals allowed.', 'error')
-                            will_exit(1)
+                            premature_exit(1)
                         self.check_and_log_error(key, temp, criteria1, criteria2)
                         self.args[key] = temp
                     elif type_of_var == 'float':
@@ -265,7 +323,7 @@ class Options(SimpleNamespace):
                             temp = float(line_split[1])
                         except ValueError:
                             print_and_log(f'The value for {key} must be a float.', 'error')
-                            will_exit(1)
+                            premature_exit(1)
                         self.check_and_log_error(key, temp, criteria1, criteria2)
                         self.args[key] = temp
                     elif type_of_var == 'boolean':
@@ -279,10 +337,10 @@ class Options(SimpleNamespace):
                         except ValueError:
                             print_and_log(f'\nBoolean key @{key} requires a value of "true" or "false" '
                                           f'(case insensitive).', 'error')
-                            will_exit(1)
+                            premature_exit(1)
                     else:
                         print_and_log(f'BUG: Undefined type in the Options dictionary: {type_of_var}.', 'critical')
-                        will_exit(1)
+                        premature_exit(1)
         # Anything we skipped in the config gets the default value
         # No need to check since these are already CAREFULLY vetted
         for key, (_, default, criteria1, criteria2) in self.defs.items():
@@ -309,7 +367,7 @@ class Options(SimpleNamespace):
         if not self.args['produce_bam'] and not self.args['produce_vcf'] \
                 and not self.args['produce_fasta'] and not self.args['produce_fastq']:
             print_and_log('No files would be produced, as all file types are set to false', 'error')
-            will_exit(1)
+            premature_exit(1)
         if not self.args['produce_fastq']:
             print_and_log("Bypassing FASTQ generation.", 'info')
         if self.args['produce_vcf'] and (not self.args['produce_fastq'] and not self.args['produce_bam']
@@ -339,16 +397,117 @@ class Options(SimpleNamespace):
         if flagged:
             print_and_log("For paired ended mode, you need either a "
                           "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
-            will_exit(1)
+            premature_exit(1)
 
 
 # class representing a chromosome mutation
 class SingleJob(multiprocessing.Process):
-    def __init__(self, threadidx, options, copts, endline, genelist, transcriptlist, snplist,
-                 impactdir, num_of_records):
+    def __init__(self, threadidx, options, ref_index, partition, out_prefix_name, input_variants, target_regions,
+                 discard_regions, mutation_rate_regions):
         multiprocessing.Process.__init__(self)
+        self.threadidx = threadidx
+        self.partition = partition
+        self.debug = options.debug
+
+        # These tasks filter the inputs down to
+        self.reference = {}
+        for chrom in self.partition:
+            self.reference[chrom] = ref_index[chrom]
+            if options.debug:
+                print_and_log(f'Reference data: {ref_index[chrom]}', 'debug')
+
+        self.chromosomes = list(self.reference.keys())
+
+        self.n_regions = {}
+
+        self.input_variants = pd.DataFrame()
+        if not input_variants.empty:
+            pass
+            # self.input_variants = input_variants[input_variants]
+
+        self.target_regions = pd.DataFrame()
+        if not target_regions.empty:
+            self.target_regions = target_regions[target_regions.index.isin(self.chromosomes)]
+
+        self.discard_regions = pd.DataFrame()
+        if not discard_regions.empty:
+            self.discard_regions = discard_regions[discard_regions.index.isin(self.chromosomes)]
+
+        self.mutation_rate_regions = pd.DataFrame()
+        if not mutation_rate_regions.empty:
+            self.mutation_rate_regions = mutation_rate_regions[mutation_rate_regions.index.isin(self.chromosomes)]
 
         # TODO check into multiprocessing.Pool()
+
+        # Setting up temp files to write to
+        self.tmp_fasta_fn = None
+        self.tmp_fastq1_fn = None
+        self.tmp_fastq2_fn = None
+        self.tmp_sam_fn = None
+        self.tmp_vcf_fn = None
+
+        self.temporary_dir = tempfile.TemporaryDirectory()
+        self.tmp_dir_path = pathlib.Path(self.temporary_dir.name)
+        if options.produce_bam:
+            self.tmp_sam_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_records_{self.threadidx}.sam"
+            if options.debug:
+                print_and_log(f'self.tmp_sam_fn = {self.tmp_sam_fn}', 'debug')
+        if options.produce_vcf:
+            self.tmp_vcf_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_{self.threadidx}.vcf"
+            if options.debug:
+                print_and_log(f'self.tmp_vcf_fn = {self.tmp_vcf_fn}', 'debug')
+        if options.produce_fasta:
+            self.tmp_fasta_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_{self.threadidx}.fasta"
+            if options.debug:
+                print_and_log(f'self.tmp_fasta_fn = {self.tmp_fasta_fn}', 'debug')
+        if options.produce_fastq:
+            self.tmp_fastq1_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_{self.threadidx}_read1.fq"
+            if options.debug:
+                print_and_log(f'self.tmp_fastq1_fn = {self.tmp_fastq1_fn}', 'debug')
+            if options.paired_ended:
+                self.tmp_fastq2_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_{self.threadidx}_read2.fq"
+                if options.debug:
+                    print_and_log(f'self.tmp_fastq2_fn  = {self.tmp_fastq2_fn }', 'debug')
+
+        # Setting up temp files for writing
+        self.tmp_fasta_outfile = None
+        self.tmp_fastq1_outfile = None
+        self.tmp_fastq2_outfile = None
+        self.tmp_sam_outfile = None
+        self.tmp_vcf_outfile = None
+        self.all_tmp_files = []
+
+        if self.tmp_fasta_fn:
+            self.tmp_fasta_outfile = open(self.tmp_fasta_fn, 'w')
+            self.all_tmp_files.append(self.tmp_fasta_outfile)
+        if self.tmp_fastq1_fn:
+            self.tmp_fastq1_outfile = open(self.tmp_fastq1_fn, 'w')
+            self.all_tmp_files.append(self.tmp_fastq1_outfile)
+        if self.tmp_fastq2_fn:
+            self.tmp_fastq2_outfile = open(self.tmp_fastq2_fn, 'w')
+            self.all_tmp_files.append(self.tmp_fastq2_outfile)
+        if self.tmp_sam_fn:
+            self.tmp_sam_outfile = open(self.tmp_sam_fn, 'w')
+            self.all_tmp_files.append(self.tmp_sam_outfile)
+        if self.tmp_vcf_fn:
+            self.tmp_vcf_outfile = open(self.tmp_vcf_fn, 'w')
+            self.all_tmp_files.append(self.tmp_vcf_outfile)
+
+        if self.threadidx == 1:
+            init_progress_info()
+
+    def close_temp_files(self):
+        for file_handle in self.all_tmp_files:
+            file_handle.close()
+
+    def close_temp_dir(self):
+        self.temporary_dir.cleanup()
+
+    def run(self):
+        if self.debug:
+            print_and_log(f"Process {self.threadidx} - simulation started", 'debug')
+
+
 
 
 # command line interface
@@ -380,7 +539,7 @@ def main(raw_args=None):
 
     if not args.conf.is_file():
         print_and_log(f'Configuration file ({args.conf}) cannot be found.', 'error')
-        will_exit(1)
+        premature_exit(1)
 
     # Reads in the user-entered options from the config file and performs
     # some basic checks and corrections.
@@ -390,28 +549,31 @@ def main(raw_args=None):
     # Set the random seed. If rng_value is None, then the default for random.seed is to use system time.
     random.seed(options.rng_value)
 
-    # cancer params (disabled currently)
-    options.cancer = False
-    options.cancer_model = None
-    options.cancer_purity = 0.8
-
     """
     Model preparation
+    
+    Read input models or default models, as specified by user.
     """
     if options.debug:
-        logging.info("Model preparation")
-    # load mutation models:
+        print_and_log("Model preparation begun", 'debug')
+
+    # Load mutation models:
     mutation_model = parse_input_mutation_model(options.mutation_model, 1)
+    cancer_model = None
     if options.cancer:
         cancer_model = parse_input_mutation_model(options.cancer_model, 2)
 
-    # Implements sequencing error model
-    mssg = "Problem loading Sequencing error model data @error_model"
-    error_data = pickle_load_model(open(options.error_model, 'rb'), mssg)
-    sequencing_error_class = ReadContainer(options.read_len, options.error_model,
-                                           options.avg_seq_error)
     if options.debug:
-        logging.info(f'Sequencing read container created')
+        print_and_log("Mutation models loaded", 'debug')
+
+    # Load sequencing error model
+    mssg = "Problem loading Sequencing error model data @error_model"
+    sequencing_error_data = pickle_load_model(open(options.error_model, 'rb'), mssg)
+    sequencing_error_class = ReadContainer(options.read_len, sequencing_error_data,
+                                           options.avg_seq_error, options.rescale_qualities,
+                                           options.debug)
+    if options.debug:
+        print_and_log(f'Sequencing read container created', 'debug')
 
     # GC bias model
     mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
@@ -420,13 +582,17 @@ def main(raw_args=None):
 
     gc_window_size = gc_scale_count[-1]
 
+    coverage_data = [gc_window_size, gc_scale_value, []]
+
+    if options.debug:
+        print_and_log('GC Bias model read', 'debug')
+
     # Handle paired-ended data, if applicable
+    fraglen_distribution = None
     if options.paired_ended:
-        fraglen_distribution = None
         if options.fraglen_model:
-            mssg = f'ERROR: Problem loading the empirical fragment length model.'
-            print("Using empirical fragment length distribution")
-            logging.info("Using empirical fragment length distribution")
+            mssg = 'Problem loading the empirical fragment length model.'
+            print_and_log("Using empirical fragment length distribution", 'info')
             potential_values, potential_prob = pickle_load_model(open(options.fraglen_model, 'rb'), mssg)
 
             fraglen_values = []
@@ -437,13 +603,12 @@ def main(raw_args=None):
                     fraglen_probability.append(potential_prob[i])
 
             fraglen_distribution = DiscreteDistribution(fraglen_probability, fraglen_values)
-            fragment_mean = fraglen_values[mean_ind_of_weighted_list(fraglen_probability)]
+            options.set_value('fragment_mean', fraglen_values[mean_ind_of_weighted_list(fraglen_probability)])
 
         # Using artificial fragment length distribution, if the parameters were specified
         # fragment length distribution: normal distribution that goes out to +- 6 standard deviations
         else:
-            print(f'Using artificial fragment length distribution.')
-            logging.info(f'Using artificial fragment length distribution.')
+            print_and_log(f'Using artificial fragment length distribution.', 'info')
             if options.fragment_st_dev == 0:
                 fraglen_distribution = DiscreteDistribution([1], [options.fragment_mean],
                                                             degenerate_val=options.fragment_mean)
@@ -459,32 +624,41 @@ def main(raw_args=None):
                                        fraglen_values]
                 fraglen_distribution = DiscreteDistribution(fraglen_probability, fraglen_values)
         if options.debug:
-            logging.info(f'Processed paired-end models')
+            print_and_log(f'Processed paired-end models', 'debug')
 
     """
     Process Inputs
     """
     if options.debug:
-        logging.info("Process Inputs")
+        print_and_log("Process Inputs", 'debug')
 
     print_and_log(f'Reading {options.reference}...', 'info')
 
-    ref_index = SeqIO.index(str(options.reference), 'fasta')
-    reference_chromosomes = list(ref_index.keys())
+    reference_index = SeqIO.index(str(options.reference), 'fasta')
+
+
+    # there is not a reference_chromosome in the options defs because
+    # there is nothing that really needs checking, so this command will just
+    # set the value. This might be an input in the future, for example if you want
+    # to only simulate certain chroms.
+    options.set_value('reference_chromosomes', list(reference_index.keys()))
+
     # this parameter will ensure we account for 'chr' in the output.
     # It is True if they all start with "chr" and False otherwise.
-    begins_with_chr = all(k.startswith('chr') for k in reference_chromosomes)
-
-    if options.debug:
-        logging.info(f'Reference file indexed.')
+    begins_with_chr = all(k.startswith('chr') for k in options.reference_chromosomes)
 
     if options.paired_ended:
         n_handling = ('random', options.fragment_mean)
     else:
         n_handling = ('ignore', options.read_len)
 
-    input_variants = None
+
+
+    if options.debug:
+        print_and_log(f'Reference file indexed.', 'debug')
+
     printed_warning = False
+    input_variants = None
     if options.include_vcf:
         if options.cancer:
             (sample_names, input_variants) = parse_vcf(options.include_vcf,
@@ -499,13 +673,10 @@ def main(raw_args=None):
                                                        ploidy=options.ploidy,
                                                        debug=options.debug)
 
-        if options.debug:
-            logging.info("Finished reading @include_vcf file.")
-
         # Remove any chromosomes that aren't in the reference.
         input_variants_chroms = list(set(list(input_variants.CHROM)))
         for item in input_variants_chroms:
-            if item not in reference_chromosomes and not printed_warning:
+            if item not in options.reference_chromosomes and not printed_warning:
                 print_and_log(f'Warning: ignoring all input vcf records for {item} '
                               f'because it is not found in the reference.', 'warning')
                 print_and_log(f'\tIf this is unexpected, check that that {item} '
@@ -514,13 +685,13 @@ def main(raw_args=None):
                 input_variants = input_variants[input_variants['CHROM'] != item]
 
         # Check the variants and classify as needed
-        for chrom in reference_chromosomes:
+        for chrom in options.reference_chromosomes:
             n_skipped = [0, 0, 0]
             if chrom in input_variants_chroms:
                 for index, row in input_variants[input_variants['CHROM'] == chrom].iterrows():
                     span = (row['POS'], row['POS'] + len(row['REF']))
                     # -1 because going from VCF coords to array coords
-                    r_seq = str(ref_index[chrom].seq[span[0] - 1:span[1] - 1])
+                    r_seq = str(reference_index[chrom].seq[span[0] - 1:span[1] - 1])
                     # Checks if there are any invalid nucleotides in the vcf items
                     any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in
                                        [item for sublist in row['alt_split'] for item in sublist])
@@ -547,27 +718,32 @@ def main(raw_args=None):
                     print_and_log(f' - [{str(n_skipped[1])}] attempted to insert into N-region', 'info')
                     print_and_log(f' - [{str(n_skipped[2])}] alt allele contained non-ACGT characters', 'info')
 
+    if options.debug:
+        print_and_log("Finished reading @include_vcf file.", 'debug')
+
     # parse input targeted regions, if present
-    target_regions = parse_bed(options.target_bed, reference_chromosomes, begins_with_chr, False, options.debug)
+    target_regions_df = parse_bed(options.target_bed, options.reference_chromosomes,
+                                  begins_with_chr, False, options.debug)
 
     # parse discard bed similarly
-    discard_regions = parse_bed(options.discard_bed, reference_chromosomes, begins_with_chr, False, options.debug)
+    discard_regions_df = parse_bed(options.discard_bed, options.reference_chromosomes,
+                                   begins_with_chr, False, options.debug)
 
     # parse input mutation rate rescaling regions, if present
-    mutation_rate_regions, mutation_rate_values = parse_bed(options.mutation_bed, reference_chromosomes,
-                                                            begins_with_chr, True, options.debug)
+    mutation_rate_df = parse_bed(options.mutation_bed, options.reference_chromosomes,
+                                 begins_with_chr, True, options.debug)
 
     """
     Initialize Output Files
     """
     if options.debug:
-        logging.info("Beginning initialize output files.")
+        print_and_log("Beginning initialize output files.", 'debug')
 
     # Prepare headers
     bam_header = None
     vcf_header = None
     if options.produce_bam:
-        bam_header = ref_index
+        bam_header = reference_index
     if options.produce_vcf:
         vcf_header = [options.reference]
 
@@ -580,72 +756,81 @@ def main(raw_args=None):
 
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf.
+    # We'll also keep track here of what files we are producing.
     if options.cancer:
         output_normal = out_prefix_parent_dir / f'{out_prefix_name}_normal'
         output_tumor = out_prefix_parent_dir / f'{out_prefix_name}_tumor'
         output_file_writer = OutputFileWriter(output_normal,
-                                              paired=options.paired_ended,
                                               bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              write_fastq=options.produce_fastq,
-                                              write_fasta=options.produce_fasta,
-                                              write_bam=options.produce_bam,
-                                              write_vcf=options.produce_vcf
+                                              options_file=options
                                               )
         output_file_writer_cancer = OutputFileWriter(output_tumor,
-                                                     paired=options.paired_ended,
                                                      bam_header=bam_header,
                                                      vcf_header=vcf_header,
-                                                     write_fastq=options.produce_fastq,
-                                                     write_fasta=options.produce_fasta,
-                                                     write_bam=options.produce_bam,
-                                                     write_vcf=options.produce_vcf
+                                                     options_file=options
                                                      )
     else:
         outfile = out_prefix_parent_dir / out_prefix_name
         output_file_writer = OutputFileWriter(outfile,
-                                              paired=options.paired_ended,
                                               bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              write_fastq=options.produce_fastq,
-                                              write_fasta=options.produce_fasta,
-                                              write_bam=options.produce_bam,
-                                              write_vcf=options.produce_vcf
+                                              options_file=options
                                               )
+        output_file_writer_cancer = None
 
-    print_and_log(f'Output files created.', 'info')
+    print_and_log(f'Output files ready for writing.', 'info')
 
     """
     Begin Analysis
     """
     if options.debug:
-        logging.info("Beginning Analysis")
+        print_and_log("Beginning Analysis", 'info')
 
-    sequence = Seq("GATTACA")
-    output_file_writer.write_fastq_record("bob", sequence, "BABBABA")
+    # Find break points in the input file.
+    breaks = find_file_breaks(options, reference_index)
 
-    cig = ['M'] * 101
-    output_file_writer.write_bam_record(0, 'debug_neat-chrY-1', 2782028, cig, Seq('TTGGGAACACTCCTTAAACTTCAAAGAGAAGGCTCAAGGCCATTAAGAAAGACCTGTTGGGGTGCCATCCTTCCATCTGGCTTAGTCAGTTCTTAAAAAGA'), 'GCEGG6GDGG?FGG@\'%EGGGE@EGGE:FGEGFGGAGG?GGAGFFGGFGGGACFFGGDCGGC&/DG<EGGGG=-GEGGEG0DFF9F&D?G=:9DGFAG:6A', 99, 2782226, 70)
+    if not breaks:
+        # Printing out summary information and end time
+        if options.debug:
+            print_and_log("Found no chromosomes in reference.", 'warning')
+        print_end_info(options, starttime)
+        sys.exit(0)
 
-    output_file_writer.close_bam_file()
+    if options.debug:
+        print_and_log("Checking lengths of breaks...", 'debug')
+        idx = 0
+        for item in breaks:
+            length = 0
+            for thing in item:
+                length += len(reference_index[thing])
+            print_and_log(f"item{idx} = {length}", 'debug')
+            idx += 1
+        print_and_log(f'breaks = {breaks}')
 
-    # Step 1 (CAVA 469 - 475) - Find break points in the input file
+    print_and_log("Input file partitioned.", 'info')
 
-    # Step 2 (CAVA 477 - 484) - Initialize simulation
+    # Initialize simulation
+    thread_index = 0
+    processes = []
+    for partition in breaks:
+        thread_index += 1
+        processes.append(SingleJob(thread_index, options, reference_index, partition, out_prefix_name,
+                                   target_regions_df, discard_regions_df, mutation_rate_df, input_variants))
 
     # Step 3 (CAVA 486 - 493) - Running simulation
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join()
+        if process.exitcode != 0:
+            print_and_log("Error in child process.", 'error')
+            premature_exit(process.exitcode)
 
-    # Step 4 (CAVA 496 - 497) - Merging tmp files
+
+    # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
 
     # Step 5 (CAVA 500 - 501) - Printing out summary and end time
-
-    # We'll perform the analysis within a temp directory.
-    with tempfile.TemporaryDirectory(prefix="sillyboy", dir=options.temp_dir) as temp_dir:
-        pass
-
-    print_and_log(f'NEAT completed in {datetime.datetime.now() - starttime}', 'info')
-    print_and_log("Have a nice day!", 'info')
-    print('-------------------------------------------------------------------\n')
 
 
 if __name__ == '__main__':

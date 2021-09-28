@@ -1,11 +1,9 @@
 import io
-import sys
-import time
 import gzip
 import random
 import logging
 import pandas as pd
-from source.error_handling import will_exit
+from source.error_handling import premature_exit, print_and_log
 
 
 def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
@@ -13,7 +11,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
               choose_random_ploid_if_no_gt_found: bool = True):
 
     if debug:
-        logging.info(f"Parsing vcf {vcf_path}")
+        print_and_log(f"Parsing vcf {vcf_path}", 'debug')
     # Read in the raw vcf using pandas' csv reader.
     if vcf_path.endswith('.gz'):
         f = gzip.open(vcf_path)
@@ -26,9 +24,8 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
 
     # Check to make sure header row is included
     if not lines[0].startswith('#CHROM'):
-        print(f"ERROR: Improper vcf header row for {vcf_path}. Check and re-run.")
-        logging.error(f"Improper vcf header row for {vcf_path}. Check and re-run.")
-        will_exit(1)
+        print_and_log(f"Improper vcf header row for {vcf_path}.", 'error')
+        premature_exit(1)
     else:
         lines[0] = lines[0].strip('#')
     # NOTE: if the vcf that is read in does not match the proper format, this read_csv command
@@ -46,7 +43,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
         if min_headers[i] != variants.columns[i]:
             print(f"ERROR: VCF must contain the following headers, in order: {min_headers}")
             logging.error(f"VCF must contain the following headers, in order: {min_headers}")
-            will_exit(1)
+            premature_exit(1)
     if debug:
         optional_headers = ['FILTER', 'INFO', 'FORMAT']
         for j in range(len(optional_headers)):
@@ -60,7 +57,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
     if not include_homs:
         variants = variants.drop(variants[(variants['ALT'] == '.') |
                                           (variants['ALT'] == '') |
-                                          (variants.apply(lambda vrow: all(j == row.ALT for j in row.REF), axis=1))
+                                          (variants.apply(lambda row: all(j == row.ALT for j in row.REF), axis=1))
                                           ].index)
     if not include_fail:
         variants = variants.drop(variants[(variants['FILTER'] != 'PASS') &
@@ -86,7 +83,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                       f'Supplied samples = {list(samp_cols)}')
                 logging.error(f"Tumor-Normal samples require both a tumor and normal column in the VCF. \n"
                               f"Supplied samples = {list(samp_cols)}")
-                will_exit(1)
+                premature_exit(1)
             elif len(samp_cols) >= 1 and tumor_normal:
                 normals = [label for label in samp_cols if 'normal' in label.lower()]
                 tumors = [label for label in samp_cols if 'tumor' in label.lower()]
@@ -95,7 +92,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                           "and 'normal' (case-insensitive).")
                     logging.error("Input VCF for cancer must contain a column with a label containing 'tumor' "
                                   "and 'normal' (case-insensitive).")
-                    will_exit(1)
+                    premature_exit(1)
                 if len(normals) > 1 or len(tumors) > 1:
                     print("WARNING: If more than one tumor or normal column is present, "
                           "only the first of each is used.")
@@ -111,11 +108,11 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                 logging.error("Unconsidered case: you may have broken reality. Check your VCF for the proper number"
                               "of sample columns.")
                 logging.error("Reality: Broken")
-                will_exit(1)
+                premature_exit(1)
         else:
             print('ERROR: If FORMAT column is present in VCF, there must be at least one sample column.')
             logging.error("If FORMAT column is present in VCF, there must be at least one sample column.")
-            will_exit(1)
+            premature_exit(1)
     else:
         if debug:
             print("Warning: Input VCF files must have a FORMAT and SAMPLE column for variant insert to work.")
@@ -228,23 +225,21 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                       f"{list(row)}")
                 logging.error(f"allele frequency (AF) field in INFO must match number of alternate alleles: "
                               f"{list(row)}")
-                will_exit(1)
+                premature_exit(1)
         else:
             # Used None value if no AF was supplied
             af_numbers.extend([None] * max([len(row['alt_split']), 1]))
         if not gt_numbers:
             rows_to_delete.append(index)
             if debug:
-                print(f'Skipping row because no genotype found:\n{row}')
-                logging.info(f'Skipping row because no genotype found:\n{row}')
+                print_and_log(f'Skipping row because no genotype found:\n{row}', 'info')
         else:
             # drop variants that aren't actually used
             for gt in gt_numbers:
                 if gt == '0/0':
                     rows_to_delete.append(index)
                     if debug:
-                        print(f'Skipping row because of 0/0 genotype:\n{row}')
-                        logging.info(f'Skipping row because of 0/0 genotype:\n{row}')
+                        print_and_log(f'Skipping row because of 0/0 genotype:\n{row}', 'info')
         # Append column to form new AF and GT columns of the dataframe
         new_column.append([af_numbers, gt_numbers])
     # Add the new data to the table
@@ -263,11 +258,8 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
 
     variants = variants.sort_values(by=['CHROM', 'POS'])
 
-    print(f'Found {len(variants.index)} valid variants in input vcf.')
-    print(f' * {n_skipped} variants skipped: (qual filtered / ref genotypes / invalid syntax)')
-    print(f' * {n_skipped_because_hash} variants skipped due to multiple variants found per position')
-    logging.info(f'Found {len(variants.index)} valid variants in input vcf.')
-    logging.info(f' * {n_skipped} variants skipped: (qual filtered / ref genotypes / invalid syntax)')
-    logging.info(f' * {n_skipped_because_hash} variants skipped due to multiple variants found per position')
+    print_and_log(f'Found {len(variants.index)} valid variants in input vcf.\n'
+                  f'* {n_skipped} variants skipped: (qual filtered / ref genotypes / invalid syntax)\n'
+                  f'* {n_skipped_because_hash} variants skipped due to multiple variants found per position', 'info')
     print('--------------------------------')
     return list(samp_cols), variants

@@ -8,7 +8,7 @@ import logging
 from Bio.Seq import Seq
 from Bio.Seq import MutableSeq
 
-from source.error_handling import will_exit
+from source.error_handling import premature_exit
 from source.constants_and_models import ALLOWED_NUCL, OK_CHR_ORD
 
 
@@ -26,7 +26,7 @@ def index_ref(reference_path: str) -> list:
     if not absolute_reference_location.is_file():
         print("\nProblem reading the reference fasta file.\n")
         logging.error("Problem reading the reference fasta file.")
-        will_exit(1)
+        premature_exit(1)
 
     index_filename = None
 
@@ -157,7 +157,7 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
     else:
         print('\nERROR: UNKNOWN N_HANDLING MODE\n')
         logging.error("UNKNOWN N_HANDLING MODE")
-        will_exit(1)
+        premature_exit(1)
 
     habitable_regions = []
     if not n_info['big']:
@@ -241,7 +241,7 @@ def find_n_regions(input_sequence: Seq, n_handling: tuple, n_unknowns: bool = Fa
     else:
         print('\nERROR: UNKNOWN N_HANDLING MODE')
         logging.error("UNKNOWN N_HANDLING MODE")
-        will_exit(1)
+        premature_exit(1)
 
     habitable_regions = []
     if not n_info['big']:
