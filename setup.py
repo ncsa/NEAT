@@ -46,10 +46,8 @@ setuptools.setup(
         'utilities/gen_mut_model.py',
         'utilities/generate_random_dna.py',
         'utilities/plotMutModel.py',
-        'utilities/repickle.py',
         'utilities/validateBam.py',
         'utilities/validateFQ.py',
-        'utilities/vcf_compare_OLD.py'
     ],
     project_urls={  # Optional
         'Bug Reports': 'https://github.com/ncsa/NEAT/issues',
