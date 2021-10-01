@@ -507,6 +507,9 @@ class SingleJob(multiprocessing.Process):
         if self.debug:
             print_and_log(f"Process {self.threadidx} - simulation started", 'debug')
 
+        total_bp_spanned = sum([len(self.reference[x]) for x in self.chromosomes])
+
+        current_progress = 0
 
 
 
@@ -636,7 +639,6 @@ def main(raw_args=None):
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
 
-
     # there is not a reference_chromosome in the options defs because
     # there is nothing that really needs checking, so this command will just
     # set the value. This might be an input in the future, for example if you want
@@ -647,12 +649,11 @@ def main(raw_args=None):
     # It is True if they all start with "chr" and False otherwise.
     begins_with_chr = all(k.startswith('chr') for k in options.reference_chromosomes)
 
+    # TODO I'm going to see how far I get without n_handling. If I make it to the end, I can chuck this.
     if options.paired_ended:
         n_handling = ('random', options.fragment_mean)
     else:
         n_handling = ('ignore', options.read_len)
-
-
 
     if options.debug:
         print_and_log(f'Reference file indexed.', 'debug')
@@ -806,7 +807,7 @@ def main(raw_args=None):
                 length += len(reference_index[thing])
             print_and_log(f"item{idx} = {length}", 'debug')
             idx += 1
-        print_and_log(f'breaks = {breaks}')
+        print_and_log(f'breaks = {breaks}', 'debug')
 
     print_and_log("Input file partitioned.", 'info')
 
@@ -824,7 +825,7 @@ def main(raw_args=None):
     for process in processes:
         process.join()
         if process.exitcode != 0:
-            print_and_log("Error in child process.", 'error')
+            print_and_log("\nError in child process.", 'error')
             premature_exit(process.exitcode)
 
 
