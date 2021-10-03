@@ -50,6 +50,5 @@ def print_and_log(mssg: str, error_type: str):
     """
     message = mssg.split('\n')
     message[1:] = [f'\t - {x}' for x in message[1:]]
-    if error_type.lower() != "debug":
-        print_lines(message, error_type.lower())
+    print_lines(message, error_type.lower())
     log_lines(message, error_type)
