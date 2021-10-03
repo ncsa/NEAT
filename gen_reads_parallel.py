@@ -23,10 +23,12 @@ from copy import deepcopy
 import multiprocessing
 import tempfile
 import pandas as pd
+import shutil
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.Seq import MutableSeq
 from types import SimpleNamespace
+from cpu_load_generator import load_single_core, load_all_cores, from_profile
 
 from source.constants_and_models import VERSION, LOW_COVERAGE_THRESHOLD
 from source.input_file_reader import parse_input_mutation_model
@@ -408,6 +410,7 @@ class SingleJob(multiprocessing.Process):
         self.threadidx = threadidx
         self.partition = partition
         self.debug = options.debug
+        self.out_prefix_name = out_prefix_name
 
         # These tasks filter the inputs down to
         self.reference = {}
@@ -449,23 +452,23 @@ class SingleJob(multiprocessing.Process):
         self.temporary_dir = tempfile.TemporaryDirectory()
         self.tmp_dir_path = pathlib.Path(self.temporary_dir.name)
         if options.produce_bam:
-            self.tmp_sam_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_records_{self.threadidx}.sam"
+            self.tmp_sam_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_records_{self.threadidx}.sam"
             if options.debug:
                 print_and_log(f'self.tmp_sam_fn = {self.tmp_sam_fn}', 'debug')
         if options.produce_vcf:
-            self.tmp_vcf_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_{self.threadidx}.vcf"
+            self.tmp_vcf_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_{self.threadidx}.vcf"
             if options.debug:
                 print_and_log(f'self.tmp_vcf_fn = {self.tmp_vcf_fn}', 'debug')
         if options.produce_fasta:
-            self.tmp_fasta_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_{self.threadidx}.fasta"
+            self.tmp_fasta_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_{self.threadidx}.fasta"
             if options.debug:
                 print_and_log(f'self.tmp_fasta_fn = {self.tmp_fasta_fn}', 'debug')
         if options.produce_fastq:
-            self.tmp_fastq1_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_{self.threadidx}_read1.fq"
+            self.tmp_fastq1_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_{self.threadidx}_read1.fq"
             if options.debug:
                 print_and_log(f'self.tmp_fastq1_fn = {self.tmp_fastq1_fn}', 'debug')
             if options.paired_ended:
-                self.tmp_fastq2_fn = self.tmp_dir_path / f"{out_prefix_name}_tmp_{self.threadidx}_read2.fq"
+                self.tmp_fastq2_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_{self.threadidx}_read2.fq"
                 if options.debug:
                     print_and_log(f'self.tmp_fastq2_fn  = {self.tmp_fastq2_fn }', 'debug')
 
@@ -511,6 +514,26 @@ class SingleJob(multiprocessing.Process):
 
         current_progress = 0
 
+        for chrom in self.partition:
+            for chrom_num in range(len(self.reference[chrom])):
+                qname = f'{self.out_prefix_name}-{chrom}-{chrom_num}'
+                flag = 0
+                rname = chrom
+                pos = 1261
+                mapq = 70
+                cigar = '101M' # placeholder
+                rnext = '='
+                pnext = 1
+                tlen = 0
+                seq = Seq('ATAGAGAATTTAAATAAAAAAGTTGATGATGGTTTCCTGGACATTTGGACTT'
+                          'ACAATGCCGAACTGTTGGTTCTATTGGAAAATGAAAGAACTTTGGACTA')
+                qual = "7FGFGDGDGGG=GEDFGGGGDGGG=FGGGGEEFGFGD>FGGGCGGGEFGGFG4ECF" \
+                       "GGGGFGGGAFGG:CDGGGG?FDAB@CGFFD3FC:GGFGEGF$0F]f="
+                line_to_write = f'{qname}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}' \
+                                f'\t{rnext}\t{pnext}\t{tlen}\t{seq}\t{qual}\n'
+                self.tmp_sam_outfile.write(line_to_write)
+        self.tmp_sam_outfile.close()
+        shutil.copy(self.tmp_sam_fn, '/home/jallen17/Documents/temp.sam')
 
 
 # command line interface
@@ -535,7 +558,7 @@ def main(raw_args=None):
     log_name = f'{args.output}.log'
 
     logging.basicConfig(filename=log_name, filemode='w',
-                        format='%(asctime)s %(levelname)s: %(message)s',
+                        format='%(asctime)s %(levelname)s %(threadName)s: %(message)s',
                         level=logging.DEBUG)
 
     starttime = print_start_info()
@@ -557,8 +580,7 @@ def main(raw_args=None):
     
     Read input models or default models, as specified by user.
     """
-    if options.debug:
-        print_and_log("Model preparation begun", 'debug')
+    print_and_log("Reading Models...", 'info')
 
     # Load mutation models:
     mutation_model = parse_input_mutation_model(options.mutation_model, 1)
@@ -632,12 +654,14 @@ def main(raw_args=None):
     """
     Process Inputs
     """
-    if options.debug:
-        print_and_log("Process Inputs", 'debug')
+    print_and_log("Processing inputs...", 'info')
 
     print_and_log(f'Reading {options.reference}...', 'info')
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
+
+    if options.debug:
+        print_and_log(f'Reference file indexed.', 'debug')
 
     # there is not a reference_chromosome in the options defs because
     # there is nothing that really needs checking, so this command will just
@@ -655,12 +679,10 @@ def main(raw_args=None):
     else:
         n_handling = ('ignore', options.read_len)
 
-    if options.debug:
-        print_and_log(f'Reference file indexed.', 'debug')
-
     printed_warning = False
     input_variants = None
     if options.include_vcf:
+        print_and_log(f"Reading input VCF...", 'info')
         if options.cancer:
             (sample_names, input_variants) = parse_vcf(options.include_vcf,
                                                        tumor_normal=True,
@@ -719,10 +741,11 @@ def main(raw_args=None):
                     print_and_log(f' - [{str(n_skipped[1])}] attempted to insert into N-region', 'info')
                     print_and_log(f' - [{str(n_skipped[2])}] alt allele contained non-ACGT characters', 'info')
 
-    if options.debug:
-        print_and_log("Finished reading @include_vcf file.", 'debug')
+        if options.debug:
+            print_and_log("Finished reading @include_vcf file.", 'debug')
 
     # parse input targeted regions, if present
+    print_and_log(f"Reading input beds, if present...", 'info')
     target_regions_df = parse_bed(options.target_bed, options.reference_chromosomes,
                                   begins_with_chr, False, options.debug)
 
@@ -734,11 +757,13 @@ def main(raw_args=None):
     mutation_rate_df = parse_bed(options.mutation_bed, options.reference_chromosomes,
                                  begins_with_chr, True, options.debug)
 
+    if options.debug:
+        print_and_log(f'Finished reading input beds.', 'debug')
+
     """
     Initialize Output Files
     """
-    if options.debug:
-        print_and_log("Beginning initialize output files.", 'debug')
+    print_and_log("Initializing output files...", 'info')
 
     # Prepare headers
     bam_header = None
@@ -780,13 +805,13 @@ def main(raw_args=None):
                                               )
         output_file_writer_cancer = None
 
-    print_and_log(f'Output files ready for writing.', 'info')
+    if options.debug:
+        print_and_log(f'Output files ready for writing.', 'debug')
 
     """
     Begin Analysis
     """
-    if options.debug:
-        print_and_log("Beginning Analysis", 'info')
+    print_and_log("Beginning analysis...", 'info')
 
     # Find break points in the input file.
     breaks = find_file_breaks(options, reference_index)
@@ -809,7 +834,8 @@ def main(raw_args=None):
             idx += 1
         print_and_log(f'breaks = {breaks}', 'debug')
 
-    print_and_log("Input file partitioned.", 'info')
+    if options.debug:
+        print_and_log("Input file partitioned.", 'debug')
 
     # Initialize simulation
     thread_index = 0
@@ -822,12 +848,12 @@ def main(raw_args=None):
     # Step 3 (CAVA 486 - 493) - Running simulation
     for process in processes:
         process.start()
+
     for process in processes:
         process.join()
         if process.exitcode != 0:
             print_and_log("\nError in child process.", 'error')
             premature_exit(process.exitcode)
-
 
     # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
 
