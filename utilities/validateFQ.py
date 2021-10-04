@@ -1,4 +1,4 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 
 #
 #	A quickie tool for validating the correctness of a FASTQ file

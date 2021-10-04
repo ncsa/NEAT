@@ -1,11 +1,11 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 # encoding: utf-8
 
 # Python 3 ready
 
 """ **************************************************
 
-vcf_compare.source
+vcf_compare.py
 
 - compare vcf file produced by workflow to golden vcf produced by simulator
 
@@ -34,7 +34,7 @@ MAX_VAL = 9999999999999  # an unreasonably large value that no reference fasta c
 DESC = """%prog: vcf comparison script."""
 VERS = 0.1
 
-parser = argparse.ArgumentParser('source %prog [options] -r <ref.fa> -g <golden.vcf> -w <workflow.vcf>',
+parser = argparse.ArgumentParser('python %prog [options] -r <ref.fa> -g <golden.vcf> -w <workflow.vcf>',
                                  description=DESC,
                                  version="%prog v" + str(VERS),
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
