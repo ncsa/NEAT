@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # compute_gc.py
 
 Takes .genomecov files produced by BEDtools genomeCov (with -d option).
