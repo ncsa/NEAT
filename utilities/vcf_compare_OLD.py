@@ -1,4 +1,4 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 # encoding: utf-8
 
 # Python 3 ready

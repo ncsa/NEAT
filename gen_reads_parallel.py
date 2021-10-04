@@ -511,8 +511,10 @@ class SingleJob(multiprocessing.Process):
             print_and_log(f"Process {self.threadidx} - simulation started", 'debug')
 
         total_bp_spanned = sum([len(self.reference[x]) for x in self.chromosomes])
-
         current_progress = 0
+        have_printed100 = False
+
+
 
         for chrom in self.partition:
             for chrom_num in range(len(self.reference[chrom])):
@@ -521,7 +523,7 @@ class SingleJob(multiprocessing.Process):
                 rname = chrom
                 pos = 1261
                 mapq = 70
-                cigar = '101M' # placeholder
+                cigar = '101M'  # placeholder
                 rnext = '='
                 pnext = 1
                 tlen = 0

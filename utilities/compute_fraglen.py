@@ -1,10 +1,11 @@
+#!/usr/bin/env python
 #
 #
-#      Compute Fragment Length Model for gen_reads.source
-#                  compute_fraglen.source
+#      Compute Fragment Length Model for gen_reads.py
 #
+#      compute_fraglen.py
 #
-#      Usage: samtools view normal.bam | source compute_fraglen.source
+#      Usage: samtools view normal.bam | python compute_fraglen.py
 #
 #
 # Upgraded 5/6/2020 to match Python 3 standards and refactored for easier reading
@@ -12,6 +13,7 @@
 import pickle
 import argparse
 import platform
+import sys
 
 os = platform.system()
 if os !='Windows':
@@ -161,10 +163,14 @@ def main():
     output = output_prefix + '.p'
 
     all_tlens = count_frags(input_file)
+    if not all_tlens:
+        print("All tlens were 0 or below 70 mapping quality, so no model can be constructed.")
+        sys.exit(0)
     print('\nSaving model...')
     out_vals, out_probs = compute_probs(all_tlens)
     pickle.dump([out_vals, out_probs], open(output, 'wb'))
     print('\nModel successfully saved.')
+
 
 if __name__ == "__main__":
     main()
