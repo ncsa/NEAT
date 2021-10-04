@@ -1,9 +1,9 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 
 #
 #	a quick script for comparing mutation models
 #
-#	source plotMutModel.source -i model1.p [model2.p] [model3.p]... -l legend_label1 [legend_label2] [legend_label3]... -o path/to/pdf_plot_prefix
+#	python plotMutModel.py -i model1.p [model2.p] [model3.p]... -l legend_label1 [legend_label2] [legend_label3]... -o path/to/pdf_plot_prefix
 #
 # Python 3 ready
 
@@ -19,8 +19,8 @@ import argparse
 # mpl.rc('text',usetex=True)
 # mpl.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
 
-parser = argparse.ArgumentParser(description='Plot and compare mutation models from gen_mut_model.source Usage: '
-                                             'source plotMutModel.source -i model1.p [model2.p] [model3.p]... '
+parser = argparse.ArgumentParser(description='Plot and compare mutation models from gen_mut_model.py Usage: '
+                                             'python plotMutModel.py -i model1.p [model2.p] [model3.p]... '
                                              '-l legend_label1 [legend_label2] [legend_label3]... '
                                              '-o path/to/pdf_plot_prefix',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter,)

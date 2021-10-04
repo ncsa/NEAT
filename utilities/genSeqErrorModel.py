@@ -1,12 +1,12 @@
-#!/usr/bin/env source
+#!/usr/bin/env python
 
 #
 #
-#          genSeqErrorModel.source
-#          Computes sequencing error model for gen_reads.source
+#          genSeqErrorModel.py
+#          Computes sequencing error model for gen_reads.py
 #
 #         
-#          Usage: source genSeqErrorModel.source -i input_reads.fq -o path/to/output_name.p
+#          Usage: python genSeqErrorModel.py -i input_reads.fq -o path/to/output_name.p
 #
 #
 # Python 3 ready
