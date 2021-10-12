@@ -31,8 +31,8 @@ from types import SimpleNamespace
 from cpu_load_generator import load_single_core, load_all_cores, from_profile
 
 from source.constants_and_models import VERSION, LOW_COVERAGE_THRESHOLD
-from source.input_file_reader import parse_input_mutation_model
-from source.ReadContainer import ReadContainer
+from source.Models import parse_input_mutation_model, pickle_load_model
+from source.SequencingErrors import SequencingErrors
 from source.error_handling import premature_exit, print_and_log
 
 from source.ref_func import find_n_regions
@@ -43,6 +43,7 @@ from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
 from source.constants_and_models import ALLOWED_NUCL
 from source.neat_cigar import CigarString
+from source.Models import Models
 
 # Constants
 NEAT_PATH = pathlib.Path(__file__).resolve().parent
@@ -63,11 +64,11 @@ def print_start_info() -> datetime.datetime:
     return starttime
 
 
-def print_end_info(options, starting_time):
+def print_end_info(output_class, cancer_output_class, starting_time):
     endtime = datetime.datetime.now()
-    list_to_iterate = options.files_to_write
-    if options.cancer:
-        list_to_iterate += options.caner_files_to_write
+    list_to_iterate = output_class.files_to_write
+    if cancer_output_class:
+        list_to_iterate += cancer_output_class.files_to_write
     print_and_log("\nWrote the following files:", 'info')
     i = 1
     for item in list_to_iterate:
@@ -140,7 +141,7 @@ def print_configuration(args, options):
     for suffix in potential_filetypes:
         key = f'produce_{suffix}'
         if options.args[key]:
-            log += f' {suffix} '
+            log += f'{suffix} '
     print_and_log(f'Producing the following files: {log.strip()}', 'INFO')
     print_and_log(f'Input file: {options.reference}', 'INFO')
     print_and_log(f'Output files: {args.output}.<{log}>', 'INFO')
@@ -191,23 +192,6 @@ def print_configuration(args, options):
         print_and_log(f'RNG seed value: {options.rng_value}', 'INFO')
 
 
-def pickle_load_model(file, mssg) -> list:
-    try:
-        return pickle.load(file)
-    except IOError as e:
-        print_and_log(mssg, 'error')
-        print_and_log(str(e), 'error')
-        premature_exit(1)
-    except EOFError as e:
-        print_and_log(mssg, 'error')
-        print_and_log(str(e), 'error')
-        premature_exit(1)
-    except ValueError as e:
-        print_and_log(mssg, 'error')
-        print_and_log(str(e), 'error')
-        premature_exit(1)
-
-
 # class representing the options
 class Options(SimpleNamespace):
     def __init__(self, config_file):
@@ -255,14 +239,13 @@ class Options(SimpleNamespace):
 
         # Cancer options (not yet implemented)
         self.cancer = False
-        self.cancer_model = False
-        self.cancer_purity = False
+        self.cancer_model = None
+        self.cancer_purity = None
 
         # Read the config file
         self.args = {}
         self.read()
-        # Some options checking to clean up the args dict. Also keep track of what files to create.
-        self.args['output_files'] = []
+        # Some options checking to clean up the args dict.
         self.check_options()
 
         self.__dict__.update(self.args)
@@ -440,6 +423,11 @@ class SingleJob(multiprocessing.Process):
         if not mutation_rate_regions.empty:
             self.mutation_rate_regions = mutation_rate_regions[mutation_rate_regions.index.isin(self.chromosomes)]
 
+        # TODO Seq error for each group
+        sequencing_error_class = SequencingErrors(options.read_len, sequencing_error_data,
+                                                  options.avg_seq_error, options.rescale_qualities,
+                                                  options.debug)
+
         # TODO check into multiprocessing.Pool()
 
         # Setting up temp files to write to
@@ -514,6 +502,7 @@ class SingleJob(multiprocessing.Process):
         current_progress = 0
         have_printed100 = False
 
+        # TODO add structural variants here.
 
 
         for chrom in self.partition:
@@ -584,38 +573,25 @@ def main(raw_args=None):
     """
     print_and_log("Reading Models...", 'info')
 
-    # Load mutation models:
-    mutation_model = parse_input_mutation_model(options.mutation_model, 1)
-    cancer_model = None
-    if options.cancer:
-        cancer_model = parse_input_mutation_model(options.cancer_model, 2)
-
-    if options.debug:
-        print_and_log("Mutation models loaded", 'debug')
+    models = Models(options)
 
     # Load sequencing error model
     mssg = "Problem loading Sequencing error model data @error_model"
-    sequencing_error_data = pickle_load_model(open(options.error_model, 'rb'), mssg)
-    sequencing_error_class = ReadContainer(options.read_len, sequencing_error_data,
-                                           options.avg_seq_error, options.rescale_qualities,
-                                           options.debug)
+    sequencing_error_model = pickle_load_model(open(options.error_model, 'rb'), mssg)
+
     if options.debug:
         print_and_log(f'Sequencing read container created', 'debug')
 
     # GC bias model
     mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
            "This file should be the output of compute_gc.py'"
-    gc_scale_count, gc_scale_value = pickle_load_model(open(options.gc_model, 'rb'), mssg)
-
-    gc_window_size = gc_scale_count[-1]
-
-    coverage_data = [gc_window_size, gc_scale_value, []]
+    gc_model = pickle_load_model(open(options.gc_model, 'rb'), mssg)
 
     if options.debug:
         print_and_log('GC Bias model read', 'debug')
 
     # Handle paired-ended data, if applicable
-    fraglen_distribution = None
+    fraglen_model = None
     if options.paired_ended:
         if options.fraglen_model:
             mssg = 'Problem loading the empirical fragment length model.'
@@ -629,7 +605,7 @@ def main(raw_args=None):
                     fraglen_values.append(potential_values[i])
                     fraglen_probability.append(potential_prob[i])
 
-            fraglen_distribution = DiscreteDistribution(fraglen_probability, fraglen_values)
+            fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
             options.set_value('fragment_mean', fraglen_values[mean_ind_of_weighted_list(fraglen_probability)])
 
         # Using artificial fragment length distribution, if the parameters were specified
@@ -637,7 +613,7 @@ def main(raw_args=None):
         else:
             print_and_log(f'Using artificial fragment length distribution.', 'info')
             if options.fragment_st_dev == 0:
-                fraglen_distribution = DiscreteDistribution([1], [options.fragment_mean],
+                fraglen_model = DiscreteDistribution([1], [options.fragment_mean],
                                                             degenerate_val=options.fragment_mean)
             else:
                 potential_values = range(options.fragment_mean - 6 * options.fragment_st_dev,
@@ -649,7 +625,7 @@ def main(raw_args=None):
                 fraglen_probability = [np.exp(-(((n - options.fragment_mean) ** 2) /
                                                 (2 * (options.fragment_st_dev ** 2)))) for n in
                                        fraglen_values]
-                fraglen_distribution = DiscreteDistribution(fraglen_probability, fraglen_values)
+                fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
         if options.debug:
             print_and_log(f'Processed paired-end models', 'debug')
 
@@ -821,8 +797,8 @@ def main(raw_args=None):
     if not breaks:
         # Printing out summary information and end time
         if options.debug:
-            print_and_log("Found no chromosomes in reference.", 'warning')
-        print_end_info(options, starttime)
+            print_and_log("Found no chromosomes in reference.", 'debug')
+        print_end_info(output_file_writer, output_file_writer_cancer, starttime)
         sys.exit(0)
 
     if options.debug:
@@ -839,13 +815,17 @@ def main(raw_args=None):
     if options.debug:
         print_and_log("Input file partitioned.", 'debug')
 
+    # Combine model info
+    models = [mutation_model, cancer_model, gc_model, sequencing_error_model, fraglen_model]
+
     # Initialize simulation
     thread_index = 0
     processes = []
     for partition in breaks:
         thread_index += 1
         processes.append(SingleJob(thread_index, options, reference_index, partition, out_prefix_name,
-                                   target_regions_df, discard_regions_df, mutation_rate_df, input_variants))
+                                   target_regions_df, discard_regions_df, mutation_rate_df, input_variants,
+                                   models))
 
     # Step 3 (CAVA 486 - 493) - Running simulation
     for process in processes:
@@ -858,6 +838,7 @@ def main(raw_args=None):
             premature_exit(process.exitcode)
 
     # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
+
 
     # Step 5 (CAVA 500 - 501) - Printing out summary and end time
 
