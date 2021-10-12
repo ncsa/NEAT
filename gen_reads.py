@@ -31,7 +31,7 @@ from source.vcf_func import parse_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
-from source.ReadContainer import ReadContainer
+from source.SequencingErrors import SequencingErrors
 from source.input_file_reader import parse_input_mutation_model
 
 """
@@ -211,10 +211,10 @@ def main(raw_args=None):
     if se_model is None:
         print('Using default sequencing error model.')
         se_model = sim_path / 'models/errorModel_default.p'
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
+        se_class = SequencingErrors(read_len, se_model, se_rate, rescale_qual)
     else:
         # probably need to do some sanity checking
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
+        se_class = SequencingErrors(read_len, se_model, se_rate, rescale_qual)
 
     # GC-bias model
     if gc_bias_model is None:

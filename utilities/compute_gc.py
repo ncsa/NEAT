@@ -153,7 +153,7 @@ def main():
         y_out.append(gc_bins[k])
 
     print('saving model...')
-    pickle.dump([range(window_size + 1), y_out], open(out_p, 'wb'))
+    pickle.dump([window_size, y_out], open(out_p, 'wb'))
 
     print(time.time() - tt, '(sec)')
 

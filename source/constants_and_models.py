@@ -33,6 +33,9 @@ IGNORE_TRINUC = False
 COV_FRAGLEN_PERCENTILE = 10.
 LARGE_NUMBER = 9999999999
 
+# For humans. Whitelist is used to generate the mutation model
+HUMAN_WHITELIST = [str(n) for n in range(1, 30)] + ['x', 'y', 'X', 'Y', 'mt', 'Mt', 'MT']
+
 """
 DEFAULT MUTATION MODELS
 TODO: Convert to pickle files? Why are these done different?

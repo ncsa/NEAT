@@ -5,7 +5,7 @@ from source.constants_and_models import ALLOWED_NUCL, NUC_IND
 from source.error_handling import premature_exit, print_and_log
 
 
-class ReadContainer:
+class SequencingErrors:
     """
     Container for read data: computes quality scores and positions to insert errors
     """
