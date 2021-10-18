@@ -45,7 +45,6 @@ def median(datalist: list) -> float:
     return median
 
 
-
 def median_absolute_deviation(datalist: list) -> float:
     """
     Calculates the absolute value of the median deviation from the median for each element of of a datalist. 
@@ -120,6 +119,9 @@ def compute_probs(datalist: list) -> (list, list):
     deviations from the median.
     :param datalist: A list of fragments with counts
     :return: A list of values that meet the criteria and a list of their associated probabilities
+    >>> n = [3] * 100 + [5] * 155 + [6] * 99
+    >>> compute_probs(n)
+    ([3, 5], [0.39215686274509803, 0.6078431372549019])
     """
     FILTER_MINREADS = 100  # only consider fragment lengths that have at least this many read pairs supporting it
     FILTER_MEDDEV_M = 10  # only consider fragment lengths this many median deviations above the median
