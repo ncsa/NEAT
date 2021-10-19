@@ -12,9 +12,58 @@ import pickle
 from pybedtools import BedTool
 import tempfile
 import json
+import io
 
 from constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
 
+
+@profile
+def read_fasta(fasta_file):
+    return SeqIO.index(fasta_file, 'fasta')
+	
+
+@profile
+def read_variant1(vcf_file, reference_idx, vcf_head):
+    variants = BedTool(vcf_file)
+    print(f'reference_idx = {reference_idx}')
+    print(f'type = {type(reference_idx)}')
+    sys.exit(0)
+    temp = variants.filter(lambda b: b.chrom in reference_idx.keys() and
+                                         not (',' in b[4]) and
+                                         not (len(b[4]) > 1 and len(b[3]) > 1))
+    matching_variants = BedTool(f'{vcf_head}\n{str(temp)}',
+                                from_string=True)
+    return matching_variants
+
+
+@profile
+def read_variant2(vcf_file, reference_idx):
+    f = open(vcf_file, 'r')    
+    lines = [line for line in f if not line.startswith('##')]
+    f.close()
+    lines[0] = lines[0].strip('#')
+    variants = pd.read_csv(
+        io.StringIO(''.join(lines)),
+        dtype={'CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
+               'QUAL': str},
+        sep='\t'
+    )
+    variant_chroms = list(set(variants[0].to_list()))
+    matching_chromosomes = []
+    for ref_name in reference_idx.keys():
+        if ref_name in variant_chroms:
+            matching_chromosomes.append(ref_name)
+
+    matching_variants = variants[variants[0].isin(matching_chromosomes)]
+
+    multi_alts = matching_variants[matching_variants['ALT'].str.contains(',')].index
+    complex_vars = matching_variast[(matching_variants['REF'].apply(len) > 1 & matching_variants['ALT'].apply(len) > 1)].index
+    matching_variants = matching_variants.drop(multi_alts)
+    matching_variants = matching_variants.drop(complex_vars)
+    return matching_variants
+
+
+    
 
 def extract_header(vcf_file: str) -> str:
     vcf_file = pathlib.Path(vcf_file)
@@ -121,7 +170,9 @@ def main(reference_idx, vcf_file: str, out_pickle_name: str, bed_file: str, outc
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     print(f'{PROG} - Processing VCF file...')
     vcf_header = extract_header(vcf_file)
-    variants = BedTool(vcf_file)
+    variants1 = read_variant1(vcf_file, vcf_header, reference_idx)
+    variants2 = read_variant2(vcf_file, reference_idx)
+    sys.exit(0)
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         # We will only use variants that are in the reference and also at this stage, we will
@@ -507,7 +558,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     print('Processing reference...')
-    reference_index = SeqIO.index(reference, "fasta")
+    reference_index = read_fasta(reference)
 
     if not vcf.is_file():
         print(f'{PROG} - Input VCF is not a file: {vcf}')
@@ -516,7 +567,5 @@ if __name__ == '__main__':
     if bed:
         if not bed.is_file():
             print(f'{PROG} - Input BED is not a file: {bed}')
-
-    input("Press any key to continue...")
 
     main(reference_index, vcf, out_pickle, bed, outcounts, show_trinuc, save_trinuc, is_human, cancer_sample)
