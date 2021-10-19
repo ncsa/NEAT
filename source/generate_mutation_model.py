@@ -13,14 +13,16 @@ from pybedtools import BedTool
 import tempfile
 import json
 import io
+from memory_profiler import profile
 
 from constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
 
 
 @profile
 def read_fasta(fasta_file):
+    print("Hello")
     return SeqIO.index(fasta_file, 'fasta')
-	
+
 
 @profile
 def read_variant1(vcf_file, reference_idx, vcf_head):
@@ -29,8 +31,7 @@ def read_variant1(vcf_file, reference_idx, vcf_head):
     print(f'type = {type(reference_idx)}')
     sys.exit(0)
     temp = variants.filter(lambda b: b.chrom in reference_idx.keys() and
-                                         not (',' in b[4]) and
-                                         not (len(b[4]) > 1 and len(b[3]) > 1))
+                                     not (',' in b[4]) and not (len(b[4]) > 1 and len(b[3]) > 1))
     matching_variants = BedTool(f'{vcf_head}\n{str(temp)}',
                                 from_string=True)
     return matching_variants
@@ -57,7 +58,7 @@ def read_variant2(vcf_file, reference_idx):
     matching_variants = variants[variants[0].isin(matching_chromosomes)]
 
     multi_alts = matching_variants[matching_variants['ALT'].str.contains(',')].index
-    complex_vars = matching_variast[(matching_variants['REF'].apply(len) > 1 & matching_variants['ALT'].apply(len) > 1)].index
+    complex_vars = matching_variants[(matching_variants['REF'].apply(len) > 1 & matching_variants['ALT'].apply(len) > 1)].index
     matching_variants = matching_variants.drop(multi_alts)
     matching_variants = matching_variants.drop(complex_vars)
     return matching_variants
@@ -170,7 +171,7 @@ def main(reference_idx, vcf_file: str, out_pickle_name: str, bed_file: str, outc
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     print(f'{PROG} - Processing VCF file...')
     vcf_header = extract_header(vcf_file)
-    variants1 = read_variant1(vcf_file, vcf_header, reference_idx)
+    variants1 = read_variant1(vcf_file, reference_idx, vcf_header)
     variants2 = read_variant2(vcf_file, reference_idx)
     sys.exit(0)
 
