@@ -27,9 +27,6 @@ def read_fasta(fasta_file):
 @profile
 def read_variant1(vcf_file, reference_idx, vcf_head):
     variants = BedTool(vcf_file)
-    print(f'reference_idx = {reference_idx}')
-    print(f'type = {type(reference_idx)}')
-    sys.exit(0)
     temp = variants.filter(lambda b: b.chrom in reference_idx.keys() and
                                      not (',' in b[4]) and not (len(b[4]) > 1 and len(b[3]) > 1))
     matching_variants = BedTool(f'{vcf_head}\n{str(temp)}',
