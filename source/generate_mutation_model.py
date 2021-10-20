@@ -13,6 +13,7 @@ from pybedtools import BedTool
 import tempfile
 import json
 import io
+import pandas as pd
 from memory_profiler import profile
 
 from constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
