@@ -21,7 +21,6 @@ from constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
 
 @profile
 def read_fasta(fasta_file):
-    print("Hello")
     return SeqIO.index(fasta_file, 'fasta')
 
 
@@ -61,8 +60,6 @@ def read_variant2(vcf_file, reference_idx):
     matching_variants = matching_variants.drop(complex_vars)
     return matching_variants
 
-
-    
 
 def extract_header(vcf_file: str) -> str:
     vcf_file = pathlib.Path(vcf_file)
