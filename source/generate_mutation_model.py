@@ -21,8 +21,8 @@ from constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
 
 @profile
 def read_fasta(fasta_file):
-    return SeqIO.index(fasta_file, 'fasta')
-
+    ret = SeqIO.index(fasta_file, 'fasta')
+    return ret
 
 @profile
 def read_variant1(vcf_file, reference_idx, vcf_head):
@@ -36,16 +36,19 @@ def read_variant1(vcf_file, reference_idx, vcf_head):
 
 @profile
 def read_variant2(vcf_file, reference_idx):
-    f = open(vcf_file, 'r')    
-    lines = [line for line in f if not line.startswith('##')]
-    f.close()
-    lines[0] = lines[0].strip('#')
-    variants = pd.read_csv(
-        io.StringIO(''.join(lines)),
-        dtype={'CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
-               'QUAL': str},
-        sep='\t'
-    )
+
+    for line in open(vcf_file, 'r'):
+        if line.startswith('#CHROM'):
+            header = line.strip().split('\t')
+            header[0] = header[0].strip('#')
+            break
+
+    if not header:
+        print(f'{PROG} - No header row found, invalid VCF file.')
+        sys.exit(1)
+
+    variants = pd.read_csv(vcf, comment="#", sep="\t", header=None, names=header)
+
     variant_chroms = list(set(variants['CHROM'].to_list()))
     matching_chromosomes = []
     for ref_name in reference_idx.keys():
