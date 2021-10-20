@@ -47,7 +47,7 @@ def read_variant2(vcf_file, reference_idx):
                'QUAL': str},
         sep='\t'
     )
-    variant_chroms = list(set(variants[0].to_list()))
+    variant_chroms = list(set(variants['CHROM'].to_list()))
     matching_chromosomes = []
     for ref_name in reference_idx.keys():
         if ref_name in variant_chroms:
