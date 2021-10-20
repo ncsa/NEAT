@@ -55,8 +55,8 @@ def read_variant2(vcf_file, reference_idx):
     matching_variants = variants[variants['CHROM'].isin(matching_chromosomes)]
 
     multi_alts = matching_variants[matching_variants['ALT'].str.contains(',')].index
-    complex_vars = matching_variants[(matching_variants['REF'] > 1) &
-                                     (matching_variants['ALT'] > 1)].index
+    complex_vars = matching_variants[(matching_variants['REF'].apply(len) > 1) &
+                                     (matching_variants['ALT'].apply(len) > 1)].index
     matching_variants = matching_variants.drop(multi_alts)
     matching_variants = matching_variants.drop(complex_vars)
     return matching_variants
