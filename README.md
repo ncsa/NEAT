@@ -28,11 +28,12 @@ Table of Contents
       * [Large single end reads](#large-single-end-reads)
       * [Parallelizing simulation](#parallelizing-simulation)
   * [Utilities](#utilities)
-    * [computeGC.py](#computegcpy)
-    * [computeFraglen.py](#computefraglenpy)
-    * [genMutModel.py](#genmutmodelpy)
+    * [compute_gc.py](#computegcpy)
+    * [compute_fraglen.py](#computefraglenpy)
+    * [generate_mutation_model.py](#genmutmodelpy)
+
     * [genSeqErrorModel.py](#genseqerrormodelpy)
-    * [plotMutModel.py](#plotmutmodelpy)
+    * [plot_mut_model.py](#plotmutmodelpy)
     * [vcf_compare_OLD.py](#vcf_compare_oldpy)
       * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
 
@@ -49,7 +50,9 @@ Table of Contents
 * numpy >= 1.19.5
 * pysam >= 0.16.0.1
 
-
+## Notes
+Some utilities require outside tools. For example, generate_mutation_model.py requires the user have access to BedTools
+if you want to restrict the VCF by a bed file. See specific tools for more information.
 ## Usage
 Here's the simplest invocation of genReads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
 
@@ -94,9 +97,9 @@ Option           |  Description
 
 ## Functionality
 
-![Diagram describing the way that genReads simulates datasets](docs/flow_new.png "Diagram describing the way that genReads simulates datasets")
+![Diagram describing the way that gen_reads simulates datasets](docs/flow_new.png "Diagram describing the way that gen_reads simulates datasets")
 
-NEAT gen_reads produces simulated sequencing datasets. It creates FASTQ files with reads sampled from a provided reference genome, using sequencing error rates and mutation rates learned from real sequencing data. The strength of genReads lies in the ability for the user to customize many sequencing parameters, produce 'golden', true positive datasets, and produce types of data that other simulators cannot (e.g. tumour/normal data).
+NEAT produces simulated sequencing datasets. It creates FASTQ files with reads sampled from a provided reference genome, using sequencing error rates and mutation rates learned from real sequencing data. The strength of genReads lies in the ability for the user to customize many sequencing parameters, produce 'golden', true positive datasets, and produce types of data that other simulators cannot (e.g. tumour/normal data).
 
 Features:
 
@@ -187,22 +190,6 @@ python gen_reads.py                         \
 	-o /home/me/simulated_reads        
 ```
 
-### Parallelizing simulation
-When possible, simulation can be done in parallel via multiple executions with different --job options. The resultant files will then need to be merged using utilities/mergeJobs.py. The following example shows splitting a simulation into 4 separate jobs (which can be run independently):
-
-```
-python gen_reads.py  -r hg19.fa -R 126 -o /home/me/simulated_reads --bam --vcf --job 1 4
-python gen_reads.py  -r hg19.fa -R 126 -o /home/me/simulated_reads --bam --vcf --job 2 4
-python gen_reads.py  -r hg19.fa -R 126 -o /home/me/simulated_reads --bam --vcf --job 3 4
-python gen_reads.py  -r hg19.fa -R 126 -o /home/me/simulated_reads --bam --vcf --job 4 4
-
-python mergeJobs.py -i /home/me/simulated_reads -o /home/me/simulated_reads_merged -s /path/to/samtools
-```
-
-In future revisions the dependence on SAMtools will be removed.
-
-To simulate human WGS 50X, try 50 chunks or less.
-
 # Utilities	
 Several scripts are distributed with gen_reads that are used to generate the models used for simulation.
 
@@ -235,15 +222,15 @@ Takes SAM file via stdin:
 
 and creates fraglen.p model in working directory.
 
-## gen_mut_model.py
+## generate_mutation_model.py
 
-Takes references genome and TSV file to generate mutation models:
+Takes references genome and VCF file to generate mutation models:
 
 ```
 python genMutModel.py               \
         -r hg19.fa                  \
-        -m inputVariants.tsv        \
-        -o /home/me/models.p
+        -m inputVariants.vcf        \
+        -o /home/me/models
 ```
 
 Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
@@ -252,12 +239,20 @@ Option           |  Description
 ------           |:----------
 -r <str>         |  Reference file for organism in FASTA format. Required
 -m <str>         |  Mutation file for organism in VCF format. Required
--o <str>         |  Path to output file and prefix. Required. 
--b <str>         |  BED file of regions to include
+-o <str>         |  Path to output file and prefix. Required.
+--bed            |  Flag that indicates you are using a bed-restricted vcf and fasta (see below)
 --save-trinuc    |  Save trinucleotide counts for reference
 --human-sample   |  Use to skip unnumbered scaffolds in human references
 --skip-common    |  Do not save common snps or high mutation areas
-	
+
+Note that if you have a bed input, you will need to have bedtools installed in your environment, in addition to the 
+pybedtools python package. We recommend using Anaconda:
+
+```
+conda install -c bioconda bedtools
+```
+
+See the [bedtools documentation](https://bedtools.readthedocs.io/en/latest/) for more information.
 
 ## genSeqErrorModel.py
 
