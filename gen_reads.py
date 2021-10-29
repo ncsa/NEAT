@@ -32,7 +32,7 @@ from source.output_file_writer import OutputFileWriter, reverse_complement, sam_
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
 from source.SequencingErrors import SequencingErrors
-from source.input_file_reader import parse_input_mutation_model
+from source.Models import parse_input_mutation_model
 
 """
 Some constants needed for analysis

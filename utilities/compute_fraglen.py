@@ -5,9 +5,6 @@
 #
 #      compute_fraglen.py
 #
-#      Usage: samtools view normal.bam | python compute_fraglen.py
-#
-#
 # Upgraded 5/6/2020 to match Python 3 standards and refactored for easier reading
 
 import pickle

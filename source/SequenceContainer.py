@@ -54,11 +54,12 @@ class SequenceContainer:
 
         # initialize mutation models
         if not mut_models:
+            # TODO the model is already set at default by parse_mut_model so this step seems redundant
             default_model = [copy.deepcopy(DEFAULT_MODEL_1) for _ in range(self.ploidy)]
             self.model_data = default_model[:self.ploidy]
         else:
             if len(mut_models) != self.ploidy:
-                print_and_log('Number of mutation models received is not equal to specified ploidy', 'error')
+                print_and_log('BUG: Number of mutation models received is not equal to specified ploidy', 'critical')
                 premature_exit(1)
             self.model_data = copy.deepcopy(mut_models)
 
