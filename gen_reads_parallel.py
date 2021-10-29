@@ -199,12 +199,20 @@ class Options(SimpleNamespace):
         self.config_file = config_file
 
         # Options flags for gen_reads. This metadata dict gives the type of variable (matching the python types)
-        # the default value ('.' means no default), and checks. Files only have one criteria: 'exists' or
-        # nothing. If there is nothing after the default value, the code will not check the value at all.
-        # If the criteria is 'exists' it will treat it as a file and check that it exists with pathlib.
-        # For numbers you need two criteria: a low value and a high value for the range that the variable
-        # should fall between. If there is no default and/or no criteria, use None as a placeholder.
-        # (type, default, criteria1 (low), criteria2 (high))
+        # the default value ('.' means no default), and checks. There are four fields: option type (corresponding to
+        # a python type), default (or None, if no default), criteria 1 and criteria 2. Any items without values should
+        # use None as a placeholder.
+        #
+        # Option Type: Current possible valuse are string, int, float, and boolean. These correspond to str, int, float,
+        # and bool Python types. For files and directories, use string type.
+        #
+        # Criteria 1: There are two modes of checking: files and numbers. For files, criteria 1 should be set to
+        # 'exists' to check file existence or None to skip a check (as with temp_dir, because that is not a user input.
+        # For numbers, criteria 1 should be the lowest acceptable value (inclusive) for that variable.
+        #
+        # Criteria 2: For files, criteria 2 will not be checked, so set to None for consistency. For numbers, this
+        # should be the highest acceptable value (inclusive).
+        # (type, default, criteria1 (low/'exists'), criteria2 (high/None))
         arbitrarily_large_number = 1000000
         self.defs['reference'] = ('string', None, 'exists', None)
         self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
@@ -267,7 +275,7 @@ class Options(SimpleNamespace):
                 print_and_log(f'The file given to @{keyname} does not exist', 'error')
                 premature_exit(1)
         elif not lowval and not highval:
-            # This indicates a boolean and we have nothing to check
+            # This indicates a boolean or dir and we have nothing to check
             pass
         else:
             print_and_log(f'Problem criteria ({lowval, highval}) in Options definitions for {keyname}.', 'critical')
@@ -282,7 +290,7 @@ class Options(SimpleNamespace):
                 if line_split[1] == '.':
                     continue
                 key = line_split[0]
-                # We can ignore any keys users. added but haven't coded for.
+                # We can ignore any keys users added but haven't coded for. It must be in the defs dict to be examined.
                 if key in list(self.defs.keys()):
                     type_of_var, default, criteria1, criteria2 = self.defs[key]
                     # if it's already set to the default value, ignore.
@@ -327,12 +335,9 @@ class Options(SimpleNamespace):
                         print_and_log(f'BUG: Undefined type in the Options dictionary: {type_of_var}.', 'critical')
                         premature_exit(1)
         # Anything we skipped in the config gets the default value
-        # No need to check since these are already CAREFULLY vetted
+        # No need to check since these are already CAREFULLY vetted (right!?)
         for key, (_, default, criteria1, criteria2) in self.defs.items():
             if key not in list(self.args.keys()):
-                # Let's double check that the file structure is as expected
-                if default:
-                    self.check_and_log_error(key, default, criteria1, criteria2)
                 self.args[key] = default
 
     def check_options(self) -> int:

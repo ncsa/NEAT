@@ -123,11 +123,9 @@ def count_trinucleotides(reference_idx, bed_file, trinuc_counts, matching_chroms
                     trinuc = reference_idx[record[0]][i:i + 3].seq
                     if trinuc not in ALL_TRI:
                         continue
-                    if record[0] not in trinuc_ref_count:
-                        trinuc_ref_count[record[0]] = {}
-                    if trinuc not in trinuc_ref_count[record[0]]:
-                        trinuc_ref_count[record[0]][trinuc] = 0
-                    trinuc_ref_count[record[0]][trinuc] += 1
+                    if trinuc not in trinuc_ref_count:
+                        trinuc_ref_count[trinuc] = 0
+                    trinuc_ref_count[trinuc] += 1
         if save_trinuc_file:
             print(f'{PROG} - Warning: since we are using bed input, no trinuc file will be saved.')
 
@@ -257,11 +255,17 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
                     trinuc_alt = trinuc_to_analyze[0] + snp_variants.loc[index, 'ALT'] + trinuc_to_analyze[2]
                     if trinuc_alt not in ALL_TRI:
                         continue
+
                     key = (trinuc_ref, trinuc_alt)
                     if key not in trinuc_transition_count:
                         trinuc_transition_count[key] = 0
                     trinuc_transition_count[key] += 1
                     snp_count += 1
+
+                    key2 = (str(row.REF), str(row.ALT))
+                    if key2 not in snp_transition_count:
+                        snp_transition_count[key2] = 0
+                    snp_transition_count[key2] += 1
 
                     my_pop_freq = find_caf(row['INFO'])
                     command_variants.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
@@ -419,6 +423,18 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     indel_freq = 1-snp_freq
 
     # save variables to file
+    """
+    DEFAULT_MODEL_1 = [DEFAULT_1_OVERALL_MUT_RATE,
+                   DEFAULT_1_HOMOZYGOUS_FREQ,
+                   DEFAULT_1_INDEL_FRACTION,
+                   DEFAULT_1_INS_VS_DEL,
+                   DEFAULT_1_INS_LENGTH_VALUES,
+                   DEFAULT_1_INS_LENGTH_WEIGHTS,
+                   DEFAULT_1_DEL_LENGTH_VALUES,
+                   DEFAULT_1_DEL_LENGTH_WEIGHTS,
+                   DEFAULT_1_TRI_FREQS,
+                   DEFAULT_1_TRINUC_BIAS]
+    """
     out = [avg_mut_rate,
            homozygous_freq,
            snp_freq,
@@ -451,6 +467,11 @@ if __name__ == '__main__':
                              'Omit this flag to include all chroms in reference.')
     parser.add_argument('--is-cancer', action='store_true',
                         help='If this is a cancer sample, this flag will help give the correct output')
+    # TODO this notion of common variants is only ever used in plot_mut_model.
+    #  Taking it out for now until that utility is rewritten.
+    # parser.add_argument('--common-variants', action='stores_true',
+    #                     help="Includes a list of common variants, "
+    #                          "necessary if you want to run plot_mut_model.py to compare models.")
     args = parser.parse_args()
 
     reference = args.reference
@@ -504,7 +525,7 @@ if __name__ == '__main__':
 
     outfile = pathlib.Path(f'{out_pickle}.p').resolve()
 
-    if not outfile.resolve().parent.is_dir():
+    if not outfile.parent.is_dir():
         print(f'{PROG} - Unknown parent directory for output: {outfile.resolve().parent}')
         sys.exit(1)
 

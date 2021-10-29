@@ -32,7 +32,7 @@ def pickle_load_model(file, mssg) -> list:
         premature_exit(1)
 
 
-def parse_input_mutation_model(model=None, which_default=1):
+def parse_input_mutation_model(model=None, is_cancer: bool = False):
     """
     parse mutation model pickle file
     :param model: model to read (if none, this will select a default)
@@ -60,12 +60,12 @@ def parse_input_mutation_model(model=None, which_default=1):
                                                which is constant)
     """
 
-    if which_default == 1:
+    if not is_cancer:
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_1]
-    elif which_default == 2:
+    elif is_cancer:
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_2]
     else:
-        print_and_log('Unknown default mutation model specified.', 'error')
+        print_and_log('BUG: Unknown default mutation model specified.', 'critical')
         premature_exit(1)
 
     if model is not None:
