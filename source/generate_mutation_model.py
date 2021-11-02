@@ -47,11 +47,11 @@ def extract_header(vcf_file):
     return ret
 
 
-def read_and_filter_variants(vcf_file, column_names: list, reference_idx, bed_file):
+def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_bed: str):
 
     variants = pd.read_csv(vcf_file, comment="#", sep="\t", header=None)
 
-    if bed_file:
+    if input_bed:
         variants = variants.iloc[:, 3:]
         # In case there were any mismatches (i.e., items in the bed that are not in the vcf), pybedtools
         # would already have pointed them out, so here we drop them
@@ -99,25 +99,28 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
     return out_list
 
 
-def count_trinucleotides(reference_idx, bed_file, trinuc_counts, matching_chroms: list, save_trinuc_file: bool):
+def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chroms: list, save_trinuc_file: bool):
 
     # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
     trinuc_ref_count = {}
 
     # Count Trinucleotides in reference, based on bed or not
     print(f'{PROG} - Counting trinucleotides in reference...')
+    # Count the total number of bases spanned
+    track_len = 0
 
-    if bed_file:
+    if input_bed:
         print(f"{PROG} - since you're using a bed input, we have to count trinucs in bed region even if "
               f"you already have a trinuc count file for the reference...")
-        if pathlib.Path(bed_file).suffix == ".gz":
-            f = gzip.open(bed_file, 'r')
+        if pathlib.Path(input_bed).suffix == ".gz":
+            f = gzip.open(input_bed, 'r')
         else:
-            f = open(bed_file, 'r')
+            f = open(input_bed, 'r')
         for line in f:
             if line.startswith('#'):
                 continue
             record = line.strip().split('\t')
+            track_len += int(record[2]) - int(record[1]) + 1
             if record[0] in reference_idx.keys():
                 for i in range(int(record[1]), int(record[2]) - 1):
                     trinuc = reference_idx[record[0]][i:i + 3].seq
@@ -149,7 +152,7 @@ def count_trinucleotides(reference_idx, bed_file, trinuc_counts, matching_chroms
         if save_trinuc_file:
             print(f'{PROG} - Warning: existing trinucelotide file will not be changed or overwritten.')
 
-    return trinuc_ref_count
+    return trinuc_ref_count, track_len
 
 
 def find_caf(candidate_field: str) -> float:
@@ -163,7 +166,7 @@ def find_caf(candidate_field: str) -> float:
 
 
 def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_counts: bool,
-         out_file, bed_file, human_flag: bool, is_cancer: bool):
+         out_file, input_bed: str, human_flag: bool, is_cancer: bool):
     """
     This function generates the mutation model suitable for use in gen_reads. At the moment it must be run as a
     separate utility.
@@ -208,7 +211,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     print(f'{PROG} - Processing VCF file...')
-    matching_variants, matching_chromosomes = read_and_filter_variants(vcf_file, columns, reference_idx, bed_file)
+    matching_variants, matching_chromosomes = read_and_filter_variants(vcf_file, columns, reference_idx, input_bed)
 
     # Check to make sure there are some matches, that not everything got filtered out.
     if matching_variants.empty:
@@ -219,7 +222,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     # Starting position of the actual reference, since vcf is 1-based.
     matching_variants['chr_start'] = matching_variants['POS'] - 1
 
-    trinuc_ref_count = count_trinucleotides(reference_idx, bed_file, trinuc_count_file, matching_chromosomes,
+    trinuc_ref_count, bed_track_length = count_trinucleotides(reference_idx, input_bed, trinuc_count_file, matching_chromosomes,
                                             save_trinuc)
 
     print(f'{PROG} - Creating mutational model...')
@@ -367,9 +370,8 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     avg_indel_freq = 1. - snp_freq
     indel_freq = {k: (indel_count[k] / float(total_var)) / avg_indel_freq for k in indel_count.keys()}
 
-    if bed:
-        track_sum = float(bed['track_len'].sum())
-        avg_mut_rate = total_var / track_sum
+    if input_bed:
+        avg_mut_rate = total_var / bed_track_length
     else:
         avg_mut_rate = total_var / float(total_reflen)
 
