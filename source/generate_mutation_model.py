@@ -531,9 +531,7 @@ if __name__ == '__main__':
         print(f'{PROG} - Unknown parent directory for output: {outfile.resolve().parent}')
         sys.exit(1)
 
-    outcounts_file = None
-    if not outcounts and save_trinuc:
-        outcounts_file = pathlib.Path(f'{out_pickle}.counts').resolve()
+    outcounts_file = pathlib.Path(f'{out_pickle}.counts').resolve()
 
     main(reference_index, vcf_to_process, vcf_columns, outcounts_file, show_trinuc, outfile,
          bed, is_human, cancer_sample)
