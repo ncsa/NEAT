@@ -134,12 +134,7 @@ def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chrom
 
     # Solution to attribute error (needs to be checked)
 
-    elif not trinuc_counts:
-
-    # Previous code (commented)
-
-    # elif not trinuc_counts.isfile():
-
+    elif not trinuc_counts.is_file():
         for ref_name in matching_chroms:
             sub_seq = reference_idx[ref_name].seq
             for trinuc in ALL_TRI:
@@ -229,8 +224,8 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     # Starting position of the actual reference, since vcf is 1-based.
     matching_variants['chr_start'] = matching_variants['POS'] - 1
 
-    trinuc_ref_count, bed_track_length = count_trinucleotides(reference_idx, input_bed, trinuc_count_file, matching_chromosomes,
-                                            save_trinuc)
+    trinuc_ref_count, bed_track_length = count_trinucleotides(reference_idx, input_bed, trinuc_count_file,
+                                                              matching_chromosomes, save_trinuc)
 
     print(f'{PROG} - Creating mutational model...')
     total_reflen = 0
