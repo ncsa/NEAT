@@ -132,7 +132,14 @@ def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chrom
         if save_trinuc_file:
             print(f'{PROG} - Warning: since we are using bed input, no trinuc file will be saved.')
 
-    elif not trinuc_counts.is_file():
+    # Solution to attribute error (needs to be checked)
+
+    elif not trinuc_counts:
+
+    # Previous code (commented)
+
+    # elif not trinuc_counts.isfile():
+
         for ref_name in matching_chroms:
             sub_seq = reference_idx[ref_name].seq
             for trinuc in ALL_TRI:
@@ -353,7 +360,18 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
         for k in sorted(trinuc_transition_count.keys()):
             if k[0] == trinuc:
                 my_count += trinuc_transition_count[k]
-        trinuc_mut_prob[trinuc] = my_count / float(trinuc_ref_count[trinuc])
+
+        # Solution to type error (needs to be checked)
+
+        trinuc_ref_list = [v for k, v in trinuc_ref_count[trinuc].items()]
+
+        for i in range(len(trinuc_ref_list)):
+            trinuc_mut_prob[trinuc] = my_count / float(trinuc_ref_list[i])
+
+        # Previous code (commented)
+
+        # trinuc_mut_prob[trinuc] = my_count / float(trinuc_ref_count[trinuc])
+
         for k in sorted(trinuc_transition_count.keys()):
             if k[0] == trinuc:
                 trinuc_trans_probs[k] = trinuc_transition_count[k] / float(my_count)
