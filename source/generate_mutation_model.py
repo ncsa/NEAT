@@ -549,7 +549,7 @@ if __name__ == '__main__':
     main(reference_index, vcf_to_process, vcf_columns, outcounts_file, show_trinuc, outfile,
          bed, is_human, cancer_sample)
 
-    if os.path.exists('vcf.vcf'):
+    if os.path.exists('temp.vcf'):
         os.remove('temp.vcf')
 
     print(f'{PROG} complete! Use {outfile} as input into gen_reads.py.')
