@@ -36,7 +36,7 @@ def parse_input_mutation_model(model=None, is_cancer: bool = False):
     """
     parse mutation model pickle file
     :param model: model to read (if none, this will select a default)
-    :param which_default: 1 = standard mutation model, 2 = cancer mutation model
+    :param is_cancer: False = standard mutation model, True = cancer mutation model
     """
 
     """

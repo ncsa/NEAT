@@ -821,7 +821,8 @@ def main(raw_args=None):
         print_and_log("Input file partitioned.", 'debug')
 
     # Combine model info
-    models = [mutation_model, cancer_model, gc_model, sequencing_error_model, fraglen_model]
+    mutation_model = parse_input_mutation_model(options.mutation_model)
+    # models = [mutation_model, cancer_model, gc_model, sequencing_error_model, fraglen_model]
 
     # Initialize simulation
     thread_index = 0
