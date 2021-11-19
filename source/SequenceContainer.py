@@ -22,7 +22,7 @@ class SequenceContainer:
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None,
+    def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models,
                  mut_rate=None, only_vcf=False, debug=False):
         # TODO check that sequence is a Seq object
         # initialize basic variables
@@ -53,15 +53,10 @@ class SequenceContainer:
             self.black_list[p][-self.win_buffer - 1] = 3
 
         # initialize mutation models
-        if not mut_models:
-            # TODO the model is already set at default by parse_mut_model so this step seems redundant
-            default_model = [copy.deepcopy(DEFAULT_MODEL_1) for _ in range(self.ploidy)]
-            self.model_data = default_model[:self.ploidy]
-        else:
-            if len(mut_models) != self.ploidy:
-                print_and_log('BUG: Number of mutation models received is not equal to specified ploidy', 'critical')
-                premature_exit(1)
-            self.model_data = copy.deepcopy(mut_models)
+        if len(mut_models) != self.ploidy:
+            print_and_log('BUG: Number of mutation models received is not equal to specified ploidy', 'critical')
+            premature_exit(1)
+        self.model_data = copy.deepcopy(mut_models)
 
         # do we need to rescale mutation frequencies?
         mut_rate_sum = sum([n[0] for n in self.model_data])
@@ -78,15 +73,17 @@ class SequenceContainer:
         self.ploid_mut_prior = DiscreteDistribution(self.ploid_mut_frac, range(self.ploidy))
 
         # init mutation models
-        #
+
         # self.models[ploid][0] = average mutation rate
         # self.models[ploid][1] = p(mut is homozygous | mutation occurs)
         # self.models[ploid][2] = p(mut is indel | mut occurs)
         # self.models[ploid][3] = p(insertion | indel occurs)
-        # self.models[ploid][4] = distribution of insertion lengths
-        # self.models[ploid][5] = distribution of deletion lengths
-        # self.models[ploid][6] = distribution of trinucleotide SNP transitions
-        # self.models[ploid][7] = p(trinuc mutates)
+        # self.models[ploid][4] = list of insertion lengths
+        # self.models[ploid][5] = list of insertion weights
+        # self.models[ploid][6] = list of deletion lengths
+        # self.models[ploid][7] = list of deletion weights
+        # self.models[ploid][8] = distribution of trinucleotide SNP transitions
+        # self.models[ploid][9] = p(trinuc mutates)
         self.models = []
         for n in self.model_data:
             self.models.append([self.mut_scalar * n[0], n[1], n[2], n[3], DiscreteDistribution(n[5], n[4]),

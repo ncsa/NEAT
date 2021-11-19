@@ -168,7 +168,7 @@ def find_caf(candidate_field: str) -> float:
 
 
 def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_counts: bool,
-         out_file, input_bed: str, human_flag: bool, is_cancer: bool):
+         out_file, input_bed: str, human_flag: bool, common_variants: bool):
     """
     This function generates the mutation model suitable for use in gen_reads. At the moment it must be run as a
     separate utility.
@@ -426,39 +426,28 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     print(f'overall average mut rate: {avg_mut_rate}')
     print(f'total variants processed: {total_var}')
 
-    # In the original code, this value is basically hard-coded in (though it is lost among the
-    # the other code and hard to see that). So we will hardcode it in here, too.
-    # TODO calculate this value?
-    homozygous_freq = 0.01
-    if is_cancer:
-        homozygous_freq = 0.2
-
     # Convert calculations from what was done to what is needed in gen_reads.
     # This basically does the job of parse_mutation_model
     indel_freq = 1-snp_freq
 
     # save variables to file
-    """
-    DEFAULT_MODEL_1 = [DEFAULT_1_OVERALL_MUT_RATE,
-                   DEFAULT_1_HOMOZYGOUS_FREQ,
-                   DEFAULT_1_INDEL_FRACTION,
-                   DEFAULT_1_INS_VS_DEL,
-                   DEFAULT_1_INS_LENGTH_VALUES,
-                   DEFAULT_1_INS_LENGTH_WEIGHTS,
-                   DEFAULT_1_DEL_LENGTH_VALUES,
-                   DEFAULT_1_DEL_LENGTH_WEIGHTS,
-                   DEFAULT_1_TRI_FREQS,
-                   DEFAULT_1_TRINUC_BIAS]
-    """
-    out = [avg_mut_rate,
-           homozygous_freq,
-           snp_freq,
-           snp_trans_freq,
-           indel_freq,
-           trinuc_mut_prob,
-           trinuc_trans_probs,
-           common_variants,
-           high_mut_regions]
+    if common_variants:
+        out = {'AVG_MUT_RATE': avg_mut_rate,
+               'SNP_FREQ': snp_freq,
+               'SNP_TRANS_FREQ': snp_trans_freq,
+               'INDEL_FREQ': indel_freq,
+               'TRINUC_MUT_PROB': trinuc_mut_prob,
+               'TRINUC_TRANS_PROBS': trinuc_trans_probs,
+               'COMMON_VARIANTS': common_variants,
+               'HIGH_MUT_REGIONS': high_mut_regions}
+    else:
+        out = {'AVG_MUT_RATE': avg_mut_rate,
+               'SNP_FREQ': snp_freq,
+               'SNP_TRANS_FREQ': snp_trans_freq,
+               'INDEL_FREQ': indel_freq,
+               'TRINUC_MUT_PROB': trinuc_mut_prob,
+               'TRINUC_TRANS_PROBS': trinuc_trans_probs}
+
     pickle.dump(out, open(out_file, "wb"))
 
 
@@ -480,18 +469,15 @@ if __name__ == '__main__':
     parser.add_argument('--human-sample', action='store_true',
                         help='Only use numbered chroms, X, Y, and MT. '
                              'Omit this flag to include all chroms in reference.')
-    parser.add_argument('--is-cancer', action='store_true',
-                        help='If this is a cancer sample, this flag will help give the correct output')
-    # TODO this notion of common variants is only ever used in plot_mut_model.
-    #  Taking it out for now until that utility is rewritten.
-    # parser.add_argument('--common-variants', action='stores_true',
-    #                     help="Includes a list of common variants, "
-    #                          "necessary if you want to run plot_mut_model.py to compare models.")
+    parser.add_argument('--skip-common', action='store_true',
+                        help="Includes a list of common variants, "
+                             "if you want to visualize common variants with plot_mut_model.py.")
     args = parser.parse_args()
 
     reference = args.reference
     vcf = args.mutations
     out_pickle = args.out
+    skip_common = args.skip_common
 
     # Set bed to None by default. This is important for the main function.
     bed = None
@@ -508,7 +494,6 @@ if __name__ == '__main__':
     show_trinuc = args.show_trinuc
     save_trinuc = args.save_trinuc
     is_human = args.human_sample
-    cancer_sample = args.is_cancer
 
     if not pathlib.Path(reference).is_file():
         print(f'{PROG} - Input reference is not a file: {reference}')
@@ -547,7 +532,7 @@ if __name__ == '__main__':
     outcounts_file = pathlib.Path(f'{out_pickle}.counts').resolve()
 
     main(reference_index, vcf_to_process, vcf_columns, outcounts_file, show_trinuc, outfile,
-         bed, is_human, cancer_sample)
+         bed, is_human, skip_common)
 
     if os.path.exists('temp.vcf'):
         os.remove('temp.vcf')
