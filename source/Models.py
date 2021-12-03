@@ -32,32 +32,12 @@ def pickle_load_model(file, mssg) -> list:
         premature_exit(1)
 
 
-def parse_input_mutation_model(model=None, is_cancer: bool = False):
+def parse_input_mutation_model(model, is_cancer: bool = False):
     """
     parse mutation model pickle file
+    see constants_and_models.py for a complete description of the default models.
     :param model: model to read (if none, this will select a default)
     :param is_cancer: False = standard mutation model, True = cancer mutation model
-    """
-
-    """
-    Default mutation model descriptions:
-    DEFAULT_MODEL_1 = [DEFAULT_1_OVERALL_MUT_RATE = 0.001,
-                       DEFAULT_1_HOMOZYGOUS_FREQ = 0.01,
-                       DEFAULT_1_INDEL_FRACTION = 0.05,
-                       DEFAULT_1_INS_VS_DEL = 0.6,
-                       DEFAULT_1_INS_LENGTH_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                       DEFAULT_1_INS_LENGTH_WEIGHTS = [0.4, 0.2, 0.1, 0.05, 0.05, 0.05, 0.05, 0.034, 0.033, 0.033],
-                       DEFAULT_1_DEL_LENGTH_VALUES = [1, 2, 3, 4, 5],
-                       DEFAULT_1_DEL_LENGTH_WEIGHTS = [0.3, 0.2, 0.2, 0.2, 0.1],
-                       example_matrix_1 = [[0.0, 0.15, 0.7, 0.15],
-                                           [0.15, 0.0, 0.15, 0.7],
-                                           [0.7, 0.15, 0.0, 0.15],
-                                           [0.15, 0.7, 0.15, 0.0]],
-                       DEFAULT_1_TRI_FREQS = [copy.deepcopy(example_matrix_1) for _ in range(16)] 
-                                             (i.e., 16 copies of the example matrix),
-                       DEFAULT_1_TRINUC_BIAS = [1. / float(len(ALL_TRI)) for _ in ALL_TRI]
-                                               (i.e., reciprocal of the number of trinucleotide combinations, 
-                                               which is constant)
     """
 
     if not is_cancer:
@@ -68,7 +48,7 @@ def parse_input_mutation_model(model=None, is_cancer: bool = False):
         print_and_log('BUG: Unknown default mutation model specified.', 'critical')
         premature_exit(1)
 
-    if model is not None:
+    if model:
         pickle_dict = pickle.load(open(model, "rb"))
         out_model[0] = pickle_dict['AVG_MUT_RATE']
         out_model[2] = 1. - pickle_dict['SNP_FREQ']

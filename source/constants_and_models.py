@@ -38,16 +38,8 @@ HUMAN_WHITELIST = [str(n) for n in range(1, 30)] + ['x', 'y', 'X', 'Y', 'mt', 'M
 
 """
 DEFAULT MUTATION MODELS
-TODO: Convert to pickle files? Why are these done different?
 
-Convert to namespace?
-
-class Namespace:
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
-
-model_1 = Namespace(
-                    DEFAULT_1_OVERALL_MUT_RATE = 0.001,
+model_1 =           DEFAULT_1_OVERALL_MUT_RATE = 0.001,
                     DEFAULT_1_HOMOZYGOUS_FREQ = 0.010,
                     DEFAULT_1_INDEL_FRACTION = 0.05,
                     DEFAULT_1_INS_VS_DEL = 0.6,
@@ -61,44 +53,26 @@ model_1 = Namespace(
                                         [0.15, 0.7, 0.15, 0.0]],
                     DEFAULT_1_TRI_FREQS = [copy.deepcopy(example_matrix_1) for _ in range(16)],
                     DEFAULT_1_TRINUC_BIAS = [1. / float(len(ALL_TRI)) for _ in ALL_TRI],
-                    DEFAULT_MODEL_1 = [DEFAULT_1_OVERALL_MUT_RATE,
-                                       DEFAULT_1_HOMOZYGOUS_FREQ,
-                                       DEFAULT_1_INDEL_FRACTION,
-                                       DEFAULT_1_INS_VS_DEL,
-                                       DEFAULT_1_INS_LENGTH_VALUES,
-                                       DEFAULT_1_INS_LENGTH_WEIGHTS,
-                                       DEFAULT_1_DEL_LENGTH_VALUES,
-                                       DEFAULT_1_DEL_LENGTH_WEIGHTS,
-                                       DEFAULT_1_TRI_FREQS,
-                                       DEFAULT_1_TRINUC_BIAS]
-                    )
                     
-model_2 = Namespace(
-                    DEFAULT_2_OVERALL_MUT_RATE = 0.002,
+model_2 =           DEFAULT_2_OVERALL_MUT_RATE = 0.002,
                     DEFAULT_2_HOMOZYGOUS_FREQ = 0.200,
                     DEFAULT_2_INDEL_FRACTION = 0.1,
                     DEFAULT_2_INS_VS_DEL = 0.3,
                     DEFAULT_2_INS_LENGTH_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                    DEFAULT_2_INS_LENGTH_WEIGHTS = [0.1, 0.1, 0.2, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
-                    DEFAULT_2_DEL_LENGTH_VALUES = [1, 2, 3, 4, 5],
-                    DEFAULT_2_DEL_LENGTH_WEIGHTS = [0.3, 0.2, 0.2, 0.2, 0.1],
-                    example_matrix_2 = [[0.0, 0.15, 0.7, 0.15],
-                                        [0.15, 0.0, 0.15, 0.7],
-                                        [0.7, 0.15, 0.0, 0.15],
-                                        [0.15, 0.7, 0.15, 0.0]],
-                    DEFAULT_2_TRI_FREQS = [copy.deepcopy(example_matrix_2) for _ in range(16)],
-                    DEFAULT_2_TRINUC_BIAS = [1. / float(len(ALL_TRI)) for _ in ALL_TRI],
-                    DEFAULT_MODEL_2 = [DEFAULT_2_OVERALL_MUT_RATE,
-                                       DEFAULT_2_HOMOZYGOUS_FREQ,
-                                       DEFAULT_2_INDEL_FRACTION,
-                                       DEFAULT_2_INS_VS_DEL,
-                                       DEFAULT_2_INS_LENGTH_VALUES,
-                                       DEFAULT_2_INS_LENGTH_WEIGHTS,
-                                       DEFAULT_2_DEL_LENGTH_VALUES,
-                                       DEFAULT_2_DEL_LENGTH_WEIGHTS,
-                                       DEFAULT_2_TRI_FREQS,
-                                       DEFAULT_2_TRINUC_BIAS]
-                    )
+                    DEFAULT_2_INS_LENGTH_WEIGHTS = [0.1, 0.1, 0.2, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+                    All other parameters the same as model 1
+                    
+DEFAULT_MODEL = [DEFAULT_1/2_OVERALL_MUT_RATE,
+                   DEFAULT_1/2_HOMOZYGOUS_FREQ,
+                   DEFAULT_1/2_INDEL_FRACTION,
+                   DEFAULT_1/2_INS_VS_DEL,
+                   DEFAULT_1/2_INS_LENGTH_VALUES,
+                   DEFAULT_1/2_INS_LENGTH_WEIGHTS,
+                   DEFAULT_1_DEL_LENGTH_VALUES,
+                   DEFAULT_1_DEL_LENGTH_WEIGHTS,
+                   DEFAULT_1_TRI_FREQS,
+                   DEFAULT_1_TRINUC_BIAS]
+
 """
 
 DEFAULT_1_OVERALL_MUT_RATE = 0.001
@@ -115,6 +89,8 @@ example_matrix_1 = [[0.0, 0.15, 0.7, 0.15],
                     [0.15, 0.7, 0.15, 0.0]]
 DEFAULT_1_TRI_FREQS = [copy.deepcopy(example_matrix_1) for _ in range(16)]
 DEFAULT_1_TRINUC_BIAS = [1. / float(len(ALL_TRI)) for _ in ALL_TRI]
+
+
 DEFAULT_MODEL_1 = [DEFAULT_1_OVERALL_MUT_RATE,
                    DEFAULT_1_HOMOZYGOUS_FREQ,
                    DEFAULT_1_INDEL_FRACTION,
@@ -132,21 +108,15 @@ DEFAULT_2_INDEL_FRACTION = 0.1
 DEFAULT_2_INS_VS_DEL = 0.3
 DEFAULT_2_INS_LENGTH_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 DEFAULT_2_INS_LENGTH_WEIGHTS = [0.1, 0.1, 0.2, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
-DEFAULT_2_DEL_LENGTH_VALUES = [1, 2, 3, 4, 5]
-DEFAULT_2_DEL_LENGTH_WEIGHTS = [0.3, 0.2, 0.2, 0.2, 0.1]
-example_matrix_2 = [[0.0, 0.15, 0.7, 0.15],
-                    [0.15, 0.0, 0.15, 0.7],
-                    [0.7, 0.15, 0.0, 0.15],
-                    [0.15, 0.7, 0.15, 0.0]]
-DEFAULT_2_TRI_FREQS = [copy.deepcopy(example_matrix_2) for _ in range(16)]
-DEFAULT_2_TRINUC_BIAS = [1. / float(len(ALL_TRI)) for _ in ALL_TRI]
+# Note that all other parameters are identical to default model 1
+
 DEFAULT_MODEL_2 = [DEFAULT_2_OVERALL_MUT_RATE,
                    DEFAULT_2_HOMOZYGOUS_FREQ,
                    DEFAULT_2_INDEL_FRACTION,
                    DEFAULT_2_INS_VS_DEL,
                    DEFAULT_2_INS_LENGTH_VALUES,
                    DEFAULT_2_INS_LENGTH_WEIGHTS,
-                   DEFAULT_2_DEL_LENGTH_VALUES,
-                   DEFAULT_2_DEL_LENGTH_WEIGHTS,
-                   DEFAULT_2_TRI_FREQS,
-                   DEFAULT_2_TRINUC_BIAS]
+                   DEFAULT_1_DEL_LENGTH_VALUES,
+                   DEFAULT_1_DEL_LENGTH_WEIGHTS,
+                   DEFAULT_1_TRI_FREQS,
+                   DEFAULT_1_TRINUC_BIAS]

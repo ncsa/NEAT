@@ -3,22 +3,16 @@
 import argparse
 import os.path
 import sys
-import copy
 import gzip
 import pathlib
-import re
-import Bio
 from Bio import SeqIO
 import numpy as np
 import pickle
 import pybedtools
-import tempfile
 import json
-import io
 import pandas as pd
-from memory_profiler import profile
 
-from constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
+from source.constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
 
 
 def read_fasta(fasta_file):
@@ -105,7 +99,7 @@ def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chrom
     trinuc_ref_count = {}
 
     # Count Trinucleotides in reference, based on bed or not
-    print(f'{PROG} - Counting trinucleotides in reference...')
+    # print(f'{PROG} - Counting trinucleotides in reference...')
     # Count the total number of bases spanned
     track_len = 0
 
@@ -133,16 +127,14 @@ def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chrom
             print(f'{PROG} - Warning: since we are using bed input, no trinuc file will be saved.')
 
     # Solution to attribute error (needs to be checked)
-
+    # TODO remove ref_name from this dict
     elif not trinuc_counts.is_file():
         for ref_name in matching_chroms:
             sub_seq = reference_idx[ref_name].seq
             for trinuc in ALL_TRI:
-                if ref_name not in trinuc_ref_count:
-                    trinuc_ref_count[ref_name] = {}
                 if trinuc not in trinuc_ref_count:
-                    trinuc_ref_count[ref_name][trinuc] = 0
-                trinuc_ref_count[ref_name][trinuc] += sub_seq.count_overlap(trinuc)
+                    trinuc_ref_count[trinuc] = 0
+                trinuc_ref_count[trinuc] += sub_seq.count_overlap(trinuc)
         if save_trinuc_file:
             with open(trinuc_counts, 'w') as countfile:
                 print(f'{PROG} - Saving trinuc counts to file...')
@@ -163,12 +155,13 @@ def find_caf(candidate_field: str) -> float:
     info_split = [a.split('=') for a in candidate_field.split(';')]
     for item in info_split:
         if item[0].upper() == 'CAF':
-            return float(item[1])
+            if ',' in item[1]:
+                return float(item[1].split(',')[1])
     return vcf_default_pop_freq
 
 
 def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_counts: bool,
-         out_file, input_bed: str, human_flag: bool, common_variants: bool):
+         out_file, input_bed: str, human_flag: bool, skip_common_variants: bool):
     """
     This function generates the mutation model suitable for use in gen_reads. At the moment it must be run as a
     separate utility.
@@ -186,8 +179,6 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     total_reflen = 0
     # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
     common_variants = []
-    # tabulate how many unique donors we've encountered (this is useful for identifying common variants)
-    total_donors = {}
     # identify regions that have significantly higher local mutation rates than the average
     high_mut_regions = []
 
@@ -234,7 +225,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
         total_reflen += len(reference_idx[ref_name].seq) - reference_idx[ref_name].seq.count('N')
 
         # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
-        command_variants = []
+        vcf_common = []
 
         # Create a view that narrows variants list to current ref
         variants_to_process = matching_variants[matching_variants['CHROM'] == ref_name]
@@ -273,7 +264,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
                     snp_transition_count[key2] += 1
 
                     my_pop_freq = find_caf(row['INFO'])
-                    command_variants.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+                    vcf_common.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
                 else:
                     print(f'{PROG} - Error: ref allele in variant call does not match reference.\n')
                     sys.exit(1)
@@ -288,27 +279,27 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
                     indel_count[indel_len] += 1
 
                     my_pop_freq = find_caf(row['INFO'])
-                    command_variants.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+                    vcf_common.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
 
         # if we didn't find anything, skip ahead along to the next reference sequence
-        if not len(command_variants):
+        if not len(vcf_common):
             print(f'{PROG} - Found no variants for this reference {ref_name}.')
             continue
 
         # identify common mutations
         percentile_var = 95
-        min_value = np.percentile([n[4] for n in command_variants], percentile_var)
-        for k in sorted(command_variants):
+        min_value = np.percentile([n[4] for n in vcf_common], percentile_var)
+        for k in sorted(vcf_common):
             if k[4] >= min_value:
                 common_variants.append((ref_name, k[0], k[1], k[3], k[4]))
-        command_variants = {(n[0], n[1], n[2], n[3]): n[4] for n in command_variants}
+        vcf_common = {(n[0], n[1], n[2], n[3]): n[4] for n in vcf_common}
 
         # identify areas that have contained significantly higher random mutation rates
         dist_thresh = 2000
         percentile_clust = 97
         scaler = 1000
         # identify regions with disproportionately more variants in them
-        variant_pos = sorted([n[0] for n in command_variants.keys()])
+        variant_pos = sorted([n[0] for n in vcf_common.keys()])
         clustered_pos = cluster_list(variant_pos, dist_thresh)
         by_len = [(len(clustered_pos[i]), min(clustered_pos[i]), max(clustered_pos[i]), i) for i in
                   range(len(clustered_pos))]
@@ -356,16 +347,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
             if k[0] == trinuc:
                 my_count += trinuc_transition_count[k]
 
-        # Solution to type error (needs to be checked)
-
-        trinuc_ref_list = [v for k, v in trinuc_ref_count[trinuc].items()]
-
-        for i in range(len(trinuc_ref_list)):
-            trinuc_mut_prob[trinuc] = my_count / float(trinuc_ref_list[i])
-
-        # Previous code (commented)
-
-        # trinuc_mut_prob[trinuc] = my_count / float(trinuc_ref_count[trinuc])
+        trinuc_mut_prob[trinuc] = my_count / float(trinuc_ref_count[trinuc])
 
         for k in sorted(trinuc_transition_count.keys()):
             if k[0] == trinuc:
@@ -426,12 +408,15 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     print(f'overall average mut rate: {avg_mut_rate}')
     print(f'total variants processed: {total_var}')
 
-    # Convert calculations from what was done to what is needed in gen_reads.
-    # This basically does the job of parse_mutation_model
-    indel_freq = 1-snp_freq
-
     # save variables to file
-    if common_variants:
+    if skip_common_variants:
+        out = {'AVG_MUT_RATE': avg_mut_rate,
+               'SNP_FREQ': snp_freq,
+               'SNP_TRANS_FREQ': snp_trans_freq,
+               'INDEL_FREQ': indel_freq,
+               'TRINUC_MUT_PROB': trinuc_mut_prob,
+               'TRINUC_TRANS_PROBS': trinuc_trans_probs}
+    else:
         out = {'AVG_MUT_RATE': avg_mut_rate,
                'SNP_FREQ': snp_freq,
                'SNP_TRANS_FREQ': snp_trans_freq,
@@ -440,13 +425,6 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
                'TRINUC_TRANS_PROBS': trinuc_trans_probs,
                'COMMON_VARIANTS': common_variants,
                'HIGH_MUT_REGIONS': high_mut_regions}
-    else:
-        out = {'AVG_MUT_RATE': avg_mut_rate,
-               'SNP_FREQ': snp_freq,
-               'SNP_TRANS_FREQ': snp_trans_freq,
-               'INDEL_FREQ': indel_freq,
-               'TRINUC_MUT_PROB': trinuc_mut_prob,
-               'TRINUC_TRANS_PROBS': trinuc_trans_probs}
 
     pickle.dump(out, open(out_file, "wb"))
 
