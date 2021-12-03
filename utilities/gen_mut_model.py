@@ -498,7 +498,7 @@ def main():
                     'TRINUC_TRANS_PROBS': TRINUC_TRANS_PROBS,
                     'COMMON_VARIANTS': COMMON_VARIANTS,
                     'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
-    pickle.dump(OUT_DICT, open(out_pickle, "wb"))
+    pickle.dump(OUT_DICT, open(out_pickle + ".p", "wb"))
 
 
 if __name__ == "__main__":
