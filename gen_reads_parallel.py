@@ -213,7 +213,7 @@ class Options(SimpleNamespace):
         # Criteria 2: For files, criteria 2 will not be checked, so set to None for consistency. For numbers, this
         # should be the highest acceptable value (inclusive).
         # (type, default, criteria1 (low/'exists'), criteria2 (high/None))
-        arbitrarily_large_number = 1000000
+        arbitrarily_large_number = 10000000
         self.defs['reference'] = ('string', None, 'exists', None)
         self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
         self.defs['threads'] = ('int', 1, 1, arbitrarily_large_number)
@@ -230,6 +230,12 @@ class Options(SimpleNamespace):
         self.defs['mutation_model'] = ('string', None, 'exists', None)
         self.defs['mutation_rate'] = ('float', None, 0, 0.3)
         self.defs['mutation_bed'] = ('string', None, 'exists', None)
+
+        # Params for cancer (not implemented yet)
+        self.defs['cancer'] = ('boolean', False, None, None)
+        self.defs['cancer_model'] = ('string', None, 'exists', None)
+        self.defs['cancer_purity'] = ('float', 0.8, 0.0, 1.0)
+
         self.defs['n_cutoff'] = ('int', None, 1, 40)
         self.defs['gc_model'] = ('string', NEAT_PATH / 'models/gcBias_default.p', 'exists', None)
         self.defs['paired_ended'] = ('boolean', False, None, None)
@@ -248,7 +254,7 @@ class Options(SimpleNamespace):
         # Cancer options (not yet implemented)
         self.cancer = False
         self.cancer_model = None
-        self.cancer_purity = None
+        self.cancer_purity = 0.8
 
         # Read the config file
         self.args = {}
@@ -392,8 +398,9 @@ class Options(SimpleNamespace):
 
 # class representing a chromosome mutation
 class SingleJob(multiprocessing.Process):
-    def __init__(self, threadidx, options, ref_index, partition, out_prefix_name, input_variants, target_regions,
-                 discard_regions, mutation_rate_regions):
+    def __init__(self, threadidx, options, ref_index, partition, out_prefix_name,
+                 target_regions, discard_regions, mutation_rate_regions, input_variants,
+                 models):
         multiprocessing.Process.__init__(self)
         self.threadidx = threadidx
         self.partition = partition
@@ -580,60 +587,6 @@ def main(raw_args=None):
 
     models = Models(options)
 
-    # Load sequencing error model
-    mssg = "Problem loading Sequencing error model data @error_model"
-    sequencing_error_model = pickle_load_model(open(options.error_model, 'rb'), mssg)
-
-    if options.debug:
-        print_and_log(f'Sequencing read container created', 'debug')
-
-    # GC bias model
-    mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
-           "This file should be the output of compute_gc.py'"
-    gc_model = pickle_load_model(open(options.gc_model, 'rb'), mssg)
-
-    if options.debug:
-        print_and_log('GC Bias model read', 'debug')
-
-    # Handle paired-ended data, if applicable
-    fraglen_model = None
-    if options.paired_ended:
-        if options.fraglen_model:
-            mssg = 'Problem loading the empirical fragment length model.'
-            print_and_log("Using empirical fragment length distribution", 'info')
-            potential_values, potential_prob = pickle_load_model(open(options.fraglen_model, 'rb'), mssg)
-
-            fraglen_values = []
-            fraglen_probability = []
-            for i in range(len(potential_values)):
-                if potential_values[1] > options.read_len:
-                    fraglen_values.append(potential_values[i])
-                    fraglen_probability.append(potential_prob[i])
-
-            fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
-            options.set_value('fragment_mean', fraglen_values[mean_ind_of_weighted_list(fraglen_probability)])
-
-        # Using artificial fragment length distribution, if the parameters were specified
-        # fragment length distribution: normal distribution that goes out to +- 6 standard deviations
-        else:
-            print_and_log(f'Using artificial fragment length distribution.', 'info')
-            if options.fragment_st_dev == 0:
-                fraglen_model = DiscreteDistribution([1], [options.fragment_mean],
-                                                            degenerate_val=options.fragment_mean)
-            else:
-                potential_values = range(options.fragment_mean - 6 * options.fragment_st_dev,
-                                         options.fragment_mean + 6 * options.fragment_st_dev + 1)
-                fraglen_values = []
-                for i in range(len(potential_values)):
-                    if potential_values[i] > options.read_len:
-                        fraglen_values.append(potential_values[i])
-                fraglen_probability = [np.exp(-(((n - options.fragment_mean) ** 2) /
-                                                (2 * (options.fragment_st_dev ** 2)))) for n in
-                                       fraglen_values]
-                fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
-        if options.debug:
-            print_and_log(f'Processed paired-end models', 'debug')
-
     """
     Process Inputs
     """
@@ -652,6 +605,7 @@ def main(raw_args=None):
     # to only simulate certain chroms.
     options.set_value('reference_chromosomes', list(reference_index.keys()))
 
+    # TODO maybe take this out. I feel like we're overthinking chr, but I could be wrong
     # this parameter will ensure we account for 'chr' in the output.
     # It is True if they all start with "chr" and False otherwise.
     begins_with_chr = all(k.startswith('chr') for k in options.reference_chromosomes)
@@ -680,7 +634,7 @@ def main(raw_args=None):
                                                        debug=options.debug)
 
         # Remove any chromosomes that aren't in the reference.
-        input_variants_chroms = list(set(list(input_variants.CHROM)))
+        input_variants_chroms = input_variants['CHROM'].unique()
         for item in input_variants_chroms:
             if item not in options.reference_chromosomes and not printed_warning:
                 print_and_log(f'Warning: ignoring all input vcf records for {item} '
@@ -728,7 +682,9 @@ def main(raw_args=None):
             print_and_log("Finished reading @include_vcf file.", 'debug')
 
     # parse input targeted regions, if present
-    print_and_log(f"Reading input beds, if present...", 'info')
+    if options.target_bed or options.discard_bed or options.mutation_bed:
+        print_and_log(f"Reading input bed files.", 'info')
+    # Note if options.target_bed is empty, this just returns an empty data frame
     target_regions_df = parse_bed(options.target_bed, options.reference_chromosomes,
                                   begins_with_chr, False, options.debug)
 
@@ -819,10 +775,6 @@ def main(raw_args=None):
 
     if options.debug:
         print_and_log("Input file partitioned.", 'debug')
-
-    # Combine model info
-    mutation_model = parse_input_mutation_model(options.mutation_model)
-    # models = [mutation_model, cancer_model, gc_model, sequencing_error_model, fraglen_model]
 
     # Initialize simulation
     thread_index = 0
