@@ -8,7 +8,7 @@ from source.error_handling import premature_exit, print_and_log
 
 def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
               include_homs: bool = False, include_fail: bool = False, debug: bool = False,
-              choose_random_ploid_if_no_gt_found: bool = True):
+              choose_random_ploid_if_no_gt_found: bool = True) -> (list, pd.DataFrame):
 
     if debug:
         print_and_log(f"Parsing vcf {vcf_path}", 'debug')

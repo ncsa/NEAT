@@ -6,6 +6,7 @@ from source.probability import DiscreteDistribution
 from source.constants_and_models import DEFAULT_MODEL_1, DEFAULT_MODEL_2, TRI_IND, \
     ALL_TRI, ALL_IND, ALLOWED_NUCL, NUC_IND
 from source.error_handling import premature_exit, print_and_log
+from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 
 
 def pickle_load_model(file, mssg) -> list:
@@ -107,17 +108,66 @@ class Models:
     """
     def __init__(self, options):
 
-        self.debug = options.debug
-
         # Lead mutation models
         self.mutation_model = parse_input_mutation_model(options.mutation_model)
+
+        self.cancer_model = None
         if options.cancer:
             self.cancer_model = parse_input_mutation_model(options.cancer_model, 2)
 
-        if self.debug:
+        if options.debug:
             print_and_log("Mutation models loaded", 'debug')
 
         # Load sequencing error model
+        mssg = "Problem loading Sequencing error model data @error_model"
+        self.sequencing_error_model = pickle_load_model(open(options.error_model, 'rb'), mssg)
 
+        if options.debug:
+            print_and_log('Sequencing error model loaded', 'debug')
 
+        mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
+               "This file should be the output of compute_gc.py'"
+        self.gc_model = pickle_load_model(open(options.gc_model, 'rb'), mssg)
 
+        if options.debug:
+            print_and_log('GC Bias model loaded', 'debug')
+
+        self.fraglen_model = None
+
+        if options.paired_ended:
+            if options.fraglen_model:
+                mssg = 'Problem loading the empirical fragment length model @fragment_model. Please check file and try' \
+                       'again.'
+                print_and_log("Using empirical fragment length distribution", 'info')
+                potential_values, potential_prob = pickle_load_model(open(options.fraglen_model, 'rb'), mssg)
+
+                fraglen_values = []
+                fraglen_probability = []
+                for i in range(len(potential_values)):
+                    if potential_values[1] > options.read_len:
+                        fraglen_values.append(potential_values[i])
+                        fraglen_probability.append(potential_prob[i])
+
+                self.fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
+                options.set_value('fragment_mean', fraglen_values[mean_ind_of_weighted_list(fraglen_probability)])
+
+            # Using artificial fragment length distribution, if the parameters were specified
+            # fragment length distribution: normal distribution that goes out to +- 6 standard deviations
+            else:
+                print_and_log(f'Using artificial fragment length distribution.', 'info')
+                if options.fragment_st_dev == 0:
+                    self.fraglen_model = DiscreteDistribution([1], [options.fragment_mean],
+                                                              degenerate_val=options.fragment_mean)
+                else:
+                    potential_values = range(options.fragment_mean - 6 * options.fragment_st_dev,
+                                             options.fragment_mean + 6 * options.fragment_st_dev + 1)
+                    fraglen_values = []
+                    for i in range(len(potential_values)):
+                        if potential_values[i] > options.read_len:
+                            fraglen_values.append(potential_values[i])
+                    fraglen_probability = [np.exp(-(((n - options.fragment_mean) ** 2) /
+                                                    (2 * (options.fragment_st_dev ** 2)))) for n in
+                                           fraglen_values]
+                    self.fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
+            if options.debug:
+                print_and_log(f'Loaded paired-end models', 'debug')
