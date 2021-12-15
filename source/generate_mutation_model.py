@@ -12,10 +12,7 @@ import pybedtools
 import json
 import pandas as pd
 
-# enables import from neighboring package
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-
-from source.constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
+from constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
 
 
 def read_fasta(fasta_file):
