@@ -48,9 +48,9 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
         optional_headers = ['FILTER', 'INFO', 'FORMAT']
         for j in range(len(optional_headers)):
             if optional_headers[j] != variants.columns[j]:
-                print(f'Warning: missing optional header: {optional_headers[j]}.'
+                print(f'Warning: missing optional header: {optional_headers[j]}.\n'
                       f'Though not required, a full VCF with complete fields will be helpful.')
-                logging.warning(f'Warning: missing optional header: {optional_headers[j]}.'
+                logging.warning(f'Warning: missing optional header: {optional_headers[j]}.\n'
                                 f'Though not required, a full VCF with complete fields will be helpful.')
 
     # Check for homs and fails, and drop those rows unless otherwise specified

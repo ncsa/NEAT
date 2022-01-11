@@ -403,6 +403,9 @@ class SingleJob(multiprocessing.Process):
                  models):
         multiprocessing.Process.__init__(self)
         self.threadidx = threadidx
+        if not partition:
+            print_and_log("No partition for this thread", "error")
+            premature_exit(1)
         self.partition = partition
         self.debug = options.debug
         self.out_prefix_name = out_prefix_name
@@ -411,6 +414,9 @@ class SingleJob(multiprocessing.Process):
         self.reference = {}
         for chrom in self.partition:
             self.reference[chrom] = ref_index[chrom]
+            if not self.reference[chrom]:
+                print_and_log(f"No reference data for this partition: {chrom}", "error")
+                premature_exit(1)
             if options.debug:
                 print_and_log(f'Reference data: {ref_index[chrom]}', 'debug')
 
@@ -420,8 +426,7 @@ class SingleJob(multiprocessing.Process):
 
         self.input_variants = pd.DataFrame()
         if not input_variants.empty:
-            pass
-            # self.input_variants = input_variants[input_variants]
+            self.input_variants = input_variants[input_variants.index.isin(self.chromosomes)]
 
         self.target_regions = pd.DataFrame()
         if not target_regions.empty:
@@ -436,7 +441,7 @@ class SingleJob(multiprocessing.Process):
             self.mutation_rate_regions = mutation_rate_regions[mutation_rate_regions.index.isin(self.chromosomes)]
 
         # TODO Seq error for each group
-        sequencing_error_class = SequencingErrors(options.read_len, sequencing_error_data,
+        sequencing_error_class = SequencingErrors(options.read_len, models.sequencing_error_model,
                                                   options.avg_seq_error, options.rescale_qualities,
                                                   options.debug)
 
@@ -450,7 +455,7 @@ class SingleJob(multiprocessing.Process):
         self.tmp_vcf_fn = None
 
         self.temporary_dir = tempfile.TemporaryDirectory()
-        self.tmp_dir_path = pathlib.Path(self.temporary_dir.name)
+        self.tmp_dir_path = pathlib.Path(self.temporary_dir.name).resolve()
         if options.produce_bam:
             self.tmp_sam_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_records_{self.threadidx}.sam"
             if options.debug:
@@ -516,27 +521,39 @@ class SingleJob(multiprocessing.Process):
 
         # TODO add structural variants here.
 
+        def quick_mutate(dna_string: str):
+            original_sequence = dna_string
+            mutated_sequence = ""
+            quality_string = ""
+            for i in range(len(original_sequence)):
+                if random.random() < 0.01:
+                    mutated_sequence = mutated_sequence + random.choice(ALLOWED_NUCL)
+                else:
+                    mutated_sequence = mutated_sequence + original_sequence[i]
+                quality_string += chr(random.randint(2, 40) + 33)
+            return mutated_sequence, quality_string
 
         for chrom in self.partition:
-            for chrom_num in range(len(self.reference[chrom])):
+            # This is filler code until we do the actual processing.
+            print(len(self.reference[chrom]))
+            for chrom_num in range(random.randint(10, 20)):
                 qname = f'{self.out_prefix_name}-{chrom}-{chrom_num}'
                 flag = 0
                 rname = chrom
                 pos = 1261
                 mapq = 70
-                cigar = '101M'  # placeholder
                 rnext = '='
                 pnext = 1
-                tlen = 0
-                seq = Seq('ATAGAGAATTTAAATAAAAAAGTTGATGATGGTTTCCTGGACATTTGGACTT'
-                          'ACAATGCCGAACTGTTGGTTCTATTGGAAAATGAAAGAACTTTGGACTA')
-                qual = "7FGFGDGDGGG=GEDFGGGGDGGG=FGGGGEEFGFGD>FGGGCGGGEFGGFG4ECF" \
-                       "GGGGFGGGAFGG:CDGGGG?FDAB@CGFFD3FC:GGFGEGF$0F]f="
-                line_to_write = f'{qname}\t{flag}\t{rname}\t{pos}\t{mapq}\t{cigar}' \
+                tlen = 300
+                reference = self.reference[chrom][pos:pos + tlen + 1]
+                seq, qual = quick_mutate(self.reference[chrom][pos + tlen + 1])
+                seq = Seq(seq)[:101]
+                qual = qual[:101]
+                line_to_write = f'{qname}\t{flag}\t{rname}\t{pos}\t{mapq}\t{reference}' \
                                 f'\t{rnext}\t{pnext}\t{tlen}\t{seq}\t{qual}\n'
                 self.tmp_sam_outfile.write(line_to_write)
         self.tmp_sam_outfile.close()
-        shutil.copy(self.tmp_sam_fn, '/home/jallen17/Documents/temp.sam')
+        shutil.copy(self.tmp_sam_fn, '/home/joshfactorial/Documents/temp.sam')
 
 
 # command line interface
@@ -633,6 +650,9 @@ def main(raw_args=None):
                                                        ploidy=options.ploidy,
                                                        debug=options.debug)
 
+        if options.debug:
+            print_and_log("Finished reading @include_vcf file. Now filtering.", "debug")
+
         # Remove any chromosomes that aren't in the reference.
         input_variants_chroms = input_variants['CHROM'].unique()
         for item in input_variants_chroms:
@@ -671,7 +691,7 @@ def main(raw_args=None):
                         input_variants.drop(index, inplace=True)
                         continue
 
-                print_and_log(f'Found {len(input_variants)} valid variants for {chrom} in @include_vcf.', 'info')
+                print_and_log(f'\nFound {len(input_variants)} valid variants for {chrom} in @include_vcf.', 'info')
                 if any(n_skipped):
                     print_and_log(f'variants skipped: {sum(n_skipped)}', 'info')
                     print_and_log(f' - [{str(n_skipped[0])}] ref allele did not match reference', 'info')
@@ -679,7 +699,7 @@ def main(raw_args=None):
                     print_and_log(f' - [{str(n_skipped[2])}] alt allele contained non-ACGT characters', 'info')
 
         if options.debug:
-            print_and_log("Finished reading @include_vcf file.", 'debug')
+            print_and_log("Finished filtering @include_vcf file.", 'debug')
 
     # parse input targeted regions, if present
     if options.target_bed or options.discard_bed or options.mutation_bed:
