@@ -521,11 +521,11 @@ class SingleJob(multiprocessing.Process):
 
         # TODO add structural variants here.
 
-        def quick_mutate(dna_string: str):
+        def quick_mutate(dna_string: str, length: int):
             original_sequence = dna_string
             mutated_sequence = ""
             quality_string = ""
-            for i in range(len(original_sequence)):
+            for i in range(length):
                 if random.random() < 0.01:
                     mutated_sequence = mutated_sequence + random.choice(ALLOWED_NUCL)
                 else:
@@ -533,27 +533,28 @@ class SingleJob(multiprocessing.Process):
                 quality_string += chr(random.randint(2, 40) + 33)
             return mutated_sequence, quality_string
 
-        for chrom in self.partition:
+        for i in range(len(self.partition)):
             # This is filler code until we do the actual processing.
+            chrom = self.partition[i]
             print(len(self.reference[chrom]))
-            for chrom_num in range(random.randint(10, 20)):
-                qname = f'{self.out_prefix_name}-{chrom}-{chrom_num}'
+            tlen = 300
+            pos = 1
+            for read_num in range(len(self.reference[chrom].seq) // tlen):
+                qname = f'{self.out_prefix_name}-{chrom}-{read_num}'
                 flag = 0
                 rname = chrom
-                pos = 1261
                 mapq = 70
                 rnext = '='
                 pnext = 1
-                tlen = 300
-                reference = self.reference[chrom][pos:pos + tlen + 1]
-                seq, qual = quick_mutate(self.reference[chrom][pos + tlen + 1])
-                seq = Seq(seq)[:101]
-                qual = qual[:101]
-                line_to_write = f'{qname}\t{flag}\t{rname}\t{pos}\t{mapq}\t{reference}' \
+                # SAM is 1-based for annoying reasons, therefore we have to subtract 1 to get the correct positions
+                reference_sequence = self.reference[chrom].seq[pos-1:pos+tlen]
+                seq, qual = quick_mutate(reference_sequence, 101)
+                line_to_write = f'{qname}\t{flag}\t{rname}\t{pos}\t{mapq}\t{reference_sequence}' \
                                 f'\t{rnext}\t{pnext}\t{tlen}\t{seq}\t{qual}\n'
                 self.tmp_sam_outfile.write(line_to_write)
+                pos += tlen
         self.tmp_sam_outfile.close()
-        shutil.copy(self.tmp_sam_fn, '/home/joshfactorial/Documents/temp.sam')
+        shutil.copy(self.tmp_sam_fn, f'/home/joshfactorial/Documents/temp_{i}.sam')
 
 
 # command line interface
