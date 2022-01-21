@@ -144,7 +144,7 @@ if '.gz' in golden_vcf:
     outpath = golden_vcf_path.parent
     outfile = golden_vcf_path.stem
     outpath_file = str(outpath / outfile)
-    print(outpath_file)
+    # print(outpath_file)
     gunzip_shutil(golden_vcf, outpath_file)
     golden_vcf = outpath_file
     print("Success: Input file decompressed to {}".format(golden_vcf))
@@ -156,7 +156,7 @@ if '.gz' in workflow_vcf:
     outpath = workflow_vcf_path.parent
     outfile = workflow_vcf_path.stem
     outpath_file = str(outpath / outfile)
-    print(outpath_file)
+    # print(outpath_file)
     gunzip_shutil(workflow_vcf, outpath_file)
     workflow_vcf = outpath_file
     print("Success: Input file decompressed to {}.".format(workflow_vcf))
