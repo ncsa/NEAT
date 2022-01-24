@@ -553,8 +553,8 @@ class SingleJob(multiprocessing.Process):
                                 f'\t{rnext}\t{pnext}\t{tlen}\t{seq}\t{qual}\n'
                 self.tmp_sam_outfile.write(line_to_write)
                 pos += tlen
+        shutil.copy(self.tmp_sam_fn, f'/home/joshfactorial/Documents/temp_{self.threadidx}.sam')
         self.tmp_sam_outfile.close()
-        shutil.copy(self.tmp_sam_fn, f'/home/joshfactorial/Documents/temp_{i}.sam')
 
 
 # command line interface

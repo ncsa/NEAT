@@ -36,8 +36,7 @@ VERS = 0.1
 
 parser = argparse.ArgumentParser('python %prog [options] -r <ref.fa> -g <golden.vcf> -w <workflow.vcf>',
                                  description=DESC,
-                                 version="%prog v" + str(VERS),
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument('-r', help='* Reference Fasta', dest='reff', action='store', metavar='<ref.fa>')
 parser.add_argument('-g', help='* Golden VCF', dest='golden_vcf', action='store', metavar='<golden.vcf>')
