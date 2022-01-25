@@ -144,7 +144,7 @@ if '.gz' in golden_vcf:
     outpath = golden_vcf_path.parent
     outfile = golden_vcf_path.stem
     outpath_file = str(outpath / outfile)
-    print(outpath_file)
+    # print(outpath_file)
     gunzip_shutil(golden_vcf, outpath_file)
     golden_vcf = outpath_file
     print("Success: Input file decompressed to {}".format(golden_vcf))
@@ -156,7 +156,7 @@ if '.gz' in workflow_vcf:
     outpath = workflow_vcf_path.parent
     outfile = workflow_vcf_path.stem
     outpath_file = str(outpath / outfile)
-    print(outpath_file)
+    # print(outpath_file)
     gunzip_shutil(workflow_vcf, outpath_file)
     workflow_vcf = outpath_file
     print("Success: Input file decompressed to {}.".format(workflow_vcf))
@@ -731,15 +731,17 @@ def main():
     ##
     ## DEBUG NOTE: If file was uncompressed, delete duplicate file 
     ## 
-    if '.gz' in golden_vcf_path:
+    if '.gz' in str(golden_vcf_path):
         outfile = golden_vcf_path.stem
+        outpath = golden_vcf_path.parent / outfile
         print("deleting duplicate file created {}".format(str(outfile)))
-        outfile.unlink()
+        outpath.unlink()
     
-    if '.gz' in workflow_vcf_path:
+    if '.gz' in str(workflow_vcf_path):
         outfile = workflow_vcf_path.stem
+        outpath = workflow_vcf_path.parent / outfile
         print("deleting duplicate file created {}".format(str(outfile)))
-        outfile.unlink() 
+        outpath.unlink() 
 
     #
     #	plot some FN stuff
