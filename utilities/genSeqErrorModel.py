@@ -234,7 +234,7 @@ def main():
     parser.add_argument('-i', type=str, required=True, metavar='<str>', help="* input_read1.fq (.gz) / input_read1.sam")
     parser.add_argument('-o', type=str, required=True, metavar='<str>', help="* output.p")
     parser.add_argument('-i2', type=str, required=False, metavar='<str>', default=None,
-                        help="input_read2.fq (.gz) / input_read2.sam")
+                        help="input_read2.fq (.gz)")
     parser.add_argument('-p', type=str, required=False, metavar='<str>', default=None, help="input_alignment.pileup")
     parser.add_argument('-q', type=int, required=False, metavar='<int>', default=33, help="quality score offset [33]")
     parser.add_argument('-Q', type=int, required=False, metavar='<int>', default=41, help="maximum quality score [41]")

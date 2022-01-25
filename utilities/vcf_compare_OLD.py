@@ -5,13 +5,17 @@
 
 """ **************************************************
 
-vcf_compare.py
+vcf_compare_OLD.py
 
 - compare vcf file produced by workflow to golden vcf produced by simulator
 
 Written by:		Zach Stephens
 Date:			January 20, 2015
 Contact:		zstephe2@illinois.edu
+
+Bug Fixes:      Jenna Kalleberg
+Date:           January 21, 2022
+Contac:         jenna.kalleberg@mail.missouri.edu
 
 ************************************************** """
 
@@ -22,8 +26,11 @@ import bisect
 import re
 import numpy as np
 import argparse
-
-from Bio.Seq import Seq
+## DEBUG NOTE: updated libraries
+import gzip
+import shutil
+from pathlib import Path
+from Bio.Seq import MutableSeq
 
 EV_BPRANGE = 50  # how far to either side of a particular variant location do we want to check for equivalents?
 
@@ -31,13 +38,20 @@ DEFAULT_QUAL = -666  # if we can't find a qual score, use this instead so we kno
 
 MAX_VAL = 9999999999999  # an unreasonably large value that no reference fasta could concievably be longer than
 
-DESC = """%prog: vcf comparison script."""
+## DEBUG NOTE: argparse module can not accept a single '%' in the help string
+##             only a double '%%' will work
+# DESC = """%(prog): vcf comparison script."""
 VERS = 0.1
 
-parser = argparse.ArgumentParser('python %prog [options] -r <ref.fa> -g <golden.vcf> -w <workflow.vcf>',
-                                 description=DESC,
+parser = argparse.ArgumentParser(usage='python {} [options] -r <ref.fa> -g <golden.vcf> -w <workflow.vcf>'.format(sys.argv[0]),
+                                 description='{0} v{1}: vcf comparison script.'.format(sys.argv[0], str(VERS)),
+                                 # version="%prog v" + str(VERS),
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
+## DEBUG NOTE: argparse module returns defaults automatically now
+##             and the '%' character was causing a bug
+## DEBUG NOTE: 'version' is no longer a valid object in argparse
+##             but I made the description behave as intended
 parser.add_argument('-r', help='* Reference Fasta', dest='reff', action='store', metavar='<ref.fa>')
 parser.add_argument('-g', help='* Golden VCF', dest='golden_vcf', action='store', metavar='<golden.vcf>')
 parser.add_argument('-w', help='* Workflow VCF', dest='workflow_vcf', action='store', metavar='<workflow.vcf>')
@@ -46,46 +60,50 @@ parser.add_argument('-m', help='Mappability Track', dest='map_track', action='st
 parser.add_argument('-M', help='Maptrack Min Len', dest='map_track_min_len', action='store', metavar='<int>')
 parser.add_argument('-t', help='Targetted Regions', dest='target_reg', action='store', metavar='<regions.bed>')
 parser.add_argument('-T', help='Min Region Len', dest='min_reg_len', action='store', metavar='<int>')
-parser.add_argument('-c', help='Coverage Filter Threshold [%default]', dest='dp_thresh', default=15, action='store',
+parser.add_argument('-c', help='Coverage Filter Threshold', dest='dp_thresh', default=15, action='store',
                     metavar='<int>')
-parser.add_argument('-a', help='Allele Freq Filter Threshold [%default]', dest='af_thresh', default=0.3, action='store',
+parser.add_argument('-a', help='Allele Freq Filter Threshold', dest='af_thresh', default=0.3, action='store',
                     metavar='<float>')
 
-parser.add_argument('--vcf-out', help="Output Match/FN/FP variants [%default]", dest='vcf_out', default=False,
+parser.add_argument('--vcf-out', help="Output Match/FN/FP variants", dest='vcf_out', default=False,
                     action='store_true')
-parser.add_argument('--no-plot', help="No plotting [%default]", dest='no_plot', default=False, action='store_true')
-parser.add_argument('--incl-homs', help="Include homozygous ref calls [%default]", dest='include_homs', default=False,
+parser.add_argument('--no-plot', help="No plotting", dest='no_plot', default=False, action='store_true')
+parser.add_argument('--incl-homs', help="Include homozygous ref calls", dest='include_homs', default=False,
                     action='store_true')
-parser.add_argument('--incl-fail', help="Include calls that failed filters [%default]", dest='include_fail',
+parser.add_argument('--incl-fail', help="Include calls that failed filters", dest='include_fail',
                     default=False,
                     action='store_true')
-parser.add_argument('--fast', help="No equivalent variant detection [%default]", dest='fast', default=False,
+parser.add_argument('--fast', help="No equivalent variant detection", dest='fast', default=False,
                     action='store_true')
 
-(opts, args) = parser.parse_args()
+## DEBUG NOTE: (opts,args) is from deprecated "optparse"
+##             updated to current syntak
+# (opts, args) = parser.parse_args()
+args = parser.parse_args()
 
-reference = opts.reff
-golden_vcf = opts.golden_vcf
-workflow_vcf = opts.workflow_vcf
-out_prefix = opts.outfile
-maptrack = opts.map_track
-min_read_len = opts.map_track_min_len
-bedfile = opts.target_reg
-dp_thresh = int(opts.dp_thresh)
-af_thresh = float(opts.af_thresh)
+reference = args.reff
+golden_vcf = args.golden_vcf
+workflow_vcf = args.workflow_vcf
+out_prefix = args.outfile
+maptrack = args.map_track
+min_read_len = args.map_track_min_len
+bedfile = args.target_reg
+dp_thresh = int(args.dp_thresh)
+af_thresh = float(args.af_thresh)
+vcf_out = args.vcf_out
+no_plot = args.no_plot
+include_homs = args.include_homs
+include_fail = args.include_fail
+fast = args.fast
 
-vcf_out = opts.vcf_out
-no_plot = opts.no_plot
-include_homs = opts.include_homs
-include_fail = opts.include_fail
-fast = opts.fast
-
+## DEBUG NOTE: missing a sys call here
 if len(sys.argv[1:]) == 0:
     parser.print_help()
-    exit(1)
+    sys.exit(1)
 
-if opts.MTRL is not None:
-    min_region_len = int(opts.min_reg_len)
+## DEBUG NOTE: variable name bug here
+if args.target_reg is not None:
+    min_region_len = int(args.min_reg_len)
 else:
     min_region_len = None
 
@@ -110,6 +128,39 @@ if (bedfile is not None and min_region_len is None) or (bedfile is None and min_
     print('Error: Both -t and -T must be specified')
     sys.exit(1)
 
+## DEBUG NOTE: enabled decompression of gzip vcf files automatically
+def gunzip_shutil(source_filepath, dest_filepath, block_size=65536):
+    """
+      Original Source: https://stackoverflow.com/questions/52332897/how-to-extract-a-gz-file-in-python
+    """
+    with gzip.open(source_filepath, 'rb') as s_file, \
+            open(dest_filepath, 'wb') as d_file:
+        shutil.copyfileobj(s_file, d_file, block_size)
+
+## DEBUG NOTE: decompress golden_vcf if necessary
+if '.gz' in golden_vcf:
+    print("decompressing .gz input file {}".format(golden_vcf))
+    golden_vcf_path = Path(golden_vcf)
+    outpath = golden_vcf_path.parent
+    outfile = golden_vcf_path.stem
+    outpath_file = str(outpath / outfile)
+    print(outpath_file)
+    gunzip_shutil(golden_vcf, outpath_file)
+    golden_vcf = outpath_file
+    print("Success: Input file decompressed to {}".format(golden_vcf))
+
+## DEBUG NOTE: decompress workflow_vcf if necessary
+if '.gz' in workflow_vcf:
+    print("decompressing .gz input file {}".format(workflow_vcf))
+    workflow_vcf_path = Path(workflow_vcf)
+    outpath = workflow_vcf_path.parent
+    outfile = workflow_vcf_path.stem
+    outpath_file = str(outpath / outfile)
+    print(outpath_file)
+    gunzip_shutil(workflow_vcf, outpath_file)
+    workflow_vcf = outpath_file
+    print("Success: Input file decompressed to {}.".format(workflow_vcf))
+
 if no_plot is False:
     import matplotlib
 
@@ -123,7 +174,6 @@ if no_plot is False:
 AF_STEPS = 20
 AF_KEYS = np.linspace(0.0, 1.0, AF_STEPS + 1)
 
-
 def quantize_AF(af):
     if af >= 1.0:
         return AF_STEPS
@@ -132,11 +182,9 @@ def quantize_AF(af):
     else:
         return int(af * AF_STEPS)
 
-
 VCF_HEADER = '##fileformat=VCFv4.1\n##reference=' + reference + '##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n'
 
 DP_TOKENS = ['DP', 'DPU', 'DPI']  # in the order that we'll look for them
-
 
 def parse_line(splt, col_dict, col_samp):
     #	check if we want to proceed..
@@ -199,7 +247,6 @@ def parse_line(splt, col_dict, col_samp):
 
     return (cov, qual, alt_alleles, alt_freqs)
 
-
 def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
     v_hashed = {}
     v_pos_hash = {}
@@ -219,7 +266,7 @@ def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
         if line[0] != '#':
             if len(col_dict) == 0:
                 print('\n\nError: VCF has no header?\n' + vcf_filename + '\n\n')
-                exit(1)
+                sys.exit(1)
             splt = line[:-1].split('\t')
             if splt[0] == ref_name:
 
@@ -284,7 +331,6 @@ def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
         v_hashed, v_alts, v_cov, v_af, v_qual, v_targ_len, n_below_min_r_len, line_unique, var_filtered, var_merged,
         hash_coll)
 
-
 def condense_by_pos(list_in):
     var_list_of_interest = [n for n in list_in]
     ind_count = {}
@@ -310,7 +356,6 @@ def condense_by_pos(list_in):
         var = (v[0][0], v[0][1], ','.join([n[2] for n in v[::-1]]))
         var_list_of_interest.append(var)
     return var_list_of_interest
-
 
 def main():
     global bedfile
@@ -441,9 +486,11 @@ def main():
                 for i in range(len(my_dat)):
                     if len(my_dat[i]) != in_width:
                         print(i, len(my_dat[i]), in_width)
-                exit(1)
-
-            my_dat = Seq(''.join(my_dat)).upper().tomutable()
+                sys.exit(1)
+            
+            ## DEBUG NOTE: .tomutable method depreciated, updated to current
+            # my_dat = Seq(''.join(my_dat)).upper().tomutable()
+            my_dat = MutableSeq(''.join(my_dat)).upper()
             my_len = len(my_dat)
 
         #
@@ -680,6 +727,19 @@ def main():
         print(out_prefix + '_FP.vcf')
         vcfo2.close()
         vcfo3.close()
+
+    ##
+    ## DEBUG NOTE: If file was uncompressed, delete duplicate file 
+    ## 
+    if '.gz' in golden_vcf_path:
+        outfile = golden_vcf_path.stem
+        print("deleting duplicate file created {}".format(str(outfile)))
+        outfile.unlink()
+    
+    if '.gz' in workflow_vcf_path:
+        outfile = workflow_vcf_path.stem
+        print("deleting duplicate file created {}".format(str(outfile)))
+        outfile.unlink() 
 
     #
     #	plot some FN stuff
