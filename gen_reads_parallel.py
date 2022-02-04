@@ -161,18 +161,28 @@ def print_configuration(args, options):
         print_and_log(f'RNG seed value: {options.rng_value}', 'INFO')
 
 
-def find_file_breaks(options, reference_index):
+def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool) -> dict:
     """
-    TODO needs update
-    We want the return to be a dictionary with the chromosomes as keys
+    Returns a dictionary with the chromosomes as keys
     For the chrom method, the value for each key will just  be "all"
-    whereas for subdivison, the value for each key should be a list of indices.
+    whereas for subdivison, the value for each key should be a list of indices that partition the
+    sequence into roughly equal sizes.
+    :param threads: number of threads for this run
+    :param mode: partition mode for this run (chrom or subdivision)
+    :param reference_index: a dictionary with chromosome keys and sequence values
+    :param debug: Turns debug mode on, if True
+    :return: a dictionary containing the chromosomes as keys and either "all" for valuse, or a list of indices
+
+    >>> index = {'chr1': "ACCATACAC"}
+    >>> find_file_breaks(5, "subdivision", index, False)
+    {'chr1': [0, 1, 2, 3, 4]}
+
     """
     partitions = {}
-    if options.partition_mode.lower() == "chrom" or options.threads == 1:
+    if mode.lower() == "chrom" or threads == 1:
         for contig in reference_index.keys():
             partitions[contig] = "all"
-    elif options.mode.lower() == "subdivision":
+    elif mode.lower() == "subdivision":
         # Instead of this, this should try to subdivide the chrom into chunks
         total_length = 0
         length_dict = {}
@@ -183,14 +193,14 @@ def find_file_breaks(options, reference_index):
         # Add items one at a time to partition list until the total length is greater than delta.
         index = 0
         for item in length_dict:
-            delta = length_dict[item] // options.threads
+            delta = length_dict[item] // threads
             if item not in partitions:
                 partitions[item] = []
-            for i in range(options.threads):
+            for i in range(threads):
                 partitions[item].append(index)
                 index += delta
 
-        if options.debug:
+        if debug:
             print_and_log(f'breaks = {partitions}', 'debug')
     else:
         print_and_log("Invalid partition mode. Must be either chrom or subdivision.", 'error')
@@ -818,7 +828,7 @@ def main(raw_args=None):
     print_and_log("Beginning analysis...", 'info')
 
     # Find break points in the input file.
-    breaks = find_file_breaks(options, reference_index)
+    breaks = find_file_breaks(options.threads, options.partition_mode, reference_index, options.debug)
 
     if not breaks:
         # Printing out summary information and end time
