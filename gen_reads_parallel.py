@@ -41,7 +41,7 @@ from source.vcf_func import parse_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
-from source.constants_and_models import ALLOWED_NUCL
+from source.constants_and_models import ALLOWED_NUCL, OK_CHR_ORD
 from source.neat_cigar import CigarString
 from source.Models import Models
 
@@ -77,37 +77,6 @@ def print_end_info(output_class, cancer_output_class, starting_time):
     print_and_log("NEAT finished successfully.", "info")
     print_and_log(f"Total runtime: {str(endtime-starting_time)}", 'info')
     print("-------------------------------------------------------------------------")
-
-
-def find_file_breaks(options, reference_index):
-    total_length = 0
-    length_dict = {}
-    for chrom in reference_index:
-        total_length += len(reference_index[chrom])
-        length_dict[chrom] = len(reference_index[chrom])
-
-    # sort the dictionary by values. This command turns the dict into a list of tuples (.items()), then
-    # sorts on the value in each dictionary item (lambda x: x[1]), making a list
-    # of sorted tuples, then converts that back to a dict. This sorts so that the longest chroms are first.
-    length_dict = dict(sorted(length_dict.items(), key=lambda x: x[1], reverse=True))
-
-    # we need a positive integer delta to compare items to.
-    delta = max(1, (total_length + 1) // options.threads)
-    # Add items one at a time to partition list until the total length is greater than delta.
-    partitions = []
-    temp_partition = []
-    for item in length_dict:
-        if sum([length_dict[x] for x in temp_partition]) + length_dict[item] >= delta:
-            temp_partition.append(item)
-            partitions.append(temp_partition)
-            temp_partition = []
-            continue
-        else:
-            temp_partition.append(item)
-    partitions.append(temp_partition)
-    # Throw out any empty partitions
-    partitions = [x for x in partitions if x]
-    return partitions
 
 
 def init_progress_info():
@@ -192,6 +161,69 @@ def print_configuration(args, options):
         print_and_log(f'RNG seed value: {options.rng_value}', 'INFO')
 
 
+def find_file_breaks(options, reference_index):
+    """
+    TODO needs update
+    We want the return to be a dictionary with the chromosomes as keys
+    For the chrom method, the value for each key will just  be "all"
+    whereas for subdivison, the value for each key should be a list of indices.
+    """
+    partitions = []
+    if options.partition_mode.lower() == "chrom":
+        partitions = list(reference_index.keys())
+    elif options.mode.lower() == "subdivision":
+        # Instead of this, this should try to subdivide the chrom into chunks
+        total_length = 0
+        length_dict = {}
+        for chrom in reference_index:
+            total_length += len(reference_index[chrom])
+            length_dict[chrom] = len(reference_index[chrom])
+
+        # sort the dictionary by values. This command turns the dict into a list of tuples (.items()), then
+        # sorts on the value in each dictionary item (lambda x: x[1]), making a list
+        # of sorted tuples, then converts that back to a dict. This sorts so that the longest chroms are first.
+        # TODO break up chromosomes
+        length_dict = dict(sorted(length_dict.items(), key=lambda x: x[1], reverse=True))
+
+        # we need a positive integer delta to compare items to.
+        delta = max(1, (total_length + 1) // options.threads)
+        # Add items one at a time to partition list until the total length is greater than delta.
+        temp_partition = []
+        for item in length_dict:
+            if sum([length_dict[x] for x in temp_partition]) + length_dict[item] >= delta:
+                temp_partition.append(item)
+                partitions.append(temp_partition)
+                temp_partition = []
+                continue
+            else:
+                temp_partition.append(item)
+        partitions.append(temp_partition)
+        # Throw out any empty partitions
+        partitions = [x for x in partitions if x]
+    else:
+        print_and_log("Invalid partition mode.", 'error')
+        premature_exit(1)
+    return partitions
+
+
+def find_n_regions(sequence, run_options):
+    previous_n_index = 0
+    n_count = 0
+    n_atlas = []
+    for i in range(len(sequence)):
+        # Checks for invalid characters, most commonly N
+        if sequence[i] not in OK_CHR_ORD:
+            if n_count == 0:
+                previous_n_index = i
+            n_count += 1
+            if i == len(sequence) - 1:
+                n_atlas.append((previous_n_index, previous_n_index + n_count))
+        else:
+            if n_count > 0:
+                n_atlas.append((previous_n_index, previous_n_index + n_count))
+            n_count = 0
+
+
 # class representing the options
 class Options(SimpleNamespace):
     def __init__(self, config_file):
@@ -215,6 +247,7 @@ class Options(SimpleNamespace):
         # (type, default, criteria1 (low/'exists'), criteria2 (high/None))
         arbitrarily_large_number = 10000000
         self.defs['reference'] = ('string', None, 'exists', None)
+        self.defs['partition_mode'] = ('string', None, 'exists', None)
         self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
         self.defs['threads'] = ('int', 1, 1, arbitrarily_large_number)
         self.defs['coverage'] = ('float', 10.0, 1, arbitrarily_large_number)
@@ -230,6 +263,7 @@ class Options(SimpleNamespace):
         self.defs['mutation_model'] = ('string', None, 'exists', None)
         self.defs['mutation_rate'] = ('float', None, 0, 0.3)
         self.defs['mutation_bed'] = ('string', None, 'exists', None)
+        self.defs['n_handling'] = ('string', None, None, None)
 
         # Params for cancer (not implemented yet)
         self.defs['cancer'] = ('boolean', False, None, None)
@@ -395,6 +429,10 @@ class Options(SimpleNamespace):
                           "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
             premature_exit(1)
 
+        self.args['n_handling'] = "ignore"
+        if self.args['paired_ended']:
+            self.args['n_handling'] = "random"
+
 
 # class representing a chromosome mutation
 class SingleJob(multiprocessing.Process):
@@ -410,17 +448,31 @@ class SingleJob(multiprocessing.Process):
         self.debug = options.debug
         self.out_prefix_name = out_prefix_name
 
-        # These tasks filter the inputs down to
+        # These tasks filter the inputs down to relevant areas
         self.reference = {}
-        for chrom in self.partition:
-            self.reference[chrom] = ref_index[chrom]
-            if not self.reference[chrom]:
-                print_and_log(f"No reference data for this partition: {chrom}", "error")
-                premature_exit(1)
-            if options.debug:
-                print_and_log(f'Reference data: {ref_index[chrom]}', 'debug')
+        if options.partition_mode == "chrom":
+            # In this  mode the partition should be a dictionary of chromosomes
+            # With values set equal to "all"
+            for chrom in self.partition:
+                self.reference[chrom] = ref_index[chrom]
+                if not self.reference[chrom]:
+                    print_and_log(f"No reference data for this partition: {chrom}", "error")
+                    premature_exit(1)
+                if options.debug:
+                    print_and_log(f'Reference data: {ref_index[chrom]}', 'debug')
+        elif options.partition_mode == "subdivison":
+            # For the subdivison method, we will index by coordinates.
+            # The partition should be a dictionary indexed by chrom and including a list of
+            # indexes (integers), in this mode
+            for chrom in self.partition:
+                for i in range(len(self.partition[chrom])):
+                    # fetch the coordinates
+                    start = self.partition[chrom][i]
+                    stop = self.partition[chrom][i+1]
+                    # index is a tuple: (chromosome (string), region start (int), region end (int))
+                    self.reference[(chrom, start, stop)] = ref_index[chrom][start:stop]
 
-        self.chromosomes = list(self.reference.keys())
+        self.chromosomes_in_set = list(partition.keys())
 
         self.n_regions = {}
 
@@ -519,7 +571,13 @@ class SingleJob(multiprocessing.Process):
         current_progress = 0
         have_printed100 = False
 
+        # TODO idea what if we loop over the chromosome once and add mutations. Then do sequence errors during the reads
         # TODO add structural variants here.
+
+        # loop over the chrom add mutation and sequence errors.
+        # Then loop over to make reads?
+
+        n_count = self.reference
 
         def quick_mutate(dna_string: str, length: int):
             original_sequence = dna_string
@@ -613,6 +671,7 @@ def main(raw_args=None):
     print_and_log(f'Reading {options.reference}...', 'info')
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
+    n_regions = find_n_regions(reference_index, options)
 
     if options.debug:
         print_and_log(f'Reference file indexed.', 'debug')
@@ -628,13 +687,6 @@ def main(raw_args=None):
     # It is True if they all start with "chr" and False otherwise.
     begins_with_chr = all(k.startswith('chr') for k in options.reference_chromosomes)
 
-    # TODO I'm going to see how far I get without n_handling. If I make it to the end, I can chuck this.
-    if options.paired_ended:
-        n_handling = ('random', options.fragment_mean)
-    else:
-        n_handling = ('ignore', options.read_len)
-
-    printed_warning = False
     input_variants = None
     if options.include_vcf:
         print_and_log(f"Reading input VCF...", 'info')

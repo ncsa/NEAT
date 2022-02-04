@@ -11,6 +11,12 @@
 # type = string | required: yes
 @reference = /home/joshfactorial/Documents/neat_data/H1N1/H1N1.fa
 
+# How to partition the reference for analysis. The default is just to partition the input into chromosomes.
+# However, if you have only one chromosome, or multiple small contigs, or other siutations,
+# you may see enhanced speed by subdividing the fasta contigs with the subdivision setting.
+# type = string | required: yes | default = chrom | possible values: chrom, subdivision,
+@partition_mode = chrom
+
 # Read length of the reads in the fastq output
 # type = int | required: no | default = 101
 @read_len = .
