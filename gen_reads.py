@@ -415,7 +415,7 @@ def main(raw_args=None):
     for chrom in range(len(ref_index)):
 
         # read in reference sequence and notate blocks of Ns
-        # (ref_sequence, n_regions) = read_ref(reference, ref_index[chrom], n_handling)
+        (ref_sequence, n_regions) = read_ref(reference, ref_index[chrom], n_handling)
 
         # count total bp we'll be spanning so we can get an idea of how far along we are
         # (for printing progress indicators)
