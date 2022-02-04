@@ -168,9 +168,10 @@ def find_file_breaks(options, reference_index):
     For the chrom method, the value for each key will just  be "all"
     whereas for subdivison, the value for each key should be a list of indices.
     """
-    partitions = []
-    if options.partition_mode.lower() == "chrom":
-        partitions = list(reference_index.keys())
+    partitions = {}
+    if options.partition_mode.lower() == "chrom" or options.threads == 1:
+        for contig in reference_index.keys():
+            partitions[contig] = "all"
     elif options.mode.lower() == "subdivision":
         # Instead of this, this should try to subdivide the chrom into chunks
         total_length = 0
@@ -179,29 +180,20 @@ def find_file_breaks(options, reference_index):
             total_length += len(reference_index[chrom])
             length_dict[chrom] = len(reference_index[chrom])
 
-        # sort the dictionary by values. This command turns the dict into a list of tuples (.items()), then
-        # sorts on the value in each dictionary item (lambda x: x[1]), making a list
-        # of sorted tuples, then converts that back to a dict. This sorts so that the longest chroms are first.
-        # TODO break up chromosomes
-        length_dict = dict(sorted(length_dict.items(), key=lambda x: x[1], reverse=True))
-
-        # we need a positive integer delta to compare items to.
-        delta = max(1, (total_length + 1) // options.threads)
         # Add items one at a time to partition list until the total length is greater than delta.
-        temp_partition = []
+        index = 0
         for item in length_dict:
-            if sum([length_dict[x] for x in temp_partition]) + length_dict[item] >= delta:
-                temp_partition.append(item)
-                partitions.append(temp_partition)
-                temp_partition = []
-                continue
-            else:
-                temp_partition.append(item)
-        partitions.append(temp_partition)
-        # Throw out any empty partitions
-        partitions = [x for x in partitions if x]
+            delta = length_dict[item] // options.threads
+            if item not in partitions:
+                partitions[item] = []
+            for i in range(options.threads):
+                partitions[item].append(index)
+                index += delta
+
+        if options.debug:
+            print_and_log(f'breaks = {partitions}', 'debug')
     else:
-        print_and_log("Invalid partition mode.", 'error')
+        print_and_log("Invalid partition mode. Must be either chrom or subdivision.", 'error')
         premature_exit(1)
     return partitions
 
@@ -836,17 +828,6 @@ def main(raw_args=None):
         sys.exit(0)
 
     if options.debug:
-        print_and_log("Checking lengths of breaks...", 'debug')
-        idx = 0
-        for item in breaks:
-            length = 0
-            for thing in item:
-                length += len(reference_index[thing])
-            print_and_log(f"item{idx} = {length}", 'debug')
-            idx += 1
-        print_and_log(f'breaks = {breaks}', 'debug')
-
-    if options.debug:
         print_and_log("Input file partitioned.", 'debug')
 
     # Initialize simulation
@@ -858,6 +839,7 @@ def main(raw_args=None):
                                    target_regions_df, discard_regions_df, mutation_rate_df, input_variants,
                                    models))
 
+    total_bp_spanned = sum([len(reference_index[x]) for x in options.reference_chromosomes])
     # Step 3 (CAVA 486 - 493) - Running simulation
     for process in processes:
         process.start()
