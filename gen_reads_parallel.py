@@ -673,7 +673,9 @@ def main(raw_args=None):
     print_and_log(f'Reading {options.reference}...', 'info')
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
-    n_regions = find_n_regions(reference_index, options)
+    # TODO still not sure I need this. It requires combing through the entire sequence, which I don't like
+    # Maybe add this into the main loop.
+    # n_regions = find_n_regions(reference_index, options)
 
     if options.debug:
         print_and_log(f'Reference file indexed.', 'debug')
@@ -828,6 +830,7 @@ def main(raw_args=None):
     print_and_log("Beginning analysis...", 'info')
 
     # Find break points in the input file.
+    # TODO Debug:z
     breaks = find_file_breaks(options.threads, options.partition_mode, reference_index, options.debug)
 
     if not breaks:
