@@ -120,7 +120,7 @@ def poisson_list(k_range, input_lambda):
         return DiscreteDistribution([1], [0], degenerate_val=0)
     log_factorial_list = [0.0]
     for k in k_range[1:]:
-        log_factorial_list.append(np.log(float(k)) + log_factorial_list[k - 1])
+        log_factorial_list.append(np.log(k) + log_factorial_list[k - 1])
     w_range = [np.exp(k * np.log(input_lambda) - input_lambda - log_factorial_list[k]) for k in k_range]
     w_range = [n for n in w_range if n >= min_weight]
     if len(w_range) <= 1:
