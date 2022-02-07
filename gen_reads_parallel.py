@@ -177,11 +177,13 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool
     >>> find_file_breaks(5, "subdivision", index, False)
     {'chr1': [0, 1, 2, 3, 4]}
 
+    >>> find_file_breaks(5, 'chrom', index, False)
+    {'chr1': [0]}
     """
     partitions = {}
     if mode.lower() == "chrom" or threads == 1:
         for contig in reference_index.keys():
-            partitions[contig] = "all"
+            partitions[contig] = [0]
     elif mode.lower() == "subdivision":
         # Instead of this, this should try to subdivide the chrom into chunks
         total_length = 0
@@ -249,7 +251,7 @@ class Options(SimpleNamespace):
         # (type, default, criteria1 (low/'exists'), criteria2 (high/None))
         arbitrarily_large_number = 10000000
         self.defs['reference'] = ('string', None, 'exists', None)
-        self.defs['partition_mode'] = ('string', None, 'exists', None)
+        self.defs['partition_mode'] = ('string', 'chrom', 'exists', None)
         self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
         self.defs['threads'] = ('int', 1, 1, arbitrarily_large_number)
         self.defs['coverage'] = ('float', 10.0, 1, arbitrarily_large_number)
@@ -438,61 +440,53 @@ class Options(SimpleNamespace):
 
 # class representing a chromosome mutation
 class SingleJob(multiprocessing.Process):
-    def __init__(self, threadidx, options, ref_index, partition, out_prefix_name,
+    def __init__(self, threadidx, ref_index, partition, chromosome, out_prefix_name,
                  target_regions, discard_regions, mutation_rate_regions, input_variants,
-                 models):
+                 models, options):
         multiprocessing.Process.__init__(self)
         self.threadidx = threadidx
+        self.chrom = chromosome
         if not partition:
             print_and_log("No partition for this thread", "error")
             premature_exit(1)
         self.partition = partition
         self.debug = options.debug
         self.out_prefix_name = out_prefix_name
+        self.reference = ref_index[self.chrom]
 
         # These tasks filter the inputs down to relevant areas
-        self.reference = {}
-        if options.partition_mode == "chrom":
-            # In this  mode the partition should be a dictionary of chromosomes
-            # With values set equal to "all"
-            for chrom in self.partition:
-                self.reference[chrom] = ref_index[chrom]
-                if not self.reference[chrom]:
-                    print_and_log(f"No reference data for this partition: {chrom}", "error")
-                    premature_exit(1)
-                if options.debug:
-                    print_and_log(f'Reference data: {ref_index[chrom]}', 'debug')
-        elif options.partition_mode == "subdivison":
-            # For the subdivison method, we will index by coordinates.
-            # The partition should be a dictionary indexed by chrom and including a list of
-            # indexes (integers), in this mode
-            for chrom in self.partition:
-                for i in range(len(self.partition[chrom])):
-                    # fetch the coordinates
-                    start = self.partition[chrom][i]
-                    stop = self.partition[chrom][i+1]
-                    # index is a tuple: (chromosome (string), region start (int), region end (int))
-                    self.reference[(chrom, start, stop)] = ref_index[chrom][start:stop]
-
-        self.chromosomes_in_set = list(partition.keys())
+        self.partitioned_reference = {}
+        if len(self.partition) == 1:
+            # In this case, we just use the whole sequence
+            self.partitioned_reference[(0, len(ref_index[self.chrom]))] = ref_index[self.chrom]
+        else:
+            for i in range(len(self.partition) - 1):
+                # fetch the coordinates
+                start = self.partition[i]
+                stop = self.partition[i+1]
+                # index is a tuple: (chromosome (string), region start (int), region end (int))
+                self.partitioned_reference[(start, stop)] = ref_index[self.chrom][start:stop]
+            # Grab the rest of the sequence as the final partition
+            self.partitioned_reference[(self.partition[-1], len(ref_index[self.chrom]))] = \
+                ref_index[self.chrom][self.partition[-1]:]
 
         self.n_regions = {}
 
         self.input_variants = pd.DataFrame()
         if not input_variants.empty:
-            self.input_variants = input_variants[input_variants.index.isin(self.chromosomes)]
+            self.input_variants = input_variants[input_variants.index.isin([self.chrom])]
 
         self.target_regions = pd.DataFrame()
         if not target_regions.empty:
-            self.target_regions = target_regions[target_regions.index.isin(self.chromosomes)]
+            self.target_regions = target_regions[target_regions.index.isin([self.chrom])]
 
         self.discard_regions = pd.DataFrame()
         if not discard_regions.empty:
-            self.discard_regions = discard_regions[discard_regions.index.isin(self.chromosomes)]
+            self.discard_regions = discard_regions[discard_regions.index.isin([self.chrom])]
 
         self.mutation_rate_regions = pd.DataFrame()
         if not mutation_rate_regions.empty:
-            self.mutation_rate_regions = mutation_rate_regions[mutation_rate_regions.index.isin(self.chromosomes)]
+            self.mutation_rate_regions = mutation_rate_regions[mutation_rate_regions.index.isin([self.chrom])]
 
         # TODO Seq error for each group
         sequencing_error_class = SequencingErrors(options.read_len, models.sequencing_error_model,
@@ -511,7 +505,7 @@ class SingleJob(multiprocessing.Process):
         self.temporary_dir = tempfile.TemporaryDirectory()
         self.tmp_dir_path = pathlib.Path(self.temporary_dir.name).resolve()
         if options.produce_bam:
-            self.tmp_sam_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_records_{self.threadidx}.sam"
+            self.tmp_sam_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_records_{self.threadidx}.tsam"
             if options.debug:
                 print_and_log(f'self.tmp_sam_fn = {self.tmp_sam_fn}', 'debug')
         if options.produce_vcf:
@@ -569,17 +563,21 @@ class SingleJob(multiprocessing.Process):
         if self.debug:
             print_and_log(f"Process {self.threadidx} - simulation started", 'debug')
 
-        total_bp_spanned = sum([len(self.reference[x]) for x in self.chromosomes])
+        total_bp_spanned = len(self.reference)
+        print(f'total bp spanned: {total_bp_spanned}')
+        print(f'chrom: {self.chrom}')
         current_progress = 0
         have_printed100 = False
 
         # TODO idea what if we loop over the chromosome once and add mutations. Then do sequence errors during the reads
         # TODO add structural variants here.
 
-        # loop over the chrom add mutation and sequence errors.
-        # Then loop over to make reads?
+        # Step 1: Create a VCF of variants (mutation and sequencing error variants)
+        # Step 2 (optional): create a fasta with those variants inserted
+        # Step 3 (optional): create a fastq from the mutated fasta
+        # Step 4 (optional): Create a golden bam with the reads aligned to the original reference
 
-        n_count = self.reference
+        # n_count = len(self.partitioned_reference)
 
         def quick_mutate(dna_string: str, length: int):
             original_sequence = dna_string
@@ -595,25 +593,26 @@ class SingleJob(multiprocessing.Process):
 
         for i in range(len(self.partition)):
             # This is filler code until we do the actual processing.
-            chrom = self.partition[i]
-            print(len(self.reference[chrom]))
+            print(len(self.partitioned_reference))
             tlen = 300
             pos = 1
-            for read_num in range(len(self.reference[chrom].seq) // tlen):
-                qname = f'{self.out_prefix_name}-{chrom}-{read_num}'
+            for read_num in range(1000):
+                qname = f'{self.out_prefix_name}-{self.chrom}-{read_num}'
                 flag = 0
-                rname = chrom
+                rname = self.chrom
                 mapq = 70
                 rnext = '='
                 pnext = 1
                 # SAM is 1-based for annoying reasons, therefore we have to subtract 1 to get the correct positions
-                reference_sequence = self.reference[chrom].seq[pos-1:pos+tlen]
+                reference_sequence = \
+                    self.partitioned_reference[list(self.partitioned_reference.keys())[0]].seq[pos - 1:pos + tlen]
                 seq, qual = quick_mutate(reference_sequence, 101)
                 line_to_write = f'{qname}\t{flag}\t{rname}\t{pos}\t{mapq}\t{reference_sequence}' \
                                 f'\t{rnext}\t{pnext}\t{tlen}\t{seq}\t{qual}\n'
                 self.tmp_sam_outfile.write(line_to_write)
-                pos += tlen
-        shutil.copy(self.tmp_sam_fn, f'/home/joshfactorial/Documents/temp_{self.threadidx}.sam')
+                pos += 1
+        self.tmp_sam_outfile.close()
+        shutil.copy(self.tmp_sam_fn, f'/home/joshfactorial/Documents/temp_{self.threadidx}.tsam')
         self.tmp_sam_outfile.close()
 
 
@@ -830,7 +829,7 @@ def main(raw_args=None):
     print_and_log("Beginning analysis...", 'info')
 
     # Find break points in the input file.
-    # TODO Debug:z
+    # TODO Debug:
     breaks = find_file_breaks(options.threads, options.partition_mode, reference_index, options.debug)
 
     if not breaks:
@@ -846,13 +845,12 @@ def main(raw_args=None):
     # Initialize simulation
     thread_index = 0
     processes = []
-    for partition in breaks:
+    for chrom in breaks:
         thread_index += 1
-        processes.append(SingleJob(thread_index, options, reference_index, partition, out_prefix_name,
+        processes.append(SingleJob(thread_index, reference_index, breaks[chrom], chrom, out_prefix_name,
                                    target_regions_df, discard_regions_df, mutation_rate_df, input_variants,
-                                   models))
+                                   models, options))
 
-    total_bp_spanned = sum([len(reference_index[x]) for x in options.reference_chromosomes])
     # Step 3 (CAVA 486 - 493) - Running simulation
     for process in processes:
         process.start()
