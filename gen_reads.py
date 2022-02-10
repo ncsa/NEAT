@@ -1,18 +1,16 @@
 #!/usr/bin/env python
 # encoding: utf-8
-""" ////////////////////////////////////////////////////////////////////////////////
-   ///                                                                          ///
-  ///       gen_reads.source                                                        ///
- ///        VERSION 2.0: HARDER, BETTER, FASTER, STRONGER!                    ///
-///////                                                                      //////
-   ///      Variant and read simulator for benchmarking NGS workflows          ///
-  ///                                                                         ///
- ///        Written by:     Zach Stephens                                    ///
-///////     For:            DEPEND Research Group, UIUC                     ///////
-   ///      Date:           May 29, 2015                                       ///
-  ///       Contact:        zstephe2@illinois.edu                             ///
- ///                                                                         ///
-/////////////////////////////////////////////////////////////////////////////// """
+"""
+gen_reads.py
+Version 3.0
+
+Variant and read simulator for benchmarking NGS workflows
+
+Currently maintained by:    NCSA Genomics Team
+Contact:                    Joshua Allen
+Email:                      jallen17@illinois.edu
+Originally written by:      Zach Stephens
+"""
 
 import sys
 import copy
