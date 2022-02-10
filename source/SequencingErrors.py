@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import pickle
 from source.probability import DiscreteDistribution
 from source.constants_and_models import ALLOWED_NUCL, NUC_IND
 from source.error_handling import premature_exit, print_and_log
@@ -17,22 +18,30 @@ class SequencingErrors:
 
         self.uniform = False
 
+        try:
+            error_dat = pickle.load(open(error_model, 'rb'), encoding="bytes")
+        except IOError:
+            print("\nProblem opening the sequencing error model.\n")
+            sys.exit(1)
+
+        self.uniform = False
+
         # uniform-error SE reads (e.g., PacBio)
-        if len(error_model) == 4:
+        if len(error_dat) == 4:
             self.uniform = True
-            [q_scores, off_q, avg_error, error_params] = error_model
+            [q_scores, off_q, avg_error, error_params] = error_dat
             self.uniform_q_score = min([max(q_scores), int(-10. * np.log10(avg_error) + 0.5)])
             print_and_log(f'Reading in uniform sequencing error model... (q={self.uniform_q_score}+{off_q}, '
                           f'p(err)={(100. * avg_error):0.2f}%)', 'info')
 
         # only 1 q-score model present, use same model for both strands
-        elif len(error_model) == 6:
-            [init_q1, prob_q1, q_scores, off_q, avg_error, error_params] = error_model
+        elif len(error_dat) == 6:
+            [init_q1, prob_q1, q_scores, off_q, avg_error, error_params] = error_dat
             self.pe_models = False
 
         # found a q-score model for both forward and reverse strands
-        elif len(error_model) == 8:
-            [init_q1, prob_q1, init_q2, prob_q2, q_scores, off_q, avg_error, error_params] = error_model
+        elif len(error_dat) == 8:
+            [init_q1, prob_q1, init_q2, prob_q2, q_scores, off_q, avg_error, error_params] = error_dat
             self.pe_models = True
             if len(init_q1) != len(init_q2) or len(prob_q1) != len(prob_q2):
                 print_and_log(f'R1 and R2 quality score models are of different length.', 'error')
