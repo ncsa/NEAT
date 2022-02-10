@@ -181,7 +181,7 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
     return my_dat, n_info
 
 
-def find_n_regions(input_sequence: Seq, n_handling: tuple, n_unknowns: bool = False):
+def find_n_regions(input_sequence: Seq, n_handling: tuple, n_unknowns: bool = True, quiet: bool = False):
     """
     Finds N regions in the sequence
     :param input_sequence: Biopython Seq object containing the sequence to scan.
@@ -190,7 +190,7 @@ def find_n_regions(input_sequence: Seq, n_handling: tuple, n_unknowns: bool = Fa
     :return:
     """
     # data explanation: my_dat[n_atlas[0][0]:n_atlas[0][1]] = solid block of Ns
-    my_dat = MutableSeq(input_sequence)
+    my_dat = input_sequence
     prev_ni = 0
     n_count = 0
     n_atlas = []
