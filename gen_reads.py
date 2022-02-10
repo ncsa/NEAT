@@ -280,6 +280,7 @@ def main(raw_args=None):
     # index reference: [(0: chromosome name, 1: byte index where the contig seq begins,
     #                    2: byte index where the next contig begins, 3: contig seq length),
     #                    (repeat for every chrom)]
+    
     # TODO check to see if this might work better as a dataframe or biopython object
     ref_index = index_ref(reference)
 
@@ -291,7 +292,7 @@ def main(raw_args=None):
     else:
         n_handling = ('ignore', read_len)
 
-    indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
+    # indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
     ref_list = [n[0] for n in ref_index]
 
     # parse input variants, if present
