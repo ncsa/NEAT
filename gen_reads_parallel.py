@@ -458,7 +458,7 @@ class SingleJob(multiprocessing.Process):
         self.partitioned_reference = {}
         if len(self.partition) == 1:
             # In this case, we just use the whole sequence
-            self.partitioned_reference[(0, len(ref_index[self.chrom]))] = ref_index[self.chrom]
+            self.partitioned_reference[(0, len(ref_index[self.chrom]))] = ref_index[self.chrom].seq
         else:
             for i in range(len(self.partition) - 1):
                 # fetch the coordinates
@@ -569,6 +569,7 @@ class SingleJob(multiprocessing.Process):
         current_progress = 0
         have_printed100 = False
 
+        
         # TODO idea what if we loop over the chromosome once and add mutations. Then do sequence errors during the reads
         # TODO add structural variants here.
 
@@ -577,7 +578,8 @@ class SingleJob(multiprocessing.Process):
         # Step 3 (optional): create a fastq from the mutated fasta
         # Step 4 (optional): Create a golden bam with the reads aligned to the original reference
 
-        # n_count = len(self.partitioned_reference)
+
+
 
         def quick_mutate(dna_string: str, length: int):
             original_sequence = dna_string
