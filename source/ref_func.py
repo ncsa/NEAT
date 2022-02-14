@@ -6,6 +6,7 @@ import pathlib
 import random
 from Bio.Seq import Seq
 from Bio import SeqIO
+from Bio.Seq import MutableSeq
 
 OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True}
 ALLOWED_NUCL = ['A', 'C', 'G', 'T']
