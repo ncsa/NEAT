@@ -89,7 +89,7 @@ def index_ref(reference_path: str) -> list:
     return ref_indices
 
 
-def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
+def read_ref(ref_path, ref_inds_i, n_handling, quiet=False):
     tt = time.time()
     if not quiet:
         print('reading ' + ref_inds_i[0] + '... ')
@@ -116,7 +116,7 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
     n_count = 0
     n_atlas = []
     for i in range(len(my_dat)):
-        if my_dat[i] == 'N' or (n_unknowns and my_dat[i] not in OK_CHR_ORD):
+        if my_dat[i] == 'N' or my_dat[i] not in ALLOWED_NUCL:
             if n_count == 0:
                 prev_ni = i
             n_count += 1
@@ -181,22 +181,23 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
     return my_dat, n_info
 
 
-def find_n_regions(input_sequence: Seq, n_handling: tuple, n_unknowns: bool = True, quiet: bool = False):
+def find_n_regions(input_sequence: Seq, n_handling: tuple, n_length_allowed: int = 25) -> dict:
     """
     Finds N regions in the sequence
     :param input_sequence: Biopython Seq object containing the sequence to scan.
     :param n_handling: tuple describing the n handling parameters
-    :param n_unknowns: Eliminate unknowns True/False
     :return:
+
+    >>> myseq = Seq("NNNNNAAACCCTTTNAAAACCCCNNNNN")
+    >>> n_handling = ('')
     """
     # data explanation: my_dat[n_atlas[0][0]:n_atlas[0][1]] = solid block of Ns
-    my_dat = input_sequence
     prev_ni = 0
     n_count = 0
     n_atlas = []
+    my_dat = input_sequence.replace(x, "N")
     for i in range(len(my_dat)):
-        # the or part will always be false because n_unknowns is always false
-        if my_dat[i] == 'N' or (n_unknowns and my_dat[i] not in OK_CHR_ORD):
+        if my_dat[i] == 'N' or my_dat[i] not in ALLOWED_NUCL:
             if n_count == 0:
                 prev_ni = i
             n_count += 1
@@ -225,7 +226,7 @@ def find_n_regions(input_sequence: Seq, n_handling: tuple, n_unknowns: bool = Tr
     # all N's with whatever base is in the third position of n_handling, so it  would
     # have to look something like n_handling = ('allChr', fragment_size, 'A').
     # Bottom line, this part may be deletable
-    elif n_handling[0] == 'allChr' and n_handling[2] in OK_CHR_ORD:
+    elif n_handling[0] == 'allChr' and n_handling[2] in ALLOWED_NUCL:
         for region in n_atlas:
             n_info['all'].extend(region)
             if region[1] - region[0] <= n_handling[1]:
