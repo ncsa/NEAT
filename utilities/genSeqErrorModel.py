@@ -296,7 +296,7 @@ def main():
     #
     #	finally, let's save our output model
     #
-    outfile = pathlib.Path(outfile).with_suffix(".dat.gz")
+    outfile = pathlib.Path(outfile).with_suffix(".pickle.gz")
     print('saving model...')
     if infile2 is None:
         pickle.dump([init_q, prob_q, q_scores, off_q, avg_err, err_params], gzip.open(outfile, 'wb'))
