@@ -179,11 +179,11 @@ python gen_reads.py                  \
 Simulate PacBio-like reads by providing an error model.
 
 ```
-python gen_reads.py                         \
-	-r hg19.fa                         \
-	-R 5000                            \
-	-e models/errorModel_pacbio_toy.dat.gz  \
-	-E 0.10                            \
+python gen_reads.py                             \
+	-r hg19.fa                                  \
+	-R 5000                                     \
+	-e models/errorModel_pacbio_toy.pickle.gz   \
+	-E 0.10                                     \
 	-o /home/me/simulated_reads        
 ```
 
@@ -235,7 +235,7 @@ Takes SAM file via stdin:
         -i input.bam         \
         -o /prefix/for/output
 
-and creates fraglen.dat.gz model in working directory.
+and creates fraglen.pickle.gz model in working directory.
 
 ## gen_mut_model.py
 
@@ -284,9 +284,9 @@ python genSeqErrorModel.py                            \
 Performs plotting and comparison of mutation models generated from genMutModel.py.
 
 ```
-python plotMutModel.py                                        \
-        -i model1.dat.gz [model2.dat.gz] [model3.dat.gz]...   \
-        -l legend_label1 [legend_label2] [legend_label3]...   \
+python plotMutModel.py                                                  \
+        -i model1.pickle.gz [model2.pickle.gz] [model3.pickle.gz]...    \
+        -l legend_label1 [legend_label2] [legend_label3]...             \
         -o path/to/pdf_plot_prefix
 ```
 

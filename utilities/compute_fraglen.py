@@ -160,7 +160,7 @@ def main():
     args = parser.parse_args()
     input_file = args.i
     output_prefix = args.o
-    output = output_prefix + '.dat.gz'
+    output = output_prefix + '.pickle.gz'
 
     all_tlens = count_frags(input_file)
     print('\nSaving model...')
