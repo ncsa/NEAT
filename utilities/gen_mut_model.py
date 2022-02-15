@@ -9,7 +9,7 @@ import argparse
 import numpy as np
 from Bio import SeqIO
 import pandas as pd
-
+import gzip
 
 #########################################################
 #				VARIOUS HELPER FUNCTIONS				#
@@ -59,7 +59,7 @@ def main():
     parser.add_argument('-m', type=str, required=True, metavar='/path/to/mutations.vcf',
                         help="Mutation file for organism in VCF format")
     parser.add_argument('-o', type=str, required=True, metavar='/path/to/output/and/prefix',
-                        help="Name of output file (final model will append \'.p\')")
+                        help="Name of output file (final model will append \'.dat.gz\')")
     parser.add_argument('-b', type=str, required=False, metavar='Bed file of regions to include '
                                                                 '(use bedtools complement if you have a '
                                                                 'bed of exclusion areas)', default=None,
@@ -498,7 +498,7 @@ def main():
                     'TRINUC_TRANS_PROBS': TRINUC_TRANS_PROBS,
                     'COMMON_VARIANTS': COMMON_VARIANTS,
                     'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
-    pickle.dump(OUT_DICT, open(out_pickle + ".p", "wb"))
+    pickle.dump(OUT_DICT, gzip.open(out_pickle + ".dat.gz", "wb"))
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ import argparse
 import numpy as np
 import pickle
 from Bio import SeqIO
+import gzip
 
 
 def process_fasta(file: str) -> dict:
@@ -152,7 +153,7 @@ def main():
         y_out.append(gc_bins[k])
 
     print('saving model...')
-    pickle.dump([range(window_size + 1), y_out], open(out_p, 'wb'))
+    pickle.dump([range(window_size + 1), y_out], gzip.open(out_p + ".dat.gz", 'wb'))
 
     print(time.time() - tt, '(sec)')
 
