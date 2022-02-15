@@ -13,6 +13,7 @@ Bug Fixes:
 - Fixed a bug where NEAT was assuming a ploidy of 2
 - Fixed a bug that was causing NEAT to produce exactly the same reverse strands as forward strands in paired ended mode
 - Fixed a bug when reading in some mutation models.
+- Added gzipping to all mutation models to maximize their compression
 
 ## TODOs for v3.1
 NEAT is still undergoing active development with many exciting upgrades planned. We also plan to bring the code up to full production scale and will continue to improve the following features (if you would like to [Contribute](CONTRIBUTING.md))

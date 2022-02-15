@@ -12,6 +12,7 @@
 import pickle
 import argparse
 import platform
+import gzip
 
 os = platform.system()
 if os !='Windows':
@@ -85,7 +86,8 @@ def count_frags(file: str) -> list:
         if os != 'Windows':
             file_to_parse = pysam.AlignmentFile(file, 'rb')
         else:
-            raise Exception("Your machine is running Windows. Please convert any BAM files to SAM files using samtools prior to input")
+            raise Exception("Your machine is running Windows. Please convert any BAM files to SAM files using samtools "
+                            "prior to input")
     else:
         print("Unknown file type, file extension must be bam or sam")
         exit(1)
@@ -158,12 +160,12 @@ def main():
     args = parser.parse_args()
     input_file = args.i
     output_prefix = args.o
-    output = output_prefix + '.p'
+    output = output_prefix + '.dat.gz'
 
     all_tlens = count_frags(input_file)
     print('\nSaving model...')
     out_vals, out_probs = compute_probs(all_tlens)
-    pickle.dump([out_vals, out_probs], open(output, 'wb'))
+    pickle.dump([out_vals, out_probs], gzip.open(output, 'wb'))
     print('\nModel successfully saved.')
 
 if __name__ == "__main__":
