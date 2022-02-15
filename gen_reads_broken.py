@@ -209,25 +209,14 @@ def main(raw_args=None):
     # sequencing error model
     if se_model is None:
         print('Using default sequencing error model.')
-<<<<<<< HEAD:gen_reads_broken.py
-        se_model = sim_path / 'models/errorModel_default.p'
-        se_class = SequencingErrors(read_len, se_model, se_rate, rescale_qual)
-=======
-        se_model = sim_path / 'models/errorModel_toy.pickle.gz'
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
->>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1:gen_reads.py
-    else:
-        # probably need to do some sanity checking
-        se_class = SequencingErrors(read_len, se_model, se_rate, rescale_qual)
+        se_model = sim_path / 'models/errorModel_default.pickle.gz'
+
+    se_class = SequencingErrors(read_len, se_model, se_rate, rescale_qual)
 
     # GC-bias model
     if gc_bias_model is None:
         print('Using default gc-bias model.')
-<<<<<<< HEAD:gen_reads_broken.py
-        gc_bias_model = sim_path / 'models/gcBias_default.p'
-=======
-        gc_bias_model = sim_path / 'models/gcBias_toy.pickle.gz'
->>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1:gen_reads.py
+        gc_bias_model = sim_path / 'models/gcBias_default.pickle.gz'
         try:
             [gc_scale_count, gc_scale_val] = pickle.load(open(gc_bias_model, 'rb'))
         except IOError:
@@ -301,7 +290,7 @@ def main(raw_args=None):
     else:
         n_handling = ('ignore', read_len)
 
-    # indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
+    indices_by_ref_name = {ref_index[n][0]: n for n in range(len(ref_index))}
     ref_list = [n[0] for n in ref_index]
 
     # parse input variants, if present
