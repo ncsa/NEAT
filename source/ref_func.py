@@ -6,6 +6,10 @@ import pathlib
 import random
 import logging
 from Bio.Seq import Seq
+<<<<<<< HEAD
+=======
+from Bio import SeqIO
+>>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1
 from Bio.Seq import MutableSeq
 
 from source.error_handling import premature_exit

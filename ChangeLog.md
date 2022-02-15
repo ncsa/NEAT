@@ -6,6 +6,14 @@
 - For now, we've eliminated the "Jobs" option and the merge jobs function. We plan to implement multi-threading instead as a way to speed up NEAT's simulation process.
 - Added a basic bacterial wrapper that will simulate multiple generations of bacteria based on an input fasta, mutate them and then produce the fastqs, bams, and vcfs for the resultant bacterial population.
 
+# NEAT v3.1
+
+Bug Fixes:
+- Fixed an issue where NEAT could not read in gzipped vcf files
+- Fixed a bug where NEAT was assuming a ploidy of 2
+- Fixed a bug that was causing NEAT to produce exactly the same reverse strands as forward strands in paired ended mode
+- Fixed a bug when reading in some mutation models.
+- Added gzipping to all mutation models to maximize their compression
 
 ## TODOs for v3.1
 NEAT is still undergoing active development with many exciting upgrades planned. We also plan to bring the code up to full production scale and will continue to improve the following features (if you would like to [Contribute](CONTRIBUTING.md))
