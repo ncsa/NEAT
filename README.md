@@ -67,13 +67,13 @@ Option           |  Description
 -R <int>         |  Read length. Required. 
 -o <str>         |  Output prefix. Use this option to specify where and what to call output files. Required
 -c <float>       |  Average coverage across the entire dataset. Default: 10
--e <str>         |  Sequencing error model pickle file
+-e <str>         |  Sequencing error model data file
 -E <float>       |  Average sequencing error rate. The sequencing error rate model is rescaled to make this the average value. 
 -p <int>         |  Sample Ploidy, default 2
 -tr <str>        |  Bed file containing targeted regions; default coverage for targeted regions is 98% of -c option; default coverage outside targeted regions is 2% of -c option
 -dr <str>	     |  Bed file with sample regions to discard.
 -to <float>      |  off-target coverage scalar [0.02]
--m <str>         |  mutation model pickle file
+-m <str>         |  mutation model data file
 -M <float>       |  Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. These random mutations are inserted in addition to the once specified in the -v option.
 -Mb <str>	 |  Bed file containing positional mutation rates
 -N <int>	 |  Below this quality score, base-call's will be replaced with N's
@@ -182,7 +182,7 @@ Simulate PacBio-like reads by providing an error model.
 python gen_reads.py                         \
 	-r hg19.fa                         \
 	-R 5000                            \
-	-e models/errorModel_pacbio_toy.p  \
+	-e models/errorModel_pacbio_toy.dat.gz  \
 	-E 0.10                            \
 	-o /home/me/simulated_reads        
 ```
@@ -219,11 +219,11 @@ bedtools genomecov
 ```
 
 ```
-python computeGC.py                 \
+python compute_gc.py                \
         -r reference.fa             \
         -i genomecovfile            \
         -w [sliding window length]  \
-        -o /path/to/model.p
+        -o /path/to/prefix
 ```
 
 ## compute_fraglen.py
@@ -231,19 +231,21 @@ python computeGC.py                 \
 Computes empirical fragment length distribution from sample data.
 Takes SAM file via stdin:
 
-    ./samtools view toy.bam | python computeFraglen.py
+    python computeFraglen.py \
+        -i input.bam         \
+        -o /prefix/for/output
 
-and creates fraglen.p model in working directory.
+and creates fraglen.dat.gz model in working directory.
 
 ## gen_mut_model.py
 
 Takes references genome and TSV file to generate mutation models:
 
 ```
-python genMutModel.py               \
+python gen_mut_model.py               \
         -r hg19.fa                  \
         -m inputVariants.tsv        \
-        -o /home/me/models.p
+        -o /home/me/models
 ```
 
 Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
@@ -267,7 +269,7 @@ This script needs revision, to improve the quality-score model eventually, and t
 ```
 python genSeqErrorModel.py                            \
         -i input_read1.fq (.gz) / input_read1.sam     \
-        -o output.p                                   \
+        -o /output/prefix                             \
         -i2 input_read2.fq (.gz) / input_read2.sam    \
         -p input_alignment.pileup                     \
         -q quality score offset [33]                  \
@@ -283,7 +285,7 @@ Performs plotting and comparison of mutation models generated from genMutModel.p
 
 ```
 python plotMutModel.py                                        \
-        -i model1.p [model2.p] [model3.p]...                  \
+        -i model1.dat.gz [model2.dat.gz] [model3.dat.gz]...   \
         -l legend_label1 [legend_label2] [legend_label3]...   \
         -o path/to/pdf_plot_prefix
 ```
