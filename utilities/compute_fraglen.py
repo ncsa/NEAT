@@ -10,11 +10,9 @@
 import pickle
 import argparse
 import platform
-<<<<<<< HEAD
 import sys
-=======
 import gzip
->>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1
+
 
 os = platform.system()
 if os !='Windows':

@@ -255,7 +255,7 @@ class Options(SimpleNamespace):
         self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
         self.defs['threads'] = ('int', 1, 1, arbitrarily_large_number)
         self.defs['coverage'] = ('float', 10.0, 1, arbitrarily_large_number)
-        self.defs['error_model'] = ('string', NEAT_PATH / 'models/errorModel_default.p', 'exists', None)
+        self.defs['error_model'] = ('string', NEAT_PATH / 'models/errorModel_default.pickle.gz', 'exists', None)
         self.defs['avg_seq_error'] = ('float', None, 0, 0.3)
         self.defs['rescale_qualities'] = ('boolean', False, None, None)
         self.defs['ploidy'] = ('int', 2, 1, 100)
@@ -275,7 +275,7 @@ class Options(SimpleNamespace):
         self.defs['cancer_purity'] = ('float', 0.8, 0.0, 1.0)
 
         self.defs['n_cutoff'] = ('int', None, 1, 40)
-        self.defs['gc_model'] = ('string', NEAT_PATH / 'models/gcBias_default.p', 'exists', None)
+        self.defs['gc_model'] = ('string', NEAT_PATH / 'models/gcBias_default.pickle.gz', 'exists', None)
         self.defs['paired_ended'] = ('boolean', False, None, None)
         self.defs['fragment_model'] = ('string', None, 'exists', None)
         self.defs['fragment_mean'] = ('float', None, 1, arbitrarily_large_number)

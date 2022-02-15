@@ -136,13 +136,13 @@ def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chrom
                     trinuc_ref_count[trinuc] = 0
                 trinuc_ref_count[trinuc] += sub_seq.count_overlap(trinuc)
         if save_trinuc_file:
-            with open(trinuc_counts, 'w') as countfile:
+            with gzip.open(trinuc_counts, 'w') as countfile:
                 print(f'{PROG} - Saving trinuc counts to file...')
                 countfile.write(json.dumps(trinuc_ref_count))
 
     else:
         print(f'{PROG} - Found counts file, {trinuc_counts}, using that.')
-        trinuc_ref_count = json.load(open(trinuc_counts))
+        trinuc_ref_count = json.load(gzip.open(trinuc_counts))
         if save_trinuc_file:
             print(f'{PROG} - Warning: existing trinucelotide file will not be changed or overwritten.')
 
@@ -426,7 +426,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
                'COMMON_VARIANTS': common_variants,
                'HIGH_MUT_REGIONS': high_mut_regions}
 
-    pickle.dump(out, open(out_file, "wb"))
+    pickle.dump(out, gzip.open(out_file, "w"))
 
 
 if __name__ == '__main__':
@@ -437,7 +437,7 @@ if __name__ == '__main__':
     parser.add_argument('mutations', type=str, metavar='mutation.vcf',
                         help="Mutation file for organism in VCF format")
     parser.add_argument('out', type=str, metavar='output_prefix',
-                        help="Name of output file (final model will append \'.p\')")
+                        help="Name of output file (final model will append \'.pickle.gz\')")
     parser.add_argument('-b', '--bed', type=str, help="Bed file with regions to use in the model")
     parser.add_argument('--outcounts', type=str, help="Path to trinucleotide counts file for reference. Note, this"
                                                       "file will not be used if a bed file is also used.")
@@ -501,13 +501,13 @@ if __name__ == '__main__':
         vcf_to_process = pathlib.Path(bed_file.intersect(vcf, wb=True).moveto('temp.vcf').fn)
         print(f'{PROG} - Created temp vcf for processing.')
 
-    outfile = pathlib.Path(f'{out_pickle}.p').resolve()
+    outfile = pathlib.Path(f'{out_pickle}.pickle.gz').resolve()
 
     if not outfile.parent.is_dir():
         print(f'{PROG} - Unknown parent directory for output: {outfile.resolve().parent}')
         sys.exit(1)
 
-    outcounts_file = pathlib.Path(f'{out_pickle}.counts').resolve()
+    outcounts_file = pathlib.Path(f'{out_pickle}.counts.gz').resolve()
 
     main(reference_index, vcf_to_process, vcf_columns, outcounts_file, show_trinuc, outfile,
          bed, is_human, skip_common)
