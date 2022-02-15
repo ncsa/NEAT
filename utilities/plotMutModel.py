@@ -15,6 +15,7 @@ import matplotlib.pyplot as mpl
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
 import argparse
+import gzip
 
 # mpl.rc('text',usetex=True)
 # mpl.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]

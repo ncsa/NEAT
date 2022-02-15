@@ -4,7 +4,7 @@ import pathlib
 import bisect
 import pickle
 import sys
-
+import gzip
 import numpy as np
 from Bio.Seq import Seq
 from Bio.Seq import MutableSeq
@@ -1072,16 +1072,18 @@ class ReadContainer:
 
 # parse mutation model pickle file
 def parse_input_mutation_model(model=None, which_default=1):
+
     if which_default == 1:
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_1]
     elif which_default == 2:
+        # for cancer
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_2]
     else:
         print('\nError: Unknown default mutation model specified\n')
         sys.exit(1)
 
     if model is not None:
-        pickle_dict = pickle.load(open(model, "rb"))
+        pickle_dict = pickle.load(gzip.open(model, "rb"))
         out_model[0] = pickle_dict['AVG_MUT_RATE']
         out_model[2] = 1. - pickle_dict['SNP_FREQ']
 
