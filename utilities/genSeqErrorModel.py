@@ -21,6 +21,7 @@ import matplotlib.pyplot as mpl
 import pathlib
 import pysam
 from functools import reduce
+import gzip
 
 # enables import from neighboring package
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -232,7 +233,7 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
 def main():
     parser = argparse.ArgumentParser(description='genSeqErrorModel.py')
     parser.add_argument('-i', type=str, required=True, metavar='<str>', help="* input_read1.fq (.gz) / input_read1.sam")
-    parser.add_argument('-o', type=str, required=True, metavar='<str>', help="* output.p")
+    parser.add_argument('-o', type=str, required=True, metavar='<str>', help="/output/prefix")
     parser.add_argument('-i2', type=str, required=False, metavar='<str>', default=None,
                         help="input_read2.fq (.gz)")
     parser.add_argument('-p', type=str, required=False, metavar='<str>', default=None, help="input_alignment.pileup")
@@ -295,12 +296,12 @@ def main():
     #
     #	finally, let's save our output model
     #
-    outfile = pathlib.Path(outfile).with_suffix(".p")
+    outfile = pathlib.Path(outfile).with_suffix(".pickle.gz")
     print('saving model...')
     if infile2 is None:
-        pickle.dump([init_q, prob_q, q_scores, off_q, avg_err, err_params], open(outfile, 'wb'))
+        pickle.dump([init_q, prob_q, q_scores, off_q, avg_err, err_params], gzip.open(outfile, 'wb'))
     else:
-        pickle.dump([init_q, prob_q, init_q2, prob_q2, q_scores, off_q, avg_err, err_params], open(outfile, 'wb'))
+        pickle.dump([init_q, prob_q, init_q2, prob_q2, q_scores, off_q, avg_err, err_params], gzip.open(outfile, 'wb'))
 
 
 if __name__ == '__main__':
