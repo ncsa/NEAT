@@ -2,8 +2,9 @@ import numpy as np
 import random
 import pickle
 import copy
+import gzip
 from source.probability import DiscreteDistribution
-from source.constants_and_models import DEFAULT_MODEL_1, DEFAULT_MODEL_2, TRI_IND, \
+from source.constants_and_models import DEFAULT_MUTATION_MODEL, DEFAULT_CANCER_MUTATION_MODEL, TRI_IND, \
     ALL_TRI, ALL_IND, ALLOWED_NUCL, NUC_IND
 from source.error_handling import premature_exit, print_and_log
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
@@ -42,15 +43,12 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
     """
 
     if not is_cancer:
-        out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_1]
-    elif is_cancer:
-        out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_2]
+        out_model = [copy.deepcopy(n) for n in DEFAULT_MUTATION_MODEL]
     else:
-        print_and_log('BUG: Unknown default mutation model specified.', 'critical')
-        premature_exit(1)
+        out_model = [copy.deepcopy(n) for n in DEFAULT_CANCER_MUTATION_MODEL]
 
     if model:
-        pickle_dict = pickle.load(open(model, "rb"))
+        pickle_dict = pickle.load(gzip.open(model, "rb"))
         out_model[0] = pickle_dict['AVG_MUT_RATE']
         out_model[2] = 1. - pickle_dict['SNP_FREQ']
 
@@ -113,21 +111,21 @@ class Models:
 
         self.cancer_model = None
         if options.cancer:
-            self.cancer_model = parse_input_mutation_model(options.cancer_model, 2)
+            self.cancer_model = parse_input_mutation_model(options.cancer_model, True)
 
         if options.debug:
             print_and_log("Mutation models loaded", 'debug')
 
         # Load sequencing error model
         mssg = "Problem loading Sequencing error model data @error_model"
-        self.sequencing_error_model = pickle_load_model(open(options.error_model, 'rb'), mssg)
+        self.sequencing_error_model = pickle_load_model(gzip.open(options.error_model, 'rb'), mssg)
 
         if options.debug:
             print_and_log('Sequencing error model loaded', 'debug')
 
         mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
                "This file should be the output of compute_gc.py'"
-        self.gc_model = pickle_load_model(open(options.gc_model, 'rb'), mssg)
+        self.gc_model = pickle_load_model(gzip.open(options.gc_model, 'rb'), mssg)
 
         if options.debug:
             print_and_log('GC Bias model loaded', 'debug')
@@ -135,11 +133,11 @@ class Models:
         self.fraglen_model = None
 
         if options.paired_ended:
-            if options.fraglen_model:
+            if options.fragment_model:
                 mssg = 'Problem loading the empirical fragment length model @fragment_model. Please check file and try' \
                        'again.'
                 print_and_log("Using empirical fragment length distribution", 'info')
-                potential_values, potential_prob = pickle_load_model(open(options.fraglen_model, 'rb'), mssg)
+                potential_values, potential_prob = pickle_load_model(open(options.fragment_model, 'rb'), mssg)
 
                 fraglen_values = []
                 fraglen_probability = []
@@ -159,8 +157,8 @@ class Models:
                     self.fraglen_model = DiscreteDistribution([1], [options.fragment_mean],
                                                               degenerate_val=options.fragment_mean)
                 else:
-                    potential_values = range(options.fragment_mean - 6 * options.fragment_st_dev,
-                                             options.fragment_mean + 6 * options.fragment_st_dev + 1)
+                    potential_values = range(max(0, int(options.fragment_mean - 6 * options.fragment_st_dev)),
+                                             int(options.fragment_mean + 6 * options.fragment_st_dev) + 1)
                     fraglen_values = []
                     for i in range(len(potential_values)):
                         if potential_values[i] > options.read_len:

@@ -1,13 +1,10 @@
 import random
 import copy
 import bisect
-<<<<<<< HEAD
-
-=======
 import pickle
 import sys
 import gzip
->>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1
+import pathlib
 import numpy as np
 from Bio.Seq import Seq
 from Bio.Seq import MutableSeq
@@ -15,8 +12,9 @@ from Bio.Seq import MutableSeq
 from source.error_handling import premature_exit, print_and_log
 from source.neat_cigar import CigarString
 from source.probability import DiscreteDistribution, poisson_list
-from source.constants_and_models import ALLOWED_NUCL, DEFAULT_MODEL_1, ALL_IND, COV_FRAGLEN_PERCENTILE, TRI_IND
-from source.constants_and_models import LARGE_NUMBER, MAX_MUTFRAC, IGNORE_TRINUC, MAX_ATTEMPTS, NUC_IND
+from source.constants_and_models import ALLOWED_NUCL, DEFAULT_MUTATION_MODEL, DEFAULT_CANCER_MUTATION_MODEL
+from source.constants_and_models import ALL_IND, COV_FRAGLEN_PERCENTILE, TRI_IND, ALL_TRI
+from source.constants_and_models import LARGE_NUMBER, MAX_ATTEMPTS, NUC_IND
 
 
 # TODO This whole file is in desperate need of refactoring, it is a mess
@@ -29,7 +27,7 @@ class SequenceContainer:
     """
 
     def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models,
-                 mut_rate=None, only_vcf=False, debug=False):
+                 mut_rate=None, only_vcf=False, debug=False, ignore_trinuc=False):
         # TODO check that sequence is a Seq object
         # initialize basic variables
         self.only_vcf = only_vcf
@@ -43,6 +41,7 @@ class SequenceContainer:
         self.fm_pos = [[] for _ in range(self.ploidy)]
         self.fm_span = [[] for _ in range(self.ploidy)]
         self.all_cigar = [[] for _ in range(self.ploidy)]
+        self.ignore_trinuc = ignore_trinuc
         self.debug = debug
 
         # Blacklist explanation:
@@ -146,7 +145,7 @@ class SequenceContainer:
 
     def update_mut_models(self, mut_models, mut_rate):
         if not mut_models:
-            default_model = [copy.deepcopy(DEFAULT_MODEL_1) for _ in range(self.ploidy)]
+            default_model = [copy.deepcopy(DEFAULT_MUTATION_MODEL) for _ in range(self.ploidy)]
             self.model_data = default_model[:self.ploidy]
         else:
             if len(mut_models) != self.ploidy:
@@ -471,7 +470,8 @@ class SequenceContainer:
         # Original code put an arbitrary cap of 0.3 on the mutation rate
         # MAX_MUTFRAC = 0.3
         # k_range = range(int(self.seq_len * MAX_MUTFRAC))
-        # I feel like we can improve on that by just setting the max equal to the input mutation rate x 10.
+        # I feel like we can improve on that by just making the max a function of the mutation rate.
+        # The default rate is 0.001, so MAX_MUTFRAC = default_rate * 3000.
         # We could also set the k_range = to the range of the sequence length, 
         # but that might slow it all down even more
         max_mutfrac = 0.3
@@ -497,7 +497,7 @@ class SequenceContainer:
         self.indels_to_add = [n.sample() for n in self.indel_poisson]
         self.snps_to_add = [n.sample() for n in self.snp_poisson]
         # initialize trinuc snp bias
-        if not IGNORE_TRINUC:
+        if not self.ignore_trinuc:
             self.update_trinuc_bias()
 
     def insert_mutations(self, input_list):
@@ -642,7 +642,7 @@ class SequenceContainer:
                 for attempt in range(MAX_ATTEMPTS):
                     # based on the mutation model for the specified ploid, choose a SNP location based on trinuc bias
                     # (if there are multiple ploids, choose one at random)
-                    if IGNORE_TRINUC:
+                    if self.ignore_trinuc:
                         event_pos = random.randint(self.win_buffer + 1, self.seq_len - 2)
                     else:
                         ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
@@ -922,8 +922,6 @@ class SequenceContainer:
 
         # read_out[i] = (pos, cigar, read_string, qual_string)
         return read_out
-<<<<<<< HEAD
-=======
 
 
 class ReadContainer:
@@ -977,11 +975,11 @@ class ReadContainer:
         self.off_q = off_q
         self.err_p = error_params
         # Selects a new nucleotide based on the error model
-        self.err_sse = [DiscreteDistribution(n, NUCL) for n in self.err_p[0]]
+        self.err_sse = [DiscreteDistribution(n, ALLOWED_NUCL) for n in self.err_p[0]]
         # allows for selection of indel length based on the parameters of the model
         self.err_sie = DiscreteDistribution(self.err_p[2], self.err_p[3])
         # allows for indel insertion based on the length above and the probability from the model
-        self.err_sin = DiscreteDistribution(self.err_p[5], NUCL)
+        self.err_sin = DiscreteDistribution(self.err_p[5], ALLOWED_NUCL)
 
         # adjust sequencing error frequency to match desired rate
         if rescaled_error is None:
@@ -1143,10 +1141,10 @@ class ReadContainer:
 def parse_input_mutation_model(model=None, which_default=1):
 
     if which_default == 1:
-        out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_1]
+        out_model = [copy.deepcopy(n) for n in DEFAULT_MUTATION_MODEL]
     elif which_default == 2:
         # for cancer
-        out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_2]
+        out_model = [copy.deepcopy(n) for n in DEFAULT_CANCER_MUTATION_MODEL]
     else:
         print('\nError: Unknown default mutation model specified\n')
         sys.exit(1)
@@ -1202,4 +1200,3 @@ def parse_input_mutation_model(model=None, which_default=1):
                 out_model[9][ALL_IND[trinuc]] = trinuc_mean
 
     return out_model
->>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1

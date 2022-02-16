@@ -6,14 +6,11 @@ import pathlib
 import random
 import logging
 from Bio.Seq import Seq
-<<<<<<< HEAD
-=======
 from Bio import SeqIO
->>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1
 from Bio.Seq import MutableSeq
 
 from source.error_handling import premature_exit
-from source.constants_and_models import ALLOWED_NUCL, OK_CHR_ORD
+from source.constants_and_models import ALLOWED_NUCL
 
 
 def index_ref(reference_path: str) -> list:
@@ -144,7 +141,7 @@ def read_ref(ref_path, ref_inds_i, n_handling, quiet=False):
                     my_dat = Seq(temp)
             else:
                 n_info['big'].extend(region)
-    elif n_handling[0] == 'allChr' and n_handling[2] in OK_CHR_ORD:
+    elif n_handling[0] == 'allChr' and n_handling[2] in ALLOWED_NUCL:
         for region in n_atlas:
             n_info['all'].extend(region)
             if region[1] - region[0] <= n_handling[1]:
