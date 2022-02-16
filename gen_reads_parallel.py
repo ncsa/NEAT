@@ -41,7 +41,7 @@ from source.vcf_func import parse_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
-from source.constants_and_models import ALLOWED_NUCL, OK_CHR_ORD
+from source.constants_and_models import ALLOWED_NUCL
 from source.neat_cigar import CigarString
 from source.Models import Models
 
@@ -216,7 +216,7 @@ def find_n_regions(sequence, run_options):
     n_atlas = []
     for i in range(len(sequence)):
         # Checks for invalid characters, most commonly N
-        if sequence[i] not in OK_CHR_ORD:
+        if sequence[i] not in ALLOWED_NUCL:
             if n_count == 0:
                 previous_n_index = i
             n_count += 1
@@ -249,9 +249,9 @@ class Options(SimpleNamespace):
         # Criteria 2: For files, criteria 2 will not be checked, so set to None for consistency. For numbers, this
         # should be the highest acceptable value (inclusive).
         # (type, default, criteria1 (low/'exists'), criteria2 (high/None))
-        arbitrarily_large_number = 10000000
+        arbitrarily_large_number = 1e8
         self.defs['reference'] = ('string', None, 'exists', None)
-        self.defs['partition_mode'] = ('string', 'chrom', 'exists', None)
+        self.defs['partition_mode'] = ('string', None, None, None)
         self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
         self.defs['threads'] = ('int', 1, 1, arbitrarily_large_number)
         self.defs['coverage'] = ('float', 10.0, 1, arbitrarily_large_number)
@@ -582,20 +582,19 @@ class SingleJob(multiprocessing.Process):
 
 
         def quick_mutate(dna_string: str, length: int):
-            original_sequence = dna_string
             mutated_sequence = ""
             quality_string = ""
-            for i in range(length):
+            range_to_iterate = min(length, len(dna_string))
+            for i in range(range_to_iterate):
                 if random.random() < 0.01:
-                    mutated_sequence = mutated_sequence + random.choice(ALLOWED_NUCL)
+                    mutated_sequence += random.choice(ALLOWED_NUCL)
                 else:
-                    mutated_sequence = mutated_sequence + original_sequence[i]
+                    mutated_sequence += dna_string[i]
                 quality_string += chr(random.randint(2, 40) + 33)
             return mutated_sequence, quality_string
 
         for i in range(len(self.partition)):
             # This is filler code until we do the actual processing.
-            print(len(self.partitioned_reference))
             tlen = 300
             pos = 1
             for read_num in range(1000):

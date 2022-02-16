@@ -147,7 +147,7 @@ class OutputFileWriter:
         if self.paired and self.write_fastq:
             self.fastq1_fn = out_prefix.parent / f'{out_prefix.name}_read1.fq.gz'
             self.fastq2_fn = out_prefix.parent / f'{out_prefix.name}_read2.fq.gz'
-            files_to_write.extend([self.fastq1_file, self.fastq2_file])
+            files_to_write.extend([self.fastq1_fn, self.fastq2_fn])
         elif self.write_fastq:
             self.fastq1_fn = out_prefix.parent / f'{out_prefix.name}.fq.gz'
             files_to_write.append(self.fastq1_fn)
