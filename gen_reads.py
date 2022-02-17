@@ -22,7 +22,8 @@ import pickle
 import numpy as np
 import argparse
 import pathlib
-# from Bio import SeqIO
+import gzip
+from Bio import SeqIO
 
 from source.input_checking import check_file_open, is_in_range
 from source.ref_func import index_ref, read_ref
@@ -214,14 +215,14 @@ def main(raw_args=None):
         print('Using default gc-bias model.')
         gc_bias_model = sim_path / 'models/gcBias_default.pickle.gz'
         try:
-            [gc_scale_count, gc_scale_val] = pickle.load(open(gc_bias_model, 'rb'))
+            [gc_scale_count, gc_scale_val] = pickle.load(gzip.open(gc_bias_model, 'rb'))
         except IOError:
             print("\nProblem reading the default gc-bias model.\n")
             sys.exit(1)
         gc_window_size = gc_scale_count[-1]
     else:
         try:
-            [gc_scale_count, gc_scale_val] = pickle.load(open(gc_bias_model, 'rb'))
+            [gc_scale_count, gc_scale_val] = pickle.load(gzip.open(gc_bias_model, 'rb'))
         except IOError:
             print("\nProblem reading the gc-bias model.\n")
             sys.exit(1)
@@ -233,7 +234,7 @@ def main(raw_args=None):
         if fraglen_model is not None:
             print('Using empirical fragment length distribution.')
             try:
-                [potential_values, potential_prob] = pickle.load(open(fraglen_model, 'rb'))
+                [potential_values, potential_prob] = pickle.load(gzip.open(fraglen_model, 'rb'))
             except IOError:
                 print('\nProblem loading the empirical fragment length model.\n')
                 sys.exit(1)
