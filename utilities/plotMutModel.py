@@ -95,7 +95,7 @@ color_ind = 0
 for fn in INP:
     my_col = get_color(color_ind, N_FILES)
     color_ind += 1
-    DATA_DICT = pickle.load(open(fn, "rb"), encoding="utf-8")
+    DATA_DICT = pickle.load(gzip.open(fn, "rb"), encoding="utf-8")
     [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT['AVG_MUT_RATE'], DATA_DICT['SNP_FREQ'], DATA_DICT['INDEL_FREQ']]
     mpl.bar([color_ind - 1], [AVG_MUT_RATE], 1., color=my_col)
 mpl.xlim([-1, N_FILES + 1])
@@ -109,7 +109,7 @@ color_ind = 0
 for fn in INP:
     my_col = get_color(color_ind, N_FILES)
     color_ind += 1
-    DATA_DICT = pickle.load(open(fn, "rb"), encoding='utf-8')
+    DATA_DICT = pickle.load(gzip.open(fn, "rb"), encoding='utf-8')
     [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT['AVG_MUT_RATE'], DATA_DICT['SNP_FREQ'], DATA_DICT['INDEL_FREQ']]
     mpl.bar([color_ind - 1], [SNP_FREQ], 1., color=my_col)
     mpl.bar([color_ind - 1], [1. - SNP_FREQ], 1., color=my_col, bottom=[SNP_FREQ], hatch='/')
@@ -126,7 +126,7 @@ leg_text = LAB
 for fn in INP:
     my_col = get_color(color_ind, N_FILES)
     color_ind += 1
-    DATA_DICT = pickle.load(open(fn, "rb"))
+    DATA_DICT = pickle.load(gzip.open(fn, "rb"))
     [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT['AVG_MUT_RATE'], DATA_DICT['SNP_FREQ'], DATA_DICT['INDEL_FREQ']]
     x = sorted(INDEL_FREQ.keys())
     y = [INDEL_FREQ[n] for n in x]
@@ -151,7 +151,7 @@ leg_text = LAB
 for fn in INP:
     my_col = get_color(color_ind, N_FILES)
     color_ind += 1
-    DATA_DICT = pickle.load(open(fn, "rb"))
+    DATA_DICT = pickle.load(gzip.open(fn, "rb"))
     TRINUC_MUT_PROB = DATA_DICT['TRINUC_MUT_PROB']
 
     x = range(color_ind - 1, len(TRINUC_MUT_PROB) * N_FILES, N_FILES)
@@ -179,7 +179,7 @@ mpl.savefig(OUP + '_plot2_trinucPriors.pdf')
 plot_num = 3
 for fn in INP:
     fig = mpl.figure(plot_num, figsize=(12, 10))
-    DATA_DICT = pickle.load(open(fn, "rb"))
+    DATA_DICT = pickle.load(gzip.open(fn, "rb"))
     TRINUC_TRANS_PROBS = DATA_DICT['TRINUC_TRANS_PROBS']
 
     xt2 = [m[3] for m in sorted([(n[0], n[2], n[1], n) for n in xt])]
@@ -227,7 +227,7 @@ track_byFile_byChr = [{} for n in INP]
 bp_total_byFile = [0 for n in INP]
 color_ind = 0
 for fn in INP:
-    DATA_DICT = pickle.load(open(fn, "rb"))
+    DATA_DICT = pickle.load(gzip.open(fn, "rb"))
     HIGH_MUT_REGIONS = DATA_DICT['HIGH_MUT_REGIONS']
     for region in HIGH_MUT_REGIONS:
         if region[0] not in track_byFile_byChr[color_ind]:
@@ -268,7 +268,7 @@ print('')
 set_of_vars = [set([]) for n in INP]
 color_ind = 0
 for fn in INP:
-    DATA_DICT = pickle.load(open(fn, "rb"))
+    DATA_DICT = pickle.load(gzip.open(fn, "rb"))
     COMMON_VARIANTS = DATA_DICT['COMMON_VARIANTS']
     for n in COMMON_VARIANTS:
         set_of_vars[color_ind].add(n)
