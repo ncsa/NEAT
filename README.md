@@ -1,11 +1,11 @@
-# The NEAT Project v3.0
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.0. Neat has now been updated with Python 3, and is moving toward PEP8 standards. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+# The NEAT Project v3.2
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.2. Neat has now been updated with Python 3, and is moving toward PEP8 standards. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
-NEAT-genReads is a fine-grained read simulator. GenReads simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation.
+NEAT-gen_reads is a fine-grained read simulator. GenReads simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation.
 
-This is an in-progress v2.0 of the software. For a previous stable release please see: [genReads1](https://github.com/zstephens/genReads1)
+This is an in-progress v3.2 of the software. For a stable release of the previous repo, please see: [genReads1](https://github.com/zstephens/genReads1) (or check out our v2.0 tag)
 
 To cite this work, please use:
 
@@ -37,16 +37,14 @@ Table of Contents
       * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
 
 
-
-
 ## Requirements
 
 * Python >= 3.6
-* biopython >= 1.78
+* biopython == 1.79
 * matplotlib >= 3.3.4 (optional, for plotting utilities)
 * matplotlib_venn >= 0.11.6 (optional, for plotting utilities)
 * pandas >= 1.2.1
-* numpy >= 1.19.5
+* numpy >= 1.22.2
 * pysam >= 0.16.0.1
 
 
