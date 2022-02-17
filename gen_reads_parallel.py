@@ -29,6 +29,7 @@ from Bio.Seq import Seq
 from Bio.Seq import MutableSeq
 from types import SimpleNamespace
 from cpu_load_generator import load_single_core, load_all_cores, from_profile
+from mpire import WorkerPool
 
 from source.constants_and_models import VERSION, LOW_COVERAGE_THRESHOLD
 from source.Models import parse_input_mutation_model, pickle_load_model
@@ -44,6 +45,7 @@ from source.SequenceContainer import SequenceContainer
 from source.constants_and_models import ALLOWED_NUCL
 from source.neat_cigar import CigarString
 from source.Models import Models
+from source.Tracker import Tracker
 
 # Constants
 NEAT_PATH = pathlib.Path(__file__).resolve().parent
@@ -77,27 +79,6 @@ def print_end_info(output_class, cancer_output_class, starting_time):
     print_and_log("NEAT finished successfully.", "info")
     print_and_log(f"Total runtime: {str(endtime-starting_time)}", 'info')
     print("-------------------------------------------------------------------------")
-
-
-def init_progress_info():
-    """
-    This initiates a printout of progress info to stdout. This won't log, because I don't think that will work.
-    """
-    sys.stdout.write('\rINFO - Simulating reads ... 0.0%')
-
-
-def print_progress_info(counter, total):
-    x = round(100*counter/total, 1)
-    x = min(x, 100.0)
-    sys.stdout.write(f'\rINFO - Simulating reads ... {x}%')
-    sys.stdout.flush()
-
-
-def finalize_progress_info():
-    sys.stdout.write('\rINFO - Simulating reads ... 100.001%')
-    sys.stdout.flush()
-    print(' - Done')
-    print_and_log('Simulation complete, writing files.', 'info')
 
 
 def print_configuration(args, options):
@@ -414,17 +395,11 @@ class Options(SimpleNamespace):
         # This next section just checks all the paired ended stuff
         flagged = False
         if self.args['paired_ended']:
-            print_and_log("\nPaired-ended mode", 'info')
             if self.args['fragment_model']:
-                print_and_log(f"Using fragment length model {self.args['fragment_model']} to produce paired ended reads")
                 self.args['fragment_mean'] = None
                 self.args['fragment_st_dev'] = None
             elif self.args['fragment_mean']:
-                if self.args['fragment_st_dev']:
-                    print_and_log(f"Using fragment length mean = {self.args['fragment_mean']}, "
-                                  f"standard deviation = {self.args['fragment_st_dev']} "
-                                  f"to produce paired ended reads.", 'info')
-                else:
+                if not self.args['fragment_st_dev']:
                     flagged = True
             else:
                 flagged = True
@@ -436,186 +411,6 @@ class Options(SimpleNamespace):
         self.args['n_handling'] = "ignore"
         if self.args['paired_ended']:
             self.args['n_handling'] = "random"
-
-
-# class representing a chromosome mutation
-class SingleJob(multiprocessing.Process):
-    def __init__(self, threadidx, ref_index, partition, chromosome, out_prefix_name,
-                 target_regions, discard_regions, mutation_rate_regions, input_variants,
-                 models, options):
-        multiprocessing.Process.__init__(self)
-        self.threadidx = threadidx
-        self.chrom = chromosome
-        if not partition:
-            print_and_log("No partition for this thread", "error")
-            premature_exit(1)
-        self.partition = partition
-        self.debug = options.debug
-        self.out_prefix_name = out_prefix_name
-        self.reference = ref_index[self.chrom]
-
-        # These tasks filter the inputs down to relevant areas
-        self.partitioned_reference = {}
-        if len(self.partition) == 1:
-            # In this case, we just use the whole sequence
-            self.partitioned_reference[(0, len(ref_index[self.chrom]))] = ref_index[self.chrom].seq
-        else:
-            for i in range(len(self.partition) - 1):
-                # fetch the coordinates
-                start = self.partition[i]
-                stop = self.partition[i+1]
-                # index is a tuple: (chromosome (string), region start (int), region end (int))
-                self.partitioned_reference[(start, stop)] = ref_index[self.chrom][start:stop]
-            # Grab the rest of the sequence as the final partition
-            self.partitioned_reference[(self.partition[-1], len(ref_index[self.chrom]))] = \
-                ref_index[self.chrom][self.partition[-1]:]
-
-        self.n_regions = {}
-
-        self.input_variants = pd.DataFrame()
-        if not input_variants.empty:
-            self.input_variants = input_variants[input_variants.index.isin([self.chrom])]
-
-        self.target_regions = pd.DataFrame()
-        if not target_regions.empty:
-            self.target_regions = target_regions[target_regions.index.isin([self.chrom])]
-
-        self.discard_regions = pd.DataFrame()
-        if not discard_regions.empty:
-            self.discard_regions = discard_regions[discard_regions.index.isin([self.chrom])]
-
-        self.mutation_rate_regions = pd.DataFrame()
-        if not mutation_rate_regions.empty:
-            self.mutation_rate_regions = mutation_rate_regions[mutation_rate_regions.index.isin([self.chrom])]
-
-        # TODO Seq error for each group
-        sequencing_error_class = SequencingErrors(options.read_len, models.sequencing_error_model,
-                                                  options.avg_seq_error, options.rescale_qualities,
-                                                  options.debug)
-
-        # TODO check into multiprocessing.Pool()
-
-        # Setting up temp files to write to
-        self.tmp_fasta_fn = None
-        self.tmp_fastq1_fn = None
-        self.tmp_fastq2_fn = None
-        self.tmp_sam_fn = None
-        self.tmp_vcf_fn = None
-
-        self.temporary_dir = tempfile.TemporaryDirectory()
-        self.tmp_dir_path = pathlib.Path(self.temporary_dir.name).resolve()
-        if options.produce_bam:
-            self.tmp_sam_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_records_{self.threadidx}.tsam"
-            if options.debug:
-                print_and_log(f'self.tmp_sam_fn = {self.tmp_sam_fn}', 'debug')
-        if options.produce_vcf:
-            self.tmp_vcf_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_{self.threadidx}.vcf"
-            if options.debug:
-                print_and_log(f'self.tmp_vcf_fn = {self.tmp_vcf_fn}', 'debug')
-        if options.produce_fasta:
-            self.tmp_fasta_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_{self.threadidx}.fasta"
-            if options.debug:
-                print_and_log(f'self.tmp_fasta_fn = {self.tmp_fasta_fn}', 'debug')
-        if options.produce_fastq:
-            self.tmp_fastq1_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_{self.threadidx}_read1.fq"
-            if options.debug:
-                print_and_log(f'self.tmp_fastq1_fn = {self.tmp_fastq1_fn}', 'debug')
-            if options.paired_ended:
-                self.tmp_fastq2_fn = self.tmp_dir_path / f"{self.out_prefix_name}_tmp_{self.threadidx}_read2.fq"
-                if options.debug:
-                    print_and_log(f'self.tmp_fastq2_fn  = {self.tmp_fastq2_fn }', 'debug')
-
-        # Setting up temp files for writing
-        self.tmp_fasta_outfile = None
-        self.tmp_fastq1_outfile = None
-        self.tmp_fastq2_outfile = None
-        self.tmp_sam_outfile = None
-        self.tmp_vcf_outfile = None
-        self.all_tmp_files = []
-
-        if self.tmp_fasta_fn:
-            self.tmp_fasta_outfile = open(self.tmp_fasta_fn, 'w')
-            self.all_tmp_files.append(self.tmp_fasta_outfile)
-        if self.tmp_fastq1_fn:
-            self.tmp_fastq1_outfile = open(self.tmp_fastq1_fn, 'w')
-            self.all_tmp_files.append(self.tmp_fastq1_outfile)
-        if self.tmp_fastq2_fn:
-            self.tmp_fastq2_outfile = open(self.tmp_fastq2_fn, 'w')
-            self.all_tmp_files.append(self.tmp_fastq2_outfile)
-        if self.tmp_sam_fn:
-            self.tmp_sam_outfile = open(self.tmp_sam_fn, 'w')
-            self.all_tmp_files.append(self.tmp_sam_outfile)
-        if self.tmp_vcf_fn:
-            self.tmp_vcf_outfile = open(self.tmp_vcf_fn, 'w')
-            self.all_tmp_files.append(self.tmp_vcf_outfile)
-
-        if self.threadidx == 1:
-            init_progress_info()
-
-    def close_temp_files(self):
-        for file_handle in self.all_tmp_files:
-            file_handle.close()
-
-    def close_temp_dir(self):
-        self.temporary_dir.cleanup()
-
-    def run(self):
-        if self.debug:
-            print_and_log(f"Process {self.threadidx} - simulation started", 'debug')
-
-        total_bp_spanned = len(self.reference)
-        print(f'total bp spanned: {total_bp_spanned}')
-        print(f'chrom: {self.chrom}')
-        current_progress = 0
-        have_printed100 = False
-
-        
-        # TODO idea what if we loop over the chromosome once and add mutations. Then do sequence errors during the reads
-        # TODO add structural variants here.
-
-        # Step 1: Create a VCF of variants (mutation and sequencing error variants)
-        # Step 2 (optional): create a fasta with those variants inserted
-        # Step 3 (optional): create a fastq from the mutated fasta
-        # Step 4 (optional): Create a golden bam with the reads aligned to the original reference
-
-
-
-
-        def quick_mutate(dna_string: str, length: int):
-            mutated_sequence = ""
-            quality_string = ""
-            range_to_iterate = min(length, len(dna_string))
-            for i in range(range_to_iterate):
-                if random.random() < 0.01:
-                    mutated_sequence += random.choice(ALLOWED_NUCL)
-                else:
-                    mutated_sequence += dna_string[i]
-                quality_string += chr(random.randint(2, 40) + 33)
-            return mutated_sequence, quality_string
-
-        for i in range(len(self.partition)):
-            # This is filler code until we do the actual processing.
-            tlen = 300
-            pos = 1
-            for read_num in range(1000):
-                qname = f'{self.out_prefix_name}-{self.chrom}-{read_num}'
-                flag = 0
-                rname = self.chrom
-                mapq = 70
-                rnext = '='
-                pnext = 1
-                # SAM is 1-based for annoying reasons, therefore we have to subtract 1 to get the correct positions
-                reference_sequence = \
-                    self.partitioned_reference[list(self.partitioned_reference.keys())[0]].seq[pos - 1:pos + tlen]
-                seq, qual = quick_mutate(reference_sequence, 101)
-                line_to_write = f'{qname}\t{flag}\t{rname}\t{pos}\t{mapq}\t{reference_sequence}' \
-                                f'\t{rnext}\t{pnext}\t{tlen}\t{seq}\t{qual}\n'
-                self.tmp_sam_outfile.write(line_to_write)
-                pos += 1
-        self.tmp_sam_outfile.close()
-        shutil.copy(self.tmp_sam_fn, f'/home/joshfactorial/Documents/temp_{self.threadidx}.tsam')
-        self.tmp_sam_outfile.close()
-
 
 # command line interface
 def main(raw_args=None):
@@ -748,15 +543,17 @@ def main(raw_args=None):
                         input_variants.drop(index, inplace=True)
                         continue
 
-                print_and_log(f'\nFound {len(input_variants)} valid variants for {chrom} in @include_vcf.', 'info')
+                if options.debug:
+                    print_and_log("Finished filtering @include_vcf file.", 'debug')
+
+                print_and_log(f'Found {len(input_variants)} valid variants after filtering for {chrom} in @include_vcf.', 'info')
                 if any(n_skipped):
                     print_and_log(f'variants skipped: {sum(n_skipped)}', 'info')
                     print_and_log(f' - [{str(n_skipped[0])}] ref allele did not match reference', 'info')
                     print_and_log(f' - [{str(n_skipped[1])}] attempted to insert into N-region', 'info')
                     print_and_log(f' - [{str(n_skipped[2])}] alt allele contained non-ACGT characters', 'info')
-
-        if options.debug:
-            print_and_log("Finished filtering @include_vcf file.", 'debug')
+                else:
+                    print_and_log(f'variants skipped: 0', 'info')
 
     # parse input targeted regions, if present
     if options.target_bed or options.discard_bed or options.mutation_bed:
@@ -846,21 +643,15 @@ def main(raw_args=None):
     # Initialize simulation
     thread_index = 0
     processes = []
+
+    """
+    REDO with mpire. The package can map a function to an iterable, so we will use the breaks as the iterable
+    And recast neat as a function (run_neat) that will take in the items from that iterable and process them.
+    I think the core of run_neat should be taking in a sequence and returning a mutated sequence. Currently, NEAT
+    """
     for chrom in breaks:
         thread_index += 1
-        processes.append(SingleJob(thread_index, reference_index, breaks[chrom], chrom, out_prefix_name,
-                                   target_regions_df, discard_regions_df, mutation_rate_df, input_variants,
-                                   models, options))
 
-    # Step 3 (CAVA 486 - 493) - Running simulation
-    for process in processes:
-        process.start()
-
-    for process in processes:
-        process.join()
-        if process.exitcode != 0:
-            print_and_log("\nError in child process.", 'error')
-            premature_exit(process.exitcode)
 
     # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
 
