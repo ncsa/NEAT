@@ -704,13 +704,21 @@ class SequenceContainer:
             reads_to_sample.append([r_pos, my_qual, my_errors, r_dat])
 
         else:
+            """
+            The point of all this is, within the window of the fragment length, pick a random place for the read
+            to start. Then it has to do some math based on the window to find where the mate ends (r_pos2)
+            """
+            # I think this is the position of the error
             r_pos1 = self.coverage_distribution[my_ploid][self.fraglen_ind_map[frag_len]].sample()
 
-            # EXPERIMENTAL
-            # coords_to_select_from = self.coverage_distribution[my_ploid][self.fraglens_ind_map[frag_len]].sample()
-            # r_pos1 = random.randint(coords_to_select_from[0],coords_to_select_from[1])
-
+            # I think this is the position on the fragment of the read's mate? I'm not sure what this is
             r_pos2 = r_pos1 + frag_len - self.read_len
+
+            """
+            self.sequences is two copies of the genome, when it starts
+            r_dat1 - the read based on the r_pos random starting point  
+            r_dat2 - this will end up being the last read of the reverse strand
+            """
             r_dat1 = self.sequences[my_ploid][r_pos1:r_pos1 + self.read_len]
             r_dat2 = self.sequences[my_ploid][r_pos2:r_pos2 + self.read_len]
             (my_qual1, my_errors1) = sequencing_model.get_sequencing_errors(r_dat1)
