@@ -324,10 +324,10 @@ def main(raw_args=None):
         for k in ref_list:
             if k not in input_regions:
                 n_in_ref_only += 1
-        for k in input_regions.keys():
-            if k not in ref_list:
+        for key in list(input_regions):
+            if key not in ref_list:
                 n_in_bed_only += 1
-                del input_regions[k]
+                del input_regions[key]
         if n_in_ref_only > 0:
             print('Warning: Reference contains sequences not found in targeted regions BED file.')
         if n_in_bed_only > 0:
