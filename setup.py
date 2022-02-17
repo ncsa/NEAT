@@ -4,7 +4,7 @@
 __author__ = 'Zach Stephens'
 __copyright__ = 'Copyright (c) 1999-2021'
 __license__ = 'BSD 3-Clause License'
-__version__ = '3.0'
+__version__ = '3.2'
 __email__ = 'zstephe2@illinois.edu'
 __status__ = 'prod'
 
