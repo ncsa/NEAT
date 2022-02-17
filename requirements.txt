@@ -1,5 +1,5 @@
 numpy>=1.19.5
-biopython~=1.79
+biopython==1.79
 matplotlib>=3.3.4
 matplotlib_venn==0.11.6
 pandas>=1.2.1
