@@ -936,7 +936,7 @@ class ReadContainer:
 
         model_path = pathlib.Path(error_model)
         try:
-            error_dat = pickle.load(open(model_path, 'rb'), encoding="bytes")
+            error_dat = pickle.load(gzip.open(model_path, 'rb'))
         except IOError:
             print("\nProblem opening the sequencing error model.\n")
             sys.exit(1)
@@ -953,6 +953,21 @@ class ReadContainer:
 
         # only 1 q-score model present, use same model for both strands
         elif len(error_dat) == 6:
+            """
+            init_q1 is the probability distribution, for each position of the read, of errors
+            prob_q1 is the probability distribution, at each position in 101 base read, of each of the potential quality scores
+            q_scores is just a list of possible q scores
+            off_q is the number to offset the quality score by (for ascii generation). 
+                  I don't know why this would be anything other than 33
+            avg_error is the average error for the dataset
+            error_params An unlabeled set of parameters for the models. I'll try to itemize them here:
+                error_params[0] - A nucleotide substitution matrix
+                error_params[1] - The chance that he error is an indel
+                error_params[2] - The probability distribution of the possible lengths of indels
+                error_params[3] - The possible lengths of indels
+                error_params[4] - The probability of an indel being an insertion
+                error_params[5] - Probability distribution for the 4 nucleotides
+            """
             [init_q1, prob_q1, q_scores, off_q, avg_error, error_params] = error_dat
             self.pe_models = False
 
@@ -974,11 +989,17 @@ class ReadContainer:
             self.q_err_rate[q] = 10. ** (-q / 10.)
         self.off_q = off_q
         self.err_p = error_params
-        # Selects a new nucleotide based on the error model
+        # This is the transition matrix calculated from the data, so it generates 4 discrete distributions,
+        # one for each row of the matrix, each having a probability
+        # of a given nucleotide transitioning to another (or staying the same) during a substitution event.
         self.err_sse = [DiscreteDistribution(n, ALLOWED_NUCL) for n in self.err_p[0]]
-        # allows for selection of indel length based on the parameters of the model
+        # A discrete distribution of the possible indel lengths and their respective probabilities.
+        # For example, if self.err_p[2] == [0.999, 0.001] and self.err_p[3] == [1, 2]
+        # then the discrete distribution will have a probability of 99% of selecting an indel of length one and 0.1%
+        # of selecting and indel of length 2 as the error.
         self.err_sie = DiscreteDistribution(self.err_p[2], self.err_p[3])
-        # allows for indel insertion based on the length above and the probability from the model
+        # This is simply the probability that each letter will be chosen. Some machines may have a bias toward A
+        # for example. Default is just to assume uniform.
         self.err_sin = DiscreteDistribution(self.err_p[5], ALLOWED_NUCL)
 
         # adjust sequencing error frequency to match desired rate
@@ -1004,6 +1025,7 @@ class ReadContainer:
             else:
                 print('Warning: Read length of error model (' + str(len(init_q1)) + ') does not match -R value (' + str(
                     self.read_len) + '), rescaling model...')
+                # This is basically a way to evenly spread the distribution across the number of bases in the read
                 self.q_ind_remap = [max([1, len(init_q1) * n // read_len]) for n in range(read_len)]
 
             # initialize probability distributions
