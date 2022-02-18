@@ -8,7 +8,6 @@ Finally, it will recombine the final output into one.
 Note that I'm planninng to hijack NEAT's features for this.
 """
 
-import os
 import sys
 import argparse
 import datetime
@@ -46,10 +45,8 @@ from source.constants_and_models import ALLOWED_NUCL
 from source.neat_cigar import CigarString
 from source.Models import Models
 from source.Tracker import Tracker
-
-# Constants
-NEAT_PATH = pathlib.Path(__file__).resolve().parent
-WORKING_DIR = pathlib.Path(os.getcwd())
+from source.run_neat import execute_neat, Job
+from source.Options import Options
 
 
 # useful functions for the rest
@@ -83,7 +80,8 @@ def print_end_info(output_class, cancer_output_class, starting_time):
 
 def print_configuration(args, options):
     """
-    Prints out file names and multithreading info
+    Combines the relevant parts of the input args and the options file to print out a
+    list of the configuration parameters. Useful for reproducibility.
     """
     print_and_log(f'Run Configuration...', 'INFO')
     potential_filetypes = ['vcf', 'bam', 'fasta', 'fastq']
@@ -136,13 +134,14 @@ def print_configuration(args, options):
         print_and_log(f'Using GC model: {options.gc_model}', 'INFO')
     if options.force_coverage:
         print_and_log(f'Ignoring models and forcing coverage value.', 'INFO')
+    print_and_log(f'Creating temp files in directory: {options.temp_dir}', 'info')
     if options.debug:
         print_and_log(f'Debug Mode Activated.', 'INFO')
     if options.rng_value:
         print_and_log(f'RNG seed value: {options.rng_value}', 'INFO')
 
 
-def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool) -> dict:
+def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool = False) -> dict:
     """
     Returns a dictionary with the chromosomes as keys
     For the chrom method, the value for each key will just  be "all"
@@ -154,34 +153,39 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool
     :param debug: Turns debug mode on, if True
     :return: a dictionary containing the chromosomes as keys and either "all" for valuse, or a list of indices
 
-    >>> index = {'chr1': "ACCATACAC"}
+    >>> index = {'chr1': "ACCATACACGGGCAACACACGTACACATTATACC"}
     >>> find_file_breaks(5, "subdivision", index, False)
-    {'chr1': [0, 1, 2, 3, 4]}
-
+    {'chr1': [range(0, 6), range(6, 12), range(12, 18), range(18, 24), range(24, 34)]}
+    >>> find_file_breaks(4, 'subdivision', index, False)
+    {'chr1': [range(0, 8), range(8, 16), range(16, 24), range(24, 34)]}
     >>> find_file_breaks(5, 'chrom', index, False)
-    {'chr1': [0]}
+    {'chr1': [range(0, 34)]}
+    >>> find_file_breaks(2, 'subdivision', index, False)
+    {'chr1': [range(0, 17), range(17, 34)]}
     """
     partitions = {}
     if mode.lower() == "chrom" or threads == 1:
         for contig in reference_index.keys():
-            partitions[contig] = [0]
+            partitions[contig] = [range(len(reference_index[contig]))]
     elif mode.lower() == "subdivision":
-        # Instead of this, this should try to subdivide the chrom into chunks
-        total_length = 0
-        length_dict = {}
-        for chrom in reference_index:
-            total_length += len(reference_index[chrom])
-            length_dict[chrom] = len(reference_index[chrom])
-
         # Add items one at a time to partition list until the total length is greater than delta.
-        index = 0
-        for item in length_dict:
-            delta = length_dict[item] // threads
-            if item not in partitions:
-                partitions[item] = []
-            for i in range(threads):
-                partitions[item].append(index)
-                index += delta
+        for contig in reference_index:
+            contig_length = len(reference_index[contig])
+            delta = contig_length // threads
+
+            if contig not in partitions:
+                partitions[contig] = []
+
+            breakpoints = list(range(0, contig_length, delta))
+
+            # Since we know the first index will be zero, we can skip the first item in the breakpoints list
+            # And since we want the last partition to grab the rest, we'll stop short and add it manually
+            for index in breakpoints:
+                if index + delta <= contig_length:
+                    partitions[contig].append(range(index, index + delta))
+                else:
+                    # Have to extend the last one so we don't get a tiny read we can't process
+                    partitions[contig][-1] = range(partitions[contig][-1].start, contig_length)
 
         if debug:
             print_and_log(f'breaks = {partitions}', 'debug')
@@ -209,210 +213,6 @@ def find_n_regions(sequence, run_options):
             n_count = 0
 
 
-# class representing the options
-class Options(SimpleNamespace):
-    def __init__(self, config_file):
-        self.defs = {}
-        self.config_file = config_file
-
-        # Options flags for gen_reads. This metadata dict gives the type of variable (matching the python types)
-        # the default value ('.' means no default), and checks. There are four fields: option type (corresponding to
-        # a python type), default (or None, if no default), criteria 1 and criteria 2. Any items without values should
-        # use None as a placeholder.
-        #
-        # Option Type: Current possible valuse are string, int, float, and boolean. These correspond to str, int, float,
-        # and bool Python types. For files and directories, use string type.
-        #
-        # Criteria 1: There are two modes of checking: files and numbers. For files, criteria 1 should be set to
-        # 'exists' to check file existence or None to skip a check (as with temp_dir, because that is not a user input.
-        # For numbers, criteria 1 should be the lowest acceptable value (inclusive) for that variable.
-        #
-        # Criteria 2: For files, criteria 2 will not be checked, so set to None for consistency. For numbers, this
-        # should be the highest acceptable value (inclusive).
-        # (type, default, criteria1 (low/'exists'), criteria2 (high/None))
-        arbitrarily_large_number = 1e8
-        self.defs['reference'] = ('string', None, 'exists', None)
-        self.defs['partition_mode'] = ('string', None, None, None)
-        self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
-        self.defs['threads'] = ('int', 1, 1, arbitrarily_large_number)
-        self.defs['coverage'] = ('float', 10.0, 1, arbitrarily_large_number)
-        self.defs['error_model'] = ('string', NEAT_PATH / 'models/errorModel_default.pickle.gz', 'exists', None)
-        self.defs['avg_seq_error'] = ('float', None, 0, 0.3)
-        self.defs['rescale_qualities'] = ('boolean', False, None, None)
-        self.defs['ploidy'] = ('int', 2, 1, 100)
-        self.defs['include_vcf'] = ('string', None, 'exists', None)
-        self.defs['target_bed'] = ('string', None, 'exists', None)
-        self.defs['discard_bed'] = ('string', None, 'exists', None)
-        self.defs['off_target_coverage'] = ('float', 0.0, 0, 1)
-        self.defs['discard_offtarget'] = ('boolean', False, None, None)
-        self.defs['mutation_model'] = ('string', None, 'exists', None)
-        self.defs['mutation_rate'] = ('float', None, 0, 0.3)
-        self.defs['mutation_bed'] = ('string', None, 'exists', None)
-        self.defs['n_handling'] = ('string', None, None, None)
-
-        # Params for cancer (not implemented yet)
-        self.defs['cancer'] = ('boolean', False, None, None)
-        self.defs['cancer_model'] = ('string', None, 'exists', None)
-        self.defs['cancer_purity'] = ('float', 0.8, 0.0, 1.0)
-
-        self.defs['n_cutoff'] = ('int', None, 1, 40)
-        self.defs['gc_model'] = ('string', NEAT_PATH / 'models/gcBias_default.pickle.gz', 'exists', None)
-        self.defs['paired_ended'] = ('boolean', False, None, None)
-        self.defs['fragment_model'] = ('string', None, 'exists', None)
-        self.defs['fragment_mean'] = ('float', None, 1, arbitrarily_large_number)
-        self.defs['fragment_st_dev'] = ('float', None, 1, arbitrarily_large_number)
-        self.defs['produce_bam'] = ('boolean', False, None, None)
-        self.defs['produce_vcf'] = ('boolean', False, None, None)
-        self.defs['produce_fasta'] = ('boolean', False, None, None)
-        self.defs['produce_fastq'] = ('boolean', True, None, None)
-        self.defs['force_coverage'] = ('boolean', False, None, None)
-        self.defs['temp_dir'] = ('string', WORKING_DIR, None, None)
-        self.defs['debug'] = ('boolean', False, None, None)
-        self.defs['rng_value'] = ('int', None, None, None)
-
-        # Cancer options (not yet implemented)
-        self.cancer = False
-        self.cancer_model = None
-        self.cancer_purity = 0.8
-
-        # Read the config file
-        self.args = {}
-        self.read()
-        # Some options checking to clean up the args dict.
-        self.check_options()
-
-        self.__dict__.update(self.args)
-
-    def set_value(self, key, value):
-        if key in self.defs.keys():
-            self.check_and_log_error(key, value, self.defs[key][2], self.defs[key][3])
-        self.args[key] = value
-        self.__dict__.update(self.args)
-
-    @staticmethod
-    def check_and_log_error(keyname, value_to_check, lowval, highval):
-        if lowval != "exists" and highval:
-            if not (lowval <= value_to_check <= highval):
-                print_and_log(f'@{keyname} must be between {lowval} and {highval}.', 'error')
-                premature_exit(1)
-        elif lowval == "exists":
-            if not pathlib.Path(value_to_check).is_file():
-                print_and_log(f'The file given to @{keyname} does not exist', 'error')
-                premature_exit(1)
-        elif not lowval and not highval:
-            # This indicates a boolean or dir and we have nothing to check
-            pass
-        else:
-            print_and_log(f'Problem criteria ({lowval, highval}) in Options definitions for {keyname}.', 'critical')
-            premature_exit(1)
-
-    def read(self):
-        for line in open(self.config_file):
-            line = line.strip()
-            if line.startswith('@'):
-                line_split = [x.strip().strip('@') for x in line.split('=')]
-                # If set to a period, then ignore, by convention.
-                if line_split[1] == '.':
-                    continue
-                key = line_split[0]
-                # We can ignore any keys users added but haven't coded for. It must be in the defs dict to be examined.
-                if key in list(self.defs.keys()):
-                    type_of_var, default, criteria1, criteria2 = self.defs[key]
-                    # if it's already set to the default value, ignore.
-                    if line_split[1] == default:
-                        continue
-
-                    # Now we check that the type is correct and it is in range, depending on the type defined for it
-                    # If it passes that it gets put into the args dictionary.
-                    if type_of_var == 'string':
-                        temp = line_split[1]
-                        self.check_and_log_error(key, temp, criteria1, criteria2)
-                        self.args[key] = temp
-                    elif type_of_var == 'int':
-                        try:
-                            temp = int(line_split[1])
-                        except ValueError:
-                            print_and_log(f'The value for {key} must be an integer. No decimals allowed.', 'error')
-                            premature_exit(1)
-                        self.check_and_log_error(key, temp, criteria1, criteria2)
-                        self.args[key] = temp
-                    elif type_of_var == 'float':
-                        try:
-                            temp = float(line_split[1])
-                        except ValueError:
-                            print_and_log(f'The value for {key} must be a float.', 'error')
-                            premature_exit(1)
-                        self.check_and_log_error(key, temp, criteria1, criteria2)
-                        self.args[key] = temp
-                    elif type_of_var == 'boolean':
-                        try:
-                            if line_split[1].lower() == 'true':
-                                self.args[key] = True
-                            elif line_split[1].lower() == 'false':
-                                self.args[key] = False
-                            else:
-                                raise ValueError
-                        except ValueError:
-                            print_and_log(f'\nBoolean key @{key} requires a value of "true" or "false" '
-                                          f'(case insensitive).', 'error')
-                            premature_exit(1)
-                    else:
-                        print_and_log(f'BUG: Undefined type in the Options dictionary: {type_of_var}.', 'critical')
-                        premature_exit(1)
-        # Anything we skipped in the config gets the default value
-        # No need to check since these are already CAREFULLY vetted (right!?)
-        for key, (_, default, criteria1, criteria2) in self.defs.items():
-            if key not in list(self.args.keys()):
-                self.args[key] = default
-
-    def check_options(self) -> int:
-        """
-        Some sanity checks and corrections to the options.
-        """
-
-        if self.args['produce_fasta']:
-            print_and_log("\nFASTA mode active.", 'info')
-            print_and_log("NOTE: At the moment, NEAT can produce a FASTA or FASTQ files, not both.", 'info')
-            # Turn off fastq and paired-ended mode for now
-            self.args['produce_fastq'] = False
-            self.args['paired_ended'] = False
-            self.args['fragment_model'] = None
-            self.args['fragment_mean'] = None
-            self.args['fragment_st_dev'] = None
-        if not self.args['produce_bam'] and not self.args['produce_vcf'] \
-                and not self.args['produce_fasta'] and not self.args['produce_fastq']:
-            print_and_log('No files would be produced, as all file types are set to false', 'error')
-            premature_exit(1)
-        if not self.args['produce_fastq']:
-            print_and_log("Bypassing FASTQ generation.", 'info')
-        if self.args['produce_vcf'] and (not self.args['produce_fastq'] and not self.args['produce_bam']
-                                         and not self.args['produce_fasta']):
-            print_and_log('Only producing VCF output.', 'info')
-        if self.args['produce_bam'] and (not self.args['produce_fastq'] and not self.args['produce_vcf']
-                                         and not self.args['produce_fasta']):
-            print_and_log('Only producing BAM output.', 'info')
-
-        # This next section just checks all the paired ended stuff
-        flagged = False
-        if self.args['paired_ended']:
-            if self.args['fragment_model']:
-                self.args['fragment_mean'] = None
-                self.args['fragment_st_dev'] = None
-            elif self.args['fragment_mean']:
-                if not self.args['fragment_st_dev']:
-                    flagged = True
-            else:
-                flagged = True
-        if flagged:
-            print_and_log("For paired ended mode, you need either a "
-                          "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
-            premature_exit(1)
-
-        self.args['n_handling'] = "ignore"
-        if self.args['paired_ended']:
-            self.args['n_handling'] = "random"
-
-# command line interface
 def main(raw_args=None):
     """
     Parallel main function. Takes args and parses the ones needed to start multiprocessing. The rest will get passed
@@ -640,18 +440,19 @@ def main(raw_args=None):
     if options.debug:
         print_and_log("Input file partitioned.", 'debug')
 
-    # Initialize simulation
-    thread_index = 0
-    processes = []
-
     """
     REDO with mpire. The package can map a function to an iterable, so we will use the breaks as the iterable
     And recast neat as a function (run_neat) that will take in the items from that iterable and process them.
-    I think the core of run_neat should be taking in a sequence and returning a mutated sequence. Currently, NEAT
+    I think the core of run_neat should be taking in a sequence and returning a mutated sequence. The core of NEAT
+    at the moment tries to be everything to everyone.
     """
-    for chrom in breaks:
-        thread_index += 1
+    jobs_to_process = []
+    for contig in breaks:
+        for section in breaks[contig]:
+            jobs_to_process.append(Job(section, reference_index, out_prefix_name, target_regions_df, discard_regions_df,
+                                       mutation_rate_df, input_variants, models, options))
 
+    execute_neat(options, jobs_to_process)
 
     # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
 
