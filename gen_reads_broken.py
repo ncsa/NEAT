@@ -50,8 +50,8 @@ def main(raw_args=None):
     ////////////    PARSE INPUT ARGUMENTS    ////////////
     //////////////////////////////////////////////////"""
 
-    parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+    parser = argparse.ArgumentParser(description='NEAT-genReads V3.2',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="Path to reference fasta")
     parser.add_argument('-R', type=int, required=True, metavar='read length',
                         help="The desired read length for fastq output")

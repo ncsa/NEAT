@@ -1074,6 +1074,11 @@ class ReadContainer:
         """
 
         # TODO this is one of the slowest methods in the code. Need to investigate how to speed this up.
+        """
+        Having explored how the sequence error models are built, I understand now why this is so slow. It's sampling 
+        from multidimensinal lists. Pandas would be faster, if we need to keep all that data. I feel like these models
+        could be parameterized instead of passed in as discrete lists of lists of lists.
+        """
         q_out = [0] * self.read_len
         s_err = []
 
