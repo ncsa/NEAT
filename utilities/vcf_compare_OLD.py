@@ -14,21 +14,16 @@ Date:			January 20, 2015
 Contact:		zstephe2@illinois.edu
 
 Bug Fixes:      Jenna Kalleberg
-Date:           January 21, 2022
+Date:           January 26, 2022
 Contac:         jenna.kalleberg@mail.missouri.edu
 
 ************************************************** """
 
-import sys
-import copy
-import time
-import bisect
-import re
+import sys, copy, time, bisect, re, argparse
 import numpy as np
 import argparse
 ## DEBUG NOTE: updated libraries
-import gzip
-import shutil
+import gzip, shutil, csv
 from pathlib import Path
 from Bio.Seq import MutableSeq
 
@@ -65,8 +60,7 @@ parser.add_argument('-c', help='Coverage Filter Threshold', dest='dp_thresh', de
 parser.add_argument('-a', help='Allele Freq Filter Threshold', dest='af_thresh', default=0.3, action='store',
                     metavar='<float>')
 
-parser.add_argument('--vcf-out', help="Output Match/FN/FP variants", dest='vcf_out', default=False,
-                    action='store_true')
+parser.add_argument('--vcf-out', help="Output Match/FN/FP variants", dest='vcf_out', default=False, action='store_true')
 parser.add_argument('--no-plot', help="No plotting", dest='no_plot', default=False, action='store_true')
 parser.add_argument('--incl-homs', help="Include homozygous ref calls", dest='include_homs', default=False,
                     action='store_true')
@@ -134,10 +128,16 @@ def gunzip_shutil(source_filepath, dest_filepath, block_size=65536):
       Original Source: https://stackoverflow.com/questions/52332897/how-to-extract-a-gz-file-in-python
     """
     with gzip.open(source_filepath, 'rb') as s_file, \
-            open(dest_filepath, 'wb') as d_file:
-        shutil.copyfileobj(s_file, d_file, block_size)
+        open(dest_filepath, 'wb') as d_file:
+            shutil.copyfileobj(s_file, d_file, block_size)
 
-## DEBUG NOTE: decompress golden_vcf if necessary
+## DEBUG NOTE: enabled compression of vcf files automatically
+def gzip_shutil(source_filepath, dest_filepath, block_size=65536):
+    with open(source_filepath, 'rb') as s_file, \
+        gzip.open(dest_filepath, 'wb') as d_file:
+            shutil.copyfileobj(s_file, d_file, block_size)
+
+## DEBUG NOTE: decompress golden_vcf, if necessary
 if '.gz' in golden_vcf:
     print("decompressing .gz input file {}".format(golden_vcf))
     golden_vcf_path = Path(golden_vcf)
@@ -148,8 +148,10 @@ if '.gz' in golden_vcf:
     gunzip_shutil(golden_vcf, outpath_file)
     golden_vcf = outpath_file
     print("Success: Input file decompressed to {}".format(golden_vcf))
+else:
+    workflow_vcf_path = False
 
-## DEBUG NOTE: decompress workflow_vcf if necessary
+## DEBUG NOTE: decompress workflow_vcf, if necessary
 if '.gz' in workflow_vcf:
     print("decompressing .gz input file {}".format(workflow_vcf))
     workflow_vcf_path = Path(workflow_vcf)
@@ -160,6 +162,8 @@ if '.gz' in workflow_vcf:
     gunzip_shutil(workflow_vcf, outpath_file)
     workflow_vcf = outpath_file
     print("Success: Input file decompressed to {}.".format(workflow_vcf))
+else:
+    workflow_vcf_path = False
 
 if no_plot is False:
     import matplotlib
@@ -194,13 +198,13 @@ def parse_line(splt, col_dict, col_samp):
         return None
     if not (include_fail) and (splt[col_dict['FILTER']] != 'PASS' and splt[col_dict['FILTER']] != '.'):
         return None
-
+    
     #	default vals
     cov = None
     qual = DEFAULT_QUAL
     alt_alleles = []
     alt_freqs = [None]
-
+    
     #	any alt alleles?
     alt_split = aa.split(',')
     if len(alt_split) > 1:
@@ -219,7 +223,7 @@ def parse_line(splt, col_dict, col_samp):
                 cov = int(splt[col_samp[0]].split(':')[dp_ind])
         if cov is not None:
             break
-
+    
     #	check INFO for AF first
     af = None
     if 'INFO' in col_dict and ';AF=' in ';' + splt[col_dict['INFO']]:
@@ -231,7 +235,7 @@ def parse_line(splt, col_dict, col_samp):
         if ':AF:' in format:
             af_ind = splt[col_dict['FORMAT']].split(':').index('AF')
             af = splt[col_samp[0]].split(':')[af_ind]
-
+    
     if af is not None:
         af_splt = af.split(',')
         while (len(af_splt) < len(alt_alleles)):  # are we lacking enough AF values for some reason?
@@ -244,7 +248,7 @@ def parse_line(splt, col_dict, col_samp):
     #	get QUAL if it's interesting
     if 'QUAL' in col_dict and splt[col_dict['QUAL']] != '.':
         qual = float(splt[col_dict['QUAL']])
-
+    
     return (cov, qual, alt_alleles, alt_freqs)
 
 def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
@@ -267,24 +271,21 @@ def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
             if len(col_dict) == 0:
                 print('\n\nError: VCF has no header?\n' + vcf_filename + '\n\n')
                 sys.exit(1)
+            
             splt = line[:-1].split('\t')
             if splt[0] == ref_name:
-
                 var = (int(splt[1]), splt[3], splt[4])
                 targ_ind = bisect.bisect(targ_regions_FL, var[0])
-
                 if targ_ind % 2 == 1:
                     targ_Len = targ_regions_FL[targ_ind] - targ_regions_FL[targ_ind - 1]
                     if (bedfile is not None and targ_Len >= min_region_len) or bedfile is None:
-
                         pl_out = parse_line(splt, col_dict, col_samp)
                         if pl_out is None:
                             var_filtered += 1
                             continue
                         (cov, qual, aa, af) = pl_out
-
+                        
                         if var not in v_hashed:
-
                             v_pos = var[0]
                             if v_pos in v_pos_hash:
                                 if len(aa) == 0:
@@ -292,7 +293,7 @@ def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
                                 aa.extend([n[2] for n in v_hashed.keys() if n[0] == v_pos])
                                 var_merged += 1
                             v_pos_hash[v_pos] = 1
-
+                            
                             if len(aa):
                                 all_vars = [(var[0], var[1], n) for n in aa]
                                 for i in range(len(all_vars)):
@@ -301,32 +302,34 @@ def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
                                     #	v_alts[all_vars[i]] = []
                                     # v_alts[all_vars[i]].extend(all_vars)
                                     v_alts[all_vars[i]] = all_vars
+                            
                             else:
                                 v_hashed[var] = 1
-
+                            
                             if cov is not None:
                                 v_cov[var] = cov
                             v_af[var] = af[0]  # only use first AF, even if multiple. fix this later?
                             v_qual[var] = qual
                             v_targ_len[var] = targ_Len
                             line_unique += 1
-
+                        
                         else:
                             hash_coll += 1
-
                     else:
                         n_below_min_r_len += 1
-        else:
-            if line[1] != '#':
-                cols = line[1:-1].split('\t')
-                for i in range(len(cols)):
-                    if 'FORMAT' in col_dict:
-                        col_samp.append(i)
-                    col_dict[cols[i]] = i
-                if vcf_out and out_bool:
-                    out_bool = False
-                    out_file.write(line)
-
+        
+        elif line[1] != '#': 
+            cols = line[1:-1].split('\t')
+            for i in range(len(cols)):
+                if 'FORMAT' in col_dict:
+                    col_samp.append(i)
+                col_dict[cols[i]] = i
+            ## DEBUG NOTE: This code ends up writing the field headers 
+            ##             for every single contig in the ref, yikes!
+            # if vcf_out and out_bool:
+            #     print(line)
+                # out_bool = False
+                # out_file.write(line)
     return (
         v_hashed, v_alts, v_cov, v_af, v_qual, v_targ_len, n_below_min_r_len, line_unique, var_filtered, var_merged,
         hash_coll)
@@ -577,7 +580,7 @@ def main():
             for i in range(len(fp_variants)):
                 pos = fp_variants[i][0]
                 regions_to_check.append((max([pos - EV_BPRANGE - 1, 0]), min([pos + EV_BPRANGE, len(my_dat) - 1])))
-
+            
             for n in regions_to_check:
                 ref_section = my_dat[n[0]:n[1]]
 
@@ -595,7 +598,7 @@ def main():
                     d_pos = m[0] - n[0] + adj
                     alt_section = alt_section[:d_pos - 1] + m[2] + alt_section[d_pos - 1 + lr:]
                     adj += la - lr
-
+                
                 nf_within = []
                 for j in range(len(not_found)):
                     m = not_found[j]
@@ -610,7 +613,7 @@ def main():
                     d_pos = m[0] - n[0] + adj
                     alt_section2 = alt_section2[:d_pos - 1] + m[2] + alt_section2[d_pos - 1 + lr:]
                     adj += la - lr
-
+                
                 if alt_section == alt_section2:
                     for (m, i) in FP_within:
                         if i not in del_list_i:
@@ -618,7 +621,7 @@ def main():
                     for (m, j) in nf_within:
                         if j not in del_list_j:
                             del_list_j.append(j)
-
+            
             n_equiv = 0
             for i in sorted(list(set(del_list_i)), reverse=True):
                 del fp_variants[i]
@@ -626,7 +629,7 @@ def main():
                 del not_found[j]
                 n_equiv += 1
             n_perfect += n_equiv
-
+        
         #
         #	Tally up errors and whatnot
         #
@@ -639,15 +642,14 @@ def main():
             zn_e += n_equiv
         if bedfile is not None:
             zb_m += correct_below_min_R_len
-
+        
         #
         #	try to identify a reason for FN variants:
         #
-
+        
         venn_data = [[0, 0, 0] for n in not_found]  # [i] = (unmappable, low cov, low het)
         for i in range(len(not_found)):
             var = not_found[i]
-
             no_reason = True
 
             #	mappability?
@@ -670,7 +672,7 @@ def main():
                     if c < dp_thresh:
                         venn_data[i][1] = 1
                         no_reason = False
-
+            
             #	heterozygous genotype messing things up?
             # if var in correct_AF:
             #	a = correct_AF[var]
@@ -685,7 +687,7 @@ def main():
             #	no reason?
             if no_reason:
                 venn_data[i][2] += 1
-
+        
         for i in range(len(not_found)):
             if venn_data[i][0]:
                 set1.append(i + var_adj)
@@ -702,47 +704,77 @@ def main():
         fp_variants = sorted(fp_variants)
         if vcf_out:
             for line in open(golden_vcf, 'r'):
-                if line[0] != '#':
+                ## DEBUG NOTE: Without the ## lines, unable to open output with bcftools
+                if line[0] == '#' and line[1] == '#':
+                    vcfo2.write(line)
+                ## DEBUG NOTE: Ensure that field header line is only written once
+                elif line[0] == '#' and line[1] != '#':
+                    vcfo2.write(line)
+                # Writing the CHROM POSITION row data 
+                elif line[0] != '#':
                     splt = line.split('\t')
                     if splt[0] == ref_name:
                         var = (int(splt[1]), splt[3], splt[4])
                         if var in not_found:
                             vcfo2.write(line)
             for line in open(workflow_vcf, 'r'):
-                if line[0] != '#':
+                ## DEBUG NOTE: Without the ## lines, unable to open output with bcftools
+                if line[0] == '#' and line[1] == '#':
+                    vcfo2.write(line)
+                ## DEBUG NOTE: Ensure that field header line is only written once
+                elif line[0] == '#' and line[1] != '#':
+                    vcfo3.write(line) 
+                elif line[0] != '#':
                     splt = line.split('\t')
                     if splt[0] == ref_name:
                         var = (int(splt[1]), splt[3], splt[4])
                         if var in fp_variants:
                             vcfo3.write(line)
-
         print('{0:.3f} (sec)'.format(time.time() - tt))
-
+    
     #
     #	close vcf output
     #
     print('')
     if vcf_out:
-        print(out_prefix + '_FN.vcf')
-        print(out_prefix + '_FP.vcf')
+        FN_vcf = out_prefix + '_FN.vcf'
+        FP_vcf = out_prefix + '_FP.vcf'
+        print(f'SUCCESS: saving false negative positions here ({FN_vcf})')
+        print(f'SUCCESS: saving false positive positions here ({FP_vcf})')
         vcfo2.close()
         vcfo3.close()
-
+        ## Compress the FN output vcfs
+        zipFN_vcf = FN_vcf + '.gz'
+        gzip_shutil(FN_vcf, zipFN_vcf)
+        ## Delete the old uncompressed vcf
+        FN_vcf_path = Path(FN_vcf)
+        if FN_vcf_path.exists():
+            print(f"SUCCESS: deleting duplicate, unzipped vcf ({str(FN_vcf_path.name)})")
+            FN_vcf_path.unlink()
+        ## Compress the FP output vcf
+        zipFP_vcf = FP_vcf + '.gz'
+        gzip_shutil(FP_vcf, zipFP_vcf)
+        ## Delete the old uncompressed vcf
+        FP_vcf_path = Path(FP_vcf)
+        if FP_vcf_path.exists():
+            print(f"SUCCESS: deleting duplicate, unzipped vcf ({str(FP_vcf_path.name)})")
+            FP_vcf_path.unlink()
+    ## NOTE: Do not uncomment if running multiple comparisions
+    #        with the same golden file
+    # if '.gz' in str(golden_vcf_path):
+    #     outfile = golden_vcf_path.stem
+    #     outpath = golden_vcf_path.parent / outfile
+    #     print("deleting duplicate file created {}".format(str(outfile)))
+    #     outpath.unlink()
+    
     ##
     ## DEBUG NOTE: If file was uncompressed, delete duplicate file 
     ## 
-    if '.gz' in str(golden_vcf_path):
-        outfile = golden_vcf_path.stem
-        outpath = golden_vcf_path.parent / outfile
-        print("deleting duplicate file created {}".format(str(outfile)))
-        outpath.unlink()
-    
-    if '.gz' in str(workflow_vcf_path):
+    if workflow_vcf_path and '.gz' in str(workflow_vcf_path):
         outfile = workflow_vcf_path.stem
         outpath = workflow_vcf_path.parent / outfile
-        print("deleting duplicate file created {}".format(str(outfile)))
+        print(f"SUCCESS: deleting duplicate, unzipped vcf file ({str(outfile)})")
         outpath.unlink() 
-
     #
     #	plot some FN stuff
     #
@@ -751,7 +783,6 @@ def main():
         set1 = set(set1)
         set2 = set(set2)
         set3 = set(set3)
-
         if len(set1):
             s1 = 'Unmappable'
         else:
@@ -765,7 +796,6 @@ def main():
             s3 = 'Unknown'
         else:
             s3 = ''
-
         mpl.figure(0)
         tstr1 = 'False Negative Variants (Missed Detections)'
         # tstr2 = str(n_detected)+' / '+str(zn_f)+' FN variants categorized'
@@ -778,9 +808,40 @@ def main():
         mpl.figtext(0.5, 0.03, tstr2, fontdict={'size': 14, 'weight': 'bold'}, horizontalalignment='center')
 
         ouf = out_prefix + '_FNvenn.pdf'
-        print(ouf)
+        print(f'SUCCESS: saving false negative venn plot here ({ouf})')
         mpl.savefig(ouf)
-
+    
+    ##
+    ##  Write results to a csv file
+    ##
+    results_dict = {}
+    results_dict['TotalGoldenVariants'] = zt_v
+    results_dict['FilteredGoldenVariants'] = zgF
+    results_dict['MergedGoldenVariants'] = zgM
+    results_dict['RedundantGoldenVariants'] = zgR
+    results_dict['TotalWorkflowVariants'] = zt_w
+    results_dict['FilteredWorkflowVariants'] = zwF
+    results_dict['MergedWorkflowVariants'] = zwM
+    results_dict['RedundantWorkflowVariants'] = zwR
+    
+    if zt_v > 0 and zt_w > 0:
+        results_dict['PerfectMatches'] = zn_p
+        results_dict['FN_variants'] = zn_f
+        results_dict['FP_variants'] = zf_p
+    if not fast:
+        results_dict['EquivalentVariants'] = zn_e
+    if no_plot:
+        results_dict['#Unmappable'] = len(set1)
+        results_dict['#LowCoverage'] = len(set2)
+        results_dict['#Unknown'] = len(set3)
+    
+    if len(results_dict) > 0:
+        results_csv = out_prefix + '_summary_metrics.csv'
+        with open(results_csv, 'w') as file:
+            writer = csv.writer(file)
+            for key, value in results_dict.items():
+                writer.writerow([key, value])
+    
     #
     #	spit out results to console
     #
@@ -802,7 +863,7 @@ def main():
         print(
             "\nWarning! Running with '--fast' means that identical variants denoted differently between the two vcfs will not be detected! The values above may be lower than the true accuracy.")
     # if NO_PLOT:
-    if True:
+    if no_plot:
         print('\n#unmappable:  ', len(set1))
         print('#low_coverage:', len(set2))
         print('#unknown:     ', len(set3))
