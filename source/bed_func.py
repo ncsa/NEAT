@@ -1,7 +1,9 @@
-import pathlib
 import gzip
+import pathlib
 import re
+
 import pandas as pd
+
 from source.error_handling import premature_exit, print_and_log
 
 

@@ -7,15 +7,15 @@
 #
 # Python 3 ready
 
-import sys
-import pickle
-import bisect
-import numpy as np
-import matplotlib.pyplot as mpl
-import matplotlib.colors as colors
-import matplotlib.cm as cmx
 import argparse
+import bisect
 import gzip
+import pickle
+
+import matplotlib.cm as cmx
+import matplotlib.colors as colors
+import matplotlib.pyplot as mpl
+import numpy as np
 
 # mpl.rc('text',usetex=True)
 # mpl.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]

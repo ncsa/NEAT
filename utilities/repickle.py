@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
-import sys
+import glob
 import os
 import pathlib
-import glob
 import pickle
+import sys
 
 
 def main():

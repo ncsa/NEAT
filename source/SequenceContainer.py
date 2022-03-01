@@ -1,20 +1,21 @@
-import random
-import copy
 import bisect
-import pickle
-import sys
+import copy
 import gzip
 import pathlib
-import numpy as np
-from Bio.Seq import Seq
-from Bio.Seq import MutableSeq
+import pickle
+import random
+import sys
 
+import numpy as np
+from Bio.Seq import MutableSeq
+from Bio.Seq import Seq
+
+from source.constants_and_defaults import ALLOWED_NUCL, DEFAULT_MUTATION_MODEL, DEFAULT_CANCER_MUTATION_MODEL
+from source.constants_and_defaults import ALL_IND, COV_FRAGLEN_PERCENTILE, TRI_IND, ALL_TRI
+from source.constants_and_defaults import LARGE_NUMBER, MAX_ATTEMPTS, NUC_IND
 from source.error_handling import premature_exit, print_and_log
 from source.neat_cigar import CigarString
 from source.probability import DiscreteDistribution, poisson_list
-from source.constants_and_models import ALLOWED_NUCL, DEFAULT_MUTATION_MODEL, DEFAULT_CANCER_MUTATION_MODEL
-from source.constants_and_models import ALL_IND, COV_FRAGLEN_PERCENTILE, TRI_IND, ALL_TRI
-from source.constants_and_models import LARGE_NUMBER, MAX_ATTEMPTS, NUC_IND
 
 
 # TODO This whole file is in desperate need of refactoring, it is a mess

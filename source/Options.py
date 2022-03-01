@@ -1,8 +1,8 @@
 import os
 import pathlib
 from types import SimpleNamespace
-from source.error_handling import premature_exit, print_and_log
 
+from source.error_handling import premature_exit, print_and_log
 
 # Constants
 # NEAT Path is the path of the main NEAT executable, one level up from where this file resides

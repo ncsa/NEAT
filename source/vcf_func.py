@@ -1,8 +1,10 @@
-import io
 import gzip
-import random
+import io
 import logging
+import random
+
 import pandas as pd
+
 from source.error_handling import premature_exit, print_and_log
 
 
