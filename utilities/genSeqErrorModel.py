@@ -30,7 +30,9 @@ from source.probability import DiscreteDistribution
 
 
 def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
+    # init smooth is set to zero and never touched again. Not sure what they were trying to do here.
     init_smooth = 0.
+    # Prob_smooth is set to zero and never touched again. Not sure what they were trying to do here, either.
     prob_smooth = 0.
 
     # Takes a gzip or sam file and returns the simulation's average error rate,
@@ -63,6 +65,7 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
         g = f.fetch()
     else:
         g = f
+
 
     for read in g:
         if is_aligned:
@@ -112,18 +115,22 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
     prob_q = [None] + [[[0. for m in range(real_q)] for n in range(real_q)] for p in range(actual_readlen - 1)]
     for p in range(1, actual_readlen):
         for i in range(real_q):
+            # prob_smooth is always 0, so this is just float(np.sum(total_q[p][i, :]))
             row_sum = float(np.sum(total_q[p][i, :])) + prob_smooth * real_q
             if row_sum <= 0.:
                 continue
             for j in range(real_q):
+                # prob_smooth is always 0, so it does nothing here.
                 prob_q[p][i][j] = (total_q[p][i][j] + prob_smooth) / row_sum
 
     init_q = [[0. for m in range(real_q)] for n in range(actual_readlen)]
     for i in range(actual_readlen):
+        # init_smooth is always = 0, so this is always just float(np.sum(prior_q[i, :]))
         row_sum = float(np.sum(prior_q[i, :])) + init_smooth * real_q
         if row_sum <= 0.:
             continue
         for j in range(real_q):
+            # init_smooth is always 0, so it does nothing here.
             init_q[i][j] = (prior_q[i][j] + init_smooth) / row_sum
 
     if plot_stuff:
