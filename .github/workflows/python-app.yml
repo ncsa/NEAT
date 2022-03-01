@@ -8,6 +8,12 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  workflow_call:
+    inputs:
+      username:
+        description: 'A file to test gen_reads.py'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -25,4 +31,5 @@ jobs:
         python -m pip install --upgrade pip
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        python gen_reads.py
+
+    
