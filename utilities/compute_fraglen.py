@@ -4,7 +4,7 @@
 #                  compute_fraglen.py
 #
 #
-#      Usage: samtools view normal.bam | python compute_fraglen.py
+#      Usage: python compute_fraglen.py -i input.b/sam -o output_prefix
 #
 #
 # Upgraded 5/6/2020 to match Python 3 standards and refactored for easier reading
@@ -44,7 +44,6 @@ def median(datalist: list) -> float:
     return median
 
 
-
 def median_absolute_deviation(datalist: list) -> float:
     """
     Calculates the absolute value of the median deviation from the median for each element of of a datalist. 
@@ -78,28 +77,18 @@ def count_frags(file: str) -> list:
     """
     FILTER_MAPQUAL = 10  # only consider reads that are mapped with at least this mapping quality
     count_list = []
-    # Check if the file is sam or bam and decide how to open based on that
-    if file[-4:] == ".sam":
-        file_to_parse = open(file, 'r')
-    elif file[-4:] == ".bam":
-        print("WARNING: Must have pysam installed to read bam files. Pysam does not work on Windows OS.")
-        if os != 'Windows':
-            file_to_parse = pysam.AlignmentFile(file, 'rb')
-        else:
-            raise Exception("Your machine is running Windows. Please convert any BAM files to SAM files using samtools "
-                            "prior to input")
-    else:
-        print("Unknown file type, file extension must be bam or sam")
-        exit(1)
+
+    file_to_parse = pysam.AlignmentFile(file)
 
     for item in file_to_parse:
-        # Need to convert bam iterable objects into strings for the next part
-        line = str(item)
-        # Skip all comments and headers
-        if line[0] == '#' or line[0] == '@':
-            continue
-        splt = line.strip().split('\t')
-        sam_flag = int(splt[1])
+        # new values based on pysam
+        sam_flag = item.flag
+        # my_ref = item.reference_id
+        # map_qual = item.mapping_quality
+        # mate_ref = item.next_reference_id
+        # my_tlen = abs(item.template_length)
+
+        splt = str(item).split('\t')
         my_ref = splt[2]
         map_qual = int(splt[4])
         mate_ref = splt[6]
@@ -154,7 +143,7 @@ def main():
     parser = argparse.ArgumentParser(description="compute_fraglen.py",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-i', type=str, metavar="input", required=True, default=None,
-                        help="Sam file input (samtools view name.bam > name.sam)")
+                        help="Bam or sam input file.")
     parser.add_argument('-o', type=str, metavar="output", required=True, default=None, help="Prefix for output")
 
     args = parser.parse_args()
