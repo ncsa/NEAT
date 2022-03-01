@@ -8,45 +8,24 @@ Finally, it will recombine the final output into one.
 Note that I'm planninng to hijack NEAT's features for this.
 """
 
-import sys
 import argparse
 import datetime
+import logging
 import pathlib
 import random
-import time
-import gzip
-import numpy as np
-import pickle
-import logging
-from copy import deepcopy
-import multiprocessing
-import tempfile
-import pandas as pd
-import shutil
+import sys
+
 from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.Seq import MutableSeq
-from types import SimpleNamespace
-from cpu_load_generator import load_single_core, load_all_cores, from_profile
-from mpire import WorkerPool
 
-from source.constants_and_models import VERSION, LOW_COVERAGE_THRESHOLD
-from source.Models import parse_input_mutation_model, pickle_load_model
-from source.SequencingErrors import SequencingErrors
-from source.error_handling import premature_exit, print_and_log
-
-from source.ref_func import find_n_regions
-from source.bed_func import parse_bed
-from source.vcf_func import parse_vcf
-from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
-from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
-from source.SequenceContainer import SequenceContainer
-from source.constants_and_models import ALLOWED_NUCL
-from source.neat_cigar import CigarString
 from source.Models import Models
-from source.Tracker import Tracker
-from source.run_neat import execute_neat, Job
 from source.Options import Options
+from source.bed_func import parse_bed
+from source.constants_and_defaults import ALLOWED_NUCL
+from source.constants_and_defaults import VERSION
+from source.error_handling import premature_exit, print_and_log
+from source.output_file_writer import OutputFileWriter
+from source.run_neat import execute_neat, JobCommonElements
+from source.vcf_func import parse_vcf
 
 
 # useful functions for the rest
@@ -155,18 +134,18 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool
 
     >>> index = {'chr1': "ACCATACACGGGCAACACACGTACACATTATACC"}
     >>> find_file_breaks(5, "subdivision", index, False)
-    {'chr1': [range(0, 6), range(6, 12), range(12, 18), range(18, 24), range(24, 34)]}
+    {'chr1': [(0, 6), (6, 12), (12, 18), (18, 24), (24, 34)]}
     >>> find_file_breaks(4, 'subdivision', index, False)
-    {'chr1': [range(0, 8), range(8, 16), range(16, 24), range(24, 34)]}
+    {'chr1': [(0, 8), (8, 16), (16, 24), (24, 34)]}
     >>> find_file_breaks(5, 'chrom', index, False)
-    {'chr1': [range(0, 34)]}
+    {'chr1': [(0, 34)]}
     >>> find_file_breaks(2, 'subdivision', index, False)
-    {'chr1': [range(0, 17), range(17, 34)]}
+    {'chr1': [(0, 17), (17, 34)]}
     """
     partitions = {}
     if mode.lower() == "chrom" or threads == 1:
         for contig in reference_index.keys():
-            partitions[contig] = [range(len(reference_index[contig]))]
+            partitions[contig] = [(0, len(reference_index[contig]))]
     elif mode.lower() == "subdivision":
         # Add items one at a time to partition list until the total length is greater than delta.
         for contig in reference_index:
@@ -182,10 +161,10 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool
             # And since we want the last partition to grab the rest, we'll stop short and add it manually
             for index in breakpoints:
                 if index + delta <= contig_length:
-                    partitions[contig].append(range(index, index + delta))
+                    partitions[contig].append((index, index + delta))
                 else:
                     # Have to extend the last one so we don't get a tiny read we can't process
-                    partitions[contig][-1] = range(partitions[contig][-1].start, contig_length)
+                    partitions[contig][-1] = (partitions[contig][-1][0], contig_length)
 
         if debug:
             print_and_log(f'breaks = {partitions}', 'debug')
@@ -446,13 +425,15 @@ def main(raw_args=None):
     I think the core of run_neat should be taking in a sequence and returning a mutated sequence. The core of NEAT
     at the moment tries to be everything to everyone.
     """
-    jobs_to_process = []
+    print_and_log("Beginning simulation", 'info')
+    # these will be the features common to each contig, for multiprocessing
+    common_features = {}
     for contig in breaks:
-        for section in breaks[contig]:
-            jobs_to_process.append(Job(section, reference_index, out_prefix_name, target_regions_df, discard_regions_df,
-                                       mutation_rate_df, input_variants, models, options))
-
-    execute_neat(options, jobs_to_process)
+        common_features[contig] = JobCommonElements(reference_index, contig, out_prefix_name, target_regions_df,
+                                                    discard_regions_df, mutation_rate_df, input_variants,
+                                                    models, options)
+    for contig in breaks:
+        execute_neat(options, breaks[contig], common_features[contig])
 
     # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
 

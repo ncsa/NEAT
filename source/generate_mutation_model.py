@@ -1,18 +1,19 @@
 #! /usr/bin/env python
 
 import argparse
-import os.path
-import sys
 import gzip
-import pathlib
-from Bio import SeqIO
-import numpy as np
-import pickle
-import pybedtools
 import json
-import pandas as pd
+import os.path
+import pathlib
+import pickle
+import sys
 
-from constants_and_models import HUMAN_WHITELIST, ALL_TRI, ALL_IND, ALLOWED_NUCL
+import numpy as np
+import pandas as pd
+import pybedtools
+from Bio import SeqIO
+
+from constants_and_defaults import HUMAN_WHITELIST, ALL_TRI, ALLOWED_NUCL
 
 
 def read_fasta(fasta_file):

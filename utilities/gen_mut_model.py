@@ -2,14 +2,16 @@
 
 # Python 3 ready
 
-import os
-import re
-import pickle
 import argparse
-import numpy as np
-from Bio import SeqIO
-import pandas as pd
 import gzip
+import os
+import pickle
+import re
+
+import numpy as np
+import pandas as pd
+from Bio import SeqIO
+
 
 #########################################################
 #				VARIOUS HELPER FUNCTIONS				#

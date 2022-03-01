@@ -1,16 +1,14 @@
-import sys
-import time
-import os
 import gzip
+import logging
 import pathlib
 import random
-import logging
-from Bio.Seq import Seq
-from Bio import SeqIO
-from Bio.Seq import MutableSeq
+import time
 
+from Bio.Seq import MutableSeq
+from Bio.Seq import Seq
+
+from source.constants_and_defaults import ALLOWED_NUCL
 from source.error_handling import premature_exit
-from source.constants_and_models import ALLOWED_NUCL
 
 
 def index_ref(reference_path: str) -> list:

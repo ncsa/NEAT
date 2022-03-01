@@ -1,9 +1,10 @@
-import numpy as np
 import random
-import pickle
-from source.probability import DiscreteDistribution
-from source.constants_and_models import ALLOWED_NUCL, NUC_IND
+
+import numpy as np
+
+from source.constants_and_defaults import ALLOWED_NUCL, NUC_IND
 from source.error_handling import premature_exit, print_and_log
+from source.probability import DiscreteDistribution
 
 
 class SequencingErrors:

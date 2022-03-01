@@ -19,12 +19,19 @@ Contac:         jenna.kalleberg@mail.missouri.edu
 
 ************************************************** """
 
-import sys, copy, time, bisect, re, argparse
-import numpy as np
 import argparse
+import bisect
+import copy
 ## DEBUG NOTE: updated libraries
-import gzip, shutil, csv
+import csv
+import gzip
+import re
+import shutil
+import sys
+import time
 from pathlib import Path
+
+import numpy as np
 from Bio.Seq import MutableSeq
 
 EV_BPRANGE = 50  # how far to either side of a particular variant location do we want to check for equivalents?

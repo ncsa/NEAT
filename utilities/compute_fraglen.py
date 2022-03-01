@@ -7,12 +7,11 @@
 #
 # Upgraded 5/6/2020 to match Python 3 standards and refactored for easier reading
 
-import pickle
 import argparse
+import gzip
+import pickle
 import platform
 import sys
-import gzip
-
 
 os = platform.system()
 if os !='Windows':

@@ -1,11 +1,12 @@
-from struct import pack
-from Bio import bgzf
 import gzip
 import pathlib
 import re
 import shutil
 import tempfile
+from struct import pack
+
 import pysam
+from Bio import bgzf
 
 from source.error_handling import premature_exit, print_and_log
 from source.neat_cigar import CigarString
