@@ -12,12 +12,13 @@
 #
 # Updated to Python 3 standards
 
-import time
 import argparse
-import numpy as np
-import pickle
-from Bio import SeqIO
 import gzip
+import pickle
+import time
+
+import numpy as np
+from Bio import SeqIO
 
 
 def process_fasta(file: str) -> dict:

@@ -2,9 +2,9 @@
 
 # Python 3 ready
 
-import sys
-import os
 import gzip
+import os
+import sys
 from struct import unpack
 
 BAM_EOF = ['1f', '8b', '08', '04', '00', '00', '00', '00', '00', 'ff', '06', '00', '42', '43', '02', '00', '1b', '00',
