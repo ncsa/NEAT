@@ -106,6 +106,34 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
     return out_model
 
 
+def score_breakdown(quality_bins: list):
+    """
+    breaks down the quality scores into a dicitonary of the interval and error rate for that bin.
+    This code requires quality bins to be a monotonic increasing list of scores corresponding to the phred score.
+    """
+    # This block of code breaks down the quality scores into intervals for analysis.
+    score_breakdown = {}
+    low = 0
+    mid_point = (quality_bins[1] - quality_bins[0]) // 2
+    high = quality_bins[0] + mid_point
+    # This is the inverse of the Phred quality score formula f(x) = -10 * log10(x)
+    error_rate = 10. ** (-quality_bins[0] / 10.)
+    # We'll precompute, for each score, both the interval it spans and the error_rate it represents
+    score_breakdown[quality_bins[0]] = {'interval': (low, high), 'error_rate': error_rate}
+    low = high + 1
+
+    for i in range(1, len(quality_bins) - 1):
+        mid_point = (quality_bins[i + 1] - quality_bins[i]) // 2
+        high = quality_bins[i] + mid_point
+        error_rate = 10. ** (-quality_bins[i] / 10.)
+        score_breakdown[quality_bins[i]] = {'interval': (low, high), 'error_rate': error_rate}
+        low = high + 1
+
+    error_rate = 10. ** (-quality_bins[-1] / 10.)
+    score_breakdown[quality_bins[-1]] = {'interval': (low, math.inf), 'error_rate': error_rate}
+    return score_breakdown
+
+
 def take_closest(myList, myNumber):
     """
     Assumes myList is sorted. Returns closest value to myNumber.
@@ -163,7 +191,8 @@ class SequencingErrorModel:
         """
         mssg = "Problem loading Sequencing error model data @error_model"
         error_model = pickle_load_model(gzip.open(options.error_model, 'rb'), mssg)
-        self.quality_scores = error_model['quality_scores']
+
+        self.quality_scores = np.array(error_model['quality_scores'])
         # pre-compute the error rate for each quality score
         self.quality_score_error_rate = {x: 10. ** (-x / 10) for x in error_model['quality_scores']}
         self.average_error = error_model['average_error']
@@ -178,28 +207,21 @@ class SequencingErrorModel:
             phred_score_bin = take_closest(self.quality_scores, avg_error_phred_score)
             self.uniform_quality_score = min([max(self.quality_scores), phred_score_bin])
         quality_score_probability_matrix = error_model['quality_score_probabilities']
-        # This creates a list of discrete distributions based on each row (which represents a probability vector).
-        # The input row has a value for each quality score.
         self.quality_score_probabilities = quality_score_probability_matrix.apply(
-                lambda row: DiscreteDistribution(self.quality_scores, row,
-                                                 rng_val=options.rng_value), axis=1).to_numpy()
-
+                lambda row: DiscreteDistribution(self.quality_scores, row), axis=1).to_numpy()
         matrix = pd.DataFrame(error_model['error_parameters'][0])
-        # These discrete distributions are for the nucleotides in order as given in constants_and_defaults
-        self.substitution_model = matrix.apply(lambda row: DiscreteDistribution(ALLOWED_NUCL, row,
-                                                                                rng_val=options.rng_value),
+        self.substitution_model = matrix.apply(lambda row: DiscreteDistribution(ALLOWED_NUCL, list(row)),
                                                axis=1).to_numpy()
         # Probability that if there is an error, it is an indel (v snp)
         self.indel_probability = error_model['error_parameters'][1]
         # Probability that an indel is an insertion
         self.insertion_probability = error_model['error_parameters'][4]
-        # Possible lengths for indels, along with their indices, to set up sampling
-        self.indel_lengths = error_model['error_parameters'][3]
-        self.indel_length_model = DiscreteDistribution(self.indel_lengths, error_model['error_parameters'][2],
-                                                       rng_val=options.rng_value)
+        # Possible lengths for indels, along with the weights of each
+        self.indel_lengths = np.array(error_model['error_parameters'][3])
+        self.indel_length_model = DiscreteDistribution(self.indel_lengths,
+                                                       error_model['error_parameters'][2])
         # Nucleotides and their probability values for a random choice
-        self.nucleotide_insertion_model = DiscreteDistribution(ALLOWED_NUCL, error_model['error_parameters'][5],
-                                                               rng_val=options.rng_value)
+        self.nucleotide_insertion_model = error_model['error_parameters'][5]
         self.quality_offset = error_model['quality_offset']
 
         # Not sure what effect rescaling the quality scores will have on binned qualities.
@@ -211,6 +233,8 @@ class SequencingErrorModel:
         # if the read length the user requests is different from what the sequencing error model calculated.
         self.quality_index_remap = range(options.read_len)
         if options.read_len != len(error_model['quality_score_probabilities']):
+            print_and_log(f'Read length of error model ({len(error_model["quality_score_probabilities"])}) '
+                          f'does not match -R value ({options.read_len}), rescaling model...', 'warning')
             self.quality_index_remap = np.array([max([0, len(error_model["quality_score_probabilities"]) * n //
                                                 options.read_len]) for n in range(options.read_len)])
 
@@ -223,19 +247,17 @@ class SequencingErrorModel:
         :return: modified sequence and associated quality scores
         """
         out_qualities = []
-        sequencing_error_indices = []
+        introduced_errors = []
         sequencing_errors = []
         if self.uniform_quality_score:
             # Since this is uniform, forward and reverse are irrelevant
-            out_qualities = np.array([chr(self.uniform_quality_score + self.quality_offset)] * self.read_length)
+            out_qualities = [chr(self.uniform_quality_score + self.quality_offset)] * self.read_length
             # Let's only bother to do this if they even want errors. If error_scale was set to 0, then skip
             if self.error_scale != 0:
-
-                random_vector = np.random.random(size=self.read_length)
-                sequencing_error_indices = np.where(random_vector < self.error_scale *
-                                                    self.quality_score_error_rate[self.uniform_quality_score])
+                for i in range(self.read_length):
+                    if random.random() < self.error_scale * self.quality_score_error_rate[self.uniform_quality_score]:
+                        sequencing_errors.append(i)
         else:
-            # This actually creates an array of the INDICES of the quality scores in self.quality_scores
             temp_quality_array = [self.quality_score_probabilities[n].sample()
                                   for n in range(len(self.quality_score_probabilities))]
 
@@ -249,18 +271,16 @@ class SequencingErrorModel:
             # Now we find where the errors are. This part works whether the strand is forward or reverse.
             # Let's only bother to do this if they even want errors. If error_scale was set to 0, then skip
             if self.error_scale != 0:
-                random_vector = np.random.random(size=self.read_length)
-                temp_quality_probs = np.array([self.quality_score_error_rate[i]
-                                               for i in out_qualities])
-                sequencing_error_indices = np.array((random_vector < temp_quality_probs).nonzero()[0])
+                for i in range(self.read_length):
+                    if random.random() < self.error_scale * self.quality_score_error_rate[out_qualities[i]]:
+                        sequencing_errors.append(i)
 
             # We'll see if this has any effect on bins. I doubt it. But since this method allows for bins of size 1,
             # then it might work in that situation.
             if self.rescale_qualities:
                 # First we rescale the quality score literals then convert back to phred score (with the 0.5
                 # causing borderline cases to take the next highest number).
-                out_qualities = [max([0, int(-10. * np.log10(self.error_scale * self.quality_score_error_rate[n]) +
-                                             0.5)]) for n in out_qualities]
+                out_qualities = [max([0, int(-10. * np.log10(self.error_scale * self.quality_score_error_rate[n]) + 0.5)]) for n in out_qualities]
                 # Now rebin the quality scores.
                 out_qualities = [take_closest(self.quality_scores, n) for n in out_qualities]
                 out_qualities = ''.join([chr(n + self.quality_offset) for n in out_qualities])
@@ -268,8 +288,9 @@ class SequencingErrorModel:
                 out_qualities = ''.join([chr(n + self.quality_offset) for n in out_qualities])
 
         # The use case here would be someone running a simulation where they want no sequencing errors.
+        # Since we skipped making errors if the error_scale was 0, sequencing_errors will be empty in this use case.
         if self.error_scale == 0:
-            return out_qualities, []
+            return out_qualities, sequencing_errors
 
         number_deletions_so_far = 0
         # don't allow indel errors to occur on subsequent positions
@@ -277,7 +298,7 @@ class SequencingErrorModel:
         # don't allow other sequencing errors to occur on bases removed by deletion errors
         del_blacklist = []
 
-        for index in sequencing_error_indices[::-1]:
+        for index in sequencing_errors[::-1]:
             # determine error type
             is_sub = True
             # This check checks that we are not trying to insert indels at the end of a read,
@@ -291,10 +312,10 @@ class SequencingErrorModel:
             # Insert substitution error
             if is_sub:
                 current_nucleotide = read_data[index]
-                nuc_index = NUC_IND[current_nucleotide]
+                nuc_index = ALLOWED_NUCL.index(current_nucleotide)
                 # take the zero index because this returns a list of length 1.
                 new_nucleotide = self.substitution_model[nuc_index].sample()
-                sequencing_errors.append(('S', 1, index, current_nucleotide, new_nucleotide))
+                introduced_errors.append(('S', 1, index, current_nucleotide, new_nucleotide))
 
             # insert indel error:
             else:
@@ -304,26 +325,26 @@ class SequencingErrorModel:
                 # insertion error:
                 if random.random() < self.insertion_probability:
                     current_nucleotide = read_data[index]
-                    insert = self.nucleotide_insertion_model.sample(indel_len)
+                    insert = random.choices(ALLOWED_NUCL, self.nucleotide_insertion_model, k=indel_len)
                     new_nucleotide = current_nucleotide + "".join(insert)
-                    sequencing_errors.append(('I', len(new_nucleotide) - 1, index, current_nucleotide, new_nucleotide))
+                    introduced_errors.append(('I', len(new_nucleotide) - 1, index, current_nucleotide, new_nucleotide))
 
                 elif index < self.read_length - 2 - number_deletions_so_far:
                     current_nucleotide = read_data[index: index + indel_len + 1]
                     new_nucleotide = read_data[index]
                     number_deletions_so_far += len(current_nucleotide) - 1
-                    sequencing_errors.append(('D', len(current_nucleotide) - 1, index,
+                    introduced_errors.append(('D', len(current_nucleotide) - 1, index,
                                               current_nucleotide, new_nucleotide))
                     del_blacklist.extend(list(range(index + 1, index + indel_len + 1)))
 
                 previous_indel = index
 
         # Remove blacklisted errors
-        for i in range(len(sequencing_errors) - 1, -1, -1):
-            if sequencing_errors[i][2] in del_blacklist:
-                del sequencing_errors[i]
+        for i in range(len(introduced_errors) - 1, -1, -1):
+            if introduced_errors[i][2] in del_blacklist:
+                del introduced_errors[i]
 
-        return out_qualities, sequencing_errors
+        return out_qualities, introduced_errors
 
 
 class Models:
@@ -371,9 +392,7 @@ class Models:
                         fraglen_values.append(potential_values[i])
                         fraglen_probability.append(potential_prob[i])
 
-                # Setting the fragment length values and model
-                self.fraglen_values = fraglen_values
-                self.fraglen_model = DiscreteDistribution(self.fraglen_values, fraglen_probability, rng_val=options.rng_value)
+                self.fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
                 options.set_value('fragment_mean', fraglen_values[mean_ind_of_weighted_list(fraglen_probability)])
 
             # Using artificial fragment length distribution, if the parameters were specified
@@ -381,9 +400,8 @@ class Models:
             else:
                 print_and_log(f'Using artificial fragment length distribution.', 'info')
                 if options.fragment_st_dev == 0:
-                    self.fraglen_values = options.fragment_mean
-                    self.fraglen_model = DiscreteDistribution(self.fraglen_values, [], rng_val=options.rng_value,
-                                                              degenerate_val=self.fraglen_values)
+                    self.fraglen_model = DiscreteDistribution([1], [options.fragment_mean],
+                                                              degenerate_val=options.fragment_mean)
                 else:
                     potential_values = range(max(0, int(options.fragment_mean - 6 * options.fragment_st_dev)),
                                              int(options.fragment_mean + 6 * options.fragment_st_dev) + 1)
@@ -394,8 +412,6 @@ class Models:
                     fraglen_probability = [np.exp(-(((n - options.fragment_mean) ** 2) /
                                                     (2 * (options.fragment_st_dev ** 2)))) for n in
                                            fraglen_values]
-                    self.fraglen_values = fraglen_values
-                    self.fraglen_model = DiscreteDistribution(self.fraglen_values, fraglen_probability,
-                                                              rng_val=options.rng_value)
+                    self.fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
             if options.debug:
                 print_and_log(f'Loaded paired-end models', 'debug')
