@@ -25,69 +25,23 @@ def mean_ind_of_weighted_list(candidate_list: list) -> int:
             return i
 
 
-# TODO get rid of this class and let a python module handle the discrete distributions
 class DiscreteDistribution:
-    def __init__(self, weights, values, degenerate_val=None, method='bisect'):
+    def __init__(self, values, weights, rng_val, degenerate_val=None):
 
+        self.values = values
+        self.weights = weights
         # some sanity checking
-        if not len(weights) or not len(values):
-            print_and_log('Weight or value vector given to DiscreteDistribution() are 0-length.', 'error')
+        if not len(weights):
+            print_and_log('Probability vector given to DiscreteDistribution() are 0-length.', 'error')
             premature_exit(1)
 
-        self.method = method
-        sum_weight = float(sum(weights))
-
         # if probability of all input events is 0, consider it degenerate and always return the first value
-        if sum_weight < LOW_PROBABILITY_THRESHOLD:
-            self.degenerate = values[0]
-        else:
-            self.weights = [n / sum_weight for n in weights]
-            # TODO This line is slowing things down and seems unnecessary. Are these "values
-            # possibly some thing from another class?
-            self.values = copy.deepcopy(values)
-            if len(self.values) != len(self.weights):
-                print_and_log('Length and weights and values vectors must be the same.', 'error')
-                premature_exit(1)
-            self.degenerate = degenerate_val
+        self.degenerate = False
+        if degenerate_val:
+            self.degenerate = True
+            self.degenerate_val = degenerate_val
 
-            if self.method == 'alias':
-                len_weights = len(self.weights)
-                prob_vector = np.zeros(len_weights)
-                count_vector = np.zeros(len_weights, dtype=np.int)
-                smaller = []
-                larger = []
-                for kk, prob in enumerate(self.weights):
-                    prob_vector[kk] = len_weights * prob
-                    if prob_vector[kk] < 1.0:
-                        smaller.append(kk)
-                    else:
-                        larger.append(kk)
-                while len(smaller) > 0 and len(larger) > 0:
-                    small = smaller.pop()
-                    large = larger.pop()
-                    count_vector[small] = large
-                    prob_vector[large] = (prob_vector[large] + prob_vector[small]) - 1.0
-                    if prob_vector[large] < 1.0:
-                        smaller.append(large)
-                    else:
-                        larger.append(large)
-
-                self.a1 = len(count_vector) - 1
-                self.a2 = count_vector.tolist()
-                self.a3 = prob_vector.tolist()
-
-            elif self.method == 'bisect':
-                self.cum_prob = np.cumsum(self.weights).tolist()[:-1]
-                self.cum_prob.insert(0, 0.)
-
-            else:
-                print_and_log("Unknown discreet distribution method.", 'critical')
-                premature_exit(1)
-
-    def __str__(self):
-        return str(self.weights) + ' ' + str(self.values) + ' ' + self.method
-
-    def sample(self) -> Union[int, float]:
+    def sample(self, size=1) -> list:
         """
         This is one of the slowest parts of the code. Or it just gets hit the most times. Will need
         to investigate at some point.
@@ -96,22 +50,12 @@ class DiscreteDistribution:
         of these uses will be lists of ints or floats, but will investigate further
         """
 
-        if self.degenerate is not None:
-            return self.degenerate
-
+        if self.degenerate:
+            return self.degenerate_val
+        elif size == 1:
+            return random.choices(self.values, self.weights)[0]
         else:
-
-            if self.method == 'alias':
-                random1 = random.randint(0, self.a1)
-                random2 = random.random()
-                if random2 < self.a3[random1]:
-                    return self.values[random1]
-                else:
-                    return self.values[self.a2[random1]]
-
-            elif self.method == 'bisect':
-                r = random.random()
-                return self.values[bisect.bisect(self.cum_prob, r) - 1]
+            return random.choices(self.values, self.weights, k=size)
 
 
 # takes k_range, lambda, [0,1,2,..], returns a DiscreteDistribution object
