@@ -1,6 +1,7 @@
 import os
 import pathlib
 from types import SimpleNamespace
+import numpy as np
 
 from source.error_handling import premature_exit, print_and_log
 
@@ -178,6 +179,10 @@ class Options(SimpleNamespace):
         """
         Some sanity checks and corrections to the options.
         """
+
+        # Using numpy's default rng value for input to scipy
+        if not self.args['rng_value']:
+            self.args['rng_value'] = np.random.default_rng()
 
         if self.args['produce_fasta']:
             print_and_log("\nFASTA mode active.", 'info')

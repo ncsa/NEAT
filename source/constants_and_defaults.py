@@ -17,14 +17,14 @@ Constants needed for analysis
 MAX_ATTEMPTS = 100  # max attempts to insert a mutation into a valid position
 MAX_MUTFRAC = 0.3  # the maximum percentage of a window that can contain mutations
 
+# allowed nucleotides sets not only the allowed letters, but their order for sampling purposes.
 ALLOWED_NUCL = ['A', 'C', 'G', 'T']
+NUC_IND = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
+
 TRI_IND = {'AA': 0, 'AC': 1, 'AG': 2, 'AT': 3, 'CA': 4, 'CC': 5, 'CG': 6, 'CT': 7,
            'GA': 8, 'GC': 9, 'GG': 10, 'GT': 11, 'TA': 12, 'TC': 13, 'TG': 14, 'TT': 15}
-NUC_IND = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
 ALL_TRI = [ALLOWED_NUCL[i] + ALLOWED_NUCL[j] + ALLOWED_NUCL[k] for i in range(len(ALLOWED_NUCL)) for j in range(len(ALLOWED_NUCL)) for k in range(len(ALLOWED_NUCL))]
 ALL_IND = {ALL_TRI[i]: i for i in range(len(ALL_TRI))}
-
-QUALITY_OFFSET = 33
 
 # DEBUG
 IGNORE_TRINUC = False
