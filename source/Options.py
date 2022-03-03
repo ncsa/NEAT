@@ -180,10 +180,6 @@ class Options(SimpleNamespace):
         Some sanity checks and corrections to the options.
         """
 
-        # Using numpy's default rng value for input to scipy
-        if not self.args['rng_value']:
-            self.args['rng_value'] = np.random.default_rng()
-
         if self.args['produce_fasta']:
             print_and_log("\nFASTA mode active.", 'info')
             print_and_log("NOTE: At the moment, NEAT can produce a FASTA or FASTQ files, not both.", 'info')
