@@ -14,6 +14,7 @@ import logging
 import pathlib
 import random
 import sys
+import time
 
 from Bio import SeqIO
 
@@ -75,7 +76,10 @@ def print_configuration(args, options):
     if options.threads == 1:
         print_and_log(f"Single threading - 1 thread.", 'info')
     else:
-        print_and_log(f'Multithreading - {options.threads} threads', 'info')
+        print_and_log(f'Multithreading coming soon!!', 'info')
+        premature_exit(0)
+        # We'll work on mulitthreading later...
+        # print_and_log(f'Multithreading - {options.threads} threads', 'info')
     if options.paired_ended:
         print_and_log(f'Running in paired-ended mode.', 'INFO')
         if options.fragment_model:
@@ -226,9 +230,6 @@ def main(raw_args=None):
     # some basic checks and corrections.
     options = Options(args.conf)
     print_configuration(args, options)
-
-    # Set the random seed. If rng_value is None, then the default for random.seed is to use system time.
-    random.seed(options.rng_value)
 
     """
     Model preparation

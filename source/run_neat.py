@@ -4,7 +4,6 @@ from random import choice
 
 import pandas as pd
 from mpire import WorkerPool
-from source.SequencingErrors import SequencingErrors
 
 
 def close_temp_files(tmp_files):
@@ -29,9 +28,9 @@ class JobCommonElements:
         self.models = models
         self.options = options
 
-        sequencing_error_class = SequencingErrors(options.read_len, models.sequencing_error_model,
-                                                  options.avg_seq_error, options.rescale_qualities,
-                                                  options.debug)
+        # sequencing_error_class = SequencingErrors(options.read_len, models.sequencing_error_model,
+        #                                           options.avg_seq_error, options.rescale_qualities,
+        #                                           options.debug)
 
 
 def run_neat(params, job_start, job_end):
