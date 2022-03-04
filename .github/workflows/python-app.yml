@@ -23,15 +23,13 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
       - uses: jannekem/run-python-script-action@v1
-
-      - name: check dir contents
-        run: |
-          import os
-          print("Directory contents:")
-          for f in os.listdir():
-              print(f)
+        with:
+          script: |
+            import os
+            print("Directory contents:")
+            for f in os.listdir():
+                print(f)
 
       - name: run genreads
-        working-directory: src/webclient
         run: |
           python gen_reads.py -h
