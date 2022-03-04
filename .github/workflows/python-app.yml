@@ -31,4 +31,3 @@ jobs:
             print("Directory contents:")
             for f in os.listdir():
                 print(f)
-        run: gen_reads.py
