@@ -33,4 +33,4 @@ jobs:
                 print(f)
       - name: run genreads
         run:
-          genreads.py
+          python genreads.py
