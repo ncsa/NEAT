@@ -66,7 +66,6 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
     else:
         g = f
 
-
     for read in g:
         if is_aligned:
             qualities_to_check = read.query_alignment_qualities
