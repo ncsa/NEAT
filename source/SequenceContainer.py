@@ -5,6 +5,7 @@ import bisect
 import pickle
 import sys
 import gzip
+import time
 import numpy as np
 from Bio.Seq import Seq
 from Bio.Seq import MutableSeq
@@ -695,6 +696,13 @@ class SequenceContainer:
 
         # choose a random position within the ploid, and generate quality scores / sequencing errors
         reads_to_sample = []
+        # Test line: To be deleted.
+        start = time.time()
+        for i in range(1000):
+            (my_qual, my_errors) = sequencing_model.get_sequencing_errors(''.join(['A'] * 1500))
+        print(f'1000 loops took {time.time() - start}')
+        sys.exit(0)
+
         if frag_len is None:
             r_pos = self.coverage_distribution[my_ploid].sample()
 
@@ -877,7 +885,7 @@ class ReadContainer:
 
         model_path = pathlib.Path(error_model)
         try:
-            error_dat = pickle.load(gzip.open(model_path, 'rb'))
+            error_dat = pickle.load(gzip.open(model_path, 'r'))
         except IOError:
             print("\nProblem opening the sequencing error model.\n")
             sys.exit(1)
@@ -1046,7 +1054,8 @@ class ReadContainer:
 
             if self.rescale_qual:  # do we want to rescale qual scores to match rescaled error?
                 q_out = [max([0, int(-10. * np.log10(self.error_scale * self.q_err_rate[n]) + 0.5)]) for n in q_out]
-                q_out = [min([int(self.q_err_rate[-1]), n]) for n in q_out]
+                test = len(self.q_err_rate)
+                q_out_new = [min([test, n]) for n in q_out]
                 q_out = ''.join([chr(n + self.off_q) for n in q_out])
             else:
                 q_out = ''.join([chr(n + self.off_q) for n in q_out])
