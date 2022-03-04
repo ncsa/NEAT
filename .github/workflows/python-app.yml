@@ -17,21 +17,21 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
       - uses: jannekem/run-python-script-action@v1
-        id: script
-        with:
-          script: |
-            import os
-            print("Directory contents:")
-            for f in os.listdir():
-                print(f)
+
+      - name: check dir contents
+        run: |
+          import os
+          print("Directory contents:")
+          for f in os.listdir():
+              print(f)
 
       - name: run genreads
-        run:
-          python gen_reads.py
+        working-directory: src/webclient
+        run: |
+          python gen_reads.py -h
