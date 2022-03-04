@@ -33,4 +33,4 @@ jobs:
       - name: test with pytest
         run: pytest
       - name: test gen_reads
-        run: python gen_reads.py
+        run: python gen_reads.py -h
