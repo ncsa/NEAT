@@ -83,10 +83,12 @@ def count_frags(file: str) -> list:
     for item in file_to_parse:
         # new values based on pysam
         sam_flag = item.flag
-        # my_ref = item.reference_id
-        # map_qual = item.mapping_quality
-        # mate_ref = item.next_reference_id
-        # my_tlen = abs(item.template_length)
+        my_ref = item.reference_id
+        map_qual = item.mapping_quality
+        mate_ref = item.next_reference_id
+        # pysam.AlignmentFile.template_length
+        my_tlen = abs(item.template_length)
+        print(my_tlen)
 
         splt = str(item).split('\t')
         my_ref = splt[2]

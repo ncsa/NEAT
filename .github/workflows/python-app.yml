@@ -25,20 +25,10 @@ jobs:
       - uses: actions/setup-python@v2
       - uses: jannekem/run-python-script-action@v1
         id: script
-          with:
-            script: |
-              import os
-              print("Directory contents:")
-              for f in os.listdir():
-                  print(f)
-          run: gen_reads.py
-      
-
-build:
-    runs-on: ubuntu-latest
-    steps:
-
-
-
-
-    
+        with:
+          script: |
+            import os
+            print("Directory contents:")
+            for f in os.listdir():
+                print(f)
+        run: gen_reads.py
