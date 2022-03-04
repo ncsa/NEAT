@@ -31,6 +31,7 @@ jobs:
             print("Directory contents:")
             for f in os.listdir():
                 print(f)
+
       - name: run genreads
         run:
-          python genreads.py
+          python gen_reads.py
