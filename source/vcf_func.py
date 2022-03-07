@@ -32,12 +32,8 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
         lines[0] = lines[0].strip('#')
     # NOTE: if the vcf that is read in does not match the proper format, this read_csv command
     # will throw an error. This means you can't have data with no column header.
-    variants = pd.read_csv(
-        io.StringIO(''.join(lines)),
-        dtype={'CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
-               'QUAL': str},
-        sep='\t'
-    )
+    variants = pd.read_csv(io.StringIO(''.join(lines)), dtype={'CHROM': str, 'POS': int, 'ID': str, 'REF': str,
+                                                               'ALT': str, 'QUAL': str}, sep='\t')
 
     # the following section is just some sanity checking.
     min_headers = ['CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL']
