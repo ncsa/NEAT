@@ -10,6 +10,8 @@ from source.constants_and_defaults import ALLOWED_NUCL
 from source.probability import DiscreteDistribution
 from source.vcf_func import parse_vcf
 import tempfile
+import pandas as pd
+import io
 
 import shutil
 
@@ -105,8 +107,8 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     # Step 1: Create a VCF of variants (mutation and sequencing error variants)
     # We'll create a temp file first then output it if the user requested the file
     with open(tmp_vcf_fn, 'w') as tmp_vcf_file:
-        tmp_vcf_file.write(f'##NEAT temporary file, for generating the list of mutations.\n')
-        tmp_vcf_file.write(f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n')
+        tmp_vcf_file.write(f'@NEAT temporary file, for generating the list of mutations.\n')
+        tmp_vcf_file.write(f'CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_sample\n')
 
     contig_sequence = reference.seq
 
@@ -128,7 +130,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                f'PASS\t{variant.INFO}\t' \
                f'GT\t{"/".join(genotype)}\n'
 
-        with open(tmp_vcf_fn, 'w') as tmp:
+        with open(tmp_vcf_fn, 'a') as tmp:
             tmp.write(line)
 
     if options.debug:
@@ -304,7 +306,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                f'PASS\t.\t' \
                f'GT\t{"/".join(genotype)}\n'
 
-        with open(tmp_vcf_fn, 'w') as tmp:
+        with open(tmp_vcf_fn, 'a') as tmp:
             tmp.write(line)
 
     print_and_log(f"Finished mutating {chrom}. Time: {time.time() - start}", 'debug')
@@ -313,11 +315,25 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     if options.produce_vcf:
         print_and_log(f'Writing output vcf', 'info')
 
-        mutations_df = parse_vcf(str(tmp_vcf_fn), ploidy=options.ploidy, debug=options.debug)
+        with open(str(tmp_vcf_fn), 'r') as f:
+            lines = [line for line in f if not line.startswith('@')]
 
-        mutations_df.sort_values(by=['CHROM', 'POS', 'ALT'])
+        mutations_df = pd.read_csv(io.StringIO(''.join(lines)),
+                                   dtype={'CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str, 'QUAL': int,
+                                          'FILTER': str, 'INFO': str, 'FORMAT': str, 'NEAT_sample': str}, sep='\t')
 
-        duplicates = mutations_df.duplicated(subset=['CHROM', 'POS'])
+        # TODO Debug why this line isn't working
+        mutations_df_sorted = mutations_df.sort_values(by=['CHROM', 'POS']).reset_index(drop=True)
+
+        for _, row in mutations_df_sorted.iterrows():
+            output_file_writer.write_vcf_record(row.CHROM, row.POS, row.ID, row.REF, row.ALT, row.QUAL, row.FILTER,
+                                                row.INFO, row.FORMAT, row.NEAT_sample)
+
+
+
+        # Probably should check for duplicates and overlaps and such
+        # duplicates = mutations_df.duplicated(subset=['CHROM', 'POS'])
+        # mutations_df = mutations_df[~duplicates]
 
     temporary_dir.cleanup()
 

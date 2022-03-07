@@ -258,10 +258,10 @@ class OutputFileWriter:
             with gzip.open(self.fasta_fn, 'a') as f:
                 f.write(f'{str(read)}')
 
-    def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info, format, sample):
-        with gzip.open(self.vcf_fn, 'wt') as f:
+    def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info, frmt, sample):
+        with gzip.open(self.vcf_fn, 'at') as f:
             f.write(f'{str(chrom)}\t{str(pos)}\t{str(id_str)}\t{str(ref)}\t'
-                    f'{str(alt)}\t{str(qual)}\t{str(filt)}\t{str(info)}\t{str(format)}\t{str(sample)}\n')
+                    f'{str(alt)}\t{str(qual)}\t{str(filt)}\t{str(info)}\t{str(frmt)}\t{str(sample)}\n')
 
     def write_sam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
                          mate_pos=None, aln_map_quality: int = 70):
