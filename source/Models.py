@@ -45,18 +45,52 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
     see constants_and_defaults.py for a complete description of the default models.
     :param model: model to read (if none, this will select a default)
     :param is_cancer: False = standard mutation model, True = cancer mutation model
+    :return: The return is a dictionary of values for sampling mutations during the run
+             avg_mut_rate = average mutation rate for the modeled data set
+             homozygous_frequency = How frequently reads are homozygous (hard coded as 0.010)
+                                    (note, we need to investigate the equivalent with polyploid organisms)
+             indel_freq = probability that if there is a mutation, it is and indel (versus snp)
+             indel_insert_percentage = probability that an indel is an insert (versus deletion)
+             insert_length_values = Potential lengths of inserts
+             insert_length_weights = Weights of the list above
+             deletion_length_values = Potential lengths of deletions
+             deletion_length_weights = Weights of the list above
+             trinuc_freqs = The calculated substiution matrix for each trinucleotide
+             trinuc_bias = The bias for each trinuc, relative to the others
     """
 
     if not is_cancer:
-        out_model = [copy.deepcopy(n) for n in DEFAULT_MUTATION_MODEL]
+        # as the mutation rate evolves, this can be expanded or changed
+        keys = ['avg_mut_rate',
+                'homozygous_freq',
+                'indel_freq',
+                'indel_insert_percentage',
+                'insert_length_values',
+                'insert_length_weights',
+                'deletion_length_values',
+                'deletion_length_weights',
+                'trinuc_freqs',
+                'trinuc_bias']
+
+        out_model = dict(zip(keys, DEFAULT_MUTATION_MODEL))
     else:
-        out_model = [copy.deepcopy(n) for n in DEFAULT_CANCER_MUTATION_MODEL]
+        keys = ['avg_mut_rate',
+                'homozygous_freq',
+                'indel_freq',
+                'indel_insert_percentage',
+                'insert_length_values',
+                'insert_length_weights',
+                'deletion_length_values',
+                'deletion_length_weights',
+                'trinuc_freqs',
+                'trinuc_bias']
+        out_model = dict(zip(keys, DEFAULT_CANCER_MUTATION_MODEL))
 
     if model:
         mssg = "Problem loading the mutation model."
         pickle_dict = pickle_load_model(gzip.open(model, "rb"), mssg)
-        out_model[0] = pickle_dict['AVG_MUT_RATE']
-        out_model[2] = 1. - pickle_dict['SNP_FREQ']
+        out_model['avg_mut_rate'] = pickle_dict['AVG_MUT_RATE']
+        out_model['indel_freq'] = 1. - pickle_dict['SNP_FREQ']
 
         ins_list = pickle_dict['INDEL_FREQ']
         if len(ins_list):
@@ -73,65 +107,29 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
             ins_weight = [1.0]
             del_vals = [1]
             del_weight = [1.0]
-        out_model[3] = ins_count / float(ins_count + del_count)
-        out_model[4] = ins_vals
-        out_model[5] = ins_weight
-        out_model[6] = del_vals
-        out_model[7] = del_weight
+        out_model['indel_insert_percentage'] = ins_count / float(ins_count + del_count)
+        out_model['insert_length_model'] = DiscreteDistribution(ins_weight, ins_vals)
+        out_model['deletion_length_model'] = DiscreteDistribution(del_weight, del_vals)
 
-        trinuc_trans_prob = pickle_dict['TRINUC_TRANS_PROBS']
-        for k in sorted(trinuc_trans_prob.keys()):
-            my_ind = TRI_IND[k[0][0] + k[0][2]]
-            (k1, k2) = (NUC_IND[k[0][1]], NUC_IND[k[1][1]])
-            out_model[8][my_ind][k1][k2] = trinuc_trans_prob[k]
-        for i in range(len(out_model[8])):
-            for j in range(len(out_model[8][i])):
-                for l in range(len(out_model[8][i][j])):
-                    # if trinuc not present in input mutation model, assign it uniform probability
-                    if float(sum(out_model[8][i][j])) < 1e-12:
-                        out_model[8][i][j] = [0.25, 0.25, 0.25, 0.25]
-                    else:
-                        out_model[8][i][j][l] /= float(sum(out_model[8][i][j]))
+        out_model['trinuc_mut_prob'] = DiscreteDistribution(list(pickle_dict['TRINUC_MUT_PROB'].keys()),
+                                                            pickle_dict['TRINUC_MUT_PROB'].values())
+        # Order is ACTG. Start by assuming they're all uniform
+        out_model['trinuc_trans_prob'] = {x: {'A': 0.25, 'C': 0.25, 'T': 0.25, 'G': 0.25} for x in ALL_TRI}
+        for transition in pickle_dict['TRINUC_TRANS_PROBS']:
+            goes_to = transition[1][1]
+            out_model['trinuc_trans_prob'][transition[0]][goes_to] = pickle_dict['TRINUC_TRANS_PROBS'][transition]
 
-        trinuc_mut_prob = pickle_dict['TRINUC_MUT_PROB']
-        which_have_we_seen = {n: False for n in ALL_TRI}
-        trinuc_mean = np.mean(list(trinuc_mut_prob.values()))
-        for trinuc in trinuc_mut_prob.keys():
-            out_model[9][ALL_IND[trinuc]] = trinuc_mut_prob[trinuc]
-            which_have_we_seen[trinuc] = True
-        for trinuc in which_have_we_seen.keys():
-            if not which_have_we_seen[trinuc]:
-                out_model[9][ALL_IND[trinuc]] = trinuc_mean
+    else:
+        # These will just be uniform
+        out_model['trinuc_mut_prob'] = DiscreteDistribution([1] * ALL_TRI, ALL_TRI)
+        out_model['trinuc_trans_prob'] = {x: {'A': 0.25, 'C': 0.25, 'T': 0.25, 'G': 0.25} for x in ALL_TRI}
+
+        out_model['insert_length_model'] = DiscreteDistribution(out_model['insert_length_weights'],
+                                                                out_model['insert_length_values'])
+        out_model['deletion_length_model'] = DiscreteDistribution(out_model['deletion_length_weights'],
+                                                                  out_model['deletion_length_values'])
 
     return out_model
-
-
-def score_breakdown(quality_bins: list):
-    """
-    breaks down the quality scores into a dicitonary of the interval and error rate for that bin.
-    This code requires quality bins to be a monotonic increasing list of scores corresponding to the phred score.
-    """
-    # This block of code breaks down the quality scores into intervals for analysis.
-    score_breakdown = {}
-    low = 0
-    mid_point = (quality_bins[1] - quality_bins[0]) // 2
-    high = quality_bins[0] + mid_point
-    # This is the inverse of the Phred quality score formula f(x) = -10 * log10(x)
-    error_rate = 10. ** (-quality_bins[0] / 10.)
-    # We'll precompute, for each score, both the interval it spans and the error_rate it represents
-    score_breakdown[quality_bins[0]] = {'interval': (low, high), 'error_rate': error_rate}
-    low = high + 1
-
-    for i in range(1, len(quality_bins) - 1):
-        mid_point = (quality_bins[i + 1] - quality_bins[i]) // 2
-        high = quality_bins[i] + mid_point
-        error_rate = 10. ** (-quality_bins[i] / 10.)
-        score_breakdown[quality_bins[i]] = {'interval': (low, high), 'error_rate': error_rate}
-        low = high + 1
-
-    error_rate = 10. ** (-quality_bins[-1] / 10.)
-    score_breakdown[quality_bins[-1]] = {'interval': (low, math.inf), 'error_rate': error_rate}
-    return score_breakdown
 
 
 def take_closest(myList, myNumber):
@@ -233,8 +231,6 @@ class SequencingErrorModel:
         # if the read length the user requests is different from what the sequencing error model calculated.
         self.quality_index_remap = range(options.read_len)
         if options.read_len != len(error_model['quality_score_probabilities']):
-            print_and_log(f'Read length of error model ({len(error_model["quality_score_probabilities"])}) '
-                          f'does not match -R value ({options.read_len}), rescaling model...', 'warning')
             self.quality_index_remap = np.array([max([0, len(error_model["quality_score_probabilities"]) * n //
                                                 options.read_len]) for n in range(options.read_len)])
 
@@ -353,7 +349,7 @@ class Models:
     """
     def __init__(self, options):
 
-        # Lead mutation models
+        # Load mutation models
         self.mutation_model = parse_input_mutation_model(options.mutation_model)
 
         self.cancer_model = None
@@ -363,15 +359,18 @@ class Models:
         if options.debug:
             print_and_log("Mutation models loaded", 'debug')
 
-        # parse sequencing error file
-        self.sequencing_error_model = SequencingErrorModel(options)
+        # We only need sequencing errors if we are producing a bam or fastq
+        self.sequencing_error_model = None
+        if options.produce_bam or options.produce_fastq:
+            # parse sequencing error file
+            self.sequencing_error_model = SequencingErrorModel(options)
 
-        if options.debug:
-            print_and_log('Sequencing error model loaded', 'debug')
+            if options.debug:
+                print_and_log('Sequencing error model loaded', 'debug')
 
         mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
                "This file should be the output of compute_gc.py'"
-        self.gc_model = pickle_load_model(gzip.open(options.gc_model, 'rb'), mssg)
+        self.gc_model = pickle_load_model(gzip.open(options.gc_model, 'r'), mssg)
 
         if options.debug:
             print_and_log('GC Bias model loaded', 'debug')

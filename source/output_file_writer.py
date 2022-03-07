@@ -174,27 +174,27 @@ class OutputFileWriter:
         # Initialize the vcf and write the header, if applicable
         if self.write_vcf:
             # Writing the vcf header.
-            with gzip.open(self.vcf_fn, 'w') as vcf_file:
-                vcf_file.write(b'##fileformat=VCFv4.1\n')
-                reference = f'##reference={vcf_header[0]}\n'
-                vcf_file.write(reference.encode())
-                vcf_file.write(b'##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n')
-                vcf_file.write(b'##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n')
-                vcf_file.write(b'##INFO=<ID=VMX,Number=1,Type=String,'
-                               b'Description="SNP is Missense in these Read Frames">\n')
-                vcf_file.write(b'##INFO=<ID=VNX,Number=1,Type=String,'
-                               b'Description="SNP is Nonsense in these Read Frames">\n')
-                vcf_file.write(b'##INFO=<ID=VFX,Number=1,Type=String,Description="Indel Causes Frameshift">\n')
-                vcf_file.write(b'##INFO=<ID=WP,Number=A,Type=Integer,Description="NEAT-GenReads ploidy indicator">\n')
-                vcf_file.write(b'##ALT=<ID=DEL,Description="Deletion">\n')
-                vcf_file.write(b'##ALT=<ID=DUP,Description="Duplication">\n')
-                vcf_file.write(b'##ALT=<ID=INS,Description="Insertion of novel sequence">\n')
-                vcf_file.write(b'##ALT=<ID=INV,Description="Inversion">\n')
-                vcf_file.write(b'##ALT=<ID=CNV,Description="Copy number variable region">\n')
-                vcf_file.write(b'##ALT=<ID=TRANS,Description="Translocation">\n')
-                vcf_file.write(b'##ALT=<ID=INV-TRANS,Description="Inverted translocation">\n')
-                # TODO add sample to vcf output
-                vcf_file.write(b'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n')
+            with gzip.open(self.vcf_fn, 'wt') as vcf_file:
+                vcf_file.write(f'##fileformat=VCFv4.1\n')
+                vcf_file.write(f'##reference={vcf_header[0]}\n')
+                vcf_file.write(f'##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n')
+                vcf_file.write(f'##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n')
+                vcf_file.write(f'##INFO=<ID=VMX,Number=1,Type=String,'
+                               f'Description="SNP is Missense in these Read Frames">\n')
+                vcf_file.write(f'##INFO=<ID=VNX,Number=1,Type=String,'
+                               f'Description="SNP is Nonsense in these Read Frames">\n')
+                vcf_file.write(f'##INFO=<ID=VFX,Number=1,Type=String,Description="Indel Causes Frameshift">\n')
+                vcf_file.write(f'##INFO=<ID=WP,Number=A,Type=Integer,Description="NEAT-GenReads ploidy indicator">\n')
+                vcf_file.write(f'##ALT=<ID=DEL,Description="Deletion">\n')
+                vcf_file.write(f'##ALT=<ID=DUP,Description="Duplication">\n')
+                vcf_file.write(f'##ALT=<ID=INS,Description="Insertion of novel sequence">\n')
+                vcf_file.write(f'##ALT=<ID=INV,Description="Inversion">\n')
+                vcf_file.write(f'##ALT=<ID=CNV,Description="Copy number variable region">\n')
+                vcf_file.write(f'##ALT=<ID=TRANS,Description="Translocation">\n')
+                vcf_file.write(f'##ALT=<ID=INV-TRANS,Description="Inverted translocation">\n')
+                vcf_file.write(f'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
+                # Add a neat sample column
+                vcf_file.write(f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n')
 
         # Create the bam header, if applicable.
         # Note that this will not write this yet. That comes later, because the BAM file must be open the entire time
@@ -258,10 +258,10 @@ class OutputFileWriter:
             with gzip.open(self.fasta_fn, 'a') as f:
                 f.write(f'{str(read)}')
 
-    def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info):
-        with gzip.open(self.vcf_fn, 'a') as f:
-            f.write(str(chrom) + '\t' + str(pos) + '\t' + str(id_str) + '\t' + str(ref) + '\t' + str(alt) + '\t' +
-                    str(qual) + '\t' + str(filt) + '\t' + str(info) + '\n')
+    def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info, format, sample):
+        with gzip.open(self.vcf_fn, 'wt') as f:
+            f.write(f'{str(chrom)}\t{str(pos)}\t{str(id_str)}\t{str(ref)}\t'
+                    f'{str(alt)}\t{str(qual)}\t{str(filt)}\t{str(info)}\t{str(format)}\t{str(sample)}\n')
 
     def write_sam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
                          mate_pos=None, aln_map_quality: int = 70):

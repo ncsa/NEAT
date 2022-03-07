@@ -16,7 +16,7 @@ def parse_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
         print_and_log(f"Parsing vcf {vcf_path}", 'debug')
     # Read in the raw vcf using pandas' csv reader.
     if vcf_path.endswith('.gz'):
-        f = gzip.open(vcf_path)
+        f = gzip.open(vcf_path, 'rt')
     else:
         f = open(vcf_path, 'r')
 
