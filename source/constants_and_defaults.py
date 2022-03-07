@@ -56,7 +56,7 @@ DEFAULT_MUT_MODEL_INS_LENGTH_WEIGHTS = [0.4, 0.2, 0.1, 0.05, 0.05, 0.05, 0.05, 0
 DEFAULT_MUT_MODEL_DEL_LENGTH_VALUES = [1, 2, 3, 4, 5]
 DEFAULT_MUT_MODEL_DEL_LENGTH_WEIGHTS = [0.3, 0.2, 0.2, 0.2, 0.1]
 # This is a subsitution matrix for the set (A,C,T,G). This may be a standard matrix, but I'm not sure where the numbers
-# come from but they do have several impirical examples in the paper
+# come from but they do have several empirical examples in the paper
 DEFAULT_SUBSTITUTION_MATRIX = [[0.0, 0.15, 0.7, 0.15],
                                [0.15, 0.0, 0.15, 0.7],
                                [0.7, 0.15, 0.0, 0.15],
