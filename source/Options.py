@@ -2,6 +2,7 @@ import os
 import pathlib
 from types import SimpleNamespace
 import numpy as np
+import random
 
 from source.error_handling import premature_exit, print_and_log
 
@@ -179,6 +180,10 @@ class Options(SimpleNamespace):
         """
         Some sanity checks and corrections to the options.
         """
+
+        # initialize random seed
+        if not self.args['rng_value']:
+            self.args['rng_value'] = random.randint(2**52, 2**53)
 
         if self.args['produce_fasta']:
             print_and_log("\nFASTA mode active.", 'info')

@@ -9,14 +9,18 @@ Note that I'm planninng to hijack NEAT's features for this.
 """
 
 import argparse
+import bisect
 import datetime
 import logging
 import pathlib
 import random
 import sys
 import time
+import pandas as pd
 
 from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
 from source.Models import Models
 from source.Options import Options
@@ -25,7 +29,7 @@ from source.constants_and_defaults import ALLOWED_NUCL
 from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, print_and_log
 from source.output_file_writer import OutputFileWriter
-from source.run_neat import execute_neat, JobCommonElements
+from source.run_neat import execute_neat
 from source.vcf_func import parse_vcf
 
 
@@ -178,22 +182,98 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool
     return partitions
 
 
-def find_n_regions(sequence, run_options):
-    previous_n_index = 0
+def map_reference(index):
+    """
+    Makes a dictionary with n regions, not n regions and the total n count
+    Note that for this program, anything not ACTG is an N
+    :param index: Input reference_index biopython object
+    :return: A dictionry indexed by contig in the input index, with a subdicitonary containing
+             'n_regions' (list of tuples) - start: end for regions containing unallowed characters in contig
+             'non_n' (list of tuples) - start: end for regions containing allowed characters in contig
+             'n_count' (int) - number of unallowed characters in contig
+
+    >>> my_seq = {'FAKE1': SeqRecord(Seq("ANNUNACTGNNNGTCA"))}
+    >>> print(map_reference(my_seq))
+    {'FAKE1': {'n_regions': [(1, 5), (9, 12)], 'non_n': [(0, 1), (5, 9)], 'n_count': 7}}
+    >>> my_seq = {'FAKE1': SeqRecord(Seq("NNUNACTGNNNGTCA"))}
+    >>> print(map_reference(my_seq))
+    {'FAKE1': {'n_regions': [(0, 4), (8, 11)], 'non_n': [(4, 8)], 'n_count': 7}}
+    """
+    reference_atlas = {x: {'n_regions': [], 'non_n': [], 'n_count': 0} for x in list(index.keys())}
+    prev_non_n = 0
+    prev_index = 0
     n_count = 0
-    n_atlas = []
-    for i in range(len(sequence)):
-        # Checks for invalid characters, most commonly N
-        if sequence[i] not in ALLOWED_NUCL:
-            if n_count == 0:
-                previous_n_index = i
-            n_count += 1
-            if i == len(sequence) - 1:
-                n_atlas.append((previous_n_index, previous_n_index + n_count))
-        else:
-            if n_count > 0:
-                n_atlas.append((previous_n_index, previous_n_index + n_count))
-            n_count = 0
+    for contig in index:
+        contig_sequence = index[contig].seq
+        # Check if the sequence startswith an unallowed character
+        startswith = any([contig_sequence.startswith(n) for n in ALLOWED_NUCL])
+        for i in range(len(contig_sequence)):
+            # Anything not in the allowed list gets called an N
+            if contig_sequence[i] not in ALLOWED_NUCL:
+                reference_atlas[contig]['n_count'] += 1
+                # In the case where the input sequence has Ns in the middle (AAAANNNAAAA),
+                # startswith should catch and put the first interval in (0, 4)
+                if prev_non_n > 0 or startswith:
+                    reference_atlas[contig]['non_n'].append((prev_non_n, i))
+                    prev_non_n = 0
+                    startswith = False
+                if n_count == 0:
+                    prev_index = i
+                n_count += 1
+                if i == len(contig_sequence) - 1:
+                    reference_atlas[contig]['n_regions'].append((prev_index, prev_index + n_count))
+            else:
+                if n_count > 0:
+                    reference_atlas[contig]['n_regions'].append((prev_index, prev_index + n_count))
+                    prev_non_n = prev_index + n_count
+                n_count = 0
+
+    return reference_atlas
+
+
+def parse_mutation_rate_dict(mutation_rate_map, avg_rate):
+    """
+    This parses the mutation rate dict, in order to fill in the dict so it can by more easily cycled through
+    later.
+
+    TODO write tests:
+    - intervals that overlap
+    - intervals that don't overlap
+    - intervals with gaps
+    - intervals with no gaps
+    - mixes of the above
+    - empty dictionary ({'chrX': []})
+    """
+    # creates the default dict
+    ret_dict = {x: [] for x in mutation_rate_map}
+    for chrom in mutation_rate_map:
+        regions = mutation_rate_map[chrom]
+        regions.sort()
+        total_regions = []
+        # check for overlaps
+        prev_index = 0
+        for i in range(len(regions)):
+            # This compares the set of coordinates
+            if regions[i][0] >= regions[i][1]:
+                print_and_log(f'Mutation bed with invalid coordinates', 'error')
+                premature_exit(1)
+            current_index = regions[i][0]
+            # This checks for an overlap. This can only happen when i > 0, by design
+            if current_index < prev_index:
+                print_and_log(f'Mutation rate region has overlapping regions, merging.', 'warning')
+                # We just average the two regions together
+                interval = (regions[i - 1][0], regions[i][1], (regions[i - 1][2] + regions[i][2]) / 2)
+                # Get rid of previous, to be replaced by ^^
+                total_regions.pop()
+            else:
+                interval = (current_index, regions[i][1], regions[i][2])
+                # This creates an interval in between the bed intervals with default mutation rate
+                if current_index != prev_index:
+                    total_regions.append((prev_index, current_index, avg_rate))
+            total_regions.append(interval)
+            prev_index = regions[i][1]
+        ret_dict[chrom] = total_regions
+    return ret_dict
 
 
 def main(raw_args=None):
@@ -248,9 +328,6 @@ def main(raw_args=None):
     print_and_log(f'Reading {options.reference}...', 'info')
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
-    # TODO still not sure I need this. It requires combing through the entire sequence, which I don't like
-    # Maybe add this into the main loop.
-    # n_regions = find_n_regions(reference_index, options)
 
     if options.debug:
         print_and_log(f'Reference file indexed.', 'debug')
@@ -266,7 +343,8 @@ def main(raw_args=None):
     # It is True if they all start with "chr" and False otherwise.
     begins_with_chr = all(k.startswith('chr') for k in options.reference_chromosomes)
 
-    input_variants = None
+    sample_names = []
+    input_variants = pd.DataFrame()
     if options.include_vcf:
         print_and_log(f"Reading input VCF...", 'info')
         if options.cancer:
@@ -335,20 +413,22 @@ def main(raw_args=None):
                 else:
                     print_and_log(f'variants skipped: 0', 'info')
 
-    # parse input targeted regions, if present
+    # parse input targeted regions, if present.
     if options.target_bed or options.discard_bed or options.mutation_bed:
         print_and_log(f"Reading input bed files.", 'info')
-    # Note if options.target_bed is empty, this just returns an empty data frame
-    target_regions_df = parse_bed(options.target_bed, options.reference_chromosomes,
-                                  begins_with_chr, False, options.debug)
 
-    # parse discard bed similarly
-    discard_regions_df = parse_bed(options.discard_bed, options.reference_chromosomes,
-                                   begins_with_chr, False, options.debug)
+    # Note if any bed is empty, parse_bed just returns a dict of chromosomes with empty list values
 
-    # parse input mutation rate rescaling regions, if present
-    mutation_rate_df = parse_bed(options.mutation_bed, options.reference_chromosomes,
-                                 begins_with_chr, True, options.debug)
+    target_regions_dict = parse_bed(options.target_bed, options.reference_chromosomes,
+                                    begins_with_chr, False, options.debug)
+
+    discard_regions_dict = parse_bed(options.discard_bed, options.reference_chromosomes,
+                                     begins_with_chr, False, options.debug)
+
+    mutation_rate_dict = parse_bed(options.mutation_bed, options.reference_chromosomes,
+                                   begins_with_chr, True, options.debug)
+
+    mutation_rate_dict = parse_mutation_rate_dict(mutation_rate_dict, models.mutation_model['avg_mut_rate'])
 
     if options.debug:
         print_and_log(f'Finished reading input beds.', 'debug')
@@ -430,11 +510,17 @@ def main(raw_args=None):
     # these will be the features common to each contig, for multiprocessing
     common_features = {}
     for contig in breaks:
-        common_features[contig] = JobCommonElements(reference_index, contig, out_prefix_name, target_regions_df,
-                                                    discard_regions_df, mutation_rate_df, input_variants,
-                                                    models, options)
-    for contig in breaks:
-        execute_neat(options, breaks[contig], common_features[contig])
+        execute_neat(reference_index[contig],
+                     contig,
+                     out_prefix_name,
+                     target_regions_dict[contig],
+                     discard_regions_dict[contig],
+                     mutation_rate_dict[contig],
+                     input_variants[input_variants.CHROM.isin([chrom])],
+                     models,
+                     options,
+                     output_file_writer,
+                     output_file_writer_cancer)
 
     # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
 

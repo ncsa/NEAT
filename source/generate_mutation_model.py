@@ -221,16 +221,16 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
     print(f'{PROG} - Creating mutational model...')
     total_reflen = 0
-    for ref_name in matching_chromosomes:
+    for contig in matching_chromosomes:
         # Running total of how many non-N bases there are in the reference
-        total_reflen += len(reference_idx[ref_name].seq) - reference_idx[ref_name].seq.count('N')
+        total_reflen += len(reference_idx[contig].seq) - reference_idx[contig].seq.count('N')
 
         # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
         vcf_common = []
 
         # Create a view that narrows variants list to current ref
-        variants_to_process = matching_variants[matching_variants['CHROM'] == ref_name]
-        ref_sequence = reference_idx[ref_name].seq
+        variants_to_process = matching_variants[matching_variants['CHROM'] == contig]
+        ref_sequence = reference_idx[contig].seq
 
         # Process the variant table
         indel_variants = variants_to_process[variants_to_process['ALT'].apply(len) !=
@@ -284,7 +284,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
         # if we didn't find anything, skip ahead along to the next reference sequence
         if not len(vcf_common):
-            print(f'{PROG} - Found no variants for this reference {ref_name}.')
+            print(f'{PROG} - Found no variants for this reference {contig}.')
             continue
 
         # identify common mutations
@@ -292,7 +292,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
         min_value = np.percentile([n[4] for n in vcf_common], percentile_var)
         for k in sorted(vcf_common):
             if k[4] >= min_value:
-                common_variants.append((ref_name, k[0], k[1], k[3], k[4]))
+                common_variants.append((contig, k[0], k[1], k[3], k[4]))
         vcf_common = {(n[0], n[1], n[2], n[3]): n[4] for n in vcf_common}
 
         # identify areas that have contained significantly higher random mutation rates
@@ -314,7 +314,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
         minimum_value = np.percentile([n[0] for n in candidate_regions], percentile_clust)
         for n in candidate_regions:
             if n[0] >= minimum_value:
-                high_mut_regions.append((ref_name, n[1], n[2], n[0]))
+                high_mut_regions.append((contig, n[1], n[2], n[0]))
         # collapse overlapping regions
         for i in range(len(high_mut_regions) - 1, 0, -1):
             if high_mut_regions[i - 1][2] >= high_mut_regions[i][1] and high_mut_regions[i - 1][0] == \
