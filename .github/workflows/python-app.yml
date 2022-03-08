@@ -55,6 +55,20 @@ jobs:
            cd ${{ github.workspace }}/utilities
            python validateFQ.py ../data/baby.fastq
       - run: echo "🍏 This job's status is ${{ job.status }}." 
+      
+  job-genmut:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Check out repository code
+         uses: actions/checkout@v2
+       - name: Execute gen_mut_model.py
+         run: |
+           pip install numpy
+           pip install biopython
+           pip install pandas
+           cd ${{ github.workspace }}/utilities
+           python gen_mut_model.py ../data/ecoli.fa ../data/small.vcf testgmm  
+       - run: echo "🍏 This job's status is ${{ job.status }}."
        
       
 
