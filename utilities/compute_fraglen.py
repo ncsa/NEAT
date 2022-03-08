@@ -1,5 +1,4 @@
 #
-#
 #      Compute Fragment Length Model for gen_reads.py
 #                  compute_fraglen.py
 #
@@ -157,5 +156,7 @@ def main():
     pickle.dump([out_vals, out_probs], gzip.open(output, 'wb'))
     print('\nModel successfully saved.')
 
+
 if __name__ == "__main__":
     main()
+    
