@@ -32,8 +32,8 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: test gen_reads
         run: python gen_reads.py -R 101 -o test -r data/H1N1.fasta 
-      - name: test BAM
-        run: python gen_mut_model.py 
+      - name: test gen_mut
+        run: python /utilities/gen_mut_model.py -r /data/ecoli.fa -m /data/small.vcf -o testgmm
        
       
 
