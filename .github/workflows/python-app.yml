@@ -33,18 +33,8 @@ jobs:
       - name: test gen_reads
         run: python gen_reads.py -R 101 -o test -r data/H1N1.fasta 
       - name: test BAM
-        run: python validateBam.py -i /data/baby.bam 
+        run: python gen_mut_model.py -r /data/ecoli.fa -m /data/small.vcf -o testgmm
        
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-      - name: List files in the repository
-        run: |
-          ls ${{ github.workspace }}/data
-      - run: echo "🍏 This job's status is ${{ job.status }}."
       
 
       
