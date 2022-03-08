@@ -32,6 +32,8 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: test gen_reads
         run: python gen_reads.py -R 101 -o test -r data/H1N1.fasta 
+      - name: test BAM
+        run: python validateBam.py -i /data/baby.bam 
        
       - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
       - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
@@ -43,7 +45,6 @@ jobs:
         run: |
           ls ${{ github.workspace }}/data
       - run: echo "🍏 This job's status is ${{ job.status }}."
-      - name: test BAM
-        run: python validateBam.py -i ${{ github.workspace }}/data/baby.bam 
+      
 
       
