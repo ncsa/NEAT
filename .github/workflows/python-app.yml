@@ -43,6 +43,18 @@ jobs:
           cd ${{ github.workspace }}/utilities
           python validateBam.py ../data/baby.bam
       - run: echo "🍏 This job's status is ${{ job.status }}." 
+  
+  job-valFQ:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Execute validateFQ.py
+        run: |
+           pip install biopython
+           cd ${{ github.workspace }}/utilities
+           python validateFQ.py ../data/baby.fastq
+      - run: echo "🍏 This job's status is ${{ job.status }}."
        
       
 
