@@ -67,7 +67,7 @@ jobs:
            pip install biopython
            pip install pandas
            cd ${{ github.workspace }}/utilities
-           python gen_mut_model.py ../data/ecoli.fa ../data/small.vcf testgmm  
+           python gen_mut_model.py -r ../data/ecoli.fa -m ../data/small.vcf -o testgmm  
        - run: echo "🍏 This job's status is ${{ job.status }}."
        
       
