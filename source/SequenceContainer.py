@@ -389,6 +389,8 @@ class SequenceContainer:
             return np.mean(avg_out)
 
     def init_poisson(self):
+        # The problem with this line of code is that for shorter sequences, it finds no mutations, even if there 
+        # should be one or two.
         ind_l_list = [self.seq_len * self.models[i][0] * self.models[i][2] * self.ploid_mut_frac[i] for i in
                       range(len(self.models))]
         snp_l_list = [self.seq_len * self.models[i][0] * (1. - self.models[i][2]) * self.ploid_mut_frac[i] for i in
