@@ -56,18 +56,18 @@ jobs:
            python validateFQ.py ../data/baby.fastq
       - run: echo "🍏 This job's status is ${{ job.status }}." 
       
-  job-genmut:
+  job-computegc:
     runs-on: ubuntu-latest
     steps:
        - name: Check out repository code
          uses: actions/checkout@v2
-       - name: Execute gen_mut_model.py
+       - name: Execute compute_gc.py
          run: |
            pip install numpy
            pip install biopython
            pip install pandas
            cd ${{ github.workspace }}/utilities
-           python gen_mut_model.py -r ../data/ecoli.fa -m ../data/small.vcf -o testgmm  
+           python compute_gc.py -i ../data/small.genomecov -r ../data/ecoli.fa -o gcop  
        - run: echo "🍏 This job's status is ${{ job.status }}."
        
       
