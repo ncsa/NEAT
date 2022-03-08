@@ -32,8 +32,19 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: test gen_reads
         run: python gen_reads.py -R 101 -o test -r data/H1N1.fasta 
-      - name: test gen_mut
+      - name: open gen_mut
         run: python /utilities/gen_mut_model.py -r /data/ecoli.fa -m /data/small.vcf -o testgmm
+      
+  job-valBAM:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Execute validateBAM.py
+        run: |
+          cd ${{ github.workspace }}/utilities
+          python validateBam.py -i ../data/baby.bam
+      - run: echo "🍏 This job's status is ${{ job.status }}."
        
       
 
