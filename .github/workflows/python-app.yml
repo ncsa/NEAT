@@ -31,4 +31,45 @@ jobs:
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: test gen_reads
-        run: python gen_reads.py -R 101 -o test -r data/H1N1.fasta
+        run: python gen_reads.py -R 101 -o test -r data/H1N1.fasta 
+      
+  job-valBAM:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Execute validateBAM.py
+        run: |
+          cd ${{ github.workspace }}/utilities
+          python validateBam.py ../data/baby.bam
+      - run: echo "🍏 This job's status is ${{ job.status }}." 
+  
+  job-valFQ:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Execute validateFQ.py
+        run: |
+           pip install biopython
+           cd ${{ github.workspace }}/utilities
+           python validateFQ.py ../data/baby.fastq
+      - run: echo "🍏 This job's status is ${{ job.status }}." 
+      
+  job-computegc:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Check out repository code
+         uses: actions/checkout@v2
+       - name: Execute compute_gc.py
+         run: |
+           pip install numpy
+           pip install biopython
+           pip install pandas
+           cd ${{ github.workspace }}/utilities
+           python compute_gc.py -i ../data/small.genomecov -r ../data/ecoli.fa -o gcop  
+       - run: echo "🍏 This job's status is ${{ job.status }}."
+       
+      
+
+      
