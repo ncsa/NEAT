@@ -43,7 +43,7 @@ jobs:
       - name: Execute validateBAM.py
         run: |
           cd ${{ github.workspace }}/utilities
-          python validateBam.py -i ../data/baby.bam
+          python validateBam.py ../data/baby.bam
       - run: echo "🍏 This job's status is ${{ job.status }}." 
        
       
