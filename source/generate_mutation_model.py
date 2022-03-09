@@ -44,16 +44,9 @@ def extract_header(vcf_file):
 
 def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_bed: str):
 
-    variants = pd.read_csv(vcf_file, comment="#", sep="\t", header=None)
-
-    if input_bed:
-        variants = variants.iloc[:, 3:]
-        # In case there were any mismatches (i.e., items in the bed that are not in the vcf), pybedtools
-        # would already have pointed them out, so here we drop them
-        variants = variants.drop(variants[variants[3] == '.'].index)
-
-    # If there is a problem with the columns, pandas will throw an error here.
-    variants = variants.set_axis(column_names, axis=1)
+    variants = pd.read_csv(vcf_file, comment="#", sep="\t", header=None,
+                           names=column_names,
+                           usecols=['CHROM', 'POS', 'REF', 'ALT', 'INFO'])
 
     variant_chroms = variants['CHROM'].unique()
     matching_chroms = []
@@ -66,10 +59,12 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_
     # We'll go ahead and filter out multiple alts, and variants where both REF and ALT are
     # more than one base. This was done to make the trinucelotide context counts make more sense.
     multi_alts = ret[ret['ALT'].str.contains(',')].index
+    ret = ret.drop(multi_alts)
+
     complex_vars = ret[(ret['REF'].apply(len) > 1) &
                        (ret['ALT'].apply(len) > 1)].index
-    ret = ret.drop(multi_alts)
     ret = ret.drop(complex_vars)
+
     return ret, matching_chroms
 
 
@@ -185,22 +180,16 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
     # Clean up and simplify reference index
     # simplify naming and filter out actual human genomes from scaffolding
+    ignore = []
     if human_flag:
-        for key in reference_idx.keys():
-            if ' ' in key:
-                key_to_check = key.split(' ')[0]
-            elif '|' in key:
-                key_to_check = key.split('|')[0]
-            else:
-                key_to_check = key
+        for key in reference_idx:
+            if key.startswith('chr'):
+                key_to_check = key_to_check[3:]
             if key_to_check not in HUMAN_WHITELIST:
-                del reference_idx[key]
+                ignore.append(key)
 
-    if not reference_idx:
+    if len(ignore) == len(reference_idx):
         print(f"{PROG} - No valid contigs detected. If using whitelist, all contigs may have been filtered out.")
-        print(f"Note: Names must follow convention of starting with the contig name, "
-              "followed by a space or pipe, then supplemental information (>chr1 dna:chromosome). "
-              "Check contig names and try again.")
         sys.exit(1)
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
@@ -478,9 +467,6 @@ if __name__ == '__main__':
         print(f'{PROG} - Input reference is not a file: {reference}')
         sys.exit(1)
 
-    print('Processing reference...')
-    reference_index = read_fasta(reference)
-
     if not pathlib.Path(vcf).is_file():
         print(f'{PROG} - Input VCF is not a file: {vcf}')
         sys.exit(1)
@@ -488,12 +474,17 @@ if __name__ == '__main__':
     if bed:
         if not pathlib.Path(bed).is_file():
             print(f'{PROG} - Input BED is not a file: {bed}')
+            sys.exit(1)
+
+    print('Processing reference...')
+    reference_index = read_fasta(reference)
 
     vcf_header = extract_header(pathlib.Path(vcf))
     vcf_columns = vcf_header[-1]
 
     vcf_to_process = pathlib.Path(vcf)
     if bed:
+        vcf_columns = ['bed_chr', 'bed_pos1', 'bed_pos2'] + vcf_columns
         bed_file = pybedtools.BedTool(bed)
         # used bedtools to intersect the bed and vcf. This will require further processing.
         # The fn at the end extracts the filename, which is what the function expects.

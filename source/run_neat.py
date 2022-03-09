@@ -298,7 +298,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             alt = random.choice(ALLOWED_NUCL)
 
         # we're maximally confident that we inserted this variant
-        quality_score = max(models.sequencing_error_model.quality_scores)
+        quality_score = max(models.sequencing_error_model['quality_scores'])
 
         # Note that ID and INFO is always just a period, indicating no data, for NEAT
         line = f'{chrom}\t{final_position}\t.\t{ref}\t' \
