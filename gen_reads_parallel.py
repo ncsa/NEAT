@@ -510,13 +510,16 @@ def main(raw_args=None):
     # these will be the features common to each contig, for multiprocessing
     common_features = {}
     for contig in breaks:
+        inputs_df = pd.DataFrame()
+        if not input_variants.empty:
+            inputs_df = input_variants[input_variants.CHROM.isin([chrom])]
         execute_neat(reference_index[contig],
                      contig,
                      out_prefix_name,
                      target_regions_dict[contig],
                      discard_regions_dict[contig],
                      mutation_rate_dict[contig],
-                     input_variants[input_variants.CHROM.isin([chrom])],
+                     inputs_df,
                      models,
                      options,
                      output_file_writer,
@@ -524,8 +527,10 @@ def main(raw_args=None):
 
     # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
 
-
     # Step 5 (CAVA 500 - 501) - Printing out summary and end time
+
+    # End info
+    print_end_info(output_file_writer, output_file_writer_cancer, starttime)
 
 
 if __name__ == '__main__':
