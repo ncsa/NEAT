@@ -359,14 +359,11 @@ class Models:
         if options.debug:
             print_and_log("Mutation models loaded", 'debug')
 
-        # We only need sequencing errors if we are producing a bam or fastq
-        self.sequencing_error_model = None
-        if options.produce_bam or options.produce_fastq:
-            # parse sequencing error file
-            self.sequencing_error_model = SequencingErrorModel(options)
+        # We need sequencing errors to get the quality score attributes, even for the vcf
+        self.sequencing_error_model = SequencingErrorModel(options)
 
-            if options.debug:
-                print_and_log('Sequencing error model loaded', 'debug')
+        if options.debug:
+            print_and_log('Sequencing error model loaded', 'debug')
 
         mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
                "This file should be the output of compute_gc.py'"
