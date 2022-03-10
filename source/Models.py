@@ -189,7 +189,7 @@ class SequencingErrorModel:
         """
         mssg = "Problem loading Sequencing error model data @error_model"
         error_model = pickle_load_model(gzip.open(options.error_model, 'rb'), mssg)
-
+        # Convert qual scores to numpy array for faster recall.
         self.quality_scores = np.array(error_model['quality_scores'])
         # pre-compute the error rate for each quality score
         self.quality_score_error_rate = {x: 10. ** (-x / 10) for x in error_model['quality_scores']}
