@@ -121,7 +121,7 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
 
     else:
         # These will just be uniform
-        out_model['trinuc_mut_prob'] = DiscreteDistribution([1] * ALL_TRI, ALL_TRI)
+        out_model['trinuc_mut_prob'] = DiscreteDistribution([1] * len(ALL_TRI), ALL_TRI)
         out_model['trinuc_trans_prob'] = {x: {'A': 0.25, 'C': 0.25, 'T': 0.25, 'G': 0.25} for x in ALL_TRI}
 
         out_model['insert_length_model'] = DiscreteDistribution(out_model['insert_length_weights'],
