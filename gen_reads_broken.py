@@ -27,7 +27,7 @@ from Bio import SeqIO
 
 from source.input_checking import check_file_open, is_in_range
 from source.ref_func import index_ref, read_ref
-from source.vcf_func import parse_vcf
+from source.vcf_func import parse_input_vcf
 from source.output_file_writer import OutputFileWriter, reverse_complement, sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 from source.SequenceContainer import SequenceContainer
@@ -299,12 +299,12 @@ def main(raw_args=None):
     input_variants = []
     if input_vcf is not None:
         if cancer:
-            (sample_names, input_variants) = parse_vcf(input_vcf, tumor_normal=True, ploidy=ploids)
+            (sample_names, input_variants) = parse_input_vcf(input_vcf, tumor_normal=True, ploidy=ploids)
             # TODO figure out what these were going to be used for
             tumor_ind = sample_names.index('TUMOR')
             normal_ind = sample_names.index('NORMAL')
         else:
-            (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids)
+            (sample_names, input_variants) = parse_input_vcf(input_vcf, ploidy=ploids)
         for k in sorted(input_variants.keys()):
             input_variants[k].sort()
 
