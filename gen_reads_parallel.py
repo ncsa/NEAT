@@ -34,7 +34,7 @@ from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, print_and_log
 from source.output_file_writer import OutputFileWriter
 from source.run_neat import execute_neat
-from source.vcf_func import parse_vcf
+from source.vcf_func import parse_input_vcf
 
 
 # useful functions for the rest
@@ -85,7 +85,7 @@ def print_configuration(args, options):
         print_and_log(f"Single threading - 1 thread.", 'info')
     else:
         print_and_log(f'Multithreading coming soon!!', 'info')
-        premature_exit(0)
+        print_and_log(f"Single threading - 1 thread.", 'info')
         # We'll work on mulitthreading later...
         # print_and_log(f'Multithreading - {options.threads} threads', 'info')
     if options.paired_ended:
@@ -132,7 +132,7 @@ def print_configuration(args, options):
         print_and_log(f'RNG seed value: {options.rng_value}', 'INFO')
 
 
-def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool = False) -> dict:
+def find_file_breaks(threads: int, mode: str, reference_index: dict) -> dict:
     """
     Returns a dictionary with the chromosomes as keys
     For the chrom method, the value for each key will just  be "all"
@@ -141,7 +141,6 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool
     :param threads: number of threads for this run
     :param mode: partition mode for this run (chrom or subdivision)
     :param reference_index: a dictionary with chromosome keys and sequence values
-    :param debug: Turns debug mode on, if True
     :return: a dictionary containing the chromosomes as keys and either "all" for valuse, or a list of indices
 
     >>> index = {'chr1': "ACCATACACGGGCAACACACGTACACATTATACC"}
@@ -178,8 +177,7 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict, debug: bool
                     # Have to extend the last one so we don't get a tiny read we can't process
                     partitions[contig][-1] = (partitions[contig][-1][0], contig_length)
 
-        if debug:
-            print_and_log(f'breaks = {partitions}', 'debug')
+        print_and_log(f'breaks = {partitions}', 'debug')
     else:
         print_and_log("Invalid partition mode. Must be either chrom or subdivision.", 'error')
         premature_exit(1)
@@ -300,9 +298,15 @@ def main(raw_args=None):
 
     log_name = f'{args.output}.log'
 
+    # Configure logging with basic parameters.
     logging.basicConfig(filename=log_name, filemode='w',
                         format='%(asctime)s %(levelname)s %(threadName)s: %(message)s',
                         level=logging.DEBUG)
+
+    # Set the logger to only write
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    logging.getLogger('').addHandler(console)
 
     starttime = print_start_info()
 
@@ -314,6 +318,10 @@ def main(raw_args=None):
     # some basic checks and corrections.
     options = Options(args.conf)
     print_configuration(args, options)
+
+    # Now that we've read the options, we can set the logger to the appropriate level
+    if not options.debug:
+        logging.getLogger('').setLevel(logging.INFO)
 
     """
     Model preparation
@@ -333,8 +341,7 @@ def main(raw_args=None):
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
 
-    if options.debug:
-        print_and_log(f'Reference file indexed.', 'debug')
+    print_and_log(f'Reference file indexed.', 'debug')
 
     # there is not a reference_chromosome in the options defs because
     # there is nothing that really needs checking, so this command will just
@@ -352,70 +359,18 @@ def main(raw_args=None):
     if options.include_vcf:
         print_and_log(f"Reading input VCF...", 'info')
         if options.cancer:
-            (sample_names, input_variants) = parse_vcf(options.include_vcf,
-                                                       tumor_normal=True,
-                                                       ploidy=options.ploidy,
-                                                       debug=options.debug)
+            (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
+                                                             tumor_normal=True,
+                                                             ploidy=options.ploidy)
             # TODO figure out what these were going to be used for
-            tumor_ind = sample_names.index('tumor_sample_split')
-            normal_ind = sample_names.index('normal_sample_split')
+            tumor_ind = sample_names.index('tumor_sample')
+            normal_ind = sample_names.index('normal_sample')
         else:
-            (sample_names, input_variants) = parse_vcf(options.include_vcf,
-                                                       ploidy=options.ploidy,
-                                                       debug=options.debug)
+            (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
+                                                             ploidy=options.ploidy,
+                                                             debug=options.debug)
 
-        if options.debug:
-            print_and_log("Finished reading @include_vcf file. Now filtering.", "debug")
-
-        # Remove any chromosomes that aren't in the reference.
-        input_variants_chroms = input_variants['CHROM'].unique()
-        for item in input_variants_chroms:
-            if item not in options.reference_chromosomes and not printed_warning:
-                print_and_log(f'Warning: ignoring all input vcf records for {item} '
-                              f'because it is not found in the reference.', 'warning')
-                print_and_log(f'\tIf this is unexpected, check that that {item} '
-                              f'matches reference name exactly.', 'warning')
-                printed_warning = True
-                input_variants = input_variants[input_variants['CHROM'] != item]
-
-        # Check the variants and classify as needed
-        for chrom in options.reference_chromosomes:
-            n_skipped = [0, 0, 0]
-            if chrom in input_variants_chroms:
-                for index, row in input_variants[input_variants['CHROM'] == chrom].iterrows():
-                    span = (row['POS'], row['POS'] + len(row['REF']))
-                    # -1 because going from VCF coords to array coords
-                    r_seq = str(reference_index[chrom].seq[span[0] - 1:span[1] - 1])
-                    # Checks if there are any invalid nucleotides in the vcf items
-                    any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in
-                                       [item for sublist in row['alt_split'] for item in sublist])
-                    # Ensure reference sequence matches the nucleotide in the vcf
-                    if r_seq != row['REF']:
-                        n_skipped[0] += 1
-                        input_variants.drop(index, inplace=True)
-                        continue
-                    # Ensure that we aren't trying to insert into an N region
-                    elif 'N' in r_seq:
-                        n_skipped[1] += 1
-                        input_variants.drop(index, inplace=True)
-                        continue
-                    # Ensure that we don't insert any disallowed characters
-                    elif any_bad_nucl:
-                        n_skipped[2] += 1
-                        input_variants.drop(index, inplace=True)
-                        continue
-
-                if options.debug:
-                    print_and_log("Finished filtering @include_vcf file.", 'debug')
-
-                print_and_log(f'Found {len(input_variants)} valid variants after filtering for {chrom} in @include_vcf.', 'info')
-                if any(n_skipped):
-                    print_and_log(f'variants skipped: {sum(n_skipped)}', 'info')
-                    print_and_log(f' - [{str(n_skipped[0])}] ref allele did not match reference', 'info')
-                    print_and_log(f' - [{str(n_skipped[1])}] attempted to insert into N-region', 'info')
-                    print_and_log(f' - [{str(n_skipped[2])}] alt allele contained non-ACGT characters', 'info')
-                else:
-                    print_and_log(f'variants skipped: 0', 'info')
+        print_and_log("Finished reading @include_vcf file.", "info")
 
     # parse input targeted regions, if present.
     if options.target_bed or options.discard_bed or options.mutation_bed:
@@ -434,8 +389,7 @@ def main(raw_args=None):
 
     mutation_rate_dict = parse_mutation_rate_dict(mutation_rate_dict, models.mutation_model['avg_mut_rate'])
 
-    if options.debug:
-        print_and_log(f'Finished reading input beds.', 'debug')
+    print_and_log(f'Finished reading input beds.', 'debug')
 
     """
     Initialize Output Files
@@ -453,8 +407,7 @@ def main(raw_args=None):
     out_prefix_name = pathlib.Path(args.output).resolve().name
     out_prefix_parent_dir = pathlib.Path(pathlib.Path(args.output).resolve().parent)
     if not out_prefix_parent_dir.is_dir():
-        if options.debug:
-            print_and_log(f'Creating output dir: {out_prefix_parent_dir}', 'info')
+        print_and_log(f'Creating output dir: {out_prefix_parent_dir}', 'debug')
         out_prefix_parent_dir.mkdir(parents=True, exist_ok=True)
 
     # Creates files and sets up objects for files that can be written to as needed.
@@ -482,8 +435,7 @@ def main(raw_args=None):
                                               )
         output_file_writer_cancer = None
 
-    if options.debug:
-        print_and_log(f'Output files ready for writing.', 'debug')
+    print_and_log(f'Output files ready for writing.', 'debug')
 
     """
     Begin Analysis
@@ -496,13 +448,11 @@ def main(raw_args=None):
 
     if not breaks:
         # Printing out summary information and end time
-        if options.debug:
-            print_and_log("Found no chromosomes in reference.", 'debug')
+        print_and_log("Found no chromosomes in reference.", 'debug')
         print_end_info(output_file_writer, output_file_writer_cancer, starttime)
         sys.exit(0)
 
-    if options.debug:
-        print_and_log("Input file partitioned.", 'debug')
+    print_and_log("Input file partitioned.", 'debug')
 
     """
     REDO with mpire. The package can map a function to an iterable, so we will use the breaks as the iterable
@@ -524,7 +474,8 @@ def main(raw_args=None):
     for contig in breaks:
         inputs_df = pd.DataFrame()
         if not input_variants.empty:
-            inputs_df = input_variants[input_variants.CHROM.isin([chrom])]
+            # We used to filter above, but this has the same effect
+            inputs_df = input_variants[input_variants.CHROM.isin([contig])]
         vcf_files.append(execute_neat(reference_index[contig],
                          contig,
                          out_prefix_name,
@@ -532,6 +483,7 @@ def main(raw_args=None):
                          discard_regions_dict[contig],
                          mutation_rate_dict[contig],
                          inputs_df,
+                         sample_names,
                          models,
                          options,
                          out_prefix))
