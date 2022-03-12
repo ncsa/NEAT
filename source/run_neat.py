@@ -1,4 +1,5 @@
 import gzip
+import math
 import random
 import time
 from random import choice
@@ -9,7 +10,7 @@ from mpire import WorkerPool
 from source.error_handling import print_and_log, premature_exit
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.probability import DiscreteDistribution
-from source.vcf_func import parse_vcf
+from source.vcf_func import parse_input_vcf
 import tempfile
 import pandas as pd
 import io
@@ -55,7 +56,7 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
 
 
 def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regions,
-                 mutation_rate_regions, input_variants, models, options,
+                 mutation_rate_regions, input_variants, sample_columns, models, options,
                  out_prefix):
     """
     This function will take all the setup we did in the main part and actually do NEAT stuff.
@@ -113,30 +114,51 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     contig_sequence = reference.seq
 
     start = time.time()
+
+    # Trying te prevent inserting a mutation in more than one place
+    blacklist = []
     """
     Inserting any input mutations
     """
-    for variant in input_variants.iterrows():
-        ref_sequence = contig_sequence[variant.POS:len(variant.REF)]
-        if ref_sequence != variant.REF:
-            print_and_log(f"Skipping variant where reference does not match "
-                          f"input vcf at {chrom}: {variant.POS}", 'warning')
-            continue
-        number_of_alts = len(variant.ALT.split(','))
-        genotype = pick_ploids(options.ploidy, number_of_alts)
+    if not input_variants.empty:
+        print_and_log(f'Adding input mutations...', 'info')
+        # TODO we'll have to add extra code for cancer, later
+        for variant in input_variants.iterrows():
+            ref_sequence = contig_sequence[variant.POS:len(variant.REF)]
+            if ref_sequence != variant.REF:
+                print_and_log(f"Skipping variant where reference does not match "
+                              f"input vcf at {chrom}: {variant.POS}", 'warning')
+                continue
+            if variant.ALT == '.':
+                print_and_log(f'Found monomorphic reference variant. '
+                              f'These prevent mutations from being added at that location.', 'info')
+                genotype = [0] * options.ploidy
+            else:
+                number_of_alts = len(variant.ALT.split(','))
+                # TODO might need to refine the blacklist to include the ploidy too
+                if 'GT' in variant.FORMAT:
+                    gt_index = variant.FORMAT.split(':').index("GT")
+                    gt_string = variant.input_sample.split(':')[gt_index]
+                    genotype = gt_string.replace('/', '|').split('|')
+                else:
+                    genotype = pick_ploids(options.ploidy, number_of_alts)
+            if variant.POS in blacklist:
+                print_and_log(f'Skipping input variant because a variant '
+                              f'already exists at that location {variant}', 'warning')
+                continue
+            line = f'{variant.CHROM}\t{variant.POS}\t{variant.ID}\t{variant.REF}\t' \
+                   f'{variant.ALT}\t{variant.QUAL}\t' \
+                   f'PASS\t{variant.INFO}\t' \
+                   f'GT\t{"/".join(genotype)}\n'
 
-        line = f'{chrom}\t{variant.POS}\t{variant.ID}\t{variant.REF}\t' \
-               f'{variant.ALT}\t{variant.QUAL}\t' \
-               f'PASS\t{variant.INFO}\t' \
-               f'GT\t{"/".join(genotype)}\n'
+            with open(tmp_vcf_fn, 'a') as tmp:
+                tmp.write(line)
 
-        with open(tmp_vcf_fn, 'a') as tmp:
-            tmp.write(line)
+            blacklist.append(variant.POS)
 
-    if options.debug:
         print_and_log(f'Completed inserting the input mutations for {chrom} in {time.time() - start}', 'debug')
 
-    print_and_log(f'Mutating {chrom}', 'info')
+    print_and_log(f'Generating random mutations for {chrom}', 'info')
     start = time.time()
 
     """
@@ -162,8 +184,8 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                                                   weighted_mutation_regions.values())
 
     mutations_to_add = int(len(contig_sequence) * overall_mutation_rate) + 1
-    if options.debug:
-        print_and_log(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
+    print_and_log(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
+
     mutation_data = []
 
     for variant in range(mutations_to_add):
@@ -262,6 +284,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             if in_region:
                 allowed = False
 
+
         # Let's assume we're fine, then adjust if not
         final_position = mutation[5]
         # if we're somewhere we shouldn't be, let's find the closest place where we can be.
@@ -274,16 +297,23 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 # okay, so we didn't find it to the right of the starting point. To look the other direction
                 # We will look up to the current location, but reverse the list, so we find the highest index
                 sub_sequence = contig_sequence[:mutation[5]]
-                for i in range(len(sub_sequence), 0, 1):
+                for i in range(len(sub_sequence), -1, -1):
                     if sub_sequence[i] in ALLOWED_NUCL:
                         final_position = i
                 # We still didn't find anywhere to put it. I guess we skip it. This seems like an edge case.
                 if final_position == -1:
-                    print_and_log(f'mutation skipped! {mutation}', 'warning')
+                    print_and_log(f'Could not locate a suitable position for {mutation}', 'warning')
                     continue
+            if final_position in blacklist:
+                print_and_log(f'Could not locate a suitable position for {mutation}', 'warning')
+                continue
             # Since we checked a subsequence for the final position, and at this point we know that
             # we have a solid final_position, let's add that to the total.
             final_position += mutation[5]
+
+        if final_position in blacklist:
+            print_and_log(f'Skipping variant, as there is already one in this location: {mutation}', 'warning')
+            continue
 
         # at this point we should have a final position.
         if is_indel:
@@ -313,19 +343,19 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         with open(tmp_vcf_fn, 'a') as tmp:
             tmp.write(line)
 
-        if options.debug:
-            print_and_log(f'wrote variant: {line}', 'debug')
+        blacklist.append(final_position)
 
     print_and_log(f"Finished mutating {chrom}. Time: {time.time() - start}", 'debug')
 
     # Let's write out the vcf, if asked to
     if options.produce_vcf:
-        print_and_log(f'Writing output vcf', 'info')
+        print_and_log(f'Sorting and writing output vcf', 'info')
 
         path = f"{tmp_dir_path}/chunk_*.vcf"
         chunksize = 1_000_000
         fid = 1
         lines = []
+        number_of_files = math.ceil(mutations_to_add / chunksize)
 
         with open(str(tmp_vcf_fn), 'r') as f:
             f_out = open(f'{tmp_dir_path}/chunk_{fid}.vcf', 'w')
@@ -333,24 +363,27 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 if not line.startswith('@'):
                     lines.append(line)
                 if not line_num % chunksize:
+                    print_and_log(f"Sorting file chunk {fid} of {number_of_files}", 'debug')
                     lines = sorted(lines, key=lambda k: (k.split()[0], int(k.split()[1])))
                     f_out.writelines(lines)
-                    print_and_log(f"splitting {chrom} {threadidx} {fid}", 'debug')
                     f_out.close()
                     lines = []
                     fid += 1
                     f_out = open(f'{tmp_dir_path}/chunk_{fid}.vcf' 'w')
+            # If the above loop has a number that is not a multiple of chunksize, then it will
+            # have a remainder. In that case, we do the final step one last time:
             if lines:
-                print_and_log(f"splitting {chrom} {threadidx} {fid}", 'debug')
+                print_and_log(f"Sorting file chunk {fid} {number_of_files}", 'debug')
                 lines = sorted(lines, key=lambda k: (k.split()[0], int(k.split()[1])))
                 f_out.writelines(lines)
                 f_out.close()
-                lines = []
 
         chunks = []
         for filename in glob.glob(path):
             chunks += [open(filename, 'r')]
 
+        if options.debug:
+            print_and_log(f'Sorting chunks into vcf file for {chrom}')
         file = f"{out_prefix}_{chrom}.vcf.gz"
         with gzip.open(file, 'wt') as f_out:
             f_out.writelines(merge(*chunks, key=lambda k: (k.split()[0], int(k.split()[1]))))

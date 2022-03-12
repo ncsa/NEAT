@@ -185,27 +185,10 @@ class Options(SimpleNamespace):
         if not self.args['rng_value']:
             self.args['rng_value'] = random.randint(2**52, 2**53)
 
-        if self.args['produce_fasta']:
-            print_and_log("\nFASTA mode active.", 'info')
-            print_and_log("NOTE: At the moment, NEAT can produce a FASTA or FASTQ files, not both.", 'info')
-            # Turn off fastq and paired-ended mode for now
-            self.args['produce_fastq'] = False
-            self.args['paired_ended'] = False
-            self.args['fragment_model'] = None
-            self.args['fragment_mean'] = None
-            self.args['fragment_st_dev'] = None
         if not self.args['produce_bam'] and not self.args['produce_vcf'] \
                 and not self.args['produce_fasta'] and not self.args['produce_fastq']:
             print_and_log('No files would be produced, as all file types are set to false', 'error')
             premature_exit(1)
-        if not self.args['produce_fastq']:
-            print_and_log("Bypassing FASTQ generation.", 'info')
-        if self.args['produce_vcf'] and (not self.args['produce_fastq'] and not self.args['produce_bam']
-                                         and not self.args['produce_fasta']):
-            print_and_log('Only producing VCF output.', 'info')
-        if self.args['produce_bam'] and (not self.args['produce_fastq'] and not self.args['produce_vcf']
-                                         and not self.args['produce_fasta']):
-            print_and_log('Only producing BAM output.', 'info')
 
         # This next section just checks all the paired ended stuff
         flagged = False
@@ -219,7 +202,7 @@ class Options(SimpleNamespace):
             else:
                 flagged = True
         if flagged:
-            print_and_log("For paired ended mode, you need either a "
+            print_and_log("For paired ended mode, you need to supply either a "
                           "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
             premature_exit(1)
 
