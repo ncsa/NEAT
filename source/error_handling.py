@@ -37,11 +37,11 @@ def log_lines(message: list, error_type: str):
         for line in message:
             logging.debug(line)
     else:
-        print_and_log(f'BUG: Unknown error type', 'critical')
+        log_mssg(f'BUG: Unknown error type', 'critical')
         premature_exit(1)
 
 
-def print_and_log(mssg: str, error_type: str):
+def log_mssg(mssg: str, error_type: str):
     """
     Prints and logs any message. Only for info level messages
 
@@ -50,5 +50,4 @@ def print_and_log(mssg: str, error_type: str):
     """
     message = mssg.split('\n')
     message[1:] = [f'\t - {x}' for x in message[1:]]
-    print_lines(message, error_type.lower())
     log_lines(message, error_type)

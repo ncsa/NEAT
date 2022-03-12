@@ -10,7 +10,7 @@ import pandas as pd
 import scipy
 
 from source.constants_and_defaults import LOW_PROBABILITY_THRESHOLD
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 
 
 def mean_ind_of_weighted_list(candidate_list: list) -> int:
@@ -33,7 +33,7 @@ class DiscreteDistribution:
 
         # some sanity checking
         if not len(weights) or not len(values):
-            print_and_log('Weight or value vector given to DiscreteDistribution() are 0-length.', 'error')
+            log_mssg('Weight or value vector given to DiscreteDistribution() are 0-length.', 'error')
             premature_exit(1)
 
         sum_weight = float(sum(weights))
@@ -47,7 +47,7 @@ class DiscreteDistribution:
             # possibly some thing from another class?
             self.values = values
             if len(self.values) != len(self.weights):
-                print_and_log('Length and weights and values vectors must be the same.', 'error')
+                log_mssg('Length and weights and values vectors must be the same.', 'error')
                 premature_exit(1)
             self.degenerate = degenerate_val
 

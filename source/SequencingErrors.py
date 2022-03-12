@@ -3,7 +3,7 @@ import random
 import numpy as np
 
 from source.constants_and_defaults import ALLOWED_NUCL, NUC_IND
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 from source.probability import DiscreteDistribution
 
 
@@ -24,7 +24,7 @@ class SequencingErrors:
             self.uniform = True
             [q_scores, off_q, avg_error, error_params] = error_model
             self.uniform_q_score = min([max(q_scores), int(-10. * np.log10(avg_error) + 0.5)])
-            print_and_log(f'Reading in uniform sequencing error model... (q={self.uniform_q_score}+{off_q}, '
+            log_mssg(f'Reading in uniform sequencing error model... (q={self.uniform_q_score}+{off_q}, '
                           f'p(err)={(100. * avg_error):0.2f}%)', 'info')
 
         # only 1 q-score model present, use same model for both strands
@@ -37,14 +37,13 @@ class SequencingErrors:
             [init_q1, prob_q1, init_q2, prob_q2, q_scores, off_q, avg_error, error_params] = error_model
             self.pe_models = True
             if len(init_q1) != len(init_q2) or len(prob_q1) != len(prob_q2):
-                print_and_log(f'R1 and R2 quality score models are of different length.', 'error')
+                log_mssg(f'R1 and R2 quality score models are of different length.', 'error')
                 premature_exit(1)
 
         # This serves as a sanity check for the input model
         else:
-            print_and_log('Something wrong with error model.', 'error')
-            if debug:
-                print_and_log(f"error model had a length of {len(error_model)}", 'debug')
+            log_mssg('Something wrong with error model.', 'error')
+            log_mssg(f"error model had a length of {len(error_model)}", 'debug')
             premature_exit(1)
 
         self.q_err_rate = [0.] * (max(q_scores) + 1)
@@ -68,14 +67,14 @@ class SequencingErrors:
         else:
             self.error_scale = rescaled_error / avg_error
             if not self.rescale_qual:
-                print_and_log(f'Quality scores no longer exactly representative of error probability. '
+                log_mssg(f'Quality scores no longer exactly representative of error probability. '
                               f'Error model scaled by {self.error_scale:.3f} to match desired rate...', 'warning')
             if self.uniform:
                 if rescaled_error <= 0.:
                     self.uniform_q_score = max(q_scores)
                 else:
                     self.uniform_q_score = min([max(q_scores), int(-10. * np.log10(rescaled_error) + 0.5)])
-                print_and_log(f'Uniform quality score scaled to match specified error rate '
+                log_mssg(f'Uniform quality score scaled to match specified error rate '
                               f'(q={self.uniform_qscore}+{self.off_q}, p(err)={(100. * rescaled_error):0.2f}%)', 'info')
 
         if not self.uniform:
@@ -83,7 +82,7 @@ class SequencingErrors:
             if self.read_len == len(init_q1):
                 self.q_ind_remap = range(self.read_len)
             else:
-                print_and_log(f'Read length of error model ({len(init_q1)}) '
+                log_mssg(f'Read length of error model ({len(init_q1)}) '
                               f'does not match -R value ({self.read_len}), rescaling model...', 'warning')
                 self.q_ind_remap = [max([1, len(init_q1) * n // read_len]) for n in range(read_len)]
 

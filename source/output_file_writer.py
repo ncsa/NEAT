@@ -8,7 +8,7 @@ from struct import pack
 import pysam
 from Bio import bgzf
 
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 from source.neat_cigar import CigarString
 
 # Some Constants
@@ -102,7 +102,7 @@ def try_to_touch(file_name: pathlib.Path):
     try:
         file_name.touch(exist_ok=False)
     except FileExistsError:
-        print_and_log(f"The file {file_name} already existed, but we're overwriting it", 'warning')
+        log_mssg(f"The file {file_name} already existed, but we're overwriting it", 'warning')
         # This opens the file for writing, which essentially clears the contents.
         with open(file_name, 'w') as f:
             pass
@@ -134,10 +134,10 @@ class OutputFileWriter:
         # A couple of quick sanity checks. These could indicate something wrong with the code.
         # They could potentially also be tripped by faulty input files.
         if self.write_vcf and not self.vcf_header:
-            print_and_log("Something wrong with VCF header.", 'error')
+            log_mssg("Something wrong with VCF header.", 'error')
             premature_exit(1)
         if self.write_bam and not self.bam_header:
-            print_and_log("Something wrong with BAM header.", 'error')
+            log_mssg("Something wrong with BAM header.", 'error')
             premature_exit(1)
 
         # Set up filenames based on booleans
@@ -343,7 +343,7 @@ class OutputFileWriter:
         for i in range(encoded_len):
             if self.debug:
                 # Note: trying to remove all this part
-                print_and_log(f'{seq[2 * i]}, {seq[2 * i + 1]}', 'debug')
+                log_mssg(f'{seq[2 * i]}, {seq[2 * i + 1]}', 'debug')
             encoded_seq.extend(
                 pack('<B', (SEQ_PACKED[seq[2 * i].capitalize()] << 4) + SEQ_PACKED[seq[2 * i + 1].capitalize()]))
 

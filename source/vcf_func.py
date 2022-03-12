@@ -5,13 +5,13 @@ import random
 
 import pandas as pd
 
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 
 
 def parse_input_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
                     choose_random_ploid_if_no_gt_found: bool = True) -> (list, pd.DataFrame):
 
-    print_and_log(f"Parsing input vcf {vcf_path}", 'debug')
+    log_mssg(f"Parsing input vcf {vcf_path}", 'debug')
     # Read in the raw vcf using pandas' csv reader.
     if vcf_path.endswith('.gz'):
         f = gzip.open(vcf_path, 'rt')
@@ -27,7 +27,7 @@ def parse_input_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
             break
         else:
             # If we got to this point, we didn't find a header row.
-            print_and_log(f'No header found for vcf: {vcf_path}', 'error')
+            log_mssg(f'No header found for vcf: {vcf_path}', 'error')
             premature_exit(1)
     f.close()
 
@@ -38,30 +38,30 @@ def parse_input_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
         if len(sample_columns) == 1 and not tumor_normal:
             sample_columns = [sample_columns[0]]
         elif len(sample_columns) >= 1 and not tumor_normal:
-            print_and_log('More than one sample column present, only first sample column used.', 'warning')
+            log_mssg('More than one sample column present, only first sample column used.', 'warning')
             sample_columns = [sample_columns[0]]
         elif len(sample_columns) == 1 and tumor_normal:
-            print_and_log(f'Tumor-Normal samples require '
+            log_mssg(f'Tumor-Normal samples require '
                           f'both a tumor and normal sample column in the VCF. {list(sample_columns)}', 'error')
             premature_exit(1)
         elif len(sample_columns) >= 1 and tumor_normal:
             normals = [label for label in sample_columns if 'normal' in label.lower()]
             tumors = [label for label in sample_columns if 'tumor' in label.lower()]
             if not (tumors and normals):
-                print_and_log("Input VCF for cancer must contain a column with a label containing 'tumor' "
+                log_mssg("Input VCF for cancer must contain a column with a label containing 'tumor' "
                               "and 'normal' (case-insensitive).", 'error')
                 premature_exit(1)
             if len(normals) > 1 or len(tumors) > 1:
-                print_and_log("If more than one tumor or normal column is present, "
+                log_mssg("If more than one tumor or normal column is present, "
                               "only the first of each is used.", 'warning')
             sample_columns = [normals[0], tumors[0]]
 
         else:
-            print_and_log('Unconsidered case encountered while parsing input vcf!', 'critical')
-            print_and_log("Reality: Broken", 'error')
+            log_mssg('Unconsidered case encountered while parsing input vcf!', 'critical')
+            log_mssg("Reality: Broken", 'error')
             premature_exit(1)
     else:
-        print_and_log('Input VCF must have least one sample column', 'error')
+        log_mssg('Input VCF must have least one sample column', 'error')
         premature_exit(1)
 
     # We'll use FORMAT to check for genotype at some point.
@@ -93,6 +93,6 @@ def parse_input_vcf(vcf_path: str, tumor_normal: bool = False, ploidy: int = 2,
     # Nan's give errors, so let's fill them out quick.
     variants = variants.fillna('.')
 
-    print_and_log(f'Found {len(variants)} valid variants in input VCF.', 'info')
+    log_mssg(f'Found {len(variants)} valid variants in input VCF.', 'info')
 
     return sample_columns, variants
