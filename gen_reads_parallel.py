@@ -11,12 +11,16 @@ Note that I'm planninng to hijack NEAT's features for this.
 import argparse
 import bisect
 import datetime
+import gzip
 import logging
 import pathlib
 import random
 import sys
 import time
 import pandas as pd
+import glob
+from heapq import merge
+import os
 
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -509,21 +513,42 @@ def main(raw_args=None):
     print_and_log("Beginning simulation", 'info')
     # these will be the features common to each contig, for multiprocessing
     common_features = {}
+
+    out_prefix = f'{out_prefix_parent_dir}/{out_prefix_name}'
+
+    if options.produce_vcf:
+        print_and_log(f"Generating list of mutations (golden vcf)", "info")
+
+    vcf_files = []
+
     for contig in breaks:
         inputs_df = pd.DataFrame()
         if not input_variants.empty:
             inputs_df = input_variants[input_variants.CHROM.isin([chrom])]
-        execute_neat(reference_index[contig],
-                     contig,
-                     out_prefix_name,
-                     target_regions_dict[contig],
-                     discard_regions_dict[contig],
-                     mutation_rate_dict[contig],
-                     inputs_df,
-                     models,
-                     options,
-                     output_file_writer,
-                     output_file_writer_cancer)
+        vcf_files.append(execute_neat(reference_index[contig],
+                         contig,
+                         out_prefix_name,
+                         target_regions_dict[contig],
+                         discard_regions_dict[contig],
+                         mutation_rate_dict[contig],
+                         inputs_df,
+                         models,
+                         options,
+                         out_prefix))
+
+    if options.produce_vcf:
+        chunks = []
+        # TODO double check that breaks is in the same order as the input fasta
+        for vcf in vcf_files:
+            chunks += [gzip.open(vcf, 'r')]
+
+        with gzip.open(output_file_writer.vcf_fn, 'ab') as vcf_out:
+            vcf_out.writelines(merge(*chunks))
+
+        for item in chunks:
+            item.close()
+            os.remove(item.name)
+
 
     # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
 
