@@ -1,4 +1,4 @@
-from source.error_handling import print_and_log
+from source.error_handling import log_mssg
 
 
 class Tracker:
@@ -23,5 +23,5 @@ class Tracker:
 
     @staticmethod
     def finalize_progress_info():
-        print_and_log('Simulating reads ... FINISHED!', 'info')
-        print_and_log('Simulation complete, writing files.', 'info')
+        log_mssg('Simulating reads ... FINISHED!', 'info')
+        log_mssg('Simulation complete, writing files.', 'info')

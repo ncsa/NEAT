@@ -550,9 +550,8 @@ def main(raw_args=None):
                     is_last_time = True
 
                 # print progress indicator
-                if debug:
-                    print(f'PROCESSING WINDOW: {(start, end), [buffer_added]}, '
-                          f'next: {(next_start, next_end)}, isLastTime: {is_last_time}')
+                print(f'PROCESSING WINDOW: {(start, end), [buffer_added]}, '
+                      f'next: {(next_start, next_end)}, isLastTime: {is_last_time}')
                 current_progress += end - start
                 new_percent = int((current_progress * 100) / float(total_bp_span))
                 if new_percent > current_percent:

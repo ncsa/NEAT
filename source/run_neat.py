@@ -7,7 +7,7 @@ import pathlib
 import numpy as np
 from mpire import WorkerPool
 
-from source.error_handling import print_and_log, premature_exit
+from source.error_handling import log_mssg, premature_exit
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.probability import DiscreteDistribution
 from source.vcf_func import parse_input_vcf
@@ -81,25 +81,20 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
     # We need the temp vcf file no matter what
     tmp_vcf_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{chrom}_{threadidx}.vcf"
-    if options.debug:
-        print_and_log(f'tmp_vcf_fn = {tmp_vcf_fn}', 'debug')
+    log_mssg(f'tmp_vcf_fn = {tmp_vcf_fn}', 'debug')
 
     if options.produce_bam:
         tmp_sam_fn = tmp_dir_path / f"{out_prefix_name}_tmp_records_{threadidx}.tsam"
-        if options.debug:
-            print_and_log(f'tmp_sam_fn = {tmp_sam_fn}', 'debug')
+        log_mssg(f'tmp_sam_fn = {tmp_sam_fn}', 'debug')
     if options.produce_fasta:
         tmp_fasta_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}.fasta"
-        if options.debug:
-            print_and_log(f'tmp_fasta_fn = {tmp_fasta_fn}', 'debug')
+        log_mssg(f'tmp_fasta_fn = {tmp_fasta_fn}', 'debug')
     if options.produce_fastq:
         tmp_fastq1_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}_read1.fq"
-        if options.debug:
-            print_and_log(f'tmp_fastq1_fn = {tmp_fastq1_fn}', 'debug')
+        log_mssg(f'tmp_fastq1_fn = {tmp_fastq1_fn}', 'debug')
         if options.paired_ended:
             tmp_fastq2_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}_read2.fq"
-            if options.debug:
-                print_and_log(f'tmp_fastq2_fn  = {tmp_fastq2_fn}', 'debug')
+            log_mssg(f'tmp_fastq2_fn  = {tmp_fastq2_fn}', 'debug')
 
     if threadidx == 1:
         # init_progress_info()
@@ -121,16 +116,16 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     Inserting any input mutations
     """
     if not input_variants.empty:
-        print_and_log(f'Adding input mutations...', 'info')
+        log_mssg(f'Adding input mutations...', 'info')
         # TODO we'll have to add extra code for cancer, later
         for variant in input_variants.iterrows():
             ref_sequence = contig_sequence[variant.POS:len(variant.REF)]
             if ref_sequence != variant.REF:
-                print_and_log(f"Skipping variant where reference does not match "
+                log_mssg(f"Skipping variant where reference does not match "
                               f"input vcf at {chrom}: {variant.POS}", 'warning')
                 continue
             if variant.ALT == '.':
-                print_and_log(f'Found monomorphic reference variant. '
+                log_mssg(f'Found monomorphic reference variant. '
                               f'These prevent mutations from being added at that location.', 'info')
                 genotype = [0] * options.ploidy
             else:
@@ -143,7 +138,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 else:
                     genotype = pick_ploids(options.ploidy, number_of_alts)
             if variant.POS in blacklist:
-                print_and_log(f'Skipping input variant because a variant '
+                log_mssg(f'Skipping input variant because a variant '
                               f'already exists at that location {variant}', 'warning')
                 continue
             line = f'{variant.CHROM}\t{variant.POS}\t{variant.ID}\t{variant.REF}\t' \
@@ -156,9 +151,9 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
             blacklist.append(variant.POS)
 
-        print_and_log(f'Completed inserting the input mutations for {chrom} in {time.time() - start}', 'debug')
+        log_mssg(f'Completed inserting the input mutations for {chrom} in {time.time() - start}', 'debug')
 
-    print_and_log(f'Generating random mutations for {chrom}', 'info')
+    log_mssg(f'Generating random mutations for {chrom}', 'info')
     start = time.time()
 
     """
@@ -184,7 +179,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                                                   weighted_mutation_regions.values())
 
     mutations_to_add = int(len(contig_sequence) * overall_mutation_rate) + 1
-    print_and_log(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
+    log_mssg(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
 
     mutation_data = []
 
@@ -302,17 +297,17 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                         final_position = i
                 # We still didn't find anywhere to put it. I guess we skip it. This seems like an edge case.
                 if final_position == -1:
-                    print_and_log(f'Could not locate a suitable position for {mutation}', 'warning')
+                    log_mssg(f'Could not locate a suitable position for {mutation}', 'warning')
                     continue
             if final_position in blacklist:
-                print_and_log(f'Could not locate a suitable position for {mutation}', 'warning')
+                log_mssg(f'Could not locate a suitable position for {mutation}', 'warning')
                 continue
             # Since we checked a subsequence for the final position, and at this point we know that
             # we have a solid final_position, let's add that to the total.
             final_position += mutation[5]
 
         if final_position in blacklist:
-            print_and_log(f'Skipping variant, as there is already one in this location: {mutation}', 'warning')
+            log_mssg(f'Skipping variant, as there is already one in this location: {mutation}', 'warning')
             continue
 
         # at this point we should have a final position.
@@ -345,11 +340,11 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
         blacklist.append(final_position)
 
-    print_and_log(f"Finished mutating {chrom}. Time: {time.time() - start}", 'debug')
+    log_mssg(f"Finished mutating {chrom}. Time: {time.time() - start}", 'debug')
 
     # Let's write out the vcf, if asked to
     if options.produce_vcf:
-        print_and_log(f'Sorting and writing output vcf', 'info')
+        log_mssg(f'Sorting and writing output vcf', 'info')
 
         path = f"{tmp_dir_path}/chunk_*.vcf"
         chunksize = 1_000_000
@@ -363,7 +358,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 if not line.startswith('@'):
                     lines.append(line)
                 if not line_num % chunksize:
-                    print_and_log(f"Sorting file chunk {fid} of {number_of_files}", 'debug')
+                    log_mssg(f"Sorting file chunk {fid} of {number_of_files}", 'debug')
                     lines = sorted(lines, key=lambda k: (k.split()[0], int(k.split()[1])))
                     f_out.writelines(lines)
                     f_out.close()
@@ -373,7 +368,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             # If the above loop has a number that is not a multiple of chunksize, then it will
             # have a remainder. In that case, we do the final step one last time:
             if lines:
-                print_and_log(f"Sorting file chunk {fid} {number_of_files}", 'debug')
+                log_mssg(f"Sorting file chunk {fid} {number_of_files}", 'debug')
                 lines = sorted(lines, key=lambda k: (k.split()[0], int(k.split()[1])))
                 f_out.writelines(lines)
                 f_out.close()
@@ -382,8 +377,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         for filename in glob.glob(path):
             chunks += [open(filename, 'r')]
 
-        if options.debug:
-            print_and_log(f'Sorting chunks into vcf file for {chrom}')
+        log_mssg(f'Sorting chunks into vcf file for {chrom}', 'debug')
         file = f"{out_prefix}_{chrom}.vcf.gz"
         with gzip.open(file, 'wt') as f_out:
             f_out.writelines(merge(*chunks, key=lambda k: (k.split()[0], int(k.split()[1]))))

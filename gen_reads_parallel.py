@@ -25,16 +25,23 @@ import os
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+from logging import log
 
 from source.Models import Models
 from source.Options import Options
 from source.bed_func import parse_bed
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.constants_and_defaults import VERSION
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 from source.output_file_writer import OutputFileWriter
 from source.run_neat import execute_neat
 from source.vcf_func import parse_input_vcf
+
+
+# class StdoutFilter(logging.Filter):
+#     # Setup filter for logging options
+#     def filter(self, record):
+#         return record.levelno in (logging.DEBUG, logging.INFO, logging.WARNING)
 
 
 # useful functions for the rest
@@ -46,8 +53,8 @@ def print_start_info() -> datetime.datetime:
     """
     starttime = datetime.datetime.now()
     print('\n-----------------------------------------------------------')
-    print_and_log(f"NEAT multithreaded version, v{VERSION}, is running.", 'info')
-    print_and_log(f'Started: {str(starttime)}.', 'info')
+    log_mssg(f"NEAT multithreaded version, v{VERSION}, is running.", 'info')
+    log_mssg(f'Started: {str(starttime)}.', 'info')
     return starttime
 
 
@@ -56,13 +63,13 @@ def print_end_info(output_class, cancer_output_class, starting_time):
     list_to_iterate = output_class.files_to_write
     if cancer_output_class:
         list_to_iterate += cancer_output_class.files_to_write
-    print_and_log("\nWrote the following files:", 'info')
+    log_mssg("\nWrote the following files:", 'info')
     i = 1
     for item in list_to_iterate:
-        print_and_log(f"\t{i}. {item}", 'info')
+        log_mssg(f"\t{i}. {item}", 'info')
         i += 1
-    print_and_log("NEAT finished successfully.", "info")
-    print_and_log(f"Total runtime: {str(endtime-starting_time)}", 'info')
+    log_mssg("NEAT finished successfully.", "info")
+    log_mssg(f"Total runtime: {str(endtime - starting_time)}", 'info')
     print("-------------------------------------------------------------------------")
 
 
@@ -71,65 +78,63 @@ def print_configuration(args, options):
     Combines the relevant parts of the input args and the options file to print out a
     list of the configuration parameters. Useful for reproducibility.
     """
-    print_and_log(f'Run Configuration...', 'INFO')
+    log_mssg(f'Run Configuration...', 'INFO')
     potential_filetypes = ['vcf', 'bam', 'fasta', 'fastq']
     log = ''
     for suffix in potential_filetypes:
         key = f'produce_{suffix}'
         if options.args[key]:
             log += f'{suffix} '
-    print_and_log(f'Producing the following files: {log.strip()}', 'INFO')
-    print_and_log(f'Input file: {options.reference}', 'INFO')
-    print_and_log(f'Output files: {args.output}.<{log}>', 'INFO')
+    log_mssg(f'Producing the following files: {log.strip()}', 'INFO')
+    log_mssg(f'Input file: {options.reference}', 'INFO')
+    log_mssg(f'Output files: {args.output}.<{log}>', 'INFO')
     if options.threads == 1:
-        print_and_log(f"Single threading - 1 thread.", 'info')
+        log_mssg(f"Single threading - 1 thread.", 'info')
     else:
-        print_and_log(f'Multithreading coming soon!!', 'info')
-        print_and_log(f"Single threading - 1 thread.", 'info')
+        log_mssg(f'Multithreading coming soon!!', 'info')
+        log_mssg(f"Single threading - 1 thread.", 'info')
         # We'll work on mulitthreading later...
         # print_and_log(f'Multithreading - {options.threads} threads', 'info')
     if options.paired_ended:
-        print_and_log(f'Running in paired-ended mode.', 'INFO')
+        log_mssg(f'Running in paired-ended mode.', 'INFO')
         if options.fragment_model:
-            print_and_log(f'Using fragment length model: {options.fragment_model}', 'INFO')
+            log_mssg(f'Using fragment length model: {options.fragment_model}', 'INFO')
         else:
-            print_and_log(f'Using fragment model based on mean={options.fragment_mean}, '
+            log_mssg(f'Using fragment model based on mean={options.fragment_mean}, '
                           f'st dev={options.fragment_st_dev}', 'INFO')
     else:
-        print_and_log(f'Running in single-ended mode.', 'INFO')
-    print_and_log(f'Using a read length of {options.read_len}', 'INFO')
-    print_and_log(f'Average coverage: {options.coverage}', 'INFO')
-    print_and_log(f'Using error model: {options.error_model}', 'INFO')
+        log_mssg(f'Running in single-ended mode.', 'INFO')
+    log_mssg(f'Using a read length of {options.read_len}', 'INFO')
+    log_mssg(f'Average coverage: {options.coverage}', 'INFO')
+    log_mssg(f'Using error model: {options.error_model}', 'INFO')
     if options.avg_seq_error:
-        print_and_log(f'User defined average sequencing error rate: {options.avg_seq_error}.', 'INFO')
+        log_mssg(f'User defined average sequencing error rate: {options.avg_seq_error}.', 'INFO')
     if options.rescale_qualities:
-        print_and_log(f'Quality scores will be rescaled to match avg seq error rate.', 'INFO')
-    print_and_log(f'Ploidy value: {options.ploidy}', 'INFO')
+        log_mssg(f'Quality scores will be rescaled to match avg seq error rate.', 'INFO')
+    log_mssg(f'Ploidy value: {options.ploidy}', 'INFO')
     if options.include_vcf:
-        print_and_log(f'Vcf of variants to include: {options.include_vcf}', 'INFO')
+        log_mssg(f'Vcf of variants to include: {options.include_vcf}', 'INFO')
     if options.target_bed:
-        print_and_log(f'BED of regions to target: {options.target_bed}', 'INFO')
-        print_and_log(f'Off-target coverage rate: {options.off_target_coverage}', 'INFO')
-        print_and_log(f'Discarding off target regions: {options.discard_offtarget}', 'INFO')
+        log_mssg(f'BED of regions to target: {options.target_bed}', 'INFO')
+        log_mssg(f'Off-target coverage rate: {options.off_target_coverage}', 'INFO')
+        log_mssg(f'Discarding off target regions: {options.discard_offtarget}', 'INFO')
     if options.discard_bed:
-        print_and_log(f'BED of regions to discard: {options.discard_bed}', 'INFO')
+        log_mssg(f'BED of regions to discard: {options.discard_bed}', 'INFO')
     if options.mutation_model:
-        print_and_log(f'Using mutation model in file: {options.mutation_model}', 'INFO')
+        log_mssg(f'Using mutation model in file: {options.mutation_model}', 'INFO')
     if options.mutation_rate:
-        print_and_log(f'Rescaling average mutation rate to: {options.mutation_rate}', 'INFO')
+        log_mssg(f'Rescaling average mutation rate to: {options.mutation_rate}', 'INFO')
     if options.mutation_bed:
-        print_and_log(f'BED of mutation rates of different regions: {options.mutation_bed}', 'INFO')
+        log_mssg(f'BED of mutation rates of different regions: {options.mutation_bed}', 'INFO')
     if options.n_cutoff:
-        print_and_log(f'N-cutoff quality score: {options.n_cutoff}', 'INFO')
+        log_mssg(f'N-cutoff quality score: {options.n_cutoff}', 'INFO')
     if options.gc_model:
-        print_and_log(f'Using GC model: {options.gc_model}', 'INFO')
+        log_mssg(f'Using GC model: {options.gc_model}', 'INFO')
     if options.force_coverage:
-        print_and_log(f'Ignoring models and forcing coverage value.', 'INFO')
-    print_and_log(f'Creating temp files in directory: {options.temp_dir}', 'info')
-    if options.debug:
-        print_and_log(f'Debug Mode Activated.', 'INFO')
-    if options.rng_value:
-        print_and_log(f'RNG seed value: {options.rng_value}', 'INFO')
+        log_mssg(f'Ignoring models and forcing coverage value.', 'INFO')
+    log_mssg(f'Creating temp files in directory: {options.temp_dir}', 'info')
+    log_mssg(f'Debug Mode Activated.', 'debug')
+    log_mssg(f'RNG seed value: {options.rng_value}', 'debug')
 
 
 def find_file_breaks(threads: int, mode: str, reference_index: dict) -> dict:
@@ -177,9 +182,9 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict) -> dict:
                     # Have to extend the last one so we don't get a tiny read we can't process
                     partitions[contig][-1] = (partitions[contig][-1][0], contig_length)
 
-        print_and_log(f'breaks = {partitions}', 'debug')
+        log_mssg(f'breaks = {partitions}', 'debug')
     else:
-        print_and_log("Invalid partition mode. Must be either chrom or subdivision.", 'error')
+        log_mssg("Invalid partition mode. Must be either chrom or subdivision.", 'error')
         premature_exit(1)
     return partitions
 
@@ -257,12 +262,12 @@ def parse_mutation_rate_dict(mutation_rate_map, avg_rate):
         for i in range(len(regions)):
             # This compares the set of coordinates
             if regions[i][0] >= regions[i][1]:
-                print_and_log(f'Mutation bed with invalid coordinates', 'error')
+                log_mssg(f'Mutation bed with invalid coordinates', 'error')
                 premature_exit(1)
             current_index = regions[i][0]
             # This checks for an overlap. This can only happen when i > 0, by design
             if current_index < prev_index:
-                print_and_log(f'Mutation rate region has overlapping regions, merging.', 'warning')
+                log_mssg(f'Mutation rate region has overlapping regions, merging.', 'warning')
                 # We just average the two regions together
                 interval = (regions[i - 1][0], regions[i][1], (regions[i - 1][2] + regions[i][2]) / 2)
                 # Get rid of previous, to be replaced by ^^
@@ -296,52 +301,75 @@ def main(raw_args=None):
     # This will by default look for a file called "neat_config.txt" in the current working dir
     args.conf = pathlib.Path(args.conf)
 
-    log_name = f'{args.output}.log'
+    log_file = f'{args.output}.log'
+    if pathlib.Path(log_file).exists():
+        os.remove(log_file)
 
-    # Configure logging with basic parameters.
-    logging.basicConfig(filename=log_name, filemode='w',
-                        format='%(asctime)s %(levelname)s %(threadName)s: %(message)s',
-                        level=logging.DEBUG)
+    neat_log = logging.getLogger(__name__)
+    neat_log.handlers = []
 
-    # Set the logger to only write
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    logging.getLogger('').addHandler(console)
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(threadName)s: %(message)s', datefmt='%Y/%m/%d %H:%M')
+
+    stdout_handler = logging.StreamHandler(stream=sys.stdout)
+    stdout_handler.setLevel(logging.DEBUG)
+    # stdout_handler.addFilter(StdoutFilter())
+    stdout_handler.setFormatter(formatter)
+
+    neat_log.addHandler(stdout_handler)
+
+    # stderr_handler = logging.StreamHandler(stream=sys.stderr)
+    # stderr_handler.setFormatter(formatter)
+    # stderr_handler.setLevel(logging.ERROR)
+    #
+    # neat_log.addHandler(stderr_handler)
+    #
+    # file_handler = logging.FileHandler(log_file)
+    # file_handler.setLevel(logging.DEBUG)
+    # file_handler.setFormatter(formatter)
+    #
+    # neat_log.addHandler(file_handler)
+
+    neat_log.info('Beginning NEAT!')
+
+    neat_log.debug("Debugging message")
+    neat_log.info("Info message")
+    neat_log.warning('Warning Message')
+    neat_log.error('Error  message')
+    neat_log.critical('critical message')
+
+    sys.exit(0)
 
     starttime = print_start_info()
 
     if not args.conf.is_file():
-        print_and_log(f'Configuration file ({args.conf}) cannot be found.', 'error')
+        log_mssg(f'Configuration file ({args.conf}) cannot be found.', 'error')
         premature_exit(1)
 
     # Reads in the user-entered options from the config file and performs
     # some basic checks and corrections.
     options = Options(args.conf)
-    print_configuration(args, options)
 
-    # Now that we've read the options, we can set the logger to the appropriate level
-    if not options.debug:
-        logging.getLogger('').setLevel(logging.INFO)
+    print_configuration(args, options)
 
     """
     Model preparation
     
     Read input models or default models, as specified by user.
     """
-    print_and_log("Reading Models...", 'info')
+    log_mssg("Reading Models...", 'info')
 
     models = Models(options)
 
     """
     Process Inputs
     """
-    print_and_log("Processing inputs...", 'info')
+    log_mssg("Processing inputs...", 'info')
 
-    print_and_log(f'Reading {options.reference}...', 'info')
+    log_mssg(f'Reading {options.reference}...', 'info')
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
 
-    print_and_log(f'Reference file indexed.', 'debug')
+    log_mssg(f'Reference file indexed.', 'debug')
 
     # there is not a reference_chromosome in the options defs because
     # there is nothing that really needs checking, so this command will just
@@ -357,7 +385,7 @@ def main(raw_args=None):
     sample_names = []
     input_variants = pd.DataFrame()
     if options.include_vcf:
-        print_and_log(f"Reading input VCF...", 'info')
+        log_mssg(f"Reading input VCF...", 'info')
         if options.cancer:
             (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
                                                              tumor_normal=True,
@@ -370,11 +398,11 @@ def main(raw_args=None):
                                                              ploidy=options.ploidy,
                                                              debug=options.debug)
 
-        print_and_log("Finished reading @include_vcf file.", "info")
+        log_mssg("Finished reading @include_vcf file.", "info")
 
     # parse input targeted regions, if present.
     if options.target_bed or options.discard_bed or options.mutation_bed:
-        print_and_log(f"Reading input bed files.", 'info')
+        log_mssg(f"Reading input bed files.", 'info')
 
     # Note if any bed is empty, parse_bed just returns a dict of chromosomes with empty list values
 
@@ -389,12 +417,12 @@ def main(raw_args=None):
 
     mutation_rate_dict = parse_mutation_rate_dict(mutation_rate_dict, models.mutation_model['avg_mut_rate'])
 
-    print_and_log(f'Finished reading input beds.', 'debug')
+    log_mssg(f'Finished reading input beds.', 'debug')
 
     """
     Initialize Output Files
     """
-    print_and_log("Initializing output files...", 'info')
+    log_mssg("Initializing output files...", 'info')
 
     # Prepare headers
     bam_header = None
@@ -407,7 +435,7 @@ def main(raw_args=None):
     out_prefix_name = pathlib.Path(args.output).resolve().name
     out_prefix_parent_dir = pathlib.Path(pathlib.Path(args.output).resolve().parent)
     if not out_prefix_parent_dir.is_dir():
-        print_and_log(f'Creating output dir: {out_prefix_parent_dir}', 'debug')
+        log_mssg(f'Creating output dir: {out_prefix_parent_dir}', 'debug')
         out_prefix_parent_dir.mkdir(parents=True, exist_ok=True)
 
     # Creates files and sets up objects for files that can be written to as needed.
@@ -435,24 +463,24 @@ def main(raw_args=None):
                                               )
         output_file_writer_cancer = None
 
-    print_and_log(f'Output files ready for writing.', 'debug')
+    log_mssg(f'Output files ready for writing.', 'debug')
 
     """
     Begin Analysis
     """
-    print_and_log("Beginning analysis...", 'info')
+    log_mssg("Beginning analysis...", 'info')
 
     # Find break points in the input file.
     # TODO Debug:
-    breaks = find_file_breaks(options.threads, options.partition_mode, reference_index, options.debug)
+    breaks = find_file_breaks(options.threads, options.partition_mode, reference_index)
 
     if not breaks:
         # Printing out summary information and end time
-        print_and_log("Found no chromosomes in reference.", 'debug')
+        log_mssg("Found no chromosomes in reference.", 'debug')
         print_end_info(output_file_writer, output_file_writer_cancer, starttime)
         sys.exit(0)
 
-    print_and_log("Input file partitioned.", 'debug')
+    log_mssg("Input file partitioned.", 'debug')
 
     """
     REDO with mpire. The package can map a function to an iterable, so we will use the breaks as the iterable
@@ -460,14 +488,14 @@ def main(raw_args=None):
     I think the core of run_neat should be taking in a sequence and returning a mutated sequence. The core of NEAT
     at the moment tries to be everything to everyone.
     """
-    print_and_log("Beginning simulation", 'info')
+    log_mssg("Beginning simulation", 'info')
     # these will be the features common to each contig, for multiprocessing
     common_features = {}
 
     out_prefix = f'{out_prefix_parent_dir}/{out_prefix_name}'
 
     if options.produce_vcf:
-        print_and_log(f"Generating list of mutations (golden vcf)", "info")
+        log_mssg(f"Generating list of mutations (golden vcf)", "info")
 
     vcf_files = []
 

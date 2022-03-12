@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 import random
 
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 
 # Constants
 # NEAT Path is the path of the main NEAT executable, one level up from where this file resides
@@ -104,17 +104,17 @@ class Options(SimpleNamespace):
     def check_and_log_error(keyname, value_to_check, lowval, highval):
         if lowval != "exists" and highval:
             if not (lowval <= value_to_check <= highval):
-                print_and_log(f'@{keyname} must be between {lowval} and {highval}.', 'error')
+                log_mssg(f'@{keyname} must be between {lowval} and {highval}.', 'error')
                 premature_exit(1)
         elif lowval == "exists":
             if not pathlib.Path(value_to_check).is_file():
-                print_and_log(f'The file given to @{keyname} does not exist', 'error')
+                log_mssg(f'The file given to @{keyname} does not exist', 'error')
                 premature_exit(1)
         elif not lowval and not highval:
             # This indicates a boolean or dir and we have nothing to check
             pass
         else:
-            print_and_log(f'Problem criteria ({lowval, highval}) in Options definitions for {keyname}.', 'critical')
+            log_mssg(f'Problem criteria ({lowval, highval}) in Options definitions for {keyname}.', 'critical')
             premature_exit(1)
 
     def read(self):
@@ -143,7 +143,7 @@ class Options(SimpleNamespace):
                         try:
                             temp = int(line_split[1])
                         except ValueError:
-                            print_and_log(f'The value for {key} must be an integer. No decimals allowed.', 'error')
+                            log_mssg(f'The value for {key} must be an integer. No decimals allowed.', 'error')
                             premature_exit(1)
                         self.check_and_log_error(key, temp, criteria1, criteria2)
                         self.args[key] = temp
@@ -151,7 +151,7 @@ class Options(SimpleNamespace):
                         try:
                             temp = float(line_split[1])
                         except ValueError:
-                            print_and_log(f'The value for {key} must be a float.', 'error')
+                            log_mssg(f'The value for {key} must be a float.', 'error')
                             premature_exit(1)
                         self.check_and_log_error(key, temp, criteria1, criteria2)
                         self.args[key] = temp
@@ -164,11 +164,11 @@ class Options(SimpleNamespace):
                             else:
                                 raise ValueError
                         except ValueError:
-                            print_and_log(f'\nBoolean key @{key} requires a value of "true" or "false" '
+                            log_mssg(f'\nBoolean key @{key} requires a value of "true" or "false" '
                                           f'(case-insensitive).', 'error')
                             premature_exit(1)
                     else:
-                        print_and_log(f'BUG: Undefined type in the Options dictionary: {type_of_var}.', 'critical')
+                        log_mssg(f'BUG: Undefined type in the Options dictionary: {type_of_var}.', 'critical')
                         premature_exit(1)
         # Anything we skipped in the config gets the default value
         # No need to check since these are already CAREFULLY vetted (right!?)
@@ -187,7 +187,7 @@ class Options(SimpleNamespace):
 
         if not self.args['produce_bam'] and not self.args['produce_vcf'] \
                 and not self.args['produce_fasta'] and not self.args['produce_fastq']:
-            print_and_log('No files would be produced, as all file types are set to false', 'error')
+            log_mssg('No files would be produced, as all file types are set to false', 'error')
             premature_exit(1)
 
         # This next section just checks all the paired ended stuff
@@ -202,7 +202,7 @@ class Options(SimpleNamespace):
             else:
                 flagged = True
         if flagged:
-            print_and_log("For paired ended mode, you need to supply either a "
+            log_mssg("For paired ended mode, you need to supply either a "
                           "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
             premature_exit(1)
 

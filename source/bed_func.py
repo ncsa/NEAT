@@ -2,7 +2,7 @@ import gzip
 import pathlib
 import re
 
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 
 
 def parse_bed(input_bed: str, chromosomes: list,
@@ -44,7 +44,7 @@ def parse_bed(input_bed: str, chromosomes: list,
                     try:
                         [my_chr, pos1, pos2] = line_list[:3]
                     except ValueError:
-                        print_and_log(f"Improperly formatted bed file line {line}", "error")
+                        log_mssg(f"Improperly formatted bed file line {line}", "error")
                         premature_exit(1)
                     # Trying not to 'fix' bed files, but an easy case is if the vcf uses 'chr' and the bed doesn't, in
                     # which we frequently see in human data, we'll just put chr on there. Anything more complicated
@@ -63,8 +63,8 @@ def parse_bed(input_bed: str, chromosomes: list,
                         # here we append the metadata, if present
                         index = line_list[3].find('mut_rate=')
                         if index == -1:
-                            print_and_log(f"Skipping mutation rate region: {my_chr}: ({pos1}, {pos2})", 'warning')
-                            print_and_log(f'4th column of mutation rate bed must be a semicolon list of key, value '
+                            log_mssg(f"Skipping mutation rate region: {my_chr}: ({pos1}, {pos2})", 'warning')
+                            log_mssg(f'4th column of mutation rate bed must be a semicolon list of key, value '
                                           f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".',
                                           'debug')
                             continue
@@ -75,14 +75,14 @@ def parse_bed(input_bed: str, chromosomes: list,
                         try:
                             mut_rate = float(mut_rate.split(';')[0])
                         except ValueError:
-                            print_and_log(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})", 'error')
-                            print_and_log(f'4th column of mutation rate bed must be a semicolon list of key, value '
+                            log_mssg(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})", 'error')
+                            log_mssg(f'4th column of mutation rate bed must be a semicolon list of key, value '
                                           f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".',
                                           'debug')
                             premature_exit(1)
 
                         if mut_rate > 0.3:
-                            print_and_log("Found a mutation rate > 0.3. This is unusual.", 'Warning')
+                            log_mssg("Found a mutation rate > 0.3. This is unusual.", 'Warning')
 
                         ret_dict[my_chr].append((int(pos1), int(pos2), mut_rate))
                     else:
@@ -92,23 +92,21 @@ def parse_bed(input_bed: str, chromosomes: list,
             # this error is to specifically detect files that are zipped using something other than gzip
             # Or if the file is really gzipped but has been misnamed.
             # The standard error here might be ambiguous, so we're using an except.
-            print_and_log("Input bed files must be a valid bed files or a valid gzipped bed file. "
+            log_mssg("Input bed files must be a valid bed files or a valid gzipped bed file. "
                           "Gzipped files must end in extension '.gz'", 'error')
             premature_exit(1)
 
         # some validation
         in_ref_only = [k for k in chromosomes if k not in ret_dict]
         if in_ref_only:
-            print_and_log(f'Warning: Reference contains sequences not found in BED file {input_bed}. '
+            log_mssg(f'Warning: Reference contains sequences not found in BED file {input_bed}. '
                           f'These chromosomes will be omitted from the outputs.', 'warning')
-            if debug:
-                print_and_log(f"In reference only regions: {in_ref_only}", 'debug')
+            log_mssg(f"In reference only regions: {in_ref_only}", 'debug')
 
         if in_bed_only:
-            print_and_log(f'BED file {input_bed} contains sequence names '
+            log_mssg(f'BED file {input_bed} contains sequence names '
                           f'not found in reference. These regions will be ignored.', 'warning')
-            if debug:
-                print_and_log(f'Regions ignored: {in_bed_only}', 'debug')
+            log_mssg(f'Regions ignored: {in_bed_only}', 'debug')
 
     # Returns an empty dict if there is no file to process.
     return ret_dict
