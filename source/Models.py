@@ -11,7 +11,7 @@ from bisect import bisect_left
 
 from source.constants_and_defaults import DEFAULT_MUTATION_MODEL, DEFAULT_CANCER_MUTATION_MODEL, TRI_IND, \
     ALL_TRI, ALL_IND, NUC_IND, ALLOWED_NUCL
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
 
 
@@ -26,16 +26,16 @@ def pickle_load_model(file, mssg) -> list:
     try:
         return pickle.load(file)
     except IOError as e:
-        print_and_log(mssg, 'error')
-        print_and_log(str(e), 'error')
+        log_mssg(mssg, 'error')
+        log_mssg(str(e), 'error')
         premature_exit(1)
     except EOFError as e:
-        print_and_log(mssg, 'error')
-        print_and_log(str(e), 'error')
+        log_mssg(mssg, 'error')
+        log_mssg(str(e), 'error')
         premature_exit(1)
     except ValueError as e:
-        print_and_log(mssg, 'error')
-        print_and_log(str(e), 'error')
+        log_mssg(mssg, 'error')
+        log_mssg(str(e), 'error')
         premature_exit(1)
 
 
@@ -356,21 +356,18 @@ class Models:
         if options.cancer:
             self.cancer_model = parse_input_mutation_model(options.cancer_model, True)
 
-        if options.debug:
-            print_and_log("Mutation models loaded", 'debug')
+        log_mssg("Mutation models loaded", 'debug')
 
         # We need sequencing errors to get the quality score attributes, even for the vcf
         self.sequencing_error_model = SequencingErrorModel(options)
 
-        if options.debug:
-            print_and_log('Sequencing error model loaded', 'debug')
+        log_mssg('Sequencing error model loaded', 'debug')
 
         mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
                "This file should be the output of compute_gc.py'"
         self.gc_model = pickle_load_model(gzip.open(options.gc_model, 'r'), mssg)
 
-        if options.debug:
-            print_and_log('GC Bias model loaded', 'debug')
+        log_mssg('GC Bias model loaded', 'debug')
 
         self.fraglen_model = None
 
@@ -378,7 +375,7 @@ class Models:
             if options.fragment_model:
                 mssg = 'Problem loading the empirical fragment length model @fragment_model. Please check file and try' \
                        'again.'
-                print_and_log("Using empirical fragment length distribution", 'info')
+                log_mssg("Using empirical fragment length distribution", 'info')
                 potential_values, potential_prob = pickle_load_model(open(options.fragment_model, 'rb'), mssg)
 
                 fraglen_values = []
@@ -394,7 +391,7 @@ class Models:
             # Using artificial fragment length distribution, if the parameters were specified
             # fragment length distribution: normal distribution that goes out to +- 6 standard deviations
             else:
-                print_and_log(f'Using artificial fragment length distribution.', 'info')
+                log_mssg(f'Using artificial fragment length distribution.', 'info')
                 if options.fragment_st_dev == 0:
                     self.fraglen_model = DiscreteDistribution([1], [options.fragment_mean],
                                                               degenerate_val=options.fragment_mean)
@@ -409,5 +406,4 @@ class Models:
                                                     (2 * (options.fragment_st_dev ** 2)))) for n in
                                            fraglen_values]
                     self.fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
-            if options.debug:
-                print_and_log(f'Loaded paired-end models', 'debug')
+            log_mssg(f'Loaded paired-end models', 'debug')

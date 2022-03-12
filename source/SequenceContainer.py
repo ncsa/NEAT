@@ -13,7 +13,7 @@ from Bio.Seq import Seq
 from source.constants_and_defaults import ALLOWED_NUCL, DEFAULT_MUTATION_MODEL, DEFAULT_CANCER_MUTATION_MODEL
 from source.constants_and_defaults import ALL_IND, COV_FRAGLEN_PERCENTILE, TRI_IND, ALL_TRI
 from source.constants_and_defaults import LARGE_NUMBER, MAX_ATTEMPTS, NUC_IND
-from source.error_handling import premature_exit, print_and_log
+from source.error_handling import premature_exit, log_mssg
 from source.neat_cigar import CigarString
 from source.probability import DiscreteDistribution, poisson_list
 
@@ -60,7 +60,7 @@ class SequenceContainer:
 
         # initialize mutation models
         if len(mut_models) != self.ploidy:
-            print_and_log('BUG: Number of mutation models received is not equal to specified ploidy', 'critical')
+            log_mssg('BUG: Number of mutation models received is not equal to specified ploidy', 'critical')
             premature_exit(1)
         self.model_data = copy.deepcopy(mut_models)
 
@@ -150,7 +150,7 @@ class SequenceContainer:
             self.model_data = default_model[:self.ploidy]
         else:
             if len(mut_models) != self.ploidy:
-                print_and_log('The number of mutation models received is not equal to specified ploidy.', 'error')
+                log_mssg('The number of mutation models received is not equal to specified ploidy.', 'error')
                 premature_exit(1)
             self.model_data = copy.deepcopy(mut_models)
 
@@ -541,8 +541,8 @@ class SequenceContainer:
                 in_len = len(input_variable[1])
 
                 if my_var[0] < 0 or my_var[0] >= len(self.black_list[p]):
-                    print_and_log('Attempting to insert variant out of window bounds:', 'critical')
-                    print_and_log(f'\t{my_var} --> blackList[0: {str(len(self.black_list[p]))}]', 'critical')
+                    log_mssg('Attempting to insert variant out of window bounds:', 'critical')
+                    log_mssg(f'\t{my_var} --> blackList[0: {str(len(self.black_list[p]))}]', 'critical')
                     premature_exit(1)
                 if len(input_variable[1]) == 1 and len(my_alt) == 1:
                     if self.black_list[p][my_var[0]]:
@@ -678,10 +678,10 @@ class SequenceContainer:
                 v_pos = all_snps[i][j][0]
 
                 if all_snps[i][j][1] != temp[v_pos]:
-                    print_and_log(f'Error: Something went wrong!\n{all_snps[i][j]}\n{temp[v_pos]}\n', 'critical')
+                    log_mssg(f'Error: Something went wrong!\n{all_snps[i][j]}\n{temp[v_pos]}\n', 'critical')
                     if self.debug:
-                        print_and_log(f'{all_snps[i][j]}', 'debug')
-                        print_and_log(f'{temp[v_pos]}', 'debug')
+                        log_mssg(f'{all_snps[i][j]}', 'debug')
+                        log_mssg(f'{temp[v_pos]}', 'debug')
                     premature_exit(1)
                 else:
                     temp[v_pos] = all_snps[i][j][2]
@@ -705,9 +705,9 @@ class SequenceContainer:
                 rolling_adj += indel_length
 
                 if all_indels_ins[i][j][1] != str(self.sequences[i][v_pos:v_pos2]):
-                    print_and_log('Something went wrong!', 'error')
+                    log_mssg('Something went wrong!', 'error')
                     if self.debug:
-                        print_and_log(f'indel: {all_indels_ins[i][j]}\n'
+                        log_mssg(f'indel: {all_indels_ins[i][j]}\n'
                                       f'positions: {v_pos, v_pos2}\n'
                                       f'sequence: {str(self.sequences[i][v_pos:v_pos2])}', 'debug')
                     premature_exit(1)
@@ -817,11 +817,11 @@ class SequenceContainer:
             try:
                 my_cigar = self.all_cigar[my_ploid][read[0]]
             except IndexError:
-                print_and_log(f'Index error when attempting to find cigar string.\n'
+                log_mssg(f'Index error when attempting to find cigar string.\n'
                               f'{my_ploid}, {len(self.all_cigar[my_ploid])}, {read[0]}', 'error')
                 if frag_len and self.debug:
-                    print_and_log(f'({r_pos1}, {r_pos2})', 'debug')
-                    print_and_log(f'{frag_len}, {self.fraglen_ind_map[frag_len]}', 'debug')
+                    log_mssg(f'({r_pos1}, {r_pos2})', 'debug')
+                    log_mssg(f'{frag_len}, {self.fraglen_ind_map[frag_len]}', 'debug')
                 premature_exit(1)
             total_d = sum([error[1] for error in read[2] if error[0] == 'D'])
             total_i = sum([error[1] for error in read[2] if error[0] == 'I'])
@@ -888,11 +888,11 @@ class SequenceContainer:
                             try:
                                 my_cigar[pi + 1] = 'D' * e_len + my_cigar[pi + 1]
                             except IndexError:
-                                print_and_log("Index error problem on expanded cigar", 'critical')
+                                log_mssg("Index error problem on expanded cigar", 'critical')
                                 premature_exit(1)
 
                         else:
-                            print_and_log('Ref does not match alt while attempting to insert deletion error!', 'error')
+                            log_mssg('Ref does not match alt while attempting to insert deletion error!', 'error')
                             premature_exit(1)
                         adj -= e_len
                         for i in range(e_pos, len(sse_adj)):
@@ -905,7 +905,7 @@ class SequenceContainer:
                             read[3] = read[3][:e_pos + my_adj] + error[4] + read[3][e_pos + my_adj + 1:]
                             my_cigar = my_cigar[:e_pos + my_adj] + ['I'] * e_len + my_cigar[e_pos + my_adj:]
                         else:
-                            print_and_log('Ref does not match alt while attempting to insert insertion error!\n'
+                            log_mssg('Ref does not match alt while attempting to insert insertion error!\n'
                                           '---{chr(read[3][e_pos + my_adj])} != {error[3]}', 'error')
                             premature_exit(1)
                         adj += e_len
@@ -918,7 +918,7 @@ class SequenceContainer:
                         temp[e_pos + sse_adj[e_pos]] = error[4]
                         read[3] = Seq(temp)
                     else:
-                        print_and_log('Ref does not match alt while attempting to insert substitution error!', 'error')
+                        log_mssg('Ref does not match alt while attempting to insert substitution error!', 'error')
                         premature_exit(1)
 
             if any_indel_err:
