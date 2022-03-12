@@ -416,7 +416,8 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
                'COMMON_VARIANTS': common_variants,
                'HIGH_MUT_REGIONS': high_mut_regions}
 
-    pickle.dump(out, gzip.open(out_file, "w"))
+    # Trying protocol = 4 to maintain backward compatability.
+    pickle.dump(out, gzip.open(out_file, "w"), protocol=4)
 
 
 if __name__ == '__main__':

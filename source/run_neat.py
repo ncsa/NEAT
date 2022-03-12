@@ -1,3 +1,4 @@
+import gzip
 import random
 import time
 from random import choice
@@ -12,6 +13,8 @@ from source.vcf_func import parse_vcf
 import tempfile
 import pandas as pd
 import io
+import glob
+from heapq import merge
 
 import shutil
 
@@ -35,14 +38,10 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
     # number of ploids to make this mutation on (always at least 1)
     if random.random() < homozygous_freq:
         # If it's homozygous. it's on all the ploids
+        # TODO fact check this with Christina
         how_many = ploidy
     else:
-        if ploidy == 1 or ploidy == 2:
-            # For ploidy of 1, homo/heterozygous is irrelevant, for ploidy of 2, hetero means it's on 1 exactly.
-            how_many = 1
-        else:
-            # If we have lots of ploids to choose from, pick at least on, but not all
-            how_many = random.randint(1, ploidy - 1)
+        how_many = 1
 
     # wp is just the temporary genotype list
     wp = [0] * ploidy
@@ -57,10 +56,14 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
 
 def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regions,
                  mutation_rate_regions, input_variants, models, options,
-                 output_file_writer, output_file_writer_cancer):
+                 out_prefix):
     """
     This function will take all the setup we did in the main part and actually do NEAT stuff.
     """
+
+    # Might be able to pre-populate this
+    final_files = []
+
 
     # Setting up temp files to write to
     tmp_fasta_fn = None
@@ -76,7 +79,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     tmp_dir_path = pathlib.Path(temporary_dir.name).resolve()
 
     # We need the temp vcf file no matter what
-    tmp_vcf_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}.vcf"
+    tmp_vcf_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{chrom}_{threadidx}.vcf"
     if options.debug:
         print_and_log(f'tmp_vcf_fn = {tmp_vcf_fn}', 'debug')
 
@@ -101,14 +104,11 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         # init_progress_info()
         pass
 
-    if options.produce_vcf:
-        print_and_log(f"Generating list of mutations (golden vcf)", "info")
 
     # Step 1: Create a VCF of variants (mutation and sequencing error variants)
     # We'll create a temp file first then output it if the user requested the file
     with open(tmp_vcf_fn, 'w') as tmp_vcf_file:
         tmp_vcf_file.write(f'@NEAT temporary file, for generating the list of mutations.\n')
-        tmp_vcf_file.write(f'CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_sample\n')
 
     contig_sequence = reference.seq
 
@@ -155,12 +155,15 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     # Figure out the weight of each region. If there is only one region, then this will be trivial
     weighted_mutation_regions = {x: (x[1] - x[0]) * x[2] for x in mutation_regions}
     # This will sort this dict by weight
-    weighted_mutation_regions = dict(sorted(weighted_mutation_regions.items(), key=lambda x:x[1]))
+    weighted_mutation_regions = dict(sorted(weighted_mutation_regions.items(), key=lambda x: x[1]))
 
     # This model will allow us to figure out what regions to place mutations in
-    mutation_regions_model = DiscreteDistribution(list(weighted_mutation_regions.keys()), weighted_mutation_regions.values())
+    mutation_regions_model = DiscreteDistribution(list(weighted_mutation_regions.keys()),
+                                                  weighted_mutation_regions.values())
 
     mutations_to_add = int(len(contig_sequence) * overall_mutation_rate) + 1
+    if options.debug:
+        print_and_log(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
     mutation_data = []
 
     for variant in range(mutations_to_add):
@@ -276,6 +279,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                         final_position = i
                 # We still didn't find anywhere to put it. I guess we skip it. This seems like an edge case.
                 if final_position == -1:
+                    print_and_log(f'mutation skipped! {mutation}', 'warning')
                     continue
             # Since we checked a subsequence for the final position, and at this point we know that
             # we have a solid final_position, let's add that to the total.
@@ -309,31 +313,50 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         with open(tmp_vcf_fn, 'a') as tmp:
             tmp.write(line)
 
+        if options.debug:
+            print_and_log(f'wrote variant: {line}', 'debug')
+
     print_and_log(f"Finished mutating {chrom}. Time: {time.time() - start}", 'debug')
 
     # Let's write out the vcf, if asked to
     if options.produce_vcf:
         print_and_log(f'Writing output vcf', 'info')
 
+        path = f"{tmp_dir_path}/chunk_*.vcf"
+        chunksize = 1_000_000
+        fid = 1
+        lines = []
+
         with open(str(tmp_vcf_fn), 'r') as f:
-            lines = [line for line in f if not line.startswith('@')]
+            f_out = open(f'{tmp_dir_path}/chunk_{fid}.vcf', 'w')
+            for line_num, line in enumerate(f, 1):
+                if not line.startswith('@'):
+                    lines.append(line)
+                if not line_num % chunksize:
+                    lines = sorted(lines, key=lambda k: (k.split()[0], int(k.split()[1])))
+                    f_out.writelines(lines)
+                    print_and_log(f"splitting {chrom} {threadidx} {fid}", 'debug')
+                    f_out.close()
+                    lines = []
+                    fid += 1
+                    f_out = open(f'{tmp_dir_path}/chunk_{fid}.vcf' 'w')
+            if lines:
+                print_and_log(f"splitting {chrom} {threadidx} {fid}", 'debug')
+                lines = sorted(lines, key=lambda k: (k.split()[0], int(k.split()[1])))
+                f_out.writelines(lines)
+                f_out.close()
+                lines = []
 
-        mutations_df = pd.read_csv(io.StringIO(''.join(lines)),
-                                   dtype={'CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str, 'QUAL': int,
-                                          'FILTER': str, 'INFO': str, 'FORMAT': str, 'NEAT_sample': str}, sep='\t')
+        chunks = []
+        for filename in glob.glob(path):
+            chunks += [open(filename, 'r')]
 
-        # TODO Debug why this line isn't working
-        mutations_df_sorted = mutations_df.sort_values(by=['CHROM', 'POS']).reset_index(drop=True)
+        file = f"{out_prefix}_{chrom}.vcf.gz"
+        with gzip.open(file, 'wt') as f_out:
+            f_out.writelines(merge(*chunks, key=lambda k: (k.split()[0], int(k.split()[1]))))
 
-        for _, row in mutations_df_sorted.iterrows():
-            output_file_writer.write_vcf_record(row.CHROM, row.POS, row.ID, row.REF, row.ALT, row.QUAL, row.FILTER,
-                                                row.INFO, row.FORMAT, row.NEAT_sample)
-
-
-
-        # Probably should check for duplicates and overlaps and such
-        # duplicates = mutations_df.duplicated(subset=['CHROM', 'POS'])
-        # mutations_df = mutations_df[~duplicates]
+        for item in chunks:
+            item.close()
 
     temporary_dir.cleanup()
 
@@ -346,4 +369,4 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     # with WorkerPool(n_jobs=options.threads, shared_objects=jobs) as pool:
     #     pool.map(run_neat, jobs, progress_bar=True)
 
-    #TODO close temporary_dir
+    return file
