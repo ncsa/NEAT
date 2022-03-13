@@ -25,7 +25,6 @@ import os
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from logging import log
 
 from source.Models import Models
 from source.Options import Options
@@ -38,10 +37,10 @@ from source.run_neat import execute_neat
 from source.vcf_func import parse_input_vcf
 
 
-# class StdoutFilter(logging.Filter):
-#     # Setup filter for logging options
-#     def filter(self, record):
-#         return record.levelno in (logging.DEBUG, logging.INFO, logging.WARNING)
+class StdoutFilter(logging.Filter):
+    # Setup filter for logging options
+    def filter(self, record):
+        return record.levelno in (logging.INFO, logging.WARNING)
 
 
 # useful functions for the rest
@@ -305,39 +304,30 @@ def main(raw_args=None):
     if pathlib.Path(log_file).exists():
         os.remove(log_file)
 
-    neat_log = logging.getLogger(__name__)
+    neat_log = logging.getLogger("neat_log")
+    neat_log.setLevel(logging.DEBUG)
     neat_log.handlers = []
 
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(threadName)s: %(message)s', datefmt='%Y/%m/%d %H:%M')
 
     stdout_handler = logging.StreamHandler(stream=sys.stdout)
     stdout_handler.setLevel(logging.DEBUG)
-    # stdout_handler.addFilter(StdoutFilter())
+    stdout_handler.addFilter(StdoutFilter())
     stdout_handler.setFormatter(formatter)
 
     neat_log.addHandler(stdout_handler)
 
-    # stderr_handler = logging.StreamHandler(stream=sys.stderr)
-    # stderr_handler.setFormatter(formatter)
-    # stderr_handler.setLevel(logging.ERROR)
-    #
-    # neat_log.addHandler(stderr_handler)
-    #
-    # file_handler = logging.FileHandler(log_file)
-    # file_handler.setLevel(logging.DEBUG)
-    # file_handler.setFormatter(formatter)
-    #
-    # neat_log.addHandler(file_handler)
+    stderr_handler = logging.StreamHandler(stream=sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    stderr_handler.setLevel(logging.ERROR)
 
-    neat_log.info('Beginning NEAT!')
+    neat_log.addHandler(stderr_handler)
 
-    neat_log.debug("Debugging message")
-    neat_log.info("Info message")
-    neat_log.warning('Warning Message')
-    neat_log.error('Error  message')
-    neat_log.critical('critical message')
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
 
-    sys.exit(0)
+    neat_log.addHandler(file_handler)
 
     starttime = print_start_info()
 
