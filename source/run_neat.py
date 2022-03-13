@@ -181,9 +181,9 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     mutations_to_add = int(len(contig_sequence) * overall_mutation_rate) + 1
     log_mssg(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
 
-    mutation_data = {x: [] for x in range(mutations_to_add)}
+    mutation = None
 
-    print_and_log(f'Generating mutation positions.', 'info')
+    log_mssg(f'Generating mutation positions.', 'info')
     for variant in range(mutations_to_add):
         genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
         region = mutation_regions_model.sample()
@@ -241,17 +241,9 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 # if the model let us down, just stick it anywhere
                 potential_location = random.randint(region[0], region[1])
 
-        # Record the info for this variant. Listing them one per line to make the indexes later easier to follow
-        mutation_data[variant] = [genotype,
-                                  region,
-                                  is_indel,
-                                  is_insertion,
-                                  length,
-                                  potential_location]
-    
-    for mutation in mutation_data:
+        # Now try to add the mutation to the vcf
         # Check if we're somewhere we shouldn't be
-        allowed = contig_sequence[mutation[5]] in ALLOWED_NUCL
+        allowed = contig_sequence[potential_location] in ALLOWED_NUCL
 
         # Check target and discard bed files
         # Note that if we aren't completely discarding off-target matches, then for the vcf,
@@ -261,7 +253,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             for coords in target_regions:
                 # Check that this location is valid.
                 # Note that we are assuming the coords are half open here.
-                if coords[0] <= mutation[5] < coords[1]:
+                if coords[0] <= potential_location < coords[1]:
                     in_region = True
                     # You can stop looking when you find it
                     break
@@ -274,38 +266,38 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             for coords in discard_regions:
                 # Check if this location is in an excluded zone
                 # Note that we are assuming the coords are half open here
-                if coords[0] <= mutation[5] < coords[1]:
+                if coords[0] <= potential_location < coords[1]:
                     in_region = True
                     break
             if in_region:
                 allowed = False
 
-
         # Let's assume we're fine, then adjust if not
-        final_position = mutation[5]
+        final_position = potential_location
         # if we're somewhere we shouldn't be, let's find the closest place where we can be.
         if not allowed:
             # See if there is any place after to put it
-            sub_sequence = contig_sequence[mutation[5]:]
+            sub_sequence = contig_sequence[final_position:]
             # To get the final position relative to the reference, we add subsequence start point
-            final_position = min([sub_sequence.index(n) for n in ALLOWED_NUCL])
-            if final_position == -1:
+            relative_final_position = min([sub_sequence.index(n) for n in ALLOWED_NUCL])
+            if relative_final_position == -1:
                 # okay, so we didn't find it to the right of the starting point. To look the other direction
                 # We will look up to the current location, but reverse the list, so we find the highest index
-                sub_sequence = contig_sequence[:mutation[5]]
+                sub_sequence = contig_sequence[:final_position]
                 for i in range(len(sub_sequence), -1, -1):
                     if sub_sequence[i] in ALLOWED_NUCL:
-                        final_position = i
+                        relative_final_position = i
+                        break
                 # We still didn't find anywhere to put it. I guess we skip it. This seems like an edge case.
-                if final_position == -1:
-                    log_mssg(f'Could not locate a suitable position for {mutation}', 'warning')
+                if relative_final_position == -1:
+                    log_mssg(f'Could not locate a suitable position for mutation {variant}', 'debug')
                     continue
             if final_position in blacklist:
-                log_mssg(f'Could not locate a suitable position for {mutation}', 'warning')
+                log_mssg(f'Variant {variant} attempted to go where there was already a variant. skipping', 'debug')
                 continue
             # Since we checked a subsequence for the final position, and at this point we know that
             # we have a solid final_position, let's add that to the total.
-            final_position += mutation[5]
+            final_position += relative_final_position
 
         if final_position in blacklist:
             log_mssg(f'Skipping variant, as there is already one in this location: {mutation}', 'warning')
