@@ -46,7 +46,8 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_
 
     variants = pd.read_csv(vcf_file, comment="#", sep="\t", header=None,
                            names=column_names,
-                           usecols=['CHROM', 'POS', 'REF', 'ALT', 'INFO'])
+                           usecols=['CHROM', 'POS', 'REF', 'ALT', 'INFO'],
+                           dtype={'CHROM': str, 'POS': int, 'REF': str, 'ALT': str, 'INFO': str})
 
     variant_chroms = variants['CHROM'].unique()
     matching_chroms = []
@@ -184,13 +185,15 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     if human_flag:
         for key in reference_idx:
             if key.startswith('chr'):
-                key_to_check = key_to_check[3:]
+                key_to_check = int(key_to_check[3:])
             if key_to_check not in HUMAN_WHITELIST:
                 ignore.append(key)
 
     if len(ignore) == len(reference_idx):
         print(f"{PROG} - No valid contigs detected. If using whitelist, all contigs may have been filtered out.")
         sys.exit(1)
+
+    # TODO - we don't actually use the ignore list anywhere
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     print(f'{PROG} - Processing VCF file...')
