@@ -181,8 +181,9 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     mutations_to_add = int(len(contig_sequence) * overall_mutation_rate) + 1
     log_mssg(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
 
-    mutation_data = []
+    mutation_data = {x: [] for x in range(mutations_to_add)}
 
+    print_and_log(f'Generating mutation positions.', 'info')
     for variant in range(mutations_to_add):
         genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
         region = mutation_regions_model.sample()
@@ -241,13 +242,13 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 potential_location = random.randint(region[0], region[1])
 
         # Record the info for this variant. Listing them one per line to make the indexes later easier to follow
-        mutation_data.append([genotype,
-                              region,
-                              is_indel,
-                              is_insertion,
-                              length,
-                              potential_location])
-
+        mutation_data[variant] = [genotype,
+                                  region,
+                                  is_indel,
+                                  is_insertion,
+                                  length,
+                                  potential_location]
+    
     for mutation in mutation_data:
         # Check if we're somewhere we shouldn't be
         allowed = contig_sequence[mutation[5]] in ALLOWED_NUCL
