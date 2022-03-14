@@ -110,6 +110,7 @@ def main(raw_args=None):
     """
     Set variables for processing
     """
+    starttime = time.time()
 
     # absolute path to this script
     sim_path = pathlib.Path(__file__).resolve().parent
@@ -891,6 +892,7 @@ def main(raw_args=None):
     if cancer:
         output_file_writer_cancer.close_files()
 
+    print(f"NEAT finished the simulation in {time.time() - starttime}")
 
 if __name__ == '__main__':
     main()
