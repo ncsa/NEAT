@@ -54,7 +54,7 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
     return [str(x) for x in wp]
 
 
-def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regions,
+def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name, target_regions, discard_regions,
                  mutation_rate_regions, input_variants, sample_columns, models, options,
                  out_prefix):
     """
@@ -98,21 +98,6 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     if threadidx == 1:
         # init_progress_info()
         pass
-
-    log_mssg(f'Generating trinucleotide bias model for {chrom}', 'info')
-    trinuc_bias = np.zeros(len(reference))
-    # Start at 1 so we get a trinucleotide to start and end one shy for the same reason
-    for i in range(1, len(reference) - 1):
-        if reference[i] not in ALLOWED_NUCL:
-            # Okay, if it is an N and the next one isn't the trinuc will be NAT or whatever, which breaks
-            # the lines below, so we'll skip ahead. Again, we probably need to map N-regions.
-            continue
-        trinuc = reference.seq[i-1:i+2]
-        # Let's double check to make sure we didn't pick up a stray N
-        if any([i for i in trinuc if i not in ALLOWED_NUCL]):
-            continue
-        trinuc_bias[i] = models.mutation_model['trinuc_bias'][trinuc]
-    trinuc_bias_model = DiscreteDistribution(range(len(reference)), trinuc_bias)
 
     # Step 1: Create a VCF of variants (mutation and sequencing error variants)
     # We'll create a temp file first then output it if the user requested the file
@@ -175,7 +160,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     # Create a dictionary of regions. With no mutation_rate_regions, then there is only one region for the contig
     # When we add multithreading, I think we can use these intervals for parallel processing.
     # Establish a uniform mutation rate by default
-    mutation_regions = [(0, len(contig_sequence), models.mutation_model['avg_mut_rate'])]
+    mutation_regions = [x + (models.mutation_model['avg_mut_rate'],) for x in non_n_regions]
     overall_mutation_rate = models.mutation_model['avg_mut_rate']
     if mutation_rate_regions:
         mutation_regions = mutation_rate_regions
@@ -217,7 +202,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             potential_location = random.randint(range(region[0], region[1]))
         else:
             # Use the trinuc bias to find a spot for this SNP
-            potential_location = trinuc_bias_model.sample()
+            potential_location = trinuc_model.sample()
             if contig_sequence[potential_location] not in ALLOWED_NUCL:
                 sub_sequence = contig_sequence[potential_location:]
                 # Look for an allowed nucleotide to the right.
