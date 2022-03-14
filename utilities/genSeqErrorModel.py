@@ -21,6 +21,7 @@ import matplotlib.pyplot as mpl
 import pathlib
 import pysam
 from functools import reduce
+import gzip
 
 # enables import from neighboring package
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -29,7 +30,9 @@ from source.probability import DiscreteDistribution
 
 
 def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
+    # init smooth is set to zero and never touched again. Not sure what they were trying to do here.
     init_smooth = 0.
+    # Prob_smooth is set to zero and never touched again. Not sure what they were trying to do here, either.
     prob_smooth = 0.
 
     # Takes a gzip or sam file and returns the simulation's average error rate,
@@ -111,18 +114,22 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
     prob_q = [None] + [[[0. for m in range(real_q)] for n in range(real_q)] for p in range(actual_readlen - 1)]
     for p in range(1, actual_readlen):
         for i in range(real_q):
+            # prob_smooth is always 0, so this is just float(np.sum(total_q[p][i, :]))
             row_sum = float(np.sum(total_q[p][i, :])) + prob_smooth * real_q
             if row_sum <= 0.:
                 continue
             for j in range(real_q):
+                # prob_smooth is always 0, so it does nothing here.
                 prob_q[p][i][j] = (total_q[p][i][j] + prob_smooth) / row_sum
 
     init_q = [[0. for m in range(real_q)] for n in range(actual_readlen)]
     for i in range(actual_readlen):
+        # init_smooth is always = 0, so this is always just float(np.sum(prior_q[i, :]))
         row_sum = float(np.sum(prior_q[i, :])) + init_smooth * real_q
         if row_sum <= 0.:
             continue
         for j in range(real_q):
+            # init_smooth is always 0, so it does nothing here.
             init_q[i][j] = (prior_q[i][j] + init_smooth) / row_sum
 
     if plot_stuff:
@@ -232,7 +239,7 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
 def main():
     parser = argparse.ArgumentParser(description='genSeqErrorModel.py')
     parser.add_argument('-i', type=str, required=True, metavar='<str>', help="* input_read1.fq (.gz) / input_read1.sam")
-    parser.add_argument('-o', type=str, required=True, metavar='<str>', help="* output.p")
+    parser.add_argument('-o', type=str, required=True, metavar='<str>', help="/output/prefix")
     parser.add_argument('-i2', type=str, required=False, metavar='<str>', default=None,
                         help="input_read2.fq (.gz)")
     parser.add_argument('-p', type=str, required=False, metavar='<str>', default=None, help="input_alignment.pileup")
@@ -295,12 +302,12 @@ def main():
     #
     #	finally, let's save our output model
     #
-    outfile = pathlib.Path(outfile).with_suffix(".p")
+    outfile = pathlib.Path(outfile).with_suffix(".pickle.gz")
     print('saving model...')
     if infile2 is None:
-        pickle.dump([init_q, prob_q, q_scores, off_q, avg_err, err_params], open(outfile, 'wb'))
+        pickle.dump([init_q, prob_q, q_scores, off_q, avg_err, err_params], gzip.open(outfile, 'wb'))
     else:
-        pickle.dump([init_q, prob_q, init_q2, prob_q2, q_scores, off_q, avg_err, err_params], open(outfile, 'wb'))
+        pickle.dump([init_q, prob_q, init_q2, prob_q2, q_scores, off_q, avg_err, err_params], gzip.open(outfile, 'wb'))
 
 
 if __name__ == '__main__':
