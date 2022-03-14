@@ -65,8 +65,8 @@ def parse_bed(input_bed: str, chromosomes: list,
                         if index == -1:
                             log_mssg(f"Skipping mutation rate region: {my_chr}: ({pos1}, {pos2})", 'warning')
                             log_mssg(f'4th column of mutation rate bed must be a semicolon list of key, value '
-                                          f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".',
-                                          'debug')
+                                     f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".',
+                                     'debug')
                             continue
 
                         # +9 because that's len('mut_rate='). Whatever is that should be our mutation rate.
@@ -77,8 +77,8 @@ def parse_bed(input_bed: str, chromosomes: list,
                         except ValueError:
                             log_mssg(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})", 'error')
                             log_mssg(f'4th column of mutation rate bed must be a semicolon list of key, value '
-                                          f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".',
-                                          'debug')
+                                     f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".',
+                                     'debug')
                             premature_exit(1)
 
                         if mut_rate > 0.3:
