@@ -61,36 +61,36 @@ python gen_reads.py -r ref.fa -R 101 -o simulated_data
 The most commonly added options are --pe, --bam, --vcf, and -c. 
 
 
-Option           |  Description
-------           |:----------
--h, --help       |  Displays usage information
--r <str>         |  Reference sequence file in fasta format. A reference index (.fai) will be created if one is not found in the directory of the reference as [reference filename].fai. Required. The index can be created using samtools faidx.
--R <int>         |  Read length. Required. 
--o <str>         |  Output prefix. Use this option to specify where and what to call output files. Required
--c <float>       |  Average coverage across the entire dataset. Default: 10
--e <str>         |  Sequencing error model data file
--E <float>       |  Average sequencing error rate. The sequencing error rate model is rescaled to make this the average value. 
--p <int>         |  Sample Ploidy, default 2
--tr <str>        |  Bed file containing targeted regions; default coverage for targeted regions is 98% of -c option; default coverage outside targeted regions is 2% of -c option
--dr <str>	     |  Bed file with sample regions to discard.
--to <float>      |  off-target coverage scalar [0.02]
--m <str>         |  mutation model data file
--M <float>       |  Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. These random mutations are inserted in addition to the once specified in the -v option.
--Mb <str>	 |  Bed file containing positional mutation rates
--N <int>	 |  Below this quality score, base-call's will be replaced with N's
--v <str>         |  Input VCF file. Variants from this VCF will be inserted into the simulated sequence with 100% certainty.
---pe <int> <int> |  Paired-end fragment length mean and standard deviation. To produce paired end data, one of --pe or --pe-model must be specified.
---pe-model <str> |  Empirical fragment length distribution. Can be generated using [computeFraglen.py](#computefraglenpy). To produce paired end data, one of --pe or --pe-model must be specified.
---gc-model <str> |  Empirical GC coverage bias distribution.  Can be generated using [computeGC.py](#computegcpy)
---bam            |  Output golden BAM file
---vcf            |  Output golden VCF file
---fa		 |  Output FASTA instead of FASTQ
---rng <int>      |  rng seed value; identical RNG value should produce identical runs of the program, so things like read locations, variant positions, error positions, etc, should all be the same.
---gz             |  Gzip output FQ and VCF
---no-fastq       |  Bypass generation of FASTQ read files
---discard-offtarget |  Discard reads outside of targeted regions
---rescale-qual   |  Rescale Quality scores to match -E input
--d  |   Turn on debugging mode (useful for development)
+| Option              | Description                                                                                                                                                                                                                   |
+|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| -h, --help          | Displays usage information                                                                                                                                                                                                    |
+| -r <str>            | Reference sequence file in fasta format. A reference index (.fai) will be created if one is not found in the directory of the reference as [reference filename].fai. Required. The index can be created using samtools faidx. |
+| -R <int>            | Read length. Required.                                                                                                                                                                                                        |
+| -o <str>            | Output prefix. Use this option to specify where and what to call output files. Required                                                                                                                                       |
+| -c <float>          | Average coverage across the entire dataset. Default: 10                                                                                                                                                                       |
+| -e <str>            | Sequencing error model data file                                                                                                                                                                                              |
+| -E <float>          | Average sequencing error rate. The sequencing error rate model is rescaled to make this the average value.                                                                                                                    |
+| -p <int>            | Sample Ploidy, default 2                                                                                                                                                                                                      |
+| -tr <str>           | Bed file containing targeted regions; default coverage for targeted regions is 98% of -c option; default coverage outside targeted regions is 2% of -c option                                                                 |
+| -dr <str>           | Bed file with sample regions to discard.                                                                                                                                                                                      |
+| -to <float>         | off-target coverage scalar [0.02]                                                                                                                                                                                             |
+| -m <str>            | mutation model data file                                                                                                                                                                                                      |
+| -M <float>          | Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. These random mutations are inserted in addition to the once specified in the -v option.                 |
+| -Mb <str>           | Bed file containing positional mutation rates                                                                                                                                                                                 |
+| -N <int>	           | Below this quality score, base-call's will be replaced with N's                                                                                                                                                               |
+| -v <str>            | Input VCF file. Variants from this VCF will be inserted into the simulated sequence with 100% certainty.                                                                                                                      |
+| --pe <int> <int>    | Paired-end fragment length mean and standard deviation. To produce paired end data, one of --pe or --pe-model must be specified.                                                                                              |
+| --pe-model <str>    | Empirical fragment length distribution. Can be generated using [computeFraglen.py](#computefraglenpy). To produce paired end data, one of --pe or --pe-model must be specified.                                               |
+| --gc-model <str>    | Empirical GC coverage bias distribution.  Can be generated using [computeGC.py](#computegcpy)                                                                                                                                 |
+| --bam               | Output golden BAM file                                                                                                                                                                                                        |
+| --vcf               | Output golden VCF file                                                                                                                                                                                                        |
+| --fa	               |   Output FASTA instead of FASTQ                                                                                                                                                                                               |
+| --rng <int>         | rng seed value; identical RNG value should produce identical runs of the program, so things like read locations, variant positions, error positions, etc, should all be the same.                                             |
+| --gz                | Gzip output FQ and VCF                                                                                                                                                                                                        |
+| --no-fastq          | Bypass generation of FASTQ read files                                                                                                                                                                                         |
+| --discard-offtarget | Discard reads outside of targeted regions                                                                                                                                                                                     |
+| --rescale-qual      | Rescale Quality scores to match -E input                                                                                                                                                                                      |
+| -d                  | Turn on debugging mode (useful for development)                                                                                                                                                                               |
 
 
 ## Functionality
@@ -235,15 +235,15 @@ python gen_mut_model.py               \
 
 Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
 
-| Option         | Description                                                                  |
-|----------------|------------------------------------------------------------------------------|
-| -r <str>       | Reference file for organism in FASTA format. Required                        |
-| -m <str>       | Mutation file for organism in VCF format. Required                           |
-| -o <str>       | Path to output file and prefix. Required.                                    |
-| --bed          | Flag that indicates you are using a bed-restricted vcf and fasta (see below) |
-| --save-trinuc  | Save trinucleotide counts for reference                                      |
-| --human-sample | Use to skip unnumbered scaffolds in human references                         |
-|  --skip-common | Do not save common snps or high mutation areas                               |
+| Option          | Description                                                                  |
+|-----------------|------------------------------------------------------------------------------|
+| -r <str>        | Reference file for organism in FASTA format. Required                        |
+| -m <str>        | Mutation file for organism in VCF format. Required                           |
+| -o <str>        | Path to output file and prefix. Required.                                    |
+| --bed           | Flag that indicates you are using a bed-restricted vcf and fasta (see below) |
+| --save-trinuc   | Save trinucleotide counts for reference                                      |
+| --human-sample  | Use to skip unnumbered scaffolds in human references                         |
+| --skip-common   | Do not save common snps or high mutation areas                               |
 
 Note that if you have a bed input, you will need to have bedtools installed in your environment, in addition to the 
 pybedtools python package. We recommend using Anaconda:
