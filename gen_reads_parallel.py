@@ -461,9 +461,6 @@ def main(raw_args=None):
 
     out_prefix = f'{out_prefix_parent_dir}/{out_prefix_name}'
 
-    if options.produce_vcf:
-        log_mssg(f"Generating list of mutations (golden vcf)", "info")
-
     vcf_files = []
 
     for contig in breaks:
