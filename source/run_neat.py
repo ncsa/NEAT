@@ -55,12 +55,11 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
 
 
 def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name, target_regions, discard_regions,
-                 mutation_rate_regions, input_variants, sample_columns, models, options,
+                 mutation_rate_regions, input_variants, models, options,
                  out_prefix):
     """
     This function will take all the setup we did in the main part and actually do NEAT stuff.
     """
-    log_mssg(f'Simulating mutations for {chrom}', 'info')
     # Might be able to pre-populate this
     final_files = []
 
@@ -110,6 +109,7 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
 
     # Trying te prevent inserting a mutation in more than one place
     blacklist = []
+    n_added = 0
     """
     Inserting any input mutations
     """
@@ -143,6 +143,7 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
                    f'{variant.ALT}\t{variant.QUAL}\t' \
                    f'PASS\t{variant.INFO}\t' \
                    f'GT\t{"/".join(genotype)}\n'
+            n_added += 1
 
             with open(tmp_vcf_fn, 'a') as tmp:
                 tmp.write(line)
@@ -296,7 +297,7 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
                 final_position -= relative_final_position
 
         if final_position in blacklist:
-            log_mssg(f'Skipping variant, as we could not find a suitable location: {variant}', 'warning')
+            log_mssg(f'Skipping variant, as we could not find a suitable location: {variant}', 'debug')
             continue
 
         # at this point we should have a final position.
@@ -324,6 +325,7 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
                f'{alt}\t{quality_score}\t' \
                f'PASS\t.\t' \
                f'GT\t{"/".join(genotype)}\n'
+        n_added += 1
 
         with open(tmp_vcf_fn, 'a') as tmp:
             tmp.write(line)
@@ -331,6 +333,7 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
         blacklist.append(final_position)
 
     log_mssg(f"Finished mutating {chrom}. Time: {time.time() - start}", 'debug')
+    log_mssg(f"Added {n_added} mutations to the reference.", 'debug')
 
     # Let's write out the vcf, if asked to
     if options.produce_vcf:

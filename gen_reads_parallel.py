@@ -480,7 +480,6 @@ def main(raw_args=None):
                          discard_regions_dict[contig],
                          mutation_rate_dict[contig],
                          inputs_df,
-                         sample_names,
                          models,
                          options,
                          out_prefix))
