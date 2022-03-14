@@ -1,18 +1,16 @@
 #!/usr/bin/env python
 # encoding: utf-8
-""" ////////////////////////////////////////////////////////////////////////////////
-   ///                                                                          ///
-  ///       gen_reads.source                                                        ///
- ///        VERSION 2.0: HARDER, BETTER, FASTER, STRONGER!                    ///
-///////                                                                      //////
-   ///      Variant and read simulator for benchmarking NGS workflows          ///
-  ///                                                                         ///
- ///        Written by:     Zach Stephens                                    ///
-///////     For:            DEPEND Research Group, UIUC                     ///////
-   ///      Date:           May 29, 2015                                       ///
-  ///       Contact:        zstephe2@illinois.edu                             ///
- ///                                                                         ///
-/////////////////////////////////////////////////////////////////////////////// """
+"""
+gen_reads.py
+Version 3.0
+
+Variant and read simulator for benchmarking NGS workflows
+
+Currently maintained by:    NCSA Genomics Team
+Contact:                    Joshua Allen
+Email:                      jallen17@illinois.edu
+Originally written by:      Zach Stephens
+"""
 
 import sys
 import copy
@@ -24,7 +22,8 @@ import pickle
 import numpy as np
 import argparse
 import pathlib
-# from Bio import SeqIO
+import gzip
+from Bio import SeqIO
 
 from source.input_checking import check_file_open, is_in_range
 from source.ref_func import index_ref, read_ref
@@ -49,8 +48,8 @@ def main(raw_args=None):
     ////////////    PARSE INPUT ARGUMENTS    ////////////
     //////////////////////////////////////////////////"""
 
-    parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+    parser = argparse.ArgumentParser(description='NEAT-genReads V3.2',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="Path to reference fasta")
     parser.add_argument('-R', type=int, required=True, metavar='read length', help="The desired read length")
     parser.add_argument('-o', type=str, required=True, metavar='output_prefix',
@@ -108,6 +107,7 @@ def main(raw_args=None):
     """
     Set variables for processing
     """
+    starttime = time.time()
 
     # absolute path to this script
     sim_path = pathlib.Path(__file__).resolve().parent
@@ -200,12 +200,12 @@ def main(raw_args=None):
         mut_rate = None
 
     if mut_rate != -1 and mut_rate is not None:
-        is_in_range(mut_rate, 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
+        is_in_range(mut_rate, 0.0, 0.3, 'Error: -M must be between 0 and 0.3')
 
     # sequencing error model
     if se_model is None:
         print('Using default sequencing error model.')
-        se_model = sim_path / 'models/errorModel_toy.p'
+        se_model = sim_path / 'models/errorModel_default.pickle.gz'
         se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
     else:
         # probably need to do some sanity checking
@@ -214,16 +214,16 @@ def main(raw_args=None):
     # GC-bias model
     if gc_bias_model is None:
         print('Using default gc-bias model.')
-        gc_bias_model = sim_path / 'models/gcBias_toy.p'
+        gc_bias_model = sim_path / 'models/gcBias_default.pickle.gz'
         try:
-            [gc_scale_count, gc_scale_val] = pickle.load(open(gc_bias_model, 'rb'))
+            [gc_scale_count, gc_scale_val] = pickle.load(gzip.open(gc_bias_model, 'rb'))
         except IOError:
             print("\nProblem reading the default gc-bias model.\n")
             sys.exit(1)
         gc_window_size = gc_scale_count[-1]
     else:
         try:
-            [gc_scale_count, gc_scale_val] = pickle.load(open(gc_bias_model, 'rb'))
+            [gc_scale_count, gc_scale_val] = pickle.load(gzip.open(gc_bias_model, 'rb'))
         except IOError:
             print("\nProblem reading the gc-bias model.\n")
             sys.exit(1)
@@ -235,7 +235,7 @@ def main(raw_args=None):
         if fraglen_model is not None:
             print('Using empirical fragment length distribution.')
             try:
-                [potential_values, potential_prob] = pickle.load(open(fraglen_model, 'rb'))
+                [potential_values, potential_prob] = pickle.load(gzip.open(fraglen_model, 'rb'))
             except IOError:
                 print('\nProblem loading the empirical fragment length model.\n')
                 sys.exit(1)
@@ -325,10 +325,10 @@ def main(raw_args=None):
         for k in ref_list:
             if k not in input_regions:
                 n_in_ref_only += 1
-        for k in input_regions.keys():
-            if k not in ref_list:
+        for key in list(input_regions):
+            if key not in ref_list:
                 n_in_bed_only += 1
-                del input_regions[k]
+                del input_regions[key]
         if n_in_ref_only > 0:
             print('Warning: Reference contains sequences not found in targeted regions BED file.')
         if n_in_bed_only > 0:
@@ -888,6 +888,7 @@ def main(raw_args=None):
     if cancer:
         output_file_writer_cancer.close_files()
 
+    print(f"NEAT finished the simulation in {time.time() - starttime}")
 
 if __name__ == '__main__':
     main()

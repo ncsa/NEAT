@@ -5,6 +5,7 @@ import sys
 from typing import Union
 
 import numpy as np
+import pandas as pd
 
 LOW_PROB_THRESH = 1e-12
 
@@ -114,18 +115,38 @@ class DiscreteDistribution:
 # takes k_range, lambda, [0,1,2,..], returns a DiscreteDistribution object
 # with the corresponding to a poisson distribution
 
-def poisson_list(k_range, input_lambda):
+def poisson_list(k_range: range, input_lambda: float) -> DiscreteDistribution:
     min_weight = 1e-12
+    # if input_lambda is less than some arbitrarily small number,
+    # return a degenerate distribution that will always give 0.
     if input_lambda < min_weight:
         return DiscreteDistribution([1], [0], degenerate_val=0)
+    # Honestly not completely sure where this code comes from or how to interpret it exactly. I think it's
+    # derived from the Poisson PDF: (e^-lambda * lambda^x)/x!
+    # But it's like the log of that list for x element of the k_range
     log_factorial_list = [0.0]
     for k in k_range[1:]:
-        log_factorial_list.append(np.log(float(k)) + log_factorial_list[k - 1])
+        log_factorial_list.append(np.log(k) + log_factorial_list[k - 1])
     w_range = [np.exp(k * np.log(input_lambda) - input_lambda - log_factorial_list[k]) for k in k_range]
-    w_range = [n for n in w_range if n >= min_weight]
-    if len(w_range) <= 1:
+    # Here originally was the code from v2.0:
+    # w_range = [n for n in w_range if n >= min_weight]
+    # return DiscreteDistribution(w_range, k_range[:len(w_range)])
+    # I think what was happening in that filtering step was that the Discrete Distribution was skewing lower.
+    # Say input_lambda = 4.25. That means that we are shooting for roughly 4 variants. The original w_range
+    # has a max value at the 4th element, and follows a distribution that makes sense, centered on 4.
+    # But when the filtering happens, they then just took the first n elements of the k-range, where n = len(w_range)
+    # For higher lambda values, this has the effect of skewing the weights downward. For example, an input
+    # lambda of 80.7525 has a w_range.index(max(w_range)) = 80 (the index of the maximum value). This  makes sense
+    # as sampling from that set should give you a number near 80. But after filtering, there are only 62 elements left
+    # in the set, and the the max value moved from 80 to 28. So now when it randomly samples from this set,
+    # it will pick a value near 28, which is much lower than we want.
+    # My solution, then, is to used a pandas dataframe to keep the counts centered properly on the lambda value
+    # during the filtering step.
+    df = pd.DataFrame({'counts': k_range, 'weights': w_range})
+    filtered_df = df[df.weights > min_weight].reset_index()
+    if len(filtered_df) <= 1:
         return DiscreteDistribution([1], [0], degenerate_val=0)
-    return DiscreteDistribution(w_range, k_range[:len(w_range)])
+    return DiscreteDistribution(filtered_df.weights, filtered_df.counts)
 
 
 # quantize a list of values into blocks

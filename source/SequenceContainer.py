@@ -4,9 +4,10 @@ import pathlib
 import bisect
 import pickle
 import sys
-
+import gzip
 import numpy as np
 from Bio.Seq import Seq
+from Bio.Seq import MutableSeq
 
 from source.neat_cigar import CigarString
 from source.probability import DiscreteDistribution, poisson_list
@@ -139,7 +140,7 @@ class SequenceContainer:
         if self.mut_rescale is None:
             self.mut_scalar = 1.0
         else:
-            self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data)))
+            self.mut_scalar = self.mut_rescale / (mut_rate_sum / len(self.model_data))
 
         # how are mutations spread to each ploid, based on their specified mut rates?
         self.ploid_mut_frac = [float(n[0]) / mut_rate_sum for n in self.model_data]
@@ -388,12 +389,22 @@ class SequenceContainer:
             return np.mean(avg_out)
 
     def init_poisson(self):
+        # The problem with this line of code is that for shorter sequences, it finds no mutations, even if there 
+        # should be one or two.
         ind_l_list = [self.seq_len * self.models[i][0] * self.models[i][2] * self.ploid_mut_frac[i] for i in
                       range(len(self.models))]
         snp_l_list = [self.seq_len * self.models[i][0] * (1. - self.models[i][2]) * self.ploid_mut_frac[i] for i in
                       range(len(self.models))]
-        k_range = range(int(self.seq_len * MAX_MUTFRAC))
-        # return (indel_poisson, snp_poisson)
+        # Original code put an arbitrary cap of 0.3 on the mutation rate
+        # MAX_MUTFRAC = 0.3
+        # k_range = range(int(self.seq_len * MAX_MUTFRAC))
+        # I feel like we can improve on that by just setting the max equal to the input mutation rate x 10.
+        # We could also set the k_range = to the range of the sequence length, 
+        # but that might slow it all down even more
+        max_mutfrac = 0.3
+        if self.mut_rescale:
+            max_mutfrac = self.mut_rescale * 3
+        k_range = range(int(self.seq_len * max_mutfrac))
         # TODO These next two lines are really slow. Maybe there's a better way
         return [poisson_list(k_range, ind_l_list[n]) for n in range(len(self.models))], \
                [poisson_list(k_range, snp_l_list[n]) for n in range(len(self.models))]
@@ -588,7 +599,7 @@ class SequenceContainer:
 
         # MODIFY REFERENCE STRING: SNPS
         for i in range(len(all_snps)):
-            temp = self.sequences[i].tomutable()
+            temp = MutableSeq(self.sequences[i])
             for j in range(len(all_snps[i])):
                 v_pos = all_snps[i][j][0]
 
@@ -599,7 +610,7 @@ class SequenceContainer:
                     sys.exit(1)
                 else:
                     temp[v_pos] = all_snps[i][j][2]
-            self.sequences[i] = temp.toseq()
+            self.sequences[i] = Seq(temp)
 
         # organize the indels we want to insert
         for i in range(len(all_indels)):
@@ -695,13 +706,21 @@ class SequenceContainer:
             reads_to_sample.append([r_pos, my_qual, my_errors, r_dat])
 
         else:
+            """
+            The point of all this is, within the window of the fragment length, pick a random place for the read
+            to start. Then it has to do some math based on the window to find where the mate ends (r_pos2)
+            """
+            # I think this is the position of the error
             r_pos1 = self.coverage_distribution[my_ploid][self.fraglen_ind_map[frag_len]].sample()
 
-            # EXPERIMENTAL
-            # coords_to_select_from = self.coverage_distribution[my_ploid][self.fraglens_ind_map[frag_len]].sample()
-            # r_pos1 = random.randint(coords_to_select_from[0],coords_to_select_from[1])
-
+            # I think this is the position on the fragment of the read's mate? I'm not sure what this is
             r_pos2 = r_pos1 + frag_len - self.read_len
+
+            """
+            self.sequences is two copies of the genome, when it starts
+            r_dat1 - the read based on the r_pos random starting point  
+            r_dat2 - this will end up being the last read of the reverse strand
+            """
             r_dat1 = self.sequences[my_ploid][r_pos1:r_pos1 + self.read_len]
             r_dat2 = self.sequences[my_ploid][r_pos2:r_pos2 + self.read_len]
             (my_qual1, my_errors1) = sequencing_model.get_sequencing_errors(r_dat1)
@@ -829,9 +848,9 @@ class SequenceContainer:
 
                 else:  # substitution errors, much easier by comparison...
                     if str(read[3][e_pos + sse_adj[e_pos]]) == error[3]:
-                        temp = read[3].tomutable()
+                        temp = MutableSeq(read[3])
                         temp[e_pos + sse_adj[e_pos]] = error[4]
-                        read[3] = temp.toseq()
+                        read[3] = Seq(temp)
                     else:
                         print('\nError, ref does not match alt while attempting to insert substitution error!\n')
                         sys.exit(1)
@@ -860,7 +879,7 @@ class ReadContainer:
 
         model_path = pathlib.Path(error_model)
         try:
-            error_dat = pickle.load(open(model_path, 'rb'), encoding="bytes")
+            error_dat = pickle.load(gzip.open(model_path, 'rb'))
         except IOError:
             print("\nProblem opening the sequencing error model.\n")
             sys.exit(1)
@@ -877,6 +896,21 @@ class ReadContainer:
 
         # only 1 q-score model present, use same model for both strands
         elif len(error_dat) == 6:
+            """
+            init_q1 is the probability distribution, for each position of the read, of errors
+            prob_q1 is the probability distribution, at each position in 101 base read, of each of the potential quality scores
+            q_scores is just a list of possible q scores
+            off_q is the number to offset the quality score by (for ascii generation). 
+                  I don't know why this would be anything other than 33
+            avg_error is the average error for the dataset
+            error_params An unlabeled set of parameters for the models. I'll try to itemize them here:
+                error_params[0] - A nucleotide substitution matrix
+                error_params[1] - The chance that he error is an indel
+                error_params[2] - The probability distribution of the possible lengths of indels
+                error_params[3] - The possible lengths of indels
+                error_params[4] - The probability of an indel being an insertion
+                error_params[5] - Probability distribution for the 4 nucleotides
+            """
             [init_q1, prob_q1, q_scores, off_q, avg_error, error_params] = error_dat
             self.pe_models = False
 
@@ -898,11 +932,17 @@ class ReadContainer:
             self.q_err_rate[q] = 10. ** (-q / 10.)
         self.off_q = off_q
         self.err_p = error_params
-        # Selects a new nucleotide based on the error model
+        # This is the transition matrix calculated from the data, so it generates 4 discrete distributions,
+        # one for each row of the matrix, each having a probability
+        # of a given nucleotide transitioning to another (or staying the same) during a substitution event.
         self.err_sse = [DiscreteDistribution(n, NUCL) for n in self.err_p[0]]
-        # allows for selection of indel length based on the parameters of the model
+        # A discrete distribution of the possible indel lengths and their respective probabilities.
+        # For example, if self.err_p[2] == [0.999, 0.001] and self.err_p[3] == [1, 2]
+        # then the discrete distribution will have a probability of 99% of selecting an indel of length one and 0.1%
+        # of selecting and indel of length 2 as the error.
         self.err_sie = DiscreteDistribution(self.err_p[2], self.err_p[3])
-        # allows for indel insertion based on the length above and the probability from the model
+        # This is simply the probability that each letter will be chosen. Some machines may have a bias toward A
+        # for example. Default is just to assume uniform.
         self.err_sin = DiscreteDistribution(self.err_p[5], NUCL)
 
         # adjust sequencing error frequency to match desired rate
@@ -928,6 +968,7 @@ class ReadContainer:
             else:
                 print('Warning: Read length of error model (' + str(len(init_q1)) + ') does not match -R value (' + str(
                     self.read_len) + '), rescaling model...')
+                # This is basically a way to evenly spread the distribution across the number of bases in the read
                 self.q_ind_remap = [max([1, len(init_q1) * n // read_len]) for n in range(read_len)]
 
             # initialize probability distributions
@@ -968,6 +1009,11 @@ class ReadContainer:
         """
 
         # TODO this is one of the slowest methods in the code. Need to investigate how to speed this up.
+        """
+        Having explored how the sequence error models are built, I understand now why this is so slow. It's sampling 
+        from multidimensinal lists. Pandas would be faster, if we need to keep all that data. I feel like these models
+        could be parameterized instead of passed in as discrete lists of lists of lists.
+        """
         q_out = [0] * self.read_len
         s_err = []
 
@@ -1063,16 +1109,18 @@ class ReadContainer:
 
 # parse mutation model pickle file
 def parse_input_mutation_model(model=None, which_default=1):
+
     if which_default == 1:
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_1]
     elif which_default == 2:
+        # for cancer
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_2]
     else:
         print('\nError: Unknown default mutation model specified\n')
         sys.exit(1)
 
     if model is not None:
-        pickle_dict = pickle.load(open(model, "rb"))
+        pickle_dict = pickle.load(gzip.open(model, "rb"))
         out_model[0] = pickle_dict['AVG_MUT_RATE']
         out_model[2] = 1. - pickle_dict['SNP_FREQ']
 
