@@ -16,6 +16,7 @@ import argparse
 import numpy as np
 import pickle
 from Bio import SeqIO
+import sys
 
 
 def process_fasta(file: str) -> dict:
@@ -109,10 +110,11 @@ def calculate_coverage(bin_dict: dict, window: int) -> float:
             running_total += my_len
             bin_dict[k] = my_mean
 
-    try :
-        return all_mean / float(running_total)
-    except ZeroDivisionError as e:
-        print(e)
+    # Prevent a divide by zero error.
+    if float(running_total) == 0:
+        return None
+
+    return all_mean / float(running_total)
 
 
 def main():
@@ -146,6 +148,11 @@ def main():
 
     print("Calculating average coverage...")
     average_coverage = calculate_coverage(gc_bins, window_size)
+
+    if not average_coverage:
+        print(f"No coverage found in this genomcov file {in_gcb}")
+        print(f'No output produced')
+        return
 
     print('AVERAGE COVERAGE =', average_coverage)
 
