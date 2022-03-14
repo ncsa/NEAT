@@ -102,7 +102,7 @@ def try_to_touch(file_name: pathlib.Path):
     try:
         file_name.touch(exist_ok=False)
     except FileExistsError:
-        log_mssg(f"The file {file_name} already existed, but we're overwriting it", 'warning')
+        log_mssg(f"The file {file_name} already existed, but we're overwriting it", 'info')
         # This opens the file for writing, which essentially clears the contents.
         with open(file_name, 'w') as f:
             pass

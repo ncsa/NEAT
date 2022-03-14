@@ -34,7 +34,7 @@ class Options(SimpleNamespace):
             float, and bool Python types. For files and directories, use string type.
 
             Criteria 1: There are two modes of checking: files and numbers. For files, criteria 1 should be set to
-            'exists' to check file existence or None to skip a check (as with temp_dir, because that is not a user 
+            'exists' to check file existence or None to skip a check, because that is not a user 
             input. For numbers, criteria 1 should be the lowest acceptable value (inclusive) for that variable.
 
             Criteria 2: For files, criteria 2 will not be checked, so set to None for consistency. For numbers, this
@@ -77,7 +77,6 @@ class Options(SimpleNamespace):
             self.defs['produce_fasta'] = ('boolean', False, None, None)
             self.defs['produce_fastq'] = ('boolean', True, None, None)
             self.defs['force_coverage'] = ('boolean', False, None, None)
-            self.defs['temp_dir'] = ('string', pathlib.Path(os.getcwd()), None, None)
             self.defs['debug'] = ('boolean', False, None, None)
             self.defs['rng_value'] = ('int', None, None, None)
 

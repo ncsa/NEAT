@@ -155,11 +155,8 @@ def main():
         y_out.append(gc_bins[k])
 
     print('saving model...')
-<<<<<<< HEAD
-    pickle.dump([window_size, y_out], open(out_p, 'wb'))
-=======
+
     pickle.dump([range(window_size + 1), y_out], gzip.open(out_p + ".pickle.gz", 'wb'))
->>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1
 
     print(time.time() - tt, '(sec)')
 

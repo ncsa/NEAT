@@ -10,7 +10,6 @@ Note that I'm planninng to hijack NEAT's features for this.
 
 import argparse
 import bisect
-import datetime
 import gzip
 import logging
 import pathlib
@@ -21,6 +20,7 @@ import pandas as pd
 import glob
 from heapq import merge
 import os
+import atexit
 
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -40,17 +40,17 @@ from source.vcf_func import parse_input_vcf
 class StdoutFilter(logging.Filter):
     # Setup filter for logging options
     def filter(self, record):
-        return record.levelno in (logging.INFO, logging.WARNING)
+        return record.levelno == logging.INFO
 
 
 # useful functions for the rest
-def print_start_info() -> datetime.datetime:
+def print_start_info():
     """
     Prints a NEAT start message with version number and logs the start time
 
     :return: logs the time this function was called as start time.
     """
-    starttime = datetime.datetime.now()
+    starttime = time.time()
     print('\n-----------------------------------------------------------')
     log_mssg(f"NEAT multithreaded version, v{VERSION}, is running.", 'info')
     log_mssg(f'Started: {str(starttime)}.', 'info')
@@ -58,7 +58,7 @@ def print_start_info() -> datetime.datetime:
 
 
 def print_end_info(output_class, cancer_output_class, starting_time):
-    endtime = datetime.datetime.now()
+    endtime = time.time()
     list_to_iterate = output_class.files_to_write
     if cancer_output_class:
         list_to_iterate += cancer_output_class.files_to_write
@@ -100,7 +100,7 @@ def print_configuration(args, options):
             log_mssg(f'Using fragment length model: {options.fragment_model}', 'INFO')
         else:
             log_mssg(f'Using fragment model based on mean={options.fragment_mean}, '
-                          f'st dev={options.fragment_st_dev}', 'INFO')
+                     f'st dev={options.fragment_st_dev}', 'INFO')
     else:
         log_mssg(f'Running in single-ended mode.', 'INFO')
     log_mssg(f'Using a read length of {options.read_len}', 'INFO')
@@ -131,7 +131,6 @@ def print_configuration(args, options):
         log_mssg(f'Using GC model: {options.gc_model}', 'INFO')
     if options.force_coverage:
         log_mssg(f'Ignoring models and forcing coverage value.', 'INFO')
-    log_mssg(f'Creating temp files in directory: {options.temp_dir}', 'info')
     log_mssg(f'Debug Mode Activated.', 'debug')
     log_mssg(f'RNG seed value: {options.rng_value}', 'debug')
 
@@ -304,31 +303,6 @@ def main(raw_args=None):
     if pathlib.Path(log_file).exists():
         os.remove(log_file)
 
-    neat_log = logging.getLogger("neat_log")
-    neat_log.setLevel(logging.DEBUG)
-    neat_log.handlers = []
-
-    formatter = logging.Formatter('%(asctime)s %(levelname)s %(threadName)s: %(message)s', datefmt='%Y/%m/%d %H:%M')
-
-    stdout_handler = logging.StreamHandler(stream=sys.stdout)
-    stdout_handler.setLevel(logging.DEBUG)
-    stdout_handler.addFilter(StdoutFilter())
-    stdout_handler.setFormatter(formatter)
-
-    neat_log.addHandler(stdout_handler)
-
-    stderr_handler = logging.StreamHandler(stream=sys.stderr)
-    stderr_handler.setFormatter(formatter)
-    stderr_handler.setLevel(logging.ERROR)
-
-    neat_log.addHandler(stderr_handler)
-
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-
-    neat_log.addHandler(file_handler)
-
     starttime = print_start_info()
 
     if not args.conf.is_file():
@@ -338,6 +312,9 @@ def main(raw_args=None):
     # Reads in the user-entered options from the config file and performs
     # some basic checks and corrections.
     options = Options(args.conf)
+
+    if not options.debug:
+        file_handler.setLevel(logging.INFO)
 
     print_configuration(args, options)
 
@@ -529,4 +506,37 @@ def main(raw_args=None):
 
 
 if __name__ == '__main__':
+
+    now = time.localtime()
+    now = time.strftime('%Y_%m_%d_%H%M', now)
+
+    log_dir = os.getcwd()
+
+    log_name = f'{log_dir}/{now}_NEAT.log'
+
+    neat_log = logging.getLogger()
+    neat_log.setLevel(logging.DEBUG)
+    neat_log.handlers = []
+
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(threadName)s: %(message)s', datefmt='%Y/%m/%d %H:%M')
+
+    stdout_handler = logging.StreamHandler(stream=sys.stdout)
+    stdout_handler.setLevel(logging.INFO)
+    stdout_handler.addFilter(StdoutFilter())
+    stdout_handler.setFormatter(formatter)
+
+    neat_log.addHandler(stdout_handler)
+
+    stderr_handler = logging.StreamHandler(stream=sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    stderr_handler.setLevel(logging.WARNING)
+
+    neat_log.addHandler(stderr_handler)
+
+    file_handler = logging.FileHandler(log_name)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+
+    neat_log.addHandler(file_handler)
+
     main()
