@@ -3,7 +3,7 @@ Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, ve
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
-NEAT-gen_reads is a fine-grained read simulator. GenReads simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation.
+NEAT's gen_reads.py is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
 
 This is an in-progress v3.2 of the software. For a stable release of the previous repo, please see: [genReads1](https://github.com/zstephens/genReads1) (or check out our v2.0 tag)
 
@@ -28,73 +28,75 @@ Table of Contents
       * [Large single end reads](#large-single-end-reads)
       * [Parallelizing simulation](#parallelizing-simulation)
   * [Utilities](#utilities)
-    * [computeGC.py](#computegcpy)
-    * [computeFraglen.py](#computefraglenpy)
-    * [genMutModel.py](#genmutmodelpy)
+    * [compute_gc.py](#computegcpy)
+    * [compute_fraglen.py](#computefraglenpy)
+    * [gen_mut_model.py](#genmutmodelpy)
     * [genSeqErrorModel.py](#genseqerrormodelpy)
-    * [plotMutModel.py](#plotmutmodelpy)
+    * [plot_mut_model.py](#plotmutmodelpy)
     * [vcf_compare_OLD.py](#vcf_compare_oldpy)
       * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
 
 
 ## Requirements
 
-* Python >= 3.6
+* python >= 3.8
 * biopython == 1.79
 * matplotlib >= 3.3.4 (optional, for plotting utilities)
-* matplotlib_venn >= 0.11.6 (optional, for plotting utilities)
+* matplotlib-venn >= 0.11.6 (optional, for plotting utilities)
 * pandas >= 1.2.1
 * numpy >= 1.22.2
 * pysam >= 0.16.0.1
 
+```
+git clone https://github.com/ncsa/NEAT.git
+UNTESTED:
+python -m pip install -e /path/to/NEAT/
+```
 
 ## Usage
-Here's the simplest invocation of genReads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
+NEAT's core functionality is invoked using the gen_reads.py command. Here's the simplest invocation of gen_reads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
 
 ```
-python gen_reads.py -r ref.fa -R 101 -o simulated_data
+python gen_reads.py -r sample_data/ecoli.fa -R 101 -o simulated_data
 ``` 
 
-The most commonly added options are --pe, --bam, --vcf, and -c. 
+The most commonly added options are --pe (to activate paired-end mode), --bam (to output golden bam), --vcf (to output golden vcf), and -c (to specify average coverage).
 
-
-Option           |  Description
-------           |:----------
--h, --help       |  Displays usage information
--r <str>         |  Reference sequence file in fasta format. A reference index (.fai) will be created if one is not found in the directory of the reference as [reference filename].fai. Required. The index can be created using samtools faidx.
--R <int>         |  Read length. Required. 
--o <str>         |  Output prefix. Use this option to specify where and what to call output files. Required
--c <float>       |  Average coverage across the entire dataset. Default: 10
--e <str>         |  Sequencing error model data file
--E <float>       |  Average sequencing error rate. The sequencing error rate model is rescaled to make this the average value. 
--p <int>         |  Sample Ploidy, default 2
--tr <str>        |  Bed file containing targeted regions; default coverage for targeted regions is 98% of -c option; default coverage outside targeted regions is 2% of -c option
--dr <str>	     |  Bed file with sample regions to discard.
--to <float>      |  off-target coverage scalar [0.02]
--m <str>         |  mutation model data file
--M <float>       |  Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. These random mutations are inserted in addition to the once specified in the -v option.
--Mb <str>	 |  Bed file containing positional mutation rates
--N <int>	 |  Below this quality score, base-call's will be replaced with N's
--v <str>         |  Input VCF file. Variants from this VCF will be inserted into the simulated sequence with 100% certainty.
---pe <int> <int> |  Paired-end fragment length mean and standard deviation. To produce paired end data, one of --pe or --pe-model must be specified.
---pe-model <str> |  Empirical fragment length distribution. Can be generated using [computeFraglen.py](#computefraglenpy). To produce paired end data, one of --pe or --pe-model must be specified.
---gc-model <str> |  Empirical GC coverage bias distribution.  Can be generated using [computeGC.py](#computegcpy)
---bam            |  Output golden BAM file
---vcf            |  Output golden VCF file
---fa		 |  Output FASTA instead of FASTQ
---rng <int>      |  rng seed value; identical RNG value should produce identical runs of the program, so things like read locations, variant positions, error positions, etc, should all be the same.
---gz             |  Gzip output FQ and VCF
---no-fastq       |  Bypass generation of FASTQ read files
---discard-offtarget |  Discard reads outside of targeted regions
---rescale-qual   |  Rescale Quality scores to match -E input
--d  |   Turn on debugging mode (useful for development)
-
+| Option              | Description                                                                                                                                                                                                                   |
+|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| -h, --help          | Displays usage information                                                                                                                                                                                                    |
+| -r <str>            | Reference sequence file in fasta format. A reference index (.fai) will be created if one is not found in the directory of the reference as [reference filename].fai. Required. The index can be created using samtools faidx. |
+| -R <int>            | Read length. Required.                                                                                                                                                                                                        |
+| -o <str>            | Output prefix. Use this option to specify where and what to call output files. Required                                                                                                                                       |
+| -c <float>          | Average coverage across the entire dataset. Default: 10                                                                                                                                                                       |
+| -e <str>            | Sequencing error model data file                                                                                                                                                                                              |
+| -E <float>          | Average sequencing error rate. The sequencing error rate model is rescaled to make this the average value.                                                                                                                    |
+| -p <int>            | Sample Ploidy, default 2                                                                                                                                                                                                      |
+| -tr <str>           | Bed file containing targeted regions; default coverage for targeted regions is 98% of -c option; default coverage outside targeted regions is 2% of -c option                                                                 |
+| -dr <str>           | Bed file with sample regions to discard.                                                                                                                                                                                      |
+| -to <float>         | off-target coverage scalar [0.02]                                                                                                                                                                                             |
+| -m <str>            | mutation model data file                                                                                                                                                                                                      |
+| -M <float>          | Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. These random mutations are inserted in addition to the once specified in the -v option.                 |
+| -Mb <str>           | Bed file containing positional mutation rates                                                                                                                                                                                 |
+| -N <int>	           | Below this quality score, base-call's will be replaced with N's                                                                                                                                                               |
+| -v <str>            | Input VCF file. Variants from this VCF will be inserted into the simulated sequence with 100% certainty.                                                                                                                      |
+| --pe <int> <int>    | Paired-end fragment length mean and standard deviation. To produce paired end data, one of --pe or --pe-model must be specified.                                                                                              |
+| --pe-model <str>    | Empirical fragment length distribution. Can be generated using [computeFraglen.py](#computefraglenpy). To produce paired end data, one of --pe or --pe-model must be specified.                                               |
+| --gc-model <str>    | Empirical GC coverage bias distribution.  Can be generated using [computeGC.py](#computegcpy)                                                                                                                                 |
+| --bam               | Output golden BAM file                                                                                                                                                                                                        |
+| --vcf               | Output golden VCF file                                                                                                                                                                                                        |
+| --fa	               |   Output FASTA instead of FASTQ                                                                                                                                                                                               |
+| --rng <int>         | rng seed value; identical RNG value should produce identical runs of the program, so things like read locations, variant positions, error positions, etc, should all be the same.                                             |
+| --no-fastq          | Bypass generation of FASTQ read files                                                                                                                                                                                         |
+| --discard-offtarget | Discard reads outside of targeted regions                                                                                                                                                                                     |
+| --rescale-qual      | Rescale Quality scores to match -E input                                                                                                                                                                                      |
+| -d                  | Turn on debugging mode (useful for development)                                                                                                                                                                               |
 
 ## Functionality
 
-![Diagram describing the way that genReads simulates datasets](docs/NEATNEAT.png "Diagram describing the way that genReads simulates datasets")
+![Diagram describing the way that genReads simulates datasets](docs/NEATNEAT.png "Diagram describing the way that gen_reads simulates datasets")
 
-NEAT gen_reads produces simulated sequencing datasets. It creates FASTQ files with reads sampled from a provided reference genome, using sequencing error rates and mutation rates learned from real sequencing data. The strength of genReads lies in the ability for the user to customize many sequencing parameters, produce 'golden', true positive datasets, and produce types of data that other simulators cannot (e.g. tumour/normal data).
+AT produces simulated sequencing datasets. It creates FASTQ files with reads sampled from a provided reference genome, using sequencing error rates and mutation rates learned from real sequencing data. The strength of NEAT lies in the ability for the user to customize many sequencing parameters, produce 'golden,' true positive datasets. We are working on expanding the functionality even further to model more species, generate larger variants, model tumor/normal data and more!
 
 Features:
 
@@ -112,7 +114,7 @@ Features:
 - Output a VCF file with the 'golden' set of true positive variants. These can be compared to bioinformatics workflow output (includes coverage and allele balance information)
 - Output a BAM file with the 'golden' set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
 - Create paired tumour/normal datasets using characteristics learned from real tumour data
-- Parallelized. Can run multiple "partial" simulations in parallel and merge results
+- Parallelization. COMING SOON!
 - Low memory footprint. Constant (proportional to the size of the reference sequence)
 
 ## Examples
@@ -133,7 +135,7 @@ python gen_reads.py                  \
 ```
 
 ### Targeted region simulation
-Simulate a targeted region of a genome, e.g. exome, with -t.
+Simulate a targeted region of a genome, e.g. exome, with -tr.
 
 ```
 python gen_reads.py                  \
@@ -143,11 +145,11 @@ python gen_reads.py                  \
         --bam                       \
         --vcf                       \
         --pe 300 30                 \
-        -t hg19_exome.bed
+        -tr hg19_exome.bed
 ```
 
 ### Insert specific variants
-Simulate a whole genome dataset with only the variants in the provided VCF file using -v and -M.
+Simulate a whole genome dataset with only the variants in the provided VCF file using -v and setting mutation rate to 0 with -M.
 
 ```
 python gen_reads.py                  \
@@ -184,22 +186,6 @@ python gen_reads.py                             \
 	-E 0.10                                     \
 	-o /home/me/simulated_reads        
 ```
-
-### Parallelizing simulation
-When possible, simulation can be done in parallel via multiple executions with different --job options. The resultant files will then need to be merged using utilities/mergeJobs.py. The following example shows splitting a simulation into 4 separate jobs (which can be run independently):
-
-```
-python gen_reads.py  -r hg19.fa -R 126 -o /home/me/simulated_reads --bam --vcf --job 1 4
-python gen_reads.py  -r hg19.fa -R 126 -o /home/me/simulated_reads --bam --vcf --job 2 4
-python gen_reads.py  -r hg19.fa -R 126 -o /home/me/simulated_reads --bam --vcf --job 3 4
-python gen_reads.py  -r hg19.fa -R 126 -o /home/me/simulated_reads --bam --vcf --job 4 4
-
-python mergeJobs.py -i /home/me/simulated_reads -o /home/me/simulated_reads_merged -s /path/to/samtools
-```
-
-In future revisions the dependence on SAMtools will be removed.
-
-To simulate human WGS 50X, try 50 chunks or less.
 
 # Utilities	
 Several scripts are distributed with gen_reads that are used to generate the models used for simulation.
@@ -248,15 +234,16 @@ python gen_mut_model.py               \
 
 Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
 
-Option           |  Description
-------           |:----------
--r <str>         |  Reference file for organism in FASTA format. Required
--m <str>         |  Mutation file for organism in VCF format. Required
--o <str>         |  Path to output file and prefix. Required. 
--b <str>         |  BED file of regions to include
---save-trinuc    |  Save trinucleotide counts for reference
---human-sample   |  Use to skip unnumbered scaffolds in human references
---skip-common    |  Do not save common snps or high mutation areas
+| Option          | Description                                                                  |
+|-----------------|------------------------------------------------------------------------------|
+| -r <str>        | Reference file for organism in FASTA format. Required                        |
+| -m <str>        | Mutation file for organism in VCF format. Required                           |
+| -o <str>        | Path to output file and prefix. Required.                                    |
+| --bed           | Flag that indicates you are using a bed-restricted vcf and fasta (see below) |
+| --save-trinuc   | Save trinucleotide counts for reference                                      |
+| --human-sample  | Use to skip unnumbered scaffolds in human references                         |
+| --skip-common   | Do not save common snps or high mutation areas                               |
+
 	
 
 ## genSeqErrorModel.py
@@ -266,15 +253,15 @@ This script needs revision, to improve the quality-score model eventually, and t
 
 ```
 python genSeqErrorModel.py                            \
-        -i input_read1.fq (.gz) / input_read1.sam     \
+        -i input_read1.fq (.gz) / input_read1.sam/bam \
         -o /output/prefix                             \
-        -i2 input_read2.fq (.gz) / input_read2.sam    \
+        -i2 input_read2.fq (.gz) / input_read2.sam/bam\
         -p input_alignment.pileup                     \
         -q quality score offset [33]                  \
         -Q maximum quality score [41]                 \
         -n maximum number of reads to process [all]   \
         -s number of simulation iterations [1000000]  \
-        --plot perform some optional plotting
+        --plot (perform some optional ploting)
 ```
 
 ## plotMutModel.py
@@ -313,9 +300,7 @@ python vcf_compare_OLD.py
 Mappability track examples: https://github.com/zstephens/neat-repeat/tree/master/example_mappabilityTracks
 
 ### Note on Sensitive Patient Data
-ICGC's "Access Controlled Data" documention can be found at http://docs.icgc.org/access-controlled-data. To have access to controlled germline data, a DACO must be
-submitted. Open tier data can be obtained without a DACO, but germline alleles that do not match the reference genome are masked and replaced with the reference
-allele. Controlled data includes unmasked germline alleles.
+ICGC's "Access Controlled Data" documentation can be found at <a href = https://docs.icgc.org/portal/access/ target="_blank">https://docs.icgc.org/portal/access/</a>. To have access to controlled germline data, a DACO must be submitted. Open tier data can be obtained without a DACO, but germline alleles that do not match the reference genome are masked and replaced with the reference allele. Controlled data includes unmasked germline alleles.
 
 
 
