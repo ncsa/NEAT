@@ -118,7 +118,7 @@ def main(raw_args=None):
     # required args
     (reference, read_len, out_prefix) = (args.r, args.R, args.o)
     # various dataset parameters
-    (coverage, ploids, input_bed, discard_bed, se_model, se_rate, mut_model, mut_rate, mut_bed, input_vcf) = \
+    (coverage, ploids, target_bed, discard_bed, se_model, se_rate, mut_model, mut_rate, mut_bed, input_vcf) = \
         (args.c, args.p, args.tr, args.dr, args.e, args.E, args.m, args.M, args.Mb, args.v)
     # cancer params (disabled currently)
     # (cancer, cancer_model, cancer_purity) = (args.cancer, args.cm, args.cp)
@@ -127,7 +127,7 @@ def main(raw_args=None):
                                                                              args.discard_offtarget,
                                                                              args.force_coverage, args.rescale_qual)
     # important flags
-    (save_bam, save_vcf, fasta_instead, no_fastq) = \
+    (save_bam, save_vcf, create_fasta, no_fastq) = \
         (args.bam, args.vcf, args.fa, args.no_fastq)
 
     # sequencing model parameters
@@ -146,17 +146,21 @@ def main(raw_args=None):
     # Check that files are real, if provided
     check_file_open(reference, 'ERROR: could not open reference, {}'.format(reference), required=True)
     check_file_open(input_vcf, 'ERROR: could not open input VCF, {}'.format(input_vcf), required=False)
-    check_file_open(input_bed, 'ERROR: could not open input BED, {}'.format(input_bed), required=False)
+    check_file_open(target_bed, 'ERROR: could not open input BED, {}'.format(target_bed), required=False)
 
     # if user specified no fastq, not fasta only, and no bam and no vcf, then print error and exit.
-    if no_fastq and not fasta_instead and not save_bam and not save_vcf:
+    if no_fastq and not create_fasta and not save_bam and not save_vcf:
         print('\nERROR: No files would be written.\n')
         sys.exit(1)
+
+    if create_fasta:
+        no_fastq = True
+        print("Writing output in FASTA format...")
 
     if no_fastq:
         print('Bypassing FASTQ generation...')
 
-    only_vcf = no_fastq and save_vcf and not save_bam and not fasta_instead
+    only_vcf = no_fastq and save_vcf and not save_bam and not create_fasta
     if only_vcf:
         print('Only producing VCF output...')
 
@@ -166,7 +170,7 @@ def main(raw_args=None):
 
     # If user specified mean/std, or specified an empirical model, then the reads will be paired_ended
     # If not, then we're doing single-end reads.
-    if (fragment_size is not None and fragment_std is not None) or (fraglen_model is not None) and not fasta_instead:
+    if (fragment_size and fragment_std) or (fraglen_model) and not create_fasta:
         paired_end = True
     else:
         paired_end = False
@@ -254,9 +258,7 @@ def main(raw_args=None):
         # Using artificial fragment length distribution, if the parameters were specified
         # fragment length distribution: normal distribution that goes out to +- 6 standard deviations
         elif fragment_size is not None and fragment_std is not None:
-            print(
-                'Using artificial fragment length distribution. mean=' + str(fragment_size) + ', std=' + str(
-                    fragment_std))
+            print(f'Using artificial fragment length distribution. mean={str(fragment_size)} std={str(fragment_std)}')
             if fragment_std == 0:
                 fraglen_distribution = DiscreteDistribution([1], [fragment_size], degenerate_val=fragment_size)
             else:
@@ -307,9 +309,9 @@ def main(raw_args=None):
     # parse input targeted regions, if present
     # TODO convert bed to pandas dataframe
     input_regions = {}
-    if input_bed is not None:
+    if target_bed is not None:
         try:
-            with open(input_bed, 'r') as f:
+            with open(target_bed, 'r') as f:
                 for line in f:
                     [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
                     if my_chr not in input_regions:
@@ -388,15 +390,15 @@ def main(raw_args=None):
     if cancer:
         output_file_writer = OutputFileWriter(out_prefix + '_normal', paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              no_fastq=no_fastq, fasta_instead=fasta_instead)
+                                              no_fastq=no_fastq, fasta_instead=create_fasta)
         output_file_writer_cancer = OutputFileWriter(out_prefix + '_tumor', paired=paired_end, bam_header=bam_header,
                                                      vcf_header=vcf_header,
-                                                     no_fastq=no_fastq, fasta_instead=fasta_instead)
+                                                     no_fastq=no_fastq, fasta_instead=create_fasta)
     else:
         output_file_writer = OutputFileWriter(out_prefix, paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
                                               no_fastq=no_fastq,
-                                              fasta_instead=fasta_instead)
+                                              fasta_instead=create_fasta)
     # Using pathlib to make this more machine agnostic
     out_prefix_name = pathlib.Path(out_prefix).name
 
@@ -476,7 +478,7 @@ def main(raw_args=None):
         print('--------------------------------')
         if only_vcf:
             print('generating vcf...')
-        elif fasta_instead:
+        elif create_fasta:
             print('generating mutated fasta...')
         else:
             print('sampling reads...')
@@ -565,7 +567,7 @@ def main(raw_args=None):
                 coverage_avg = None
                 coverage_dat = [gc_window_size, gc_scale_val, []]
                 target_hits = 0
-                if input_bed is None:
+                if target_bed is None:
                     coverage_dat[2] = [1.0] * (end - start)
                 else:
                     if ref_index[chrom][0] not in input_regions:
@@ -699,7 +701,7 @@ def main(raw_args=None):
 
                         # are we discarding offtargets?
                         outside_boundaries = []
-                        if off_target_discard and input_bed is not None:
+                        if off_target_discard and target_bed is not None:
                             outside_boundaries += [bisect.bisect(input_regions[ref_index[chrom][0]], n[0]) % 2 for n
                                                    in my_read_data]
                             outside_boundaries += [
