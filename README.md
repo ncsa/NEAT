@@ -235,15 +235,15 @@ python gen_mut_model.py               \
 
 Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
 
-Option           |  Description
-------           |:----------
--r <str>         |  Reference file for organism in FASTA format. Required
--m <str>         |  Mutation file for organism in VCF format. Required
--o <str>         |  Path to output file and prefix. Required.
---bed            |  Flag that indicates you are using a bed-restricted vcf and fasta (see below)
---save-trinuc    |  Save trinucleotide counts for reference
---human-sample   |  Use to skip unnumbered scaffolds in human references
---skip-common    |  Do not save common snps or high mutation areas
+| Option         | Description                                                                  |
+|----------------|------------------------------------------------------------------------------|
+| -r <str>       | Reference file for organism in FASTA format. Required                        |
+| -m <str>       | Mutation file for organism in VCF format. Required                           |
+| -o <str>       | Path to output file and prefix. Required.                                    |
+| --bed          | Flag that indicates you are using a bed-restricted vcf and fasta (see below) |
+| --save-trinuc  | Save trinucleotide counts for reference                                      |
+| --human-sample | Use to skip unnumbered scaffolds in human references                         |
+|  --skip-common | Do not save common snps or high mutation areas                               |
 
 Note that if you have a bed input, you will need to have bedtools installed in your environment, in addition to the 
 pybedtools python package. We recommend using Anaconda:
