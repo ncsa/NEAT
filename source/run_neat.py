@@ -112,7 +112,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         if any([i for i in trinuc if i not in ALLOWED_NUCL]):
             continue
         trinuc_bias[i] = models.mutation_model['trinuc_bias'][trinuc]
-    trinuc_bias_model = DiscreteDistribution(range(len(reference)),trinuc_bias)
+    trinuc_bias_model = DiscreteDistribution(range(len(reference)), trinuc_bias)
 
     # Step 1: Create a VCF of variants (mutation and sequencing error variants)
     # We'll create a temp file first then output it if the user requested the file
@@ -135,11 +135,11 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             ref_sequence = contig_sequence[variant.POS:len(variant.REF)]
             if ref_sequence != variant.REF:
                 log_mssg(f"Skipping variant where reference does not match "
-                              f"input vcf at {chrom}: {variant.POS}", 'warning')
+                         f"input vcf at {chrom}: {variant.POS}", 'warning')
                 continue
             if variant.ALT == '.':
                 log_mssg(f'Found monomorphic reference variant. '
-                              f'These prevent mutations from being added at that location.', 'info')
+                         f'These prevent mutations from being added at that location.', 'info')
                 genotype = [0] * options.ploidy
             else:
                 number_of_alts = len(variant.ALT.split(','))
@@ -152,7 +152,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                     genotype = pick_ploids(options.ploidy, number_of_alts)
             if variant.POS in blacklist:
                 log_mssg(f'Skipping input variant because a variant '
-                              f'already exists at that location {variant}', 'warning')
+                         f'already exists at that location {variant}', 'warning')
                 continue
             line = f'{variant.CHROM}\t{variant.POS}\t{variant.ID}\t{variant.REF}\t' \
                    f'{variant.ALT}\t{variant.QUAL}\t' \
@@ -197,7 +197,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     log_mssg(f'Generating mutation positions.', 'info')
     for variant in range(mutations_to_add):
         if start - time.time() > 10000:
-            log_mssg(f'gen_reads timed out', info)
+            log_mssg(f'gen_reads timed out', "info")
             break
         genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
         region = mutation_regions_model.sample()
@@ -311,7 +311,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 final_position -= relative_final_position
 
         if final_position in blacklist:
-            log_mssg(f'Skipping variant, as there is already one in this location: {variant}', 'warning')
+            log_mssg(f'Skipping variant, as we could not find a suitable location: {variant}', 'warning')
             continue
 
         # at this point we should have a final position.
