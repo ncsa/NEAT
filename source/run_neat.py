@@ -192,8 +192,6 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     mutations_to_add = int(len(contig_sequence) * overall_mutation_rate) + 1
     log_mssg(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
 
-    mutation = None
-
     log_mssg(f'Generating mutation positions.', 'info')
     for variant in range(mutations_to_add):
         genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
@@ -308,7 +306,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 final_position -= relative_final_position
 
         if final_position in blacklist:
-            log_mssg(f'Skipping variant, as there is already one in this location: {mutation}', 'warning')
+            log_mssg(f'Skipping variant, as there is already one in this location: {variant}', 'warning')
             continue
 
         # at this point we should have a final position.
