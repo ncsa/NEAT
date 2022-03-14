@@ -106,9 +106,11 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         if reference[i] not in ALLOWED_NUCL:
             # Okay, if it is an N and the next one isn't the trinuc will be NAT or whatever, which breaks
             # the lines below, so we'll skip ahead. Again, we probably need to map N-regions.
-            i += 1
             continue
         trinuc = reference.seq[i-1:i+2]
+        # Let's double check to make sure we didn't pick up a stray N
+        if any([i for i in trinuc if i not in ALLOWED_NUCL]):
+            continue
         trinuc_bias[i] = models.mutation_model['trinuc_bias'][trinuc]
     trinuc_bias_model = DiscreteDistribution(range(len(reference)),trinuc_bias)
 
