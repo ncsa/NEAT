@@ -1,11 +1,11 @@
-# The NEAT Project v3.0
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.0. Neat has now been updated with Python 3, and is moving toward PEP8 standards. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+# The NEAT Project v3.2
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.2. Neat has now been updated with Python 3, and is moving toward PEP8 standards. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
-NEAT-genReads is a fine-grained read simulator. GenReads simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation.
+NEAT-gen_reads is a fine-grained read simulator. GenReads simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation.
 
-This is an in-progress v2.0 of the software. For a previous stable release please see: [genReads1](https://github.com/zstephens/genReads1)
+This is an in-progress v3.2 of the software. For a stable release of the previous repo, please see: [genReads1](https://github.com/zstephens/genReads1) (or check out our v2.0 tag)
 
 To cite this work, please use:
 
@@ -37,16 +37,14 @@ Table of Contents
       * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
 
 
-
-
 ## Requirements
 
 * Python >= 3.6
-* biopython >= 1.78
+* biopython == 1.79
 * matplotlib >= 3.3.4 (optional, for plotting utilities)
 * matplotlib_venn >= 0.11.6 (optional, for plotting utilities)
 * pandas >= 1.2.1
-* numpy >= 1.19.5
+* numpy >= 1.22.2
 * pysam >= 0.16.0.1
 
 
@@ -67,13 +65,13 @@ Option           |  Description
 -R <int>         |  Read length. Required. 
 -o <str>         |  Output prefix. Use this option to specify where and what to call output files. Required
 -c <float>       |  Average coverage across the entire dataset. Default: 10
--e <str>         |  Sequencing error model pickle file
+-e <str>         |  Sequencing error model data file
 -E <float>       |  Average sequencing error rate. The sequencing error rate model is rescaled to make this the average value. 
 -p <int>         |  Sample Ploidy, default 2
 -tr <str>        |  Bed file containing targeted regions; default coverage for targeted regions is 98% of -c option; default coverage outside targeted regions is 2% of -c option
 -dr <str>	     |  Bed file with sample regions to discard.
 -to <float>      |  off-target coverage scalar [0.02]
--m <str>         |  mutation model pickle file
+-m <str>         |  mutation model data file
 -M <float>       |  Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. These random mutations are inserted in addition to the once specified in the -v option.
 -Mb <str>	 |  Bed file containing positional mutation rates
 -N <int>	 |  Below this quality score, base-call's will be replaced with N's
@@ -94,7 +92,7 @@ Option           |  Description
 
 ## Functionality
 
-![Diagram describing the way that genReads simulates datasets](docs/flow_new.png "Diagram describing the way that genReads simulates datasets")
+![Diagram describing the way that genReads simulates datasets](docs/NEATNEAT.png "Diagram describing the way that genReads simulates datasets")
 
 NEAT gen_reads produces simulated sequencing datasets. It creates FASTQ files with reads sampled from a provided reference genome, using sequencing error rates and mutation rates learned from real sequencing data. The strength of genReads lies in the ability for the user to customize many sequencing parameters, produce 'golden', true positive datasets, and produce types of data that other simulators cannot (e.g. tumour/normal data).
 
@@ -179,11 +177,11 @@ python gen_reads.py                  \
 Simulate PacBio-like reads by providing an error model.
 
 ```
-python gen_reads.py                         \
-	-r hg19.fa                         \
-	-R 5000                            \
-	-e models/errorModel_pacbio_toy.p  \
-	-E 0.10                            \
+python gen_reads.py                             \
+	-r hg19.fa                                  \
+	-R 5000                                     \
+	-e models/errorModel_pacbio_toy.pickle.gz   \
+	-E 0.10                                     \
 	-o /home/me/simulated_reads        
 ```
 
@@ -219,11 +217,11 @@ bedtools genomecov
 ```
 
 ```
-python computeGC.py                 \
+python compute_gc.py                \
         -r reference.fa             \
         -i genomecovfile            \
         -w [sliding window length]  \
-        -o /path/to/model.p
+        -o /path/to/prefix
 ```
 
 ## compute_fraglen.py
@@ -231,19 +229,21 @@ python computeGC.py                 \
 Computes empirical fragment length distribution from sample data.
 Takes SAM file via stdin:
 
-    ./samtools view toy.bam | python computeFraglen.py
+    python computeFraglen.py \
+        -i input.bam         \
+        -o /prefix/for/output
 
-and creates fraglen.p model in working directory.
+and creates fraglen.pickle.gz model in working directory.
 
 ## gen_mut_model.py
 
 Takes references genome and TSV file to generate mutation models:
 
 ```
-python genMutModel.py               \
+python gen_mut_model.py               \
         -r hg19.fa                  \
         -m inputVariants.tsv        \
-        -o /home/me/models.p
+        -o /home/me/models
 ```
 
 Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
@@ -267,7 +267,7 @@ This script needs revision, to improve the quality-score model eventually, and t
 ```
 python genSeqErrorModel.py                            \
         -i input_read1.fq (.gz) / input_read1.sam     \
-        -o output.p                                   \
+        -o /output/prefix                             \
         -i2 input_read2.fq (.gz) / input_read2.sam    \
         -p input_alignment.pileup                     \
         -q quality score offset [33]                  \
@@ -282,9 +282,9 @@ python genSeqErrorModel.py                            \
 Performs plotting and comparison of mutation models generated from genMutModel.py.
 
 ```
-python plotMutModel.py                                        \
-        -i model1.p [model2.p] [model3.p]...                  \
-        -l legend_label1 [legend_label2] [legend_label3]...   \
+python plotMutModel.py                                                  \
+        -i model1.pickle.gz [model2.pickle.gz] [model3.pickle.gz]...    \
+        -l legend_label1 [legend_label2] [legend_label3]...             \
         -o path/to/pdf_plot_prefix
 ```
 
