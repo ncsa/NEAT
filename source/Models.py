@@ -111,8 +111,7 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
         out_model['insert_length_model'] = DiscreteDistribution(ins_weight, ins_vals)
         out_model['deletion_length_model'] = DiscreteDistribution(del_weight, del_vals)
 
-        out_model['trinuc_mut_prob'] = DiscreteDistribution(list(pickle_dict['TRINUC_MUT_PROB'].keys()),
-                                                            pickle_dict['TRINUC_MUT_PROB'].values())
+        out_model['trinuc_bias'] = pickle_dict['TRINUC_MUT_PROB']
         # Order is ACTG. Start by assuming they're all uniform
         out_model['trinuc_trans_prob'] = {x: {'A': 0.25, 'C': 0.25, 'T': 0.25, 'G': 0.25} for x in ALL_TRI}
         for transition in pickle_dict['TRINUC_TRANS_PROBS']:
