@@ -196,6 +196,9 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
     log_mssg(f'Generating mutation positions.', 'info')
     for variant in range(mutations_to_add):
+        if start - time.time() > 10000:
+            log_mssg(f'gen_reads timed out', info)
+            break
         genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
         region = mutation_regions_model.sample()
         # for now our options are indel or snp. Later we can add more variants.
