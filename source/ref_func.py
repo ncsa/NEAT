@@ -6,6 +6,7 @@ import pathlib
 import random
 from Bio.Seq import Seq
 from Bio import SeqIO
+from Bio.Seq import MutableSeq
 
 OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True}
 ALLOWED_NUCL = ['A', 'C', 'G', 'T']
@@ -106,7 +107,7 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
     my_dat = ''.join(ref_file.read(ref_inds_i[2] - ref_inds_i[1]).split('\n'))
     my_dat = Seq(my_dat.upper())
     # Mutable seqs have a number of disadvantages. I'm going to try making them immutable and see if that helps
-    # my_dat = my_dat.tomutable()
+    # my_dat = MutableSeq(my_dat)
 
     # find N regions
     # data explanation: my_dat[n_atlas[0][0]:n_atlas[0][1]] = solid block of Ns
@@ -133,9 +134,9 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
             n_info['all'].extend(region)
             if region[1] - region[0] <= n_handling[1]:
                 for i in range(region[0], region[1]):
-                    temp = my_dat.tomutable()
+                    temp = MutableSeq(my_dat)
                     temp[i] = random.choice(ALLOWED_NUCL)
-                    my_dat = temp.toseq()
+                    my_dat = Seq(temp)
             else:
                 n_info['big'].extend(region)
     elif n_handling[0] == 'allChr' and n_handling[2] in OK_CHR_ORD:
@@ -143,9 +144,9 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
             n_info['all'].extend(region)
             if region[1] - region[0] <= n_handling[1]:
                 for i in range(region[0], region[1]):
-                    temp = my_dat.tomutable()
+                    temp = MutableSeq(my_dat)
                     temp[i] = n_handling[2]
-                    my_dat = temp.toseq()
+                    my_dat = Seq(temp)
             else:
                 n_info['big'].extend(region)
     elif n_handling[0] == 'ignore':

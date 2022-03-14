@@ -1,0 +1,104 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: Python application
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: set up python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.8.10"
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: test gen_reads
+        run: python gen_reads.py -R 101 -o test -r data/H1N1.fasta 
+      
+  job-valBAM:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Execute validateBAM.py
+        run: |
+          cd ${{ github.workspace }}/utilities
+          python validateBam.py ../data/baby.bam
+      - run: echo "🍏 This job's status is ${{ job.status }}." 
+  
+  job-valFQ:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Execute validateFQ.py
+        run: |
+           pip install biopython
+           cd ${{ github.workspace }}/utilities
+           python validateFQ.py ../data/baby.fastq
+      - run: echo "🍏 This job's status is ${{ job.status }}." 
+      
+  job-computegc:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Check out repository code
+         uses: actions/checkout@v2
+       - name: Execute compute_gc.py
+         run: |
+           pip install numpy
+           pip install biopython
+           pip install pandas
+           cd ${{ github.workspace }}/utilities
+           python compute_gc.py -i ../data/small.genomecov -r ../data/ecoli.fa -o gcop
+       - run: echo "🍏 This job's status is ${{ job.status }}."
+  
+  job-gen_mut:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Check out repository code
+         uses: actions/checkout@v2
+       - name: Execute gen_mut_model.py
+         run: |
+           pip install numpy
+           pip install biopython
+           pip install pandas
+           cd ${{ github.workspace }}/utilities
+           python gen_mut_model.py -r ../data/H1N1.fa -m ../data/H1N1.vcf -o testgmm
+       - run: echo "🍏 This job's status is ${{ job.status }}."
+       
+  job-genSeq:
+    runs-on: ubuntu-latest
+    steps:
+       - name: Check out repository code
+         uses: actions/checkout@v2
+       - name: Execute genSeqErrorModel.py
+         run: |
+           pip install numpy
+           pip install biopython
+           pip install pandas
+           pip install matplotlib
+           pip install pysam
+           cd ${{ github.workspace }}/utilities
+           python genSeqErrorModel.py -i ../data/baby.fastq -o genseop2
+       - run: echo "🍏 This job's status is ${{ job.status }}."
+      
+
+      
