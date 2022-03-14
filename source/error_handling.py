@@ -1,6 +1,8 @@
 import logging
 import sys
 
+neat_log = logging.getLogger(__name__)
+
 
 def premature_exit(err_code: int):
     print("Quitting NEAT...")
@@ -23,19 +25,19 @@ def log_lines(message: list, error_type: str):
 
     if error_type.lower() == 'critical':
         for line in message:
-            logging.critical(line)
+            neat_log.critical(line)
     elif error_type.lower() == 'error':
         for line in message:
-            logging.error(line)
+            neat_log.error(line)
     elif error_type.lower() == 'warning':
         for line in message:
-            logging.warning(line)
+            neat_log.warning(line)
     elif error_type.lower() == 'info':
         for line in message:
-            logging.info(line)
+            neat_log.info(line)
     elif error_type.lower() == 'debug':
         for line in message:
-            logging.debug(line)
+            neat_log.debug(line)
     else:
         log_mssg(f'BUG: Unknown error type', 'critical')
         premature_exit(1)
