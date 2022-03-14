@@ -29,6 +29,7 @@ from Bio.SeqRecord import SeqRecord
 from source.Models import Models
 from source.Options import Options
 from source.bed_func import parse_bed
+from source.ref_func import process_reference
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, log_mssg
@@ -236,7 +237,7 @@ def map_reference(index):
     return reference_atlas
 
 
-def parse_mutation_rate_dict(mutation_rate_map, avg_rate):
+def parse_mutation_rate_dict(mutation_rate_map, avg_rate, non_n_regions):
     """
     This parses the mutation rate dict, in order to fill in the dict so it can by more easily cycled through
     later.
@@ -336,6 +337,8 @@ def main(raw_args=None):
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
 
+    safe_zones, trinucleotide_models = process_reference(reference_index, models)
+
     log_mssg(f'Reference file indexed.', 'debug')
 
     # there is not a reference_chromosome in the options defs because
@@ -382,7 +385,7 @@ def main(raw_args=None):
     mutation_rate_dict = parse_bed(options.mutation_bed, options.reference_chromosomes,
                                    begins_with_chr, True, options.debug)
 
-    mutation_rate_dict = parse_mutation_rate_dict(mutation_rate_dict, models.mutation_model['avg_mut_rate'])
+    mutation_rate_dict = parse_mutation_rate_dict(mutation_rate_dict, models.mutation_model['avg_mut_rate'], safe_zones)
 
     log_mssg(f'Finished reading input beds.', 'debug')
 
@@ -470,6 +473,8 @@ def main(raw_args=None):
             inputs_df = input_variants[input_variants.CHROM.isin([contig])]
         vcf_files.append(execute_neat(reference_index[contig],
                          contig,
+                         safe_zones[contig],
+                         trinucleotide_models[contig],
                          out_prefix_name,
                          target_regions_dict[contig],
                          discard_regions_dict[contig],
