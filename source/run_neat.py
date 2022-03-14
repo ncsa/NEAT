@@ -99,7 +99,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         # init_progress_info()
         pass
 
-    log_mssg(f'Counting trinucleotides in {chrom}', 'info')
+    log_mssg(f'Generating trinucleotide bias model for {chrom}', 'info')
     trinuc_bias = np.zeros(len(reference))
     # Start at 1 so we get a trinucleotide to start and end one shy for the same reason
     for i in range(1, len(reference) - 1):
