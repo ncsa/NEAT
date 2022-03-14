@@ -5,7 +5,6 @@ import time
 from random import choice
 import pathlib
 import numpy as np
-from mpire import WorkerPool
 
 from source.error_handling import log_mssg, premature_exit
 from source.constants_and_defaults import ALLOWED_NUCL
@@ -100,6 +99,15 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         # init_progress_info()
         pass
 
+    log_mssg(f'Counting trinucleotides in contig', 'info')
+    trinuc_bias = np.zeros(len(reference))
+    # Start at 1 so we get a trinucleotide to start and end one shy for the same reason
+    for i in range(1, len(reference) - 1):
+        if reference[i] not in ALLOWED_NUCL:
+            continue
+        trinuc = reference.seq[i-1:i+2]
+        trinuc_bias[i] = models.mutation_model['trinuc_bias'][trinuc]
+    trinuc_bias_model = DiscreteDistribution(range(len(reference)),trinuc_bias)
 
     # Step 1: Create a VCF of variants (mutation and sequencing error variants)
     # We'll create a temp file first then output it if the user requested the file
@@ -203,43 +211,32 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             potential_location = random.randint(range(region[0], region[1]))
         else:
             # Use the trinuc bias to find a spot for this SNP
-
-            # where to look
-            subsequence = contig_sequence[region[0]:region[1]]
-            # try 100 times to find an appropriate trinuc
-            found = False
-            seek = -1
-            max_attempts = 100
-            while max_attempts > 0:
-                max_attempts -= 1
-                trinuc_to_mutate = models.mutation_model['trinuc_mut_prob'].sample()
-                # This index will be relative to the start of the region,
-                # so we add on the region start to keep the coords relative to the reference.
-                seek = subsequence.find(trinuc_to_mutate) + region[0]
+            potential_location = trinuc_bias_model.sample()
+            if contig_sequence[potential_location] not in ALLOWED_NUCL:
+                sub_sequence = contig_sequence[potential_location:]
+                # Look for an allowed nucleotide to the right.
+                seek = -1
+                # I was using a min function, but this will be faster because the min function might be searching
+                # entire subsequences. If I stick with this method, maybe stick it in a function.
+                for i in range(len(sub_sequence)):
+                    if i not in ALLOWED_NUCL:
+                        continue
+                    else:
+                        seek = i
+                        break
+                # case 1, there was not one to the right, so look left
+                if seek == -1:
+                    sub_sequence = contig_sequence[:potential_location]
+                    for i in range(len(sub_sequence), -1, -1):
+                        if sub_sequence[i] in ALLOWED_NUCL:
+                            seek = i
+                            break
+                # if we still haven't found an allowed nucleotide, there may not be one.
+                # Hm this might be an argument in favor of adding the N-dictionary back in
                 if seek == -1:
                     continue
-                else:
-                    # At least on occurrence of this trinucleotide was found in this set, so
-                    # we'll have to pick one at random
-                    total = subsequence.count_overlap(trinuc_to_mutate)
-                    pick_one = 0
-                    if total > 1:
-                        pick_one = random.randint(1, total)
-                    for i in range(pick_one):
-                        # seek is set to the first instance. If we picked 0, then
-                        # that will be our choice and this loop will skippde
-                        # otherwise, we check subsequences until we find the correct trinuc
-                        # to use. We add one to the index to skip the current trinuc
-                        subsubsequence = subsequence[seek + 1:]
-                        # Add one to match the subsequence check in the previous line
-                        seek += subsubsequence.find(trinuc_to_mutate) + 1
-                        found = True
-                        break
-            if found and seek != -1:
+                # And finally, we found it
                 potential_location = seek
-            else:
-                # if the model let us down, just stick it anywhere
-                potential_location = random.randint(region[0], region[1])
 
         # Now try to add the mutation to the vcf
         # Check if we're somewhere we shouldn't be
@@ -275,11 +272,19 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         # Let's assume we're fine, then adjust if not
         final_position = potential_location
         # if we're somewhere we shouldn't be, let's find the closest place where we can be.
+        method = '-'
         if not allowed:
             # See if there is any place after to put it
             sub_sequence = contig_sequence[final_position:]
             # To get the final position relative to the reference, we add subsequence start point
-            relative_final_position = min([sub_sequence.index(n) for n in ALLOWED_NUCL])
+            relative_final_position = -1
+            for i in range(len(sub_sequence)):
+                if sub_sequence[i] not in ALLOWED_NUCL:
+                    continue
+                else:
+                    relative_final_position = i
+                    method = '+'
+                    break
             if relative_final_position == -1:
                 # okay, so we didn't find it to the right of the starting point. To look the other direction
                 # We will look up to the current location, but reverse the list, so we find the highest index
@@ -292,12 +297,12 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 if relative_final_position == -1:
                     log_mssg(f'Could not locate a suitable position for mutation {variant}', 'debug')
                     continue
-            if final_position in blacklist:
-                log_mssg(f'Variant {variant} attempted to go where there was already a variant. skipping', 'debug')
-                continue
             # Since we checked a subsequence for the final position, and at this point we know that
-            # we have a solid final_position, let's add that to the total.
-            final_position += relative_final_position
+            # we have a solid final_position, let's add that to the total, or subtract if it was on the left.
+            if method == '+':
+                final_position += relative_final_position
+            else:
+                final_position -= relative_final_position
 
         if final_position in blacklist:
             log_mssg(f'Skipping variant, as there is already one in this location: {mutation}', 'warning')
@@ -323,7 +328,8 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         quality_score = max(models.sequencing_error_model.quality_scores)
 
         # Note that ID and INFO is always just a period, indicating no data, for NEAT
-        line = f'{chrom}\t{final_position}\t.\t{ref}\t' \
+        # position is plus one because vcf is 1-indexed
+        line = f'{chrom}\t{final_position + 1}\t.\t{ref}\t' \
                f'{alt}\t{quality_score}\t' \
                f'PASS\t.\t' \
                f'GT\t{"/".join(genotype)}\n'
