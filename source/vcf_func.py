@@ -110,12 +110,14 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
 
                 # make sure at least one allele somewhere contains the variant
                 if tumor_normal:
+                    # Not sure what this line is expecting to finde
                     gt_eval = gt[:2]
                 else:
-                    gt_eval = gt[:1]
+                    gt_eval = gt.replace('|').split('/')
+                    gt_eval = [int(x) for x in gt_eval]
                 # For some reason this had an additional "if True" inserted. I guess it was supposed to be an option
                 # the user could set but was never implemented.
-                if None in gt_eval:
+                if not any(gt_eval):
                     if choose_random_ploid_if_no_gt_found:
                         if not printed_warning:
                             print('Warning: Found variants without a GT field, assuming heterozygous...')
@@ -130,9 +132,8 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                         continue
                 non_reference = False
                 for gtVal in gt_eval:
-                    if gtVal is not None:
-                        if '1' in gtVal:
-                            non_reference = True
+                    if gtVal == 1:
+                        non_reference = True
                 if not non_reference:
                     # skip if no genotype actually contains this variant
                     n_skipped += 1
