@@ -1,0 +1,141 @@
+#!/bin/bash
+
+#######################################
+# Wrapper for gen_reads suite
+#######################################
+
+VERSION="4.0"
+
+read -r -d '' MANIFEST << MANIFEST
+
+*******************************************************************************
+`readlink -m $0`
+called by: `whoami` on `date`
+command line input: ${@}
+*******************************************************************************
+
+MANIFEST
+
+echo -e "\n${MANIFEST}"
+read -r -d '' DOCS << DOCS
+
+***********************************************************************
+** Calls one of the tasks in NEAT to perform the desired caluclation
+***********************************************************************
+
+Program: NEAT (Next-generation sequencing Analysis Toolkit)
+Version: ${VERSION}
+
+USAGE: NEAT <command> [options]
+
+Commands:
+    simulate               Generates simulated variants in the desired output
+    mutation_model         Runs the mutation model algorithm to generate a mutation model as input to the simulation task
+    sequence_model         Runs the sequence error model algorithm to generate a sequencing error model as input to the simulation task
+    compute_fraglen        Models the fragment length from existing data, for input to the simulation task
+    compute_gc             Models the GC content of existing data, for input to the simulation task
+
+***********************************************************************
+
+DOCS
+
+COMMAND=$1
+
+if [[ "${COMMAND}" == "simulate" ]]
+then
+    # Set the arguments for simulate as the arguments
+    shift
+
+    read -r -d '' DOCS << SIM_DOCS
+
+***********************************************************************
+** Calls the simulate task in NEAT to generate random mutations for a dataset
+***********************************************************************
+
+Program: NEAT (Next-generation sequencing Analysis Toolkit)
+Version: ${VERSION}
+
+USAGE: NEAT simulate [options]
+
+BASIC_RUN:
+    -r                  An input genome in fasta format
+    -R                  The desired read length
+    -o                  The prefix to output NEAT's files
+
+CONFIGURATION_FILE_RUN:
+    -c                  The path to a NEAT configuration file (see template_neat_config.txt for more info)
+    -o                  The prefix to output NEAT's files
+
+If you used the BASIC_RUN parameters, you can further refine the simulation with the following. If instead
+you use the CONFIGURATION_FILE_RUN you will enter these in the configuration file.
+OPTIONS (or declare in config file):
+    -C                  Average coverage for the fastq reads (default = 10)
+    -e                  Path to error model pickle file (default models/errorModel_default.pickle.gz)
+    -E                  Scale all error rates by this rate (must be between 0 and 0.3)
+    -p                  Ploidy value for input organism (default = 2)
+    -t                  A bed file containing targeted regions. Regions outside the bed will have lower coverage.
+    -s                  Sets the coverage value for regions outside the target bed file, as a fraction of the
+                        coverage value (must be between 0 and 1). Example: to set the coverage to 30 within
+                        the targeted bed and 10 outside, you could have -C 30, -t my.bed, -s 0.333. Default value
+                        in 0.5.
+    --discard-offtarget A flag that will instead ignore regions outside the target bed.
+    -d                  A bed file containing regions for NEAT to ignore entirely.
+    -m                  Path to a mutation model pickle file. This file should be the output of NEAT mutation_model
+    -M                  Rescales mutation rate from the model to this value. Must be between 0 and 0.3
+    -N                  Bed file containing 4 columns: chr, start, end, mutation_rate. Mutation rates must be
+                        of the from "mut_rate=0.01". For each region in the bed file, sets a mutation rate of that
+                        region. Useful for modeling highly volatile sections of a chromosome.
+    -Q                  Threshold quality score rate. Below this number, bases are hard masked as Ns
+    -V                  Path to VCF file containing variants you wish to add to the simulation.
+    --pe                Paired end parameters. Two numbers that define the fragment length and standard deviation
+                        of the fragment length for paired-ended reads. Using this parameter activates NEAT's
+                        paired-ended mode, applicable only if you are outputting a FASTQ or BAM. Example: to set
+                        the fragment length to 300 and standard deviation to 30, you'd input "--pe 300 30".
+    --pe-model          Path to paired-end model. Instead of an explicit fragment length and standard deviation,
+                        you can use the output pickle file from compute_fraglen. This will have the same effect of
+                        activating paired-ended mode.
+    --gc-model          Path to GC-content model generated by compute_gc. The default model is
+                        models/gcBias_default.pickle.gz
+    --bam               Set this flag to produce the golden bam, containing NEAT's alignments of the reads.
+    --vcf               Set this flag to produce the golden vcf, containing the actual mutations introduced by NEAT
+    --fa                Set this flag to produce an output fasta with the mutations introduced.
+    --no-fastq          Set this flag to stop NEAT from generating the reads. If you only need the mutation VCF
+                        or the mutated FASTA, for example, use this flag.
+    --force-coverage    Setting this flag will force constant coverage for reads across the input dataset.
+    --rescale-qual      Setting this flag will rescale quality scores to match the -E input. Useful for debugging.
+    --rng               Set a number to use as a seed for the random number generator. Setting this number to an int
+                        value should produce consistent output no matter the run. Useful for debugging.
+    -D                  Flag that activates debug mode for the run.
+
+***********************************************************************
+
+SIM_DOCS
+
+    if (($# == 0))
+    then
+        echo -e "\n${DOCS}\n\nNo arguments passed to NEAT simulate.\n"
+    fi
+
+
+
+    while [[ $# -gt 0 ]]; do
+        opt="$1"
+        shift
+        current_arg="$1"
+        case "$opt" in
+            -h            ) echo -e "\n${DOCS}\n"; exit 0;;
+            -o            ) OUTPUT_PREFIX="$1"; shift;;
+            -c            ) CONFIG_FILE="$1"; shift
+                            echo Using config file ${CONFIG_FILE}
+                            echo Ignoring other inputs;;
+            -r            ) REFERENCE="$1"; shift;;
+            -R            ) READ_LENGTH="$1"; shift;;
+            --pe          ) echo paired_ended = true;
+                            FRAGMENT_MEAN="$1"
+                            F"$1"
+                            shift; shift;;
+            *             ) echo -e "\n${DOCS}\n\nInvalid option: \""$opt"\""
+                            exit 1;;
+        esac
+    done
+fi
