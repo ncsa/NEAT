@@ -66,7 +66,7 @@ def parse_line(vcf_line, col_dict, col_samp):
                 for i in range(len(gt_per_samp)):
                     gt_per_samp[i] = gt_per_samp[i].replace('.', '0')
         if not gt_per_samp:
-            gt_per_samp = [None] * max([len(col_samp), 1])
+            gt_per_samp = ['0/0'] * max([len(col_samp), 1])
 
     return alt_alleles, alt_freqs, gt_per_samp
 
@@ -113,7 +113,7 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                     # Not sure what this line is expecting to find
                     gt_eval = gt[:2]
                 else:
-                    gt_eval = gt.replace('|').split('/')
+                    gt_eval = gt[0].replace('|', '/').split('/')
                     gt_eval = [int(x) for x in gt_eval]
                 # For some reason this had an additional "if True" inserted. I guess it was supposed to be an option
                 # the user could set but was never implemented.
