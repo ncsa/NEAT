@@ -131,9 +131,10 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                         n_skipped += 1
                         continue
                 non_reference = False
-                for gtVal in gt_eval:
-                    if gtVal == 1:
+                for gt_val in gt_eval:
+                    if gt_val == 1:
                         non_reference = True
+                        break
                 if not non_reference:
                     # skip if no genotype actually contains this variant
                     n_skipped += 1
