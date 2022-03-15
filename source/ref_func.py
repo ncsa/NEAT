@@ -69,6 +69,7 @@ def model_trinucs(reference, models, safe_zones):
         trinuc_models[chrom] = DiscreteDistribution(range(len(reference[chrom])), trinuc_bias)
     return trinuc_models
 
+
 def process_reference(reference_index, models):
     allowed_areas = find_habitable_regions(reference_index)
     trinuc_models = model_trinucs(reference_index, models, allowed_areas)
