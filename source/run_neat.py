@@ -54,6 +54,18 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
     return [str(x) for x in wp]
 
 
+def intersect(region1, region2):
+    """
+    Looks for the common ground between two regions. These are assuming both regions are "included" not a region of
+    exclusion.
+    """
+    total = region1 + region2
+    total = sorted(total, key=lambda x: [x[0], x[1]])
+
+
+
+
+
 def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name, target_regions, discard_regions,
                  mutation_rate_regions, input_variants, models, options,
                  out_prefix):
@@ -161,7 +173,8 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
     # Create a dictionary of regions. With no mutation_rate_regions, then there is only one region for the contig
     # When we add multithreading, I think we can use these intervals for parallel processing.
     # Establish a uniform mutation rate by default
-    mutation_regions = [x + (models.mutation_model['avg_mut_rate'],) for x in non_n_regions]
+    regions_of_interest = intersect(mutation_rate_regions, non_n_regions)
+    mutation_regions = [(0, len(contig_sequence), models.mutation_model['avg_mut_rate'])]
     overall_mutation_rate = models.mutation_model['avg_mut_rate']
     if mutation_rate_regions:
         mutation_regions = mutation_rate_regions
