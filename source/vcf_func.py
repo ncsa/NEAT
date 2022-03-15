@@ -65,7 +65,7 @@ def parse_line(vcf_line, col_dict, col_samp):
                 gt_per_samp = [vcf_line[col_samp[iii]].split(':')[gt_ind - 1] for iii in range(len(col_samp))]
                 for i in range(len(gt_per_samp)):
                     gt_per_samp[i] = gt_per_samp[i].replace('.', '0')
-        if gt_per_samp is None:
+        if not gt_per_samp:
             gt_per_samp = [None] * max([len(col_samp), 1])
 
     return alt_alleles, alt_freqs, gt_per_samp
@@ -110,7 +110,7 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
 
                 # make sure at least one allele somewhere contains the variant
                 if tumor_normal:
-                    # Not sure what this line is expecting to finde
+                    # Not sure what this line is expecting to find
                     gt_eval = gt[:2]
                 else:
                     gt_eval = gt.replace('|').split('/')
@@ -123,9 +123,9 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                             print('Warning: Found variants without a GT field, assuming heterozygous...')
                             printed_warning = True
                         for i in range(len(gt_eval)):
-                            tmp = ['0'] * ploidy
-                            tmp[random.randint(0, ploidy - 1)] = '1'
-                            gt_eval[i] = '/'.join(tmp)
+                            tmp = [0] * ploidy
+                            tmp[random.randint(0, ploidy - 1)] = 1
+                            gt_eval = tmp
                     else:
                         # skip because no GT field was found
                         n_skipped += 1
@@ -138,6 +138,8 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                     # skip if no genotype actually contains this variant
                     n_skipped += 1
                     continue
+
+                gt_eval = "/".join([str(x) for x in gt_eval])
 
                 chrom = splt[0]
                 pos = int(splt[1])
@@ -169,9 +171,8 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                     elif len(col_samp) == 2 and tumor_normal:
                         print('Detected 2 sample columns in input VCF, assuming tumor/normal.')
                     else:
-                        print(
-                            'Warning: Multiple sample columns present in input VCF. By default genReads uses '
-                            'only the first column.')
+                        print('Warning: Multiple sample columns present in input VCF. By default genReads uses '
+                              'only the first column.')
                 else:
                     samp_names = ['Unknown']
                 if tumor_normal:
