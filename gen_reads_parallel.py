@@ -298,6 +298,7 @@ def main(raw_args=None):
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
 
+    log_mssg(f'Counting trinucleotides', 'info')
     safe_zones, trinucleotide_models = process_reference(reference_index, models)
 
     log_mssg(f'Reference file indexed.', 'debug')
