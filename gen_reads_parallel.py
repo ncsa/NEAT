@@ -17,6 +17,7 @@ import random
 import sys
 import time
 import pandas as pd
+import numpy as np
 import glob
 from heapq import merge
 import os
@@ -63,7 +64,7 @@ def print_end_info(output_class, cancer_output_class, starting_time):
     list_to_iterate = output_class.files_to_write
     if cancer_output_class:
         list_to_iterate += cancer_output_class.files_to_write
-    log_mssg("\nWrote the following files:", 'info')
+    log_mssg("Wrote the following files:", 'info')
     i = 1
     for item in list_to_iterate:
         log_mssg(f"\t{i}. {item}", 'info')
@@ -148,13 +149,13 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict) -> dict:
     :return: a dictionary containing the chromosomes as keys and either "all" for valuse, or a list of indices
 
     >>> index = {'chr1': "ACCATACACGGGCAACACACGTACACATTATACC"}
-    >>> find_file_breaks(5, "subdivision", index, False)
+    >>> find_file_breaks(5, "subdivision", index)
     {'chr1': [(0, 6), (6, 12), (12, 18), (18, 24), (24, 34)]}
-    >>> find_file_breaks(4, 'subdivision', index, False)
+    >>> find_file_breaks(4, 'subdivision', index)
     {'chr1': [(0, 8), (8, 16), (16, 24), (24, 34)]}
-    >>> find_file_breaks(5, 'chrom', index, False)
+    >>> find_file_breaks(5, 'chrom', index)
     {'chr1': [(0, 34)]}
-    >>> find_file_breaks(2, 'subdivision', index, False)
+    >>> find_file_breaks(2, 'subdivision', index)
     {'chr1': [(0, 17), (17, 34)]}
     """
     partitions = {}
@@ -188,97 +189,57 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict) -> dict:
     return partitions
 
 
-def map_reference(index):
-    """
-    Makes a dictionary with n regions, not n regions and the total n count
-    Note that for this program, anything not ACTG is an N
-    :param index: Input reference_index biopython object
-    :return: A dictionry indexed by contig in the input index, with a subdicitonary containing
-             'n_regions' (list of tuples) - start: end for regions containing unallowed characters in contig
-             'non_n' (list of tuples) - start: end for regions containing allowed characters in contig
-             'n_count' (int) - number of unallowed characters in contig
-
-    >>> my_seq = {'FAKE1': SeqRecord(Seq("ANNUNACTGNNNGTCA"))}
-    >>> print(map_reference(my_seq))
-    {'FAKE1': {'n_regions': [(1, 5), (9, 12)], 'non_n': [(0, 1), (5, 9)], 'n_count': 7}}
-    >>> my_seq = {'FAKE1': SeqRecord(Seq("NNUNACTGNNNGTCA"))}
-    >>> print(map_reference(my_seq))
-    {'FAKE1': {'n_regions': [(0, 4), (8, 11)], 'non_n': [(4, 8)], 'n_count': 7}}
-    """
-    reference_atlas = {x: {'n_regions': [], 'non_n': [], 'n_count': 0} for x in list(index.keys())}
-    prev_non_n = 0
-    prev_index = 0
-    n_count = 0
-    for contig in index:
-        contig_sequence = index[contig].seq
-        # Check if the sequence startswith an unallowed character
-        startswith = any([contig_sequence.startswith(n) for n in ALLOWED_NUCL])
-        for i in range(len(contig_sequence)):
-            # Anything not in the allowed list gets called an N
-            if contig_sequence[i] not in ALLOWED_NUCL:
-                reference_atlas[contig]['n_count'] += 1
-                # In the case where the input sequence has Ns in the middle (AAAANNNAAAA),
-                # startswith should catch and put the first interval in (0, 4)
-                if prev_non_n > 0 or startswith:
-                    reference_atlas[contig]['non_n'].append((prev_non_n, i))
-                    prev_non_n = 0
-                    startswith = False
-                if n_count == 0:
-                    prev_index = i
-                n_count += 1
-                if i == len(contig_sequence) - 1:
-                    reference_atlas[contig]['n_regions'].append((prev_index, prev_index + n_count))
-            else:
-                if n_count > 0:
-                    reference_atlas[contig]['n_regions'].append((prev_index, prev_index + n_count))
-                    prev_non_n = prev_index + n_count
-                n_count = 0
-
-    return reference_atlas
-
-
-def parse_mutation_rate_dict(mutation_rate_map, avg_rate, non_n_regions):
+def parse_mutation_rate_dict(mutation_rate_map, avg_rate, reference_index, non_n_regions):
     """
     This parses the mutation rate dict, in order to fill in the dict so it can by more easily cycled through
     later.
 
-    TODO write tests:
-    - intervals that overlap
+    example mutation_rate_map {'H1N1_HA': [(22, 500, 0.001), (510, 750, 0.003)]}
+    example avg_rate: 0.03
+    example reference_index: {'H1N1_HA': Seq("AAACA")}
+    example non_n_regions: {'H1N1_HA': [(50, 1701)]}
+
     - intervals that don't overlap
     - intervals with gaps
     - intervals with no gaps
     - mixes of the above
     - empty dictionary ({'chrX': []})
+
+    TODO write tests:
+    >>> my_map = {'H1N1_HA': [(1, 3, 0.001)]}
+    >>> my_rate = 0.03
+    >>> my_ref = {'H1N1_HA': Seq("NAAACAAA")}
+    >>> my_non_n = {'H1N1_HA': [(1, 8)]}
+    >>> x = parse_mutation_rate_dict(my_map, my_rate, my_ref, my_non_n)
+    >>> len(x['H1N1_HA'])
+    8
+    >>> print(x)
+    {'H1N1_HA': array([0.   , 0.001, 0.001, 0.03 , 0.03 , 0.03 , 0.03 , 0.03 ])}
     """
-    # creates the default dict
-    ret_dict = {x: [] for x in mutation_rate_map}
-    for chrom in mutation_rate_map:
+    # creates the default dict, which is a list of values -1 = not a valid base,
+    # any other number is the mutation rate of that base
+    ret_dict = {x: np.zeros(len(reference_index[x])) for x in reference_index.keys()}
+    for chrom in ret_dict:
         regions = mutation_rate_map[chrom]
         regions.sort()
-        total_regions = []
-        # check for overlaps
-        prev_index = 0
-        for i in range(len(regions)):
-            # This compares the set of coordinates
-            if regions[i][0] >= regions[i][1]:
-                log_mssg(f'Mutation bed with invalid coordinates', 'error')
-                premature_exit(1)
-            current_index = regions[i][0]
-            # This checks for an overlap. This can only happen when i > 0, by design
-            if current_index < prev_index:
-                log_mssg(f'Mutation rate region has overlapping regions, merging.', 'warning')
-                # We just average the two regions together
-                interval = (regions[i - 1][0], regions[i][1], (regions[i - 1][2] + regions[i][2]) / 2)
-                # Get rid of previous, to be replaced by ^^
-                total_regions.pop()
-            else:
-                interval = (current_index, regions[i][1], regions[i][2])
-                # This creates an interval in between the bed intervals with default mutation rate
-                if current_index != prev_index:
-                    total_regions.append((prev_index, current_index, avg_rate))
-            total_regions.append(interval)
-            prev_index = regions[i][1]
-        ret_dict[chrom] = total_regions
+        for i in range(len(ret_dict[chrom])):
+            # check if this base is in a habitable region
+            in_habitable = False
+            for safe_zone in non_n_regions[chrom]:
+                if safe_zone[0] <= i < safe_zone[1]:
+                    in_habitable = True
+                    break
+            if not in_habitable:
+                continue
+            # at this point we've confirmed it's a valid base, now we'll assign it a mutation rate
+            # The default for mut_rate is one region per chromosome with one rate, which makes this a trivial
+            # check. But with a mutation rate bed, this will be necessary.
+            mut_rate = avg_rate
+            for mut_zone in regions:
+                if mut_zone[0] <= i < mut_zone[1]:
+                    mut_rate = mut_zone[2]
+                    break
+            ret_dict[chrom][i] = mut_rate
     return ret_dict
 
 
@@ -353,20 +314,17 @@ def main(raw_args=None):
     begins_with_chr = all(k.startswith('chr') for k in options.reference_chromosomes)
 
     sample_names = []
-    input_variants = pd.DataFrame()
+    input_variants = {}
     if options.include_vcf:
         log_mssg(f"Reading input VCF...", 'info')
         if options.cancer:
             (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
-                                                             tumor_normal=True,
-                                                             ploidy=options.ploidy)
+                                                             tumor_normal=True)
             # TODO figure out what these were going to be used for
             tumor_ind = sample_names.index('tumor_sample')
             normal_ind = sample_names.index('normal_sample')
         else:
-            (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
-                                                             ploidy=options.ploidy,
-                                                             debug=options.debug)
+            (sample_names, input_variants) = parse_input_vcf(options.include_vcf)
 
         log_mssg("Finished reading @include_vcf file.", "info")
 
@@ -377,15 +335,18 @@ def main(raw_args=None):
     # Note if any bed is empty, parse_bed just returns a dict of chromosomes with empty list values
 
     target_regions_dict = parse_bed(options.target_bed, options.reference_chromosomes,
-                                    begins_with_chr, False, options.debug)
+                                    begins_with_chr, False)
 
     discard_regions_dict = parse_bed(options.discard_bed, options.reference_chromosomes,
-                                     begins_with_chr, False, options.debug)
+                                     begins_with_chr, False)
 
     mutation_rate_dict = parse_bed(options.mutation_bed, options.reference_chromosomes,
-                                   begins_with_chr, True, options.debug)
+                                   begins_with_chr, True)
 
-    mutation_rate_dict = parse_mutation_rate_dict(mutation_rate_dict, models.mutation_model['avg_mut_rate'], safe_zones)
+    mutation_rate_dict = parse_mutation_rate_dict(mutation_rate_dict,
+                                                  models.mutation_model['avg_mut_rate'],
+                                                  reference_index,
+                                                  safe_zones)
 
     log_mssg(f'Finished reading input beds.', 'debug')
 
@@ -467,24 +428,21 @@ def main(raw_args=None):
     vcf_files = []
 
     for contig in breaks:
-        inputs_df = pd.DataFrame()
-        if not input_variants.empty:
-            # We used to filter above, but this has the same effect
-            inputs_df = input_variants[input_variants.CHROM.isin([contig])]
+        contig_variants = {x: input_variants[x] for x in input_variants if x[0] == contig}
         vcf_files.append(execute_neat(reference_index[contig],
                          contig,
-                         safe_zones[contig],
                          trinucleotide_models[contig],
                          out_prefix_name,
                          target_regions_dict[contig],
                          discard_regions_dict[contig],
                          mutation_rate_dict[contig],
-                         inputs_df,
+                         contig_variants,
                          models,
                          options,
                          out_prefix))
 
     if options.produce_vcf:
+        log_mssg("Sorting and outputting complete golden vcf.", 'info')
         chunks = []
         # TODO double check that breaks is in the same order as the input fasta
         for vcf in vcf_files:

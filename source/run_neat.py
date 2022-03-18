@@ -28,6 +28,20 @@ def close_temp_dir(temp_dir):
     temp_dir.cleanup()
 
 
+def remove_blacklisted(which_ploids, genotype, key, blacklist):
+    remove_ploid = []
+    if key in blacklist:
+        for ploid in which_ploids:
+            if ploid in blacklist[key]:
+                remove_ploid.append(ploid)
+    for ploid in remove_ploid:
+        # If there is already a mutation at this location on this ploid, we'll set the genotype
+        # for it to zero
+        genotype[ploid] = 0
+        log_mssg(f'Skipping input variant because a variant '
+                 f'already exists at that location {key}, ploid: {ploid}', 'warning')
+    return genotype
+
 def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
     """
     Applies alts to random ploids. Picks at least one, maybe more.
@@ -37,9 +51,21 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
     """
     # number of ploids to make this mutation on (always at least 1)
     if random.random() < homozygous_freq:
-        # If it's homozygous. it's on all the ploids
-        # TODO fact check this with Christina
-        how_many = ploidy
+        if ploidy <= 2:
+            # If it's homozygous. it's on both ploids
+            how_many = ploidy
+        else:
+            # if it's polyploid, we'll just pick some.
+            # TODO may need to improve the modeling for polyploid
+            how_many = 1
+            for i in range(ploidy):
+                # Not totally sure how to model this, so I'm counting each
+                # ploid as a separate homozygous event. That doesn't exactly make
+                # sense though so we'll improve this later.
+                if random.random() < homozygous_freq:
+                    how_many += 1
+                else:
+                    break
     else:
         how_many = 1
 
@@ -54,19 +80,7 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
     return [str(x) for x in wp]
 
 
-def intersect(region1, region2):
-    """
-    Looks for the common ground between two regions. These are assuming both regions are "included" not a region of
-    exclusion.
-    """
-    total = region1 + region2
-    total = sorted(total, key=lambda x: [x[0], x[1]])
-
-
-
-
-
-def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name, target_regions, discard_regions,
+def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions, discard_regions,
                  mutation_rate_regions, input_variants, models, options,
                  out_prefix):
     """
@@ -74,7 +88,6 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
     """
     # Might be able to pre-populate this
     final_files = []
-
 
     # Setting up temp files to write to
     tmp_fasta_fn = None
@@ -120,47 +133,89 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
     start = time.time()
 
     # Trying te prevent inserting a mutation in more than one place
-    blacklist = []
+    blacklist = {}
     n_added = 0
     """
     Inserting any input mutations
     """
-    if not input_variants.empty:
-        log_mssg(f'Adding input mutations...', 'info')
+    if input_variants:
+        """
+        For reference, the columns in input_variants, and their indices:
+        key: (CHROM, POS)
+        values[0]: ID [0], REF [1], ALT [2], QUAL [3], FILTER [4], INFO [5], 
+                FORMAT [6, optional], SAMPLE1 [7, optional], SAMPLE2 [8, optional]
+        values[1]: genotype (if present in original vcf)
+        values[2]: genotype tumor (if present in original vcf)
+        """
+        log_mssg(f'Adding input mutations for {chrom}...', 'info')
+        random_ploid = False
         # TODO we'll have to add extra code for cancer, later
-        for variant in input_variants.iterrows():
-            ref_sequence = contig_sequence[variant.POS:len(variant.REF)]
-            if ref_sequence != variant.REF:
+        for key, variant in input_variants.items():
+            ref_sequence = contig_sequence[key[1]:key[1]+len(variant[0][1])]
+            if ref_sequence != variant[0][1]:
                 log_mssg(f"Skipping variant where reference does not match "
-                         f"input vcf at {chrom}: {variant.POS}", 'warning')
+                         f"input vcf at {key}: {variant[0][1]}", 'warning')
                 continue
-            if variant.ALT == '.':
+            if variant[0][2] == '.':
                 log_mssg(f'Found monomorphic reference variant. '
                          f'These prevent mutations from being added at that location.', 'info')
-                genotype = [0] * options.ploidy
             else:
-                number_of_alts = len(variant.ALT.split(','))
-                # TODO might need to refine the blacklist to include the ploidy too
-                if 'GT' in variant.FORMAT:
-                    gt_index = variant.FORMAT.split(':').index("GT")
-                    gt_string = variant.input_sample.split(':')[gt_index]
-                    genotype = gt_string.replace('/', '|').split('|')
-                else:
+                number_of_alts = len(variant[0][2].split(','))
+                # If genotype data was not present in the vcf
+                if not variant[1]:
                     genotype = pick_ploids(options.ploidy, number_of_alts)
-            if variant.POS in blacklist:
-                log_mssg(f'Skipping input variant because a variant '
-                         f'already exists at that location {variant}', 'warning')
+                    random_ploid = True
+                else:
+                    genotype = variant[1]
+                if options.cancer:
+                    if not variant[2]:
+                        genotype_tumor = pick_ploids(options.ploidy, number_of_alts)
+                        random_ploid = True
+                    else:
+                        genotype_tumor = variant[2]
+            # determine which ploid was mutated, for the blacklist. Find all the mutated ploids (genotype != 0)
+            which_ploids = [genotype.index(x) for x in genotype if x != 0]
+            if options.cancer:
+                tumor_ploid = [genotype_tumor.index(x) for x in genotype_tumor if x != 0]
+
+            genotype = remove_blacklisted(which_ploids, genotype, key, blacklist)
+
+            # if that leaves us with all zeros, skip this one
+            if not any(genotype):
                 continue
-            line = f'{variant.CHROM}\t{variant.POS}\t{variant.ID}\t{variant.REF}\t' \
-                   f'{variant.ALT}\t{variant.QUAL}\t' \
-                   f'PASS\t{variant.INFO}\t' \
-                   f'GT\t{"/".join(genotype)}\n'
+            else:
+                # Which ploids are still being mutated?
+                which_ploids = [genotype.index(x) for x in genotype if x != 0]
+            # That is, if we have format and sample columns
+            if len(variant[0]) > 6 and not options.cancer:
+                if random_ploid:
+                    if "GT" not in variant[0][6]:
+                        format_field = f"GT:{variant[0][6]}"
+                        gt_index = 0
+                    else:
+                        format_field = variant[0][6]
+                        gt_index = variant[0][6].split(':').index("GT")
+                    # Slice up the field and add in the genotype, then join it back together
+                    sample_field = variant[0][7].split(':')
+                    gt_field = sample_field[:gt_index] + ["/".join(genotype)] + sample_field[gt_index:]
+                    gt_field = ":".join(gt_field)
+                else:
+                    format_field = variant[0][6]
+                    gt_field = variant[0][7]
+                tail = f'{format_field}\t{gt_field}'
+            line = f'{key[0]}\t{key[1]}\t{variant[0][0]}\t{variant[0][1]}\t' \
+                   f'{variant[0][2]}\t{variant[0][3]}\t{variant[0][4]}\t{variant[0][5]}\t' \
+                   f'{tail}\n'
             n_added += 1
 
             with open(tmp_vcf_fn, 'a') as tmp:
                 tmp.write(line)
 
-            blacklist.append(variant.POS)
+            # Initialize blacklist for that position
+            if key not in blacklist:
+                blacklist[key] = []
+                for index in which_ploids:
+                    blacklist[key].append(index)
 
         log_mssg(f'Completed inserting the input mutations for {chrom} in {time.time() - start}', 'debug')
 
@@ -170,36 +225,18 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
     """
     Decide how many and where any random mutations will happen in this contig
     """
-    # Create a dictionary of regions. With no mutation_rate_regions, then there is only one region for the contig
-    # When we add multithreading, I think we can use these intervals for parallel processing.
-    # Establish a uniform mutation rate by default
-    regions_of_interest = intersect(mutation_rate_regions, non_n_regions)
-    mutation_regions = [(0, len(contig_sequence), models.mutation_model['avg_mut_rate'])]
-    overall_mutation_rate = models.mutation_model['avg_mut_rate']
-    if mutation_rate_regions:
-        mutation_regions = mutation_rate_regions
-        # This uses an average across the contig to calculate how many total variants to add. At least 1.
-        overall_mutation_rate = sum([x[2] for x in mutation_regions])/len(mutation_regions)
-
-    # Figure out the weight of each region. If there is only one region, then this will be trivial
-    weighted_mutation_regions = {x: (x[1] - x[0]) * x[2] for x in mutation_regions}
-    # This will sort this dict by weight
-    weighted_mutation_regions = dict(sorted(weighted_mutation_regions.items(), key=lambda x: x[1]))
-
-    # This model will allow us to figure out what regions to place mutations in
-    mutation_regions_model = DiscreteDistribution(list(weighted_mutation_regions.keys()),
-                                                  weighted_mutation_regions.values())
+    overall_mutation_rate = sum(mutation_rate_regions)/len(mutation_rate_regions)
+    mutation_model = DiscreteDistribution(range(len(mutation_rate_regions)), mutation_rate_regions)
 
     mutations_to_add = int(len(contig_sequence) * overall_mutation_rate) + 1
     log_mssg(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
 
-    log_mssg(f'Generating mutation positions.', 'info')
     for variant in range(mutations_to_add):
         if start - time.time() > 10000:
             log_mssg(f'gen_reads timed out', "info")
             break
         genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
-        region = mutation_regions_model.sample()
+        potential_location = mutation_model.sample()
         # for now our options are indel or snp. Later we can add more variants.
         is_indel = random.random() <= models.mutation_model['indel_freq']
         is_insertion = False
@@ -210,10 +247,6 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
                 length = models.mutation_model['insert_length_model'].sample()
             else:
                 length = models.mutation_model['deletion_length_model'].sample()
-        # Find somewhere to put this damn thing
-        if is_indel:
-            # Indels can go anywhere in the region
-            potential_location = random.randint(range(region[0], region[1]))
         else:
             # Use the trinuc bias to find a spot for this SNP
             potential_location = trinuc_model.sample()
@@ -309,7 +342,12 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
             else:
                 final_position -= relative_final_position
 
-        if final_position in blacklist:
+        key = (chrom, final_position)
+        which_ploids = [genotype.index(x) for x in genotype if x != 0]
+        genotype = remove_blacklisted(which_ploids, genotype, key, blacklist)
+
+        # If the previous step set all the genotype positions to 0, then we skip this one
+        if not genotype:
             log_mssg(f'Skipping variant, as we could not find a suitable location: {variant}', 'debug')
             continue
 
@@ -343,14 +381,16 @@ def execute_neat(reference, chrom, non_n_regions, trinuc_model, out_prefix_name,
         with open(tmp_vcf_fn, 'a') as tmp:
             tmp.write(line)
 
-        blacklist.append(final_position)
+        if (chrom, final_position) not in blacklist:
+            blacklist[(chrom, final_position)] = []
+        blacklist[(chrom, final_position)].append(final_position)
 
     log_mssg(f"Finished mutating {chrom}. Time: {time.time() - start}", 'debug')
     log_mssg(f"Added {n_added} mutations to the reference.", 'debug')
 
     # Let's write out the vcf, if asked to
     if options.produce_vcf:
-        log_mssg(f'Sorting and writing output vcf', 'info')
+        log_mssg(f'Sorting and writing temp vcf for {chrom}', 'info')
 
         path = f"{tmp_dir_path}/chunk_*.vcf"
         chunksize = 1_000_000
