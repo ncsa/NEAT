@@ -30,7 +30,7 @@ from Bio.SeqRecord import SeqRecord
 from source.Models import Models
 from source.Options import Options
 from source.bed_func import parse_bed
-from source.ref_func import process_reference
+from source.ref_func import find_habitable_regions
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, log_mssg
@@ -297,11 +297,11 @@ def main(raw_args=None):
     log_mssg(f'Reading {options.reference}...', 'info')
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
-
-    log_mssg(f'Counting trinucleotides', 'info')
-    safe_zones, trinucleotide_models = process_reference(reference_index, models)
-
     log_mssg(f'Reference file indexed.', 'debug')
+
+    log_mssg(f'Mapping regions of all Ns in reference', 'info')
+    safe_zones = find_habitable_regions(reference_index)
+
 
     # there is not a reference_chromosome in the options defs because
     # there is nothing that really needs checking, so this command will just
@@ -431,16 +431,16 @@ def main(raw_args=None):
     for contig in breaks:
         contig_variants = {x: input_variants[x] for x in input_variants if x[0] == contig}
         vcf_files.append(execute_neat(reference_index[contig],
-                         contig,
-                         trinucleotide_models[contig],
-                         out_prefix_name,
-                         target_regions_dict[contig],
-                         discard_regions_dict[contig],
-                         mutation_rate_dict[contig],
-                         contig_variants,
-                         models,
-                         options,
-                         out_prefix))
+                                      contig,
+                                      out_prefix_name,
+                                      safe_zones[contig],
+                                      target_regions_dict[contig],
+                                      discard_regions_dict[contig],
+                                      mutation_rate_dict[contig],
+                                      contig_variants,
+                                      models,
+                                      options,
+                                      out_prefix))
 
     if options.produce_vcf:
         log_mssg("Sorting and outputting complete golden vcf.", 'info')

@@ -9,6 +9,7 @@ import numpy as np
 from source.error_handling import log_mssg, premature_exit
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.probability import DiscreteDistribution
+from source.ref_func import model_trinucs
 from source.vcf_func import parse_input_vcf
 import tempfile
 import pandas as pd
@@ -41,6 +42,7 @@ def remove_blacklisted(which_ploids, genotype, key, blacklist):
         log_mssg(f'Skipping input variant because a variant '
                  f'already exists at that location {key}, ploid: {ploid}', 'warning')
     return genotype
+
 
 def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
     """
@@ -80,7 +82,7 @@ def pick_ploids(ploidy, homozygous_freq, number_alts=1) -> list:
     return [str(x) for x in wp]
 
 
-def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions, discard_regions,
+def execute_neat(reference, chrom, out_prefix_name, non_n_regions, target_regions, discard_regions,
                  mutation_rate_regions, input_variants, models, options,
                  out_prefix):
     """
@@ -128,7 +130,7 @@ def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions
     with open(tmp_vcf_fn, 'w') as tmp_vcf_file:
         tmp_vcf_file.write(f'@NEAT temporary file, for generating the list of mutations.\n')
 
-    contig_sequence = reference.seq
+    trinuc_model = model_trinucs(reference, models, non_n_regions)
 
     start = time.time()
 
@@ -151,7 +153,7 @@ def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions
         random_ploid = False
         # TODO we'll have to add extra code for cancer, later
         for key, variant in input_variants.items():
-            ref_sequence = contig_sequence[key[1]:key[1]+len(variant[0][1])]
+            ref_sequence = reference[key[1]:key[1]+len(variant[0][1])].seq
             if ref_sequence != variant[0][1]:
                 log_mssg(f"Skipping variant where reference does not match "
                          f"input vcf at {key}: {variant[0][1]}", 'warning')
@@ -228,7 +230,7 @@ def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions
     overall_mutation_rate = sum(mutation_rate_regions)/len(mutation_rate_regions)
     mutation_model = DiscreteDistribution(range(len(mutation_rate_regions)), mutation_rate_regions)
 
-    mutations_to_add = int(len(contig_sequence) * overall_mutation_rate) + 1
+    mutations_to_add = int(len(reference) * overall_mutation_rate) + 1
     log_mssg(f'Planning to add {mutations_to_add} mutations to {chrom}', 'debug')
 
     for variant in range(mutations_to_add):
@@ -250,21 +252,21 @@ def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions
         else:
             # Use the trinuc bias to find a spot for this SNP
             potential_location = trinuc_model.sample()
-            if contig_sequence[potential_location] not in ALLOWED_NUCL:
-                sub_sequence = contig_sequence[potential_location:]
+            if reference[potential_location] not in ALLOWED_NUCL:
+                sub_sequence = reference[potential_location:]
                 # Look for an allowed nucleotide to the right.
                 seek = -1
                 # I was using a min function, but this will be faster because the min function might be searching
                 # entire subsequences. If I stick with this method, maybe stick it in a function.
                 for i in range(len(sub_sequence)):
-                    if i not in ALLOWED_NUCL:
+                    if sub_sequence[i] not in ALLOWED_NUCL:
                         continue
                     else:
                         seek = i
                         break
                 # case 1, there was not one to the right, so look left
                 if seek == -1:
-                    sub_sequence = contig_sequence[:potential_location]
+                    sub_sequence = reference[:potential_location]
                     for i in range(len(sub_sequence), -1, -1):
                         if sub_sequence[i] in ALLOWED_NUCL:
                             seek = i
@@ -278,7 +280,7 @@ def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions
 
         # Now try to add the mutation to the vcf
         # Check if we're somewhere we shouldn't be
-        allowed = contig_sequence[potential_location] in ALLOWED_NUCL
+        allowed = reference[potential_location] in ALLOWED_NUCL
 
         # Check target and discard bed files
         # Note that if we aren't completely discarding off-target matches, then for the vcf,
@@ -313,7 +315,7 @@ def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions
         method = '-'
         if not allowed:
             # See if there is any place after to put it
-            sub_sequence = contig_sequence[final_position:]
+            sub_sequence = reference[final_position:]
             # To get the final position relative to the reference, we add subsequence start point
             relative_final_position = -1
             for i in range(len(sub_sequence)):
@@ -326,7 +328,7 @@ def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions
             if relative_final_position == -1:
                 # okay, so we didn't find it to the right of the starting point. To look the other direction
                 # We will look up to the current location, but reverse the list, so we find the highest index
-                sub_sequence = contig_sequence[:final_position]
+                sub_sequence = reference[:final_position]
                 for i in range(len(sub_sequence), -1, -1):
                     if sub_sequence[i] in ALLOWED_NUCL:
                         relative_final_position = i
@@ -354,16 +356,16 @@ def execute_neat(reference, chrom, trinuc_model, out_prefix_name, target_regions
         # at this point we should have a final position.
         if is_indel:
             if is_insertion:
-                ref = contig_sequence[final_position]
+                ref = reference[final_position]
                 alt = ref + "".join(random.choices(ALLOWED_NUCL, k=length))
             else:
                 # plus one because we leave the first base alone in vcf format
-                ref = contig_sequence[final_position: length + 1]
-                alt = contig_sequence[final_position]
+                ref = reference[final_position: length + 1]
+                alt = reference[final_position]
         # if it's not an indel, it's a SNP
         else:
             # See what the ref is
-            ref = contig_sequence[final_position]
+            ref = reference[final_position]
             # mutate the hell out of it
             alt = random.choice(ALLOWED_NUCL)
 
