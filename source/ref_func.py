@@ -53,23 +53,13 @@ def find_habitable_regions(reference) -> dict:
 
 def model_trinucs(reference, models, safe_zones):
     # Set up the model dictionary
-    trinuc_models = {x: np.zeros(len(reference[x])) for x in reference}
-    for chrom in reference:
-        
-        chrom_atlas = safe_zones[chrom]
-        for zone in chrom_atlas:
-            # Start at +1 so we get a trinucleotide to start and end one shy for the same reason
-            for i in range(zone[0] + 1, zone[1] - 1):
-                trinuc = reference[chrom].seq[i-1:i+2]
-                # Let's double check to make sure we didn't pick up a stray N
-                if any([j for j in trinuc if j not in ALLOWED_NUCL]):
-                    trinuc_models[chrom][i] = 0
-                trinuc_models[chrom][i] = models.mutation_model['trinuc_bias'][trinuc]
-        trinuc_models[chrom] = DiscreteDistribution(range(len(reference[chrom])), trinuc_models[chrom])
-    return trinuc_models
-
-
-def process_reference(reference_index, models):
-    allowed_areas = find_habitable_regions(reference_index)
-    trinuc_models = model_trinucs(reference_index, models, allowed_areas)
-    return allowed_areas, trinuc_models
+    trinuc_models = np.zeros(len(reference))
+    for zone in safe_zones:
+        # Start at +1 so we get a trinucleotide to start and end one shy for the same reason
+        for i in range(zone[0] + 1, zone[1] - 1):
+            trinuc = reference.seq[i-1:i+2]
+            # Let's double check to make sure we didn't pick up a stray N
+            if any([j for j in trinuc if j not in ALLOWED_NUCL]):
+                continue
+            trinuc_models[i] = models.mutation_model['trinuc_bias'][trinuc]
+    return DiscreteDistribution(range(len(reference)), trinuc_models)
