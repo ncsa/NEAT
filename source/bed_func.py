@@ -7,8 +7,7 @@ from source.error_handling import premature_exit, log_mssg
 
 def parse_bed(input_bed: str, chromosomes: list,
               begins_with_chr: bool,
-              mut_rate_present: bool,
-              debug: bool = False) -> dict:
+              mut_rate_present: bool) -> dict:
     """
     Will parse a bed file, returning a dataframe of chromosomes that are found in the reference,
     and the corresponding positions. Some beds may have mutation in the fourth column. If specified
@@ -21,8 +20,7 @@ def parse_bed(input_bed: str, chromosomes: list,
     no program seems to agree on what to do with this fact. We'll check for both cases, if chroms in the ref
     begin with 'chr'
     :param mut_rate_present: A true or false if this bed has mut rate regions included.
-    :param debug: True or false if we are in debugging mode and need more info
-    :return: a dictionary of chromosomes, -1, pos1, and pos2
+    :return: a dictionary of chromosomes: [(pos1, pos2, mutation_rate), etc...]
     """
     ret_dict = {x: [] for x in chromosomes}
     in_bed_only = []
@@ -93,7 +91,7 @@ def parse_bed(input_bed: str, chromosomes: list,
             # Or if the file is really gzipped but has been misnamed.
             # The standard error here might be ambiguous, so we're using an except.
             log_mssg("Input bed files must be a valid bed files or a valid gzipped bed file. "
-                          "Gzipped files must end in extension '.gz'", 'error')
+                     "Gzipped files must end in extension '.gz'", 'error')
             premature_exit(1)
 
         # some validation
