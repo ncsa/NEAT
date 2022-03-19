@@ -42,17 +42,15 @@ class DiscreteDistribution:
         if sum_weight < LOW_PROBABILITY_THRESHOLD or len(values) == 1 or len(weights) == 1:
             self.degenerate = values[0]
         else:
-            self.weights = [n / sum_weight for n in weights]
-            # TODO This line is slowing things down and seems unnecessary. Are these "values
-            # possibly some thing from another class?
+            self.weights = weights/sum_weight
             self.values = values
             if len(self.values) != len(self.weights):
                 log_mssg('Length and weights and values vectors must be the same.', 'error')
                 premature_exit(1)
             self.degenerate = degenerate_val
 
-            self.cum_prob = np.cumsum(self.weights).tolist()[:-1]
-            self.cum_prob.insert(0, 0.)
+            self.cum_prob = np.cumsum(self.weights)
+            self.cum_prob[0] = 0.
 
     def sample(self) -> Union[int, float]:
         """

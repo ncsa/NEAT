@@ -31,6 +31,8 @@ def find_habitable_regions(reference) -> dict:
     >>> find_n_regions(my_ref)
     {'chr1': [(0, 23)]}
     """
+    # TODO instead, this may need to be per chromosome OR written to a bed file, for memory reasons, though I think
+    #  the final product is not too big
     # data explanation: my_dat[n_atlas[0][0]:n_atlas[0][1]] = solid block of Ns
     non_n_atlas = {x: [] for x in reference}
     for chrom in reference:
@@ -53,7 +55,7 @@ def find_habitable_regions(reference) -> dict:
 
 def model_trinucs(reference, models, safe_zones):
     # Set up the model dictionary
-    trinuc_models = np.zeros(len(reference))
+    trinuc_models = [0] * len(reference)
     for zone in safe_zones:
         # Start at +1 so we get a trinucleotide to start and end one shy for the same reason
         for i in range(zone[0] + 1, zone[1] - 1):
@@ -62,4 +64,5 @@ def model_trinucs(reference, models, safe_zones):
             if any([j for j in trinuc if j not in ALLOWED_NUCL]):
                 continue
             trinuc_models[i] = models.mutation_model['trinuc_bias'][trinuc]
+    trinuc_models = np.array(trinuc_models)
     return DiscreteDistribution(range(len(reference)), trinuc_models)

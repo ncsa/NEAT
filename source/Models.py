@@ -207,7 +207,7 @@ class SequencingErrorModel:
         self.quality_score_probabilities = quality_score_probability_matrix.apply(
                 lambda row: DiscreteDistribution(self.quality_scores, row), axis=1).to_numpy()
         matrix = pd.DataFrame(error_model['error_parameters'][0])
-        self.substitution_model = matrix.apply(lambda row: DiscreteDistribution(ALLOWED_NUCL, list(row)),
+        self.substitution_model = matrix.apply(lambda row: DiscreteDistribution(ALLOWED_NUCL, row),
                                                axis=1).to_numpy()
         # Probability that if there is an error, it is an indel (v snp)
         self.indel_probability = error_model['error_parameters'][1]
@@ -216,7 +216,7 @@ class SequencingErrorModel:
         # Possible lengths for indels, along with the weights of each
         self.indel_lengths = np.array(error_model['error_parameters'][3])
         self.indel_length_model = DiscreteDistribution(self.indel_lengths,
-                                                       error_model['error_parameters'][2])
+                                                       np.array(error_model['error_parameters'][2]))
         # Nucleotides and their probability values for a random choice
         self.nucleotide_insertion_model = error_model['error_parameters'][5]
         self.quality_offset = error_model['quality_offset']
