@@ -221,25 +221,22 @@ def parse_mutation_rate_dict(mutation_rate_map, avg_rate, reference_index, non_n
     ret_dict = {x: np.zeros(len(reference_index[x])) for x in reference_index.keys()}
     for chrom in ret_dict:
         regions = mutation_rate_map[chrom]
+        safe_zone = non_n_regions[chrom]
         regions.sort()
         for i in range(len(ret_dict[chrom])):
             # check if this base is in a habitable region
-            in_habitable = False
-            for safe_zone in non_n_regions[chrom]:
-                if safe_zone[0] <= i < safe_zone[1]:
-                    in_habitable = True
-                    break
-            if not in_habitable:
+            if int(safe_zone[i]):
+                # at this point we've confirmed it's a valid base, now we'll assign it a mutation rate
+                # The default for mut_rate is one region per chromosome with one rate, which makes this a trivial
+                # check. But with a mutation rate bed, this will be necessary.
+                mut_rate = avg_rate
+                for mut_zone in regions:
+                    if mut_zone[0] <= i < mut_zone[1]:
+                        mut_rate = mut_zone[2]
+                        break
+                ret_dict[chrom][i] = mut_rate
+            else:
                 continue
-            # at this point we've confirmed it's a valid base, now we'll assign it a mutation rate
-            # The default for mut_rate is one region per chromosome with one rate, which makes this a trivial
-            # check. But with a mutation rate bed, this will be necessary.
-            mut_rate = avg_rate
-            for mut_zone in regions:
-                if mut_zone[0] <= i < mut_zone[1]:
-                    mut_rate = mut_zone[2]
-                    break
-            ret_dict[chrom][i] = mut_rate
     return ret_dict
 
 
