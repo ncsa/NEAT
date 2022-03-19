@@ -130,6 +130,7 @@ def execute_neat(reference, chrom, out_prefix_name, non_n_regions, target_region
     with open(tmp_vcf_fn, 'w') as tmp_vcf_file:
         tmp_vcf_file.write(f'@NEAT temporary file, for generating the list of mutations.\n')
 
+    log_mssg(f'Calculating trinuc bias for SNPS', 'info')
     trinuc_model = model_trinucs(reference, models, non_n_regions)
 
     start = time.time()
@@ -412,7 +413,7 @@ def execute_neat(reference, chrom, out_prefix_name, non_n_regions, target_region
                     f_out.close()
                     lines = []
                     fid += 1
-                    f_out = open(f'{tmp_dir_path}/chunk_{fid}.vcf' 'w')
+                    f_out = open(f'{tmp_dir_path}/chunk_{fid}.vcf', 'w')
             # If the above loop has a number that is not a multiple of chunksize, then it will
             # have a remainder. In that case, we do the final step one last time:
             if lines:
