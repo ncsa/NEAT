@@ -111,14 +111,17 @@ def parse_mutation_rate_dict(mutation_rate_map, avg_rate, reference):
     # any other number is the mutation rate of that base
     ret_list = []
     start = 0
-    for region in mutation_rate_map:
-        if region[0] > start:
-            ret_list.append((start, region[0], avg_rate))
-            start = region[1]
-            ret_list.append(region)
-        elif region[0] == start:
-            ret_list.append(region)
-            start = region[1]
+    if mutation_rate_map:
+        for region in mutation_rate_map:
+            if region[0] > start:
+                ret_list.append((start, region[0], avg_rate))
+                start = region[1]
+                ret_list.append(region)
+            elif region[0] == start:
+                ret_list.append(region)
+                start = region[1]
+    else:
+        ret_list.append(0, len(reference), avg_rate)
     if ret_list[-1][1] != len(reference):
         ret_list.append((start, len(reference), avg_rate))
     return ret_list
