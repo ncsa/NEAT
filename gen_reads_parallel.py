@@ -30,7 +30,6 @@ from Bio.SeqRecord import SeqRecord
 from source.Models import Models
 from source.Options import Options
 from source.bed_func import parse_bed
-from source.ref_func import find_habitable_regions
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, log_mssg
@@ -189,57 +188,6 @@ def find_file_breaks(threads: int, mode: str, reference_index: dict) -> dict:
     return partitions
 
 
-def parse_mutation_rate_dict(mutation_rate_map, avg_rate, reference_index, non_n_regions):
-    """
-    This parses the mutation rate dict, in order to fill in the dict so it can by more easily cycled through
-    later.
-
-    example mutation_rate_map {'H1N1_HA': [(22, 500, 0.001), (510, 750, 0.003)]}
-    example avg_rate: 0.03
-    example reference_index: {'H1N1_HA': Seq("AAACA")}
-    example non_n_regions: {'H1N1_HA': [(50, 1701)]}
-
-    - intervals that don't overlap
-    - intervals with gaps
-    - intervals with no gaps
-    - mixes of the above
-    - empty dictionary ({'chrX': []})
-
-    TODO write tests:
-    >>> my_map = {'H1N1_HA': [(1, 3, 0.001)]}
-    >>> my_rate = 0.03
-    >>> my_ref = {'H1N1_HA': Seq("NAAACAAA")}
-    >>> my_non_n = {'H1N1_HA': [(1, 8)]}
-    >>> x = parse_mutation_rate_dict(my_map, my_rate, my_ref, my_non_n)
-    >>> len(x['H1N1_HA'])
-    8
-    >>> print(x)
-    {'H1N1_HA': array([0.   , 0.001, 0.001, 0.03 , 0.03 , 0.03 , 0.03 , 0.03 ])}
-    """
-    # creates the default dict, which is a list of values -1 = not a valid base,
-    # any other number is the mutation rate of that base
-    ret_dict = {x: np.zeros(len(reference_index[x])) for x in reference_index.keys()}
-    for chrom in ret_dict:
-        regions = mutation_rate_map[chrom]
-        safe_zone = non_n_regions[chrom]
-        regions.sort()
-        for i in range(len(ret_dict[chrom])):
-            # check if this base is in a habitable region
-            if int(safe_zone[i]):
-                # at this point we've confirmed it's a valid base, now we'll assign it a mutation rate
-                # The default for mut_rate is one region per chromosome with one rate, which makes this a trivial
-                # check. But with a mutation rate bed, this will be necessary.
-                mut_rate = avg_rate
-                for mut_zone in regions:
-                    if mut_zone[0] <= i < mut_zone[1]:
-                        mut_rate = mut_zone[2]
-                        break
-                ret_dict[chrom][i] = mut_rate
-            else:
-                continue
-    return ret_dict
-
-
 def main(raw_args=None):
     """
     Parallel main function. Takes args and parses the ones needed to start multiprocessing. The rest will get passed
@@ -296,10 +244,6 @@ def main(raw_args=None):
     reference_index = SeqIO.index(str(options.reference), 'fasta')
     log_mssg(f'Reference file indexed.', 'debug')
 
-    log_mssg(f'Mapping regions of all Ns in reference', 'info')
-    safe_zones = find_habitable_regions(reference_index)
-
-
     # there is not a reference_chromosome in the options defs because
     # there is nothing that really needs checking, so this command will just
     # set the value. This might be an input in the future, for example if you want
@@ -341,10 +285,6 @@ def main(raw_args=None):
     mutation_rate_dict = parse_bed(options.mutation_bed, options.reference_chromosomes,
                                    begins_with_chr, True)
 
-    mutation_rate_dict = parse_mutation_rate_dict(mutation_rate_dict,
-                                                  models.mutation_model['avg_mut_rate'],
-                                                  reference_index,
-                                                  safe_zones)
 
     log_mssg(f'Finished reading input beds.', 'debug')
 
@@ -426,11 +366,10 @@ def main(raw_args=None):
     vcf_files = []
 
     for contig in breaks:
-        contig_variants = {x: input_variants[x] for x in input_variants if x[0] == contig}
+        contig_variants = {x[1]: input_variants[x] for x in input_variants if x[0] == contig}
         vcf_files.append(execute_neat(reference_index[contig],
                                       contig,
                                       out_prefix_name,
-                                      safe_zones[contig],
                                       target_regions_dict[contig],
                                       discard_regions_dict[contig],
                                       mutation_rate_dict[contig],
