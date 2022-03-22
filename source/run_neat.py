@@ -342,7 +342,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
         # First find any input variants that go in this window, initialize with input variants
         variants_to_add = []
-        if input_variants_locations:
+        if input_variants:
             variants_to_add.append(sorted([x for x in input_variants_locations
                                    if mutation_slice[0] <= x < mutation_slice[1]]))
 
