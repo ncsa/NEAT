@@ -121,7 +121,7 @@ def parse_mutation_rate_dict(mutation_rate_map, avg_rate, reference):
                 ret_list.append(region)
                 start = region[1]
     else:
-        ret_list.append(0, len(reference), avg_rate)
+        ret_list.append((0, len(reference), avg_rate))
     if ret_list[-1][1] != len(reference):
         ret_list.append((start, len(reference), avg_rate))
     return ret_list
