@@ -38,19 +38,25 @@ class DiscreteDistribution:
 
         sum_weight = float(sum(weights))
 
+        self.degenerate = False
+        self.degenerate_value = None
+
         # if probability of all input events is 0, consider it degenerate and always return the first value
         if sum_weight < LOW_PROBABILITY_THRESHOLD or len(values) == 1 or len(weights) == 1:
-            self.degenerate = values[0]
+            self.degenerate = True
+            if degenerate_val:
+                self.degenerate_value = degenerate_val
+            else:
+                self.degenerate_value = values[0]
         else:
             self.weights = weights/sum_weight
             self.values = values
             if len(self.values) != len(self.weights):
                 log_mssg('Length and weights and values vectors must be the same.', 'error')
                 premature_exit(1)
-            self.degenerate = degenerate_val
 
-            self.cum_prob = np.cumsum(self.weights)
-            self.cum_prob[0] = 0.
+            self.cum_prob = np.zeros_like(self.weights)
+            self.cum_prob[1:] = np.cumsum(self.weights)[:-1]
 
     def sample(self) -> Union[int, float]:
         """
@@ -62,21 +68,20 @@ class DiscreteDistribution:
         """
 
         if self.degenerate:
-            return self.degenerate
+            return self.degenerate_value
 
         else:
             r = random.random()
             return self.values[bisect.bisect(self.cum_prob, r) - 1]
 
 
-# takes k_range, lambda, [0,1,2,..], returns a DiscreteDistribution object
-# with the corresponding to a poisson distribution
-
+# takes k_range, lambda, returns a DiscreteDistribution object
+# corresponding to a poisson distribution
 def poisson_list(k_value: int, input_mu: float) -> DiscreteDistribution:
     min_weight = 1e-12
     k_range = np.arange(k_value)
     poisson_pmf = poisson.pmf(k_range, input_mu)
-    peak_zone = np.where(poisson_pmf >= min_weight)
+    peak_zone = np.where(poisson_pmf >= min_weight)[0]
 
     if len(peak_zone) == 1:
         return DiscreteDistribution([1], [0], degenerate_val=k_range[peak_zone])
