@@ -283,6 +283,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     max_mutations = int(len(reference) * 0.3)
     total_mutations_model = poisson_list(max_mutations, average_number_of_mutations)
     how_many_mutations = total_mutations_model.sample()
+    log_mssg(f'Planning to add {how_many_mutations}', 'debug')
 
     log_mssg(f'Mutating chrom: {chrom}...', 'info')
 
@@ -312,6 +313,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
         # If we couldn't find a spot, try again
         if not found:
+            log_mssg(f"Couldn't find a spot for this one", 'debug')
             continue
 
         # at this point the location is found. Now we need a second endpoint. Grab a 1000 bases or to the end.
@@ -321,6 +323,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             end_point = random.randint(max(window_start - max_window_size, mut_region[0]), window_start - 1)
             if reference[end_point] not in ALLOWED_NUCL:
                 # No suitable end_point, so we try again
+                log_mssg(f"No suitable reference", 'debug')
                 continue
 
         # Sorting assures that wherever we found the end point, the coordinates will be in the correct order for slicing
@@ -328,16 +331,19 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         slice_distance = mutation_slice[1] - mutation_slice[0]
         # How many variants to add in this slice (at least one, or we'll never get to the finish line)
         variants_to_add_in_slice = max((slice_distance/len(reference)) * how_many_mutations, 1)
+        log_mssg(f"Planning to add {variants_to_add_in_slice} variants to slice", 'debug')
 
         subsequence = reference[mutation_slice[0]: mutation_slice[1]]
         # In the case where the end points are equal, just skip
         if len(subsequence) == 0:
+            log_mssg(f"Subsequence had a zero length", 'debug')
             continue
 
         non_n_regions = map_non_n_regions(subsequence)
 
         # If the sequence has too many N's, we'll skip it
         if not non_n_regions:
+            log_mssg(f"In non-n region", 'debug')
             continue
 
         # First find any input variants that go in this window, initialize with input variants
@@ -346,6 +352,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             variants_to_add.append(sorted([x for x in input_variants_locations
                                    if mutation_slice[0] <= x < mutation_slice[1]]))
 
+        log_mssg(f"Couldn't find a spot for this one", 'debug')
         # Begin random mutations
         for _ in range(variants_to_add_in_slice):
             # Now figure out the type of random mutation to insert
@@ -357,6 +364,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 # First pick a location. This function ensures that we do not pick an N as our starting place
                 location = find_random_non_n(mutation_slice, non_n_regions, 10)
                 if not location:
+                    log_mssg(f"Found no location", 'debug')
                     continue
 
                 is_insertion = random.random() <= models.mutation_model['indel_insert_percentage']
@@ -383,6 +391,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 trinuc_probs = model_trinucs(subsequence, models)
                 # If we have some edge case where there was no actual valid trinucleotides, we'll skip this
                 if not trinuc_probs:
+                    log_mssg(f"Could not build trinuc probs", 'debug')
                     continue
                 # So there is at least valid trinuc in this subsequence, so now we sample for a location
                 # It's a relative location, so we add the start point of the subsequence to that.
@@ -398,6 +407,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                         break
                 # We tried and failed, so we give up.
                 if alt == ref:
+                    log_mssg(f"Transition failed to find an alt", 'debug')
                     continue
             warning = False
             if location in variants_to_add:
@@ -487,6 +497,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
                 # At this point, if it's not allowed, just skip
                 if not allowed:
+                    log_mssg(f"Variant somewhere it wasn't allowed", 'debug')
                     continue
 
                 if variant[i][2] == '.':
@@ -515,6 +526,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
                 # if that leaves us with all zeros, skip this one
                 if not any(genotype):
+                    log_mssg(f"No free ploid for this one", 'debug')
                     continue
                 else:
                     # Which ploids are still being mutated?
