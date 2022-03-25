@@ -7,10 +7,12 @@ import pathlib
 from Bio.Seq import Seq
 import numpy as np
 import bisect
+import shutil
 
 from source.error_handling import log_mssg, premature_exit
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.probability import DiscreteDistribution, poisson_list
+from source.ploid_functions import which_ploid, pick_ploids
 from source.vcf_func import parse_input_vcf
 import tempfile
 import pandas as pd
@@ -43,44 +45,6 @@ def remove_blacklisted(which_ploids, genotype, location, blacklist):
         log_mssg(f'Skipping input variant because a variant '
                  f'already exists at that location {location}, ploid: {ploid}', 'warning')
     return genotype
-
-
-def pick_ploids(ploidy, homozygous_frequency, number_alts=1) -> list:
-    """
-    Applies alts to random ploids. Picks at least one, maybe more.
-    :param ploidy: how many copies of each chromosome this organism has
-    :param number_alts: If there is more than one alt, this will assign a random alt to the ploids
-    :return: a list of strings representing the genotype of each ploid.
-    """
-    # number of ploids to make this mutation on (always at least 1)
-    if random.random() < homozygous_frequency:
-        if ploidy <= 2:
-            # If it's homozygous. it's on both ploids
-            how_many = ploidy
-        else:
-            # if it's polyploid, we'll just pick some.
-            # TODO may need to improve the modeling for polyploid
-            how_many = 1
-            for i in range(ploidy):
-                # Not totally sure how to model this, so I'm counting each
-                # ploid as a separate homozygous event. That doesn't exactly make
-                # sense though so we'll improve this later.
-                if random.random() < homozygous_frequency:
-                    how_many += 1
-                else:
-                    break
-    else:
-        how_many = 1
-
-    # wp is just the temporary genotype list
-    wp = [0] * ploidy
-    while how_many > 0:
-        x = random.choice(range(ploidy))
-        # pick a random alt. in VCF terminology, 0 = REF, 1 = ALT1, 2 = ALT2, etc
-        wp[x] = random.choice(range(1, number_alts + 1))
-        how_many -= 1
-
-    return [str(x) for x in wp]
 
 
 def parse_mutation_rate_dict(mutation_rate_map, avg_rate, reference):
@@ -185,11 +149,15 @@ def model_trinucs(sequence, models):
 
 
 def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regions,
-                 mutation_rate_regions, input_variants, models, options,
+                 mutation_rate_regions, output_variants, models, options,
                  out_prefix):
     """
     This function will take all the setup we did in the main part and actually do NEAT stuff.
+
+    TODO: need to add cancer logic to this section
     """
+    log_mssg(f'Mutating chrom: {chrom}...', 'info')
+
     # Might be able to pre-populate this
     final_files = []
 
@@ -240,30 +208,30 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     mutation_regions_model = DiscreteDistribution([(x[0], x[1]) for x in mutation_map],
                                                   np.array([x[2] for x in mutation_map]))
 
-    start = time.time()
-
     # Trying te prevent inserting a mutation in more than one place
     blacklist = {}
+    # Trying to use a random window to keep memory under control. May need to adjust this number.
     max_window_size = 1000
     n_added = 0
     random_mutation_quality_score = max(models.sequencing_error_model.quality_scores)
     random_mutation_filter = "PASS"
     """
-    Inserting any input mutations
+    Checking current mutations from input vcf. If there were no variants, output_variants will be empty
     """
-    if input_variants:
+    output_variants_locations = []
+    if output_variants:
         """
-        For reference, the columns in input_variants, and their indices:
-        key: (CHROM, POS)
+        For reference, the columns in output_variants, and their indices:
+        key: POS
         values[0]: ID [0], REF [1], ALT [2], QUAL [3], FILTER [4], INFO [5], 
                 FORMAT [6, optional], SAMPLE1 [7, optional], SAMPLE2 [8, optional]
         values[1]: genotype (if present in original vcf), None if not present
         values[2]: genotype tumor (if present in original vcf), None if not present and a cancer sample
         """
-        # this should give is just the positions of the inserts.
-        input_variants_locations = input_variants.keys()
+        # this should give is just the positions of the inserts. This will be used to keep track of sort order.
+        output_variants_locations = sorted(list(output_variants.keys()))
 
-    log_mssg(f'Adding mutations for {chrom}', 'info')
+    log_mssg(f'Adding random mutations for {chrom}', 'info')
     start = time.time()
 
     """
@@ -282,13 +250,12 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     average_number_of_mutations = int(len(reference) * overall_mutation_average)
     max_mutations = int(len(reference) * 0.3)
     total_mutations_model = poisson_list(max_mutations, average_number_of_mutations)
+
+    # This number will serve as a counter for our loops
     how_many_mutations = total_mutations_model.sample()
-    log_mssg(f'Planning to add {how_many_mutations}', 'debug')
 
-    log_mssg(f'Mutating chrom: {chrom}...', 'info')
+    log_mssg(f'Planning to add {how_many_mutations} mutations. The final number may be less.', 'debug')
 
-    # Initialize to include all input variants
-    all_mutations = input_variants
     while how_many_mutations > 0:
         # Pick a region based on the mutation rates
         # (default is one rate for the whole chromosome, so this will be trivial in that case
@@ -298,13 +265,13 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         found = False
         if reference[window_start] not in ALLOWED_NUCL:
             # pick a random location to the right
-            plus = random.randint(window_start, mut_region[1] - 1)
+            plus = random.randint(window_start + 1, mut_region[1] - 1)
             if reference[plus] in ALLOWED_NUCL:
                 found = True
                 window_start = plus
             else:
                 # If that didn't work pick a random location to the left
-                minus = random.randint(mut_region[0], window_start)
+                minus = random.randint(mut_region[0], window_start - 1)
                 if reference[minus] in ALLOWED_NUCL:
                     found = True
                     window_start = minus
@@ -316,21 +283,21 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             log_mssg(f"Couldn't find a spot for this one", 'debug')
             continue
 
-        # at this point the location is found. Now we need a second endpoint. Grab a 1000 bases or to the end.
+        # at this point the location is found. Now we need a second endpoint. Grab 1000 bases or to the end.
         end_point = random.randint(window_start, min(mut_region[1], window_start + max_window_size) - 1)
         if reference[end_point] not in ALLOWED_NUCL:
             # Didn't find it to the right, look to the left
-            end_point = random.randint(max(window_start - max_window_size, mut_region[0]), window_start - 1)
+            end_point = random.randint(max(window_start - max_window_size, mut_region[0]), window_start)
             if reference[end_point] not in ALLOWED_NUCL:
                 # No suitable end_point, so we try again
-                log_mssg(f"No suitable reference", 'debug')
+                log_mssg(f"No suitable end_point", 'debug')
                 continue
 
         # Sorting assures that wherever we found the end point, the coordinates will be in the correct order for slicing
         mutation_slice = sorted([window_start, end_point])
         slice_distance = mutation_slice[1] - mutation_slice[0]
         # How many variants to add in this slice (at least one, or we'll never get to the finish line)
-        variants_to_add_in_slice = max((slice_distance/len(reference)) * how_many_mutations, 1)
+        variants_to_add_in_slice = max(int((slice_distance/len(reference)) * how_many_mutations), 1)
         log_mssg(f"Planning to add {variants_to_add_in_slice} variants to slice", 'debug')
 
         subsequence = reference[mutation_slice[0]: mutation_slice[1]]
@@ -343,22 +310,17 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
 
         # If the sequence has too many N's, we'll skip it
         if not non_n_regions:
-            log_mssg(f"In non-n region", 'debug')
+            log_mssg(f"In N region", 'debug')
             continue
 
-        # First find any input variants that go in this window, initialize with input variants
-        variants_to_add = []
-        if input_variants:
-            variants_to_add.append(sorted([x for x in input_variants_locations
-                                   if mutation_slice[0] <= x < mutation_slice[1]]))
+        # Begin random mutations for this slice
+        while variants_to_add_in_slice > 0:
+            # We decrement now because we don't want to get stuck in a never ending loop
+            variants_to_add_in_slice -= 1
+            how_many_mutations -= 1
 
-        log_mssg(f"Couldn't find a spot for this one", 'debug')
-        # Begin random mutations
-        for _ in range(variants_to_add_in_slice):
             # Now figure out the type of random mutation to insert
             is_indel = random.random() <= models.mutation_model['indel_freq']
-            is_insertion = False
-            length = 0
             # Case 1: indel
             if is_indel:
                 # First pick a location. This function ensures that we do not pick an N as our starting place
@@ -409,69 +371,66 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 if alt == ref:
                     log_mssg(f"Transition failed to find an alt", 'debug')
                     continue
-            warning = False
-            if location in variants_to_add:
-                warning = True
 
-            # Now we put it all together for this window
-            random_ploid = False
+            # Now we have a location, an alt and a ref, so we figure out which ploid is mutated
+            genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
 
-            # TODO we'll have to add extra code for cancer, later
-            # If there are no input variants, this list is only 1 element long.
+            if location in output_variants_locations:
+                # grab the genotype of the existing mutation at that location
+                previous_genotype = output_variants[location][1]
+
+                # Try to find a different arrangement. Cap this at 10 tries
+                i = 10
+                while genotype == previous_genotype or i > 0:
+                    random.shuffle(genotype)
+                    i -= 1
+                if genotype == previous_genotype:
+                    log_mssg(f"Skipping random mutation because a variant already exists there", )
+                    continue
+
+            else:
+                output_variants[location] = []
+
             # The logic for this command is find the position to insert with the very fast bisect algorithm,
             # then insert it there. This ensures that the list stays sorted.
-            variants_to_add.insert(bisect.bisect(variants_to_add, location), location)
-            # If there was already a variant at that location, need to pick a ploid that is clear
-            if warning:
-                # grab the genotype of the existing mutation at that location
-                input_genotype = input_variants[location][1]
-                if input_genotype:
-                    # Check which ploids have mutations available
-                    which_ploid = [input_genotype.index(x) for x in input_genotype if x == 0]
-                    if which_ploid:
-                        ploid = random.choice(which_ploid)
-                        genotype = [0] * options.ploidy
-                        genotype[ploid] = 1
-                        genotype = [str(x) for x in genotype]
-                    else:
-                        random_ploid = True
-            else:
-                random_ploid = True
+            output_variants_locations.insert(bisect.bisect(output_variants_locations, location), location)
 
-            # Otherwise, determine genotype randomly
-            if random_ploid:
-                genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
-
-            if location not in all_mutations:
-                all_mutations[location] = []
             # This will add a second mutation if applicable plus the warning status, or just the mutation.
-            all_mutations[location].extend([['.', ref, alt, random_mutation_quality_score, random_mutation_filter,
-                                             '.', 'GT', ''.join(genotype)], genotype])
+            output_variants[location].extend([['.', ref, alt, random_mutation_quality_score, random_mutation_filter,
+                                             '.', 'GT', '/'.join([str(x) for x in genotype])], genotype])
+            # The count will tell us how many we actually added v how many we were trying to add
+            n_added += 1
 
-        # Now that we've generated a list of mutations, let's add them to the temp vcf
-        # TODO add cancer logic
-        for position in variants_to_add:
-            variant = all_mutations[position]
+    log_mssg(f'Finished generating random mutations in {(time.time() - start)/60:.2f} minutes', 'info')
+    log_mssg(f'Added {n_added} mutations to {chrom}', 'info')
 
-            # If there is only one variant at this location, this will only execute once
-            for i in range(0, len(variant), 2):
-                ref_sequence = reference[position:position + len(variant[i][1])].seq
-                # Some checks to make sure we are inserting into a good spot
+    log_mssg(f'Outputting temp vcf for {chrom} for later use', 'info')
+    start = time.time()
+    filtered_by_target = 0
+    filtered_by_discard = 0
+    # Now that we've generated a list of mutations, let's add them to the temp vcf
+    with open(tmp_vcf_fn, 'a') as tmp:
+        for position in output_variants_locations:
+            variant = output_variants[position]
 
-                # Check if we're somewhere we shouldn't be
-                allowed = reference[position] in ALLOWED_NUCL
+            # If there is only one variant at this location, this will only execute once. This line skips 2 because in
+            # normal vcfs, the dictionary will have one list for te variant, one for the genotype. Will need to adjust
+            # for cancer samples
+            count = 2
+            if options.cancer:
+                count = 3
+            for i in range(0, len(variant), count):
 
-                # Make sure the ref field is correct
-                if ref_sequence != variant[i][1]:
-                    log_mssg(f"Skipping variant where reference does not match "
-                             f"input vcf at {chrom}: {position} - {variant[0][1]} "
-                             f"(ref = {ref_sequence}", 'warning')
-                    continue
+                # Warn about monomorphic sites but let it go otherwise
+                if variant[i][2] == '.':
+                    log_mssg(f'Found monomorphic reference variant. '
+                             f'These prevent mutations from being added at that location.', 'info')
 
                 # Check target and discard bed files
                 # Note that if we aren't completely discarding off-target matches, then for the vcf,
                 # we don't need to even check if it's in the target region.
-                if target_regions and options.discard_offtarget and allowed:
+
+                if target_regions and options.discard_offtarget:
                     in_region = False
                     for coords in target_regions:
                         # Check that this location is valid.
@@ -481,10 +440,12 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                             # You can stop looking when you find it
                             break
                     if not in_region:
-                        allowed = False
+                        log_mssg(f'Variant filtered out by target regions bed: {chrom}: {position}', 'debug')
+                        filtered_by_target += 1
+                        continue
 
                 # These are firm discards so they all get tossed.
-                if discard_regions and allowed:
+                if discard_regions:
                     in_region = False
                     for coords in discard_regions:
                         # Check if this location is in an excluded zone
@@ -493,122 +454,43 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                             in_region = True
                             break
                     if in_region:
-                        allowed = False
+                        log_mssg(f'Variant filtered out by discard regions bed: {chrom}: {position}', 'debug')
+                        filtered_by_target += 1
+                        continue
 
-                # At this point, if it's not allowed, just skip
-                if not allowed:
-                    log_mssg(f"Variant somewhere it wasn't allowed", 'debug')
-                    continue
+                # Add one to get it back into vcf coordinates
+                line = f'{chrom}\t{position + 1}\t{variant[i][0]}\t{variant[i][1]}\t{variant[i][2]}\t{variant[i][3]}' \
+                       f'\t{variant[i][4]}\t{variant[i][5]}\t{variant[i][6]}\t{variant[i][7]}\n'
 
-                if variant[i][2] == '.':
-                    log_mssg(f'Found monomorphic reference variant. '
-                             f'These prevent mutations from being added at that location.', 'info')
-                else:
-                    number_of_alts = len(variant[i][2].split(','))
-                    # If genotype data was not present in the vcf
-                    # We already have genotype data for input vcfs, so this will handle that case too
-                    if not variant[i+1]:
-                        genotype = pick_ploids(options.ploidy, number_of_alts)
-                    else:
-                        genotype = variant[i+1]
-                    if options.cancer:
-                        if not variant[2]:
-                            genotype_tumor = pick_ploids(options.ploidy, number_of_alts)
-                        else:
-                            genotype_tumor = variant[i+2]
-
-                # determine which ploid was mutated, for the blacklist. Find all the mutated ploids (genotype != 0)
-                which_ploids = [genotype.index(x) for x in genotype if x != 0]
                 if options.cancer:
-                    tumor_ploids = [genotype_tumor.index(x) for x in genotype_tumor if x != 0]
+                    line += f'\t{variant[i][8]}'
 
-                genotype = remove_blacklisted(which_ploids, genotype, position, blacklist)
+                tmp.write(line)
 
-                # if that leaves us with all zeros, skip this one
-                if not any(genotype):
-                    log_mssg(f"No free ploid for this one", 'debug')
-                    continue
-                else:
-                    # Which ploids are still being mutated?
-                    which_ploids = [genotype.index(x) for x in genotype if x != 0]
-                # That is, if we have format and sample columns, we need to add in the GT
-                if len(variant[i]) > 6 and not options.cancer:
-                    if "GT" not in variant[i][6]:
-                        format_field = f"GT:{variant[i][6]}"
-                        gt_index = 0
-                    else:
-                        format_field = variant[i][6]
-                        gt_index = variant[i][6].split(':').index("GT")
-                    # Slice up the field and add in the genotype, then join it back together
-                    sample_field = variant[i][7].split(':')
-                    gt_field = sample_field[:gt_index] + ["/".join(genotype)] + sample_field[gt_index:]
-                    gt_field = ":".join(gt_field)
-                else:
-                    format_field = variant[0][6]
-                    gt_field = variant[0][7]
+    if filtered_by_target:
+        log_mssg(f'{filtered_by_target} variants excluded because '
+                 f'of target regions with discard off-target enabled', 'info')
 
-                tail = f'{format_field}\t{gt_field}'
+    if filtered_by_discard:
+        log_mssg(f'{filtered_by_discard} variants excluded because '
+                 f'of target regions with discard off-target enabled', 'info')
 
-                line = f'{chrom}\t{position}\t{variant[i][0]}\t{variant[i][1]}\t' \
-                       f'{variant[i][2]}\t{variant[i][3]}\t{variant[i][4]}\t{variant[i][5]}\t' \
-                       f'{tail}\n'
-                how_many_mutations -= 1
+    log_mssg(f'Finished outputting temp vcf in {(time.time() - start)/60:.2f} minutes', 'info')
 
-                with open(tmp_vcf_fn, 'a') as tmp:
-                    tmp.write(line)
-
-                # Initialize blacklist for that position
-                if position not in blacklist:
-                    blacklist[position] = []
-                    for index in which_ploids:
-                        blacklist[position].append(index)
-
-
-    log_mssg(f"Finished mutating {chrom}. Time: {time.time() - start}", 'debug')
     log_mssg(f"Added {n_added} mutations to the reference.", 'debug')
 
     # Let's write out the vcf, if asked to
     if options.produce_vcf:
-        log_mssg(f'Sorting and writing temp vcf for {chrom}', 'info')
+        log_mssg(f'Creating vcf for {chrom}', 'info')
 
-        path = f"{tmp_dir_path}/chunk_*.vcf"
-        chunksize = 1_000_000
-        fid = 1
-        lines = []
-        number_of_files = math.ceil(len(all_mutations) / chunksize)
+        chrom_vcf_file = f"{out_prefix}_{chrom}.vcf.gz"
 
-        with open(str(tmp_vcf_fn), 'r') as f:
-            f_out = open(f'{tmp_dir_path}/chunk_{fid}.vcf', 'w')
-            for line_num, line in enumerate(f, 1):
-                if not line.startswith('@'):
-                    lines.append(line)
-                if not line_num % chunksize:
-                    log_mssg(f"Sorting file chunk {fid} of {number_of_files}", 'debug')
-                    lines = sorted(lines, key=lambda k: (k.split()[0], int(k.split()[1])))
-                    f_out.writelines(lines)
-                    f_out.close()
-                    lines = []
-                    fid += 1
-                    f_out = open(f'{tmp_dir_path}/chunk_{fid}.vcf', 'w')
-            # If the above loop has a number that is not a multiple of chunksize, then it will
-            # have a remainder. In that case, we do the final step one last time:
-            if lines:
-                log_mssg(f"Sorting file chunk {fid} {number_of_files}", 'debug')
-                lines = sorted(lines, key=lambda k: (k.split()[0], int(k.split()[1])))
-                f_out.writelines(lines)
-                f_out.close()
-
-        chunks = []
-        for filename in glob.glob(path):
-            chunks += [open(filename, 'r')]
-
-        log_mssg(f'Sorting chunks into vcf file for {chrom}', 'debug')
-        file = f"{out_prefix}_{chrom}.vcf.gz"
-        with gzip.open(file, 'wt') as f_out:
-            f_out.writelines(merge(*chunks, key=lambda k: (k.split()[0], int(k.split()[1]))))
-
-        for item in chunks:
-            item.close()
+        with open(tmp_vcf_fn, 'r') as f_in, gzip.open(chrom_vcf_file, 'wt') as f_out:
+            for line in f_in:
+                if line.startswith('@'):
+                    continue
+                else:
+                    f_out.writelines(line)
 
     temporary_dir.cleanup()
 
@@ -621,4 +503,4 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     # with WorkerPool(n_jobs=options.threads, shared_objects=jobs) as pool:
     #     pool.map(run_neat, jobs, progress_bar=True)
 
-    return file
+    return chrom_vcf_file

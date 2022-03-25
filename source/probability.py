@@ -87,7 +87,7 @@ def poisson_list(k_value: int, input_mu: float) -> DiscreteDistribution:
         return DiscreteDistribution([1], [0], degenerate_val=k_range[peak_zone])
     elif len(peak_zone) == 0:
         return DiscreteDistribution([1], [0], degenerate_val=0)
-    return DiscreteDistribution(poisson_pmf[peak_zone], k_range[peak_zone])
+    return DiscreteDistribution(k_range[peak_zone], poisson_pmf[peak_zone])
 
 
 # quantize a list of values into blocks
