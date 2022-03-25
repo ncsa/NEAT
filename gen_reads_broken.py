@@ -252,7 +252,7 @@ def main(raw_args=None):
                     fraglen_probability.append(potential_prob[i])
 
             # TODO add some validation and sanity-checking code here...
-            fraglen_distribution = DiscreteDistribution(fraglen_probability, fraglen_values)
+            fraglen_distribution = DiscreteDistribution(fraglen_values, fraglen_probability)
             fragment_size = fraglen_values[mean_ind_of_weighted_list(fraglen_probability)]
 
         # Using artificial fragment length distribution, if the parameters were specified
@@ -262,7 +262,7 @@ def main(raw_args=None):
                 'Using artificial fragment length distribution. mean=' + str(fragment_size) + ', std=' + str(
                     fragment_std))
             if fragment_std == 0:
-                fraglen_distribution = DiscreteDistribution([1], [fragment_size], degenerate_val=fragment_size)
+                fraglen_distribution = DiscreteDistribution([fragment_size], [1], degenerate_val=fragment_size)
             else:
                 potential_values = range(fragment_size - 6 * fragment_std, fragment_size + 6 * fragment_std + 1)
                 fraglen_values = []
@@ -271,7 +271,7 @@ def main(raw_args=None):
                         fraglen_values.append(potential_values[i])
                 fraglen_probability = [np.exp(-(((n - float(fragment_size)) ** 2) / (2 * (fragment_std ** 2)))) for n in
                                        fraglen_values]
-                fraglen_distribution = DiscreteDistribution(fraglen_probability, fraglen_values)
+                fraglen_distribution = DiscreteDistribution(fraglen_values, fraglen_probability)
 
     """
     Process Inputs

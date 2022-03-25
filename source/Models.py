@@ -108,8 +108,8 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
             del_vals = [1]
             del_weight = [1.0]
         out_model['indel_insert_percentage'] = ins_count / float(ins_count + del_count)
-        out_model['insert_length_model'] = DiscreteDistribution(ins_weight, ins_vals)
-        out_model['deletion_length_model'] = DiscreteDistribution(del_weight, del_vals)
+        out_model['insert_length_model'] = DiscreteDistribution(ins_vals, np.array(ins_weight))
+        out_model['deletion_length_model'] = DiscreteDistribution(del_vals, np.array(del_weight))
 
         out_model['trinuc_bias'] = pickle_dict['TRINUC_MUT_PROB']
         # Order is ACTG. Start by assuming they're all uniform
@@ -120,13 +120,13 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
 
     else:
         # These will just be uniform
-        out_model['trinuc_mut_prob'] = DiscreteDistribution([1] * len(ALL_TRI), ALL_TRI)
+        out_model['trinuc_mut_prob'] = DiscreteDistribution(ALL_TRI, [1] * len(ALL_TRI))
         out_model['trinuc_trans_prob'] = {x: {'A': 0.25, 'C': 0.25, 'T': 0.25, 'G': 0.25} for x in ALL_TRI}
 
-        out_model['insert_length_model'] = DiscreteDistribution(out_model['insert_length_weights'],
-                                                                out_model['insert_length_values'])
-        out_model['deletion_length_model'] = DiscreteDistribution(out_model['deletion_length_weights'],
-                                                                  out_model['deletion_length_values'])
+        out_model['insert_length_model'] = DiscreteDistribution(out_model['insert_length_values'],
+                                                                out_model['insert_length_weights'])
+        out_model['deletion_length_model'] = DiscreteDistribution(out_model['deletion_length_values'],
+                                                                  out_model['deletion_length_weights'])
 
     return out_model
 
@@ -377,7 +377,7 @@ class Models:
                         fraglen_values.append(potential_values[i])
                         fraglen_probability.append(potential_prob[i])
 
-                self.fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
+                self.fraglen_model = DiscreteDistribution(fraglen_values, fraglen_probability)
                 options.set_value('fragment_mean', fraglen_values[mean_ind_of_weighted_list(fraglen_probability)])
 
             # Using artificial fragment length distribution, if the parameters were specified
@@ -385,7 +385,7 @@ class Models:
             else:
                 log_mssg(f'Using artificial fragment length distribution.', 'info')
                 if options.fragment_st_dev == 0:
-                    self.fraglen_model = DiscreteDistribution([1], [options.fragment_mean],
+                    self.fraglen_model = DiscreteDistribution([options.fragment_mean], [1],
                                                               degenerate_val=options.fragment_mean)
                 else:
                     potential_values = range(max(0, int(options.fragment_mean - 6 * options.fragment_st_dev)),
@@ -397,5 +397,5 @@ class Models:
                     fraglen_probability = [np.exp(-(((n - options.fragment_mean) ** 2) /
                                                     (2 * (options.fragment_st_dev ** 2)))) for n in
                                            fraglen_values]
-                    self.fraglen_model = DiscreteDistribution(fraglen_probability, fraglen_values)
+                    self.fraglen_model = DiscreteDistribution(fraglen_values, fraglen_probability)
             log_mssg(f'Loaded paired-end models', 'debug')

@@ -112,11 +112,11 @@ def map_non_n_regions(sequence):
 
 def find_random_non_n(slice, safe_zones, max_attempts):
     for _ in range(max_attempts):
-        potential_location = random.randint(slice[0], slice[1] - 1)
+        potential_location = random.randint(0, len(safe_zones) - 1)
         if not safe_zones[potential_location]:
             continue
         else:
-            return potential_location
+            return potential_location + slice[0]
 
     return False
 
@@ -208,8 +208,6 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
     mutation_regions_model = DiscreteDistribution([(x[0], x[1]) for x in mutation_map],
                                                   np.array([x[2] for x in mutation_map]))
 
-    # Trying te prevent inserting a mutation in more than one place
-    blacklist = {}
     # Trying to use a random window to keep memory under control. May need to adjust this number.
     max_window_size = 1000
     n_added = 0
@@ -379,8 +377,8 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 # grab the genotype of the existing mutation at that location
                 previous_genotype = output_variants[location][1]
 
-                # Try to find a different arrangement. Cap this at 10 tries
-                i = 10
+                # Try to find a different arrangement. Cap this at 3 tries
+                i = 3
                 while genotype == previous_genotype or i > 0:
                     random.shuffle(genotype)
                     i -= 1
