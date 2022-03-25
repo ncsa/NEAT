@@ -202,15 +202,15 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
     # print (len(init_q), len(init_q[0]))
     # print (len(prob_q), len(prob_q[1]), len(prob_q[1][0]))
 
-    init_dist_by_pos = [DiscreteDistribution(init_q[i], q_scores) for i in range(len(init_q))]
+    init_dist_by_pos = [DiscreteDistribution(q_scores, init_q[i]) for i in range(len(init_q))]
     prob_dist_by_pos_by_prev_q = [None]
     for i in range(1, len(init_q)):
         prob_dist_by_pos_by_prev_q.append([])
         for j in range(len(init_q[0])):
             if np.sum(prob_q[i][j]) <= 0.:  # if we don't have sufficient data for a transition, use the previous qscore
-                prob_dist_by_pos_by_prev_q[-1].append(DiscreteDistribution([1], [q_scores[j]], degenerate_val=q_scores[j]))
+                prob_dist_by_pos_by_prev_q[-1].append(DiscreteDistribution([q_scores[j]], [1], degenerate_val=q_scores[j]))
             else:
-                prob_dist_by_pos_by_prev_q[-1].append(DiscreteDistribution(prob_q[i][j], q_scores))
+                prob_dist_by_pos_by_prev_q[-1].append(DiscreteDistribution(q_scores, prob_q[i][j]))
 
     count_dict = {}
     for q in q_scores:
