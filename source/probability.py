@@ -84,9 +84,9 @@ def poisson_list(k_value: int, input_mu: float) -> DiscreteDistribution:
     peak_zone = np.where(poisson_pmf >= min_weight)[0]
 
     if len(peak_zone) == 1:
-        return DiscreteDistribution([1], [0], degenerate_val=k_range[peak_zone])
+        return DiscreteDistribution([0], [1], degenerate_val=k_range[peak_zone])
     elif len(peak_zone) == 0:
-        return DiscreteDistribution([1], [0], degenerate_val=0)
+        return DiscreteDistribution([0], [1], degenerate_val=0)
     return DiscreteDistribution(k_range[peak_zone], poisson_pmf[peak_zone])
 
 
