@@ -162,20 +162,13 @@ class SequencingErrorModel:
         New input model:
 
         Dictionary of the probabilities and values:
-            - quality_scores: possible values of quality scores. This is a dictionary of the form:
-                - The keys are the possible bins for the quality scores. This is input when the model is being made
-                - The values are themselves dictionaries:
-                    - the keys are "interval" and "error_rate"
-                    - the value for "interval" is a tuple, which gives the high and low value of the range the
-                      bin represents
-                    - the value for "error_rate" is just a float that is the inverse of the phred score the bin
-                      represents.
-            - quality_score_probabilities: pandas dataframe indexed by position along the read, with each row
-                                           representing the probabilities of each quality bin at that location.
-            - quality_offset: a number representing the offset used to translate from quality score to ascii character,
+            - quality_scores: list of possible values of quality scores.
+            - quality_score_probabilities: 2D numpy list, with each row representing the
+                                           probabilities of each quality bin at that location.
+            - quality_offset: int representing the offset used to translate from quality score to ascii character,
                               usually this is 33, but some machines differ.b
-            - read_length: the observed read length from the data.
-            - average_error: the estimated average error of the entire dataset
+            - read_length: int of the observed read length from the data.
+            - average_error: float of the estimated average error of the entire dataset
             - is_uniform: a boolean that indicates if the quality scores have uniform error.
             - error_parameters:
                 - error_params[0] - A nucleotide substitution matrix

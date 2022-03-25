@@ -261,12 +261,18 @@ def main(raw_args=None):
         log_mssg(f"Reading input VCF...", 'info')
         if options.cancer:
             (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
+                                                             options.ploidy,
+                                                             models.mutation_model['homozygous_freq'],
+                                                             reference_index,
                                                              tumor_normal=True)
             # TODO figure out what these were going to be used for
             tumor_ind = sample_names.index('tumor_sample')
             normal_ind = sample_names.index('normal_sample')
         else:
-            (sample_names, input_variants) = parse_input_vcf(options.include_vcf)
+            (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
+                                                             options.ploidy,
+                                                             models.mutation_model['homozygous_freq'],
+                                                             reference_index)
 
         log_mssg("Finished reading @include_vcf file.", "info")
 
