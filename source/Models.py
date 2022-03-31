@@ -124,9 +124,9 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
         out_model['trinuc_trans_prob'] = {x: {'A': 0.25, 'C': 0.25, 'T': 0.25, 'G': 0.25} for x in ALL_TRI}
 
         out_model['insert_length_model'] = DiscreteDistribution(out_model['insert_length_values'],
-                                                                out_model['insert_length_weights'])
+                                                                np.array(out_model['insert_length_weights']))
         out_model['deletion_length_model'] = DiscreteDistribution(out_model['deletion_length_values'],
-                                                                  out_model['deletion_length_weights'])
+                                                                  np.array(out_model['deletion_length_weights']))
 
     return out_model
 
