@@ -269,10 +269,11 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 window_start = plus
             else:
                 # If that didn't work pick a random location to the left
-                minus = random.randint(mut_region[0], window_start - 1)
-                if reference[minus] in ALLOWED_NUCL:
-                    found = True
-                    window_start = minus
+                if window_start - 1 > mut_region[0]:
+                    minus = random.randint(mut_region[0], window_start - 1)
+                    if reference[minus] in ALLOWED_NUCL:
+                        found = True
+                        window_start = minus
         else:
             found = True
 
@@ -322,7 +323,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
             # Case 1: indel
             if is_indel:
                 # First pick a location. This function ensures that we do not pick an N as our starting place
-                location = find_random_non_n(mutation_slice, non_n_regions, 10)
+                location = find_random_non_n(mutation_slice, non_n_regions, 5)
                 if not location:
                     log_mssg(f"Found no location", 'debug')
                     continue
@@ -337,13 +338,10 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 else:
                     length = models.mutation_model['deletion_length_model'].sample()
                     # Now we know what it is and how long, we just need to find a spot for it.
-                    ref = ""
+                    ref = reference[location: location+length]
                     for i in range(length):
                         # At this point if we find an N, replace with random base and schedule for deletion
-                        if not non_n_regions[location + i]:
-                            ref += random.choice(ALLOWED_NUCL)
-                        else:
-                            ref += reference[location + i]
+                        ref += reference[location + i]
                     alt = reference[location]
 
             # Case 2: SNP
