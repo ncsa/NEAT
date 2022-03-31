@@ -120,7 +120,7 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
 
     else:
         # These will just be uniform
-        out_model['trinuc_mut_prob'] = DiscreteDistribution(ALL_TRI, [1] * len(ALL_TRI))
+        out_model['trinuc_mut_prob'] = DiscreteDistribution(ALL_TRI, np.ones(len(ALL_TRI)))
         out_model['trinuc_trans_prob'] = {x: {'A': 0.25, 'C': 0.25, 'T': 0.25, 'G': 0.25} for x in ALL_TRI}
 
         out_model['insert_length_model'] = DiscreteDistribution(out_model['insert_length_values'],
@@ -166,7 +166,7 @@ class SequencingErrorModel:
             - quality_score_probabilities: 2D numpy list, with each row representing the
                                            probabilities of each quality bin at that location.
             - quality_offset: int representing the offset used to translate from quality score to ascii character,
-                              usually this is 33, but some machines differ.b
+                              usually this is 33, but some machines differ.
             - read_length: int of the observed read length from the data.
             - average_error: float of the estimated average error of the entire dataset
             - is_uniform: a boolean that indicates if the quality scores have uniform error.
