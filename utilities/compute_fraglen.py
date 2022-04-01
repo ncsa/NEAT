@@ -14,7 +14,7 @@ import platform
 import gzip
 
 os = platform.system()
-if os !='Windows':
+if os != 'Windows':
     import pysam
 
 
@@ -67,14 +67,15 @@ def median_absolute_deviation(datalist: list) -> float:
     return median(sorted(deviations))
 
 
-def count_frags(file: str) -> list:
+def count_frags(file: str, filter_mapqual: int) -> list:
     """
     Takes a sam or bam file input and creates a list of the number of reads that are paired,
     first in the pair, confidently mapped and whose pair is mapped to the same reference
     :param file: A sam input file
+    :param filter_mapqual: The minimum mapping quality required to count a read
     :return: A list of the tlens from the bam/sam file
     """
-    FILTER_MAPQUAL = 10  # only consider reads that are mapped with at least this mapping quality
+
     count_list = []
 
     file_to_parse = pysam.AlignmentFile(file)
@@ -82,18 +83,13 @@ def count_frags(file: str) -> list:
     for item in file_to_parse:
         # new values based on pysam
         sam_flag = item.flag
-        # my_ref = item.reference_id
-        # map_qual = item.mapping_quality
-        # mate_ref = item.next_reference_id
-        # my_tlen = abs(item.template_length)
+        my_ref = item.reference_id
+        map_qual = item.mapping_quality
+        mate_ref = item.next_reference_id
+        my_tlen = abs(item.template_length)
 
-        splt = str(item).split('\t')
-        my_ref = splt[2]
-        map_qual = int(splt[4])
-        mate_ref = splt[6]
-        my_tlen = abs(int(splt[8]))
         # if read is paired, and is first in pair, and is confidently mapped...
-        if sam_flag & 1 and sam_flag & 64 and map_qual > FILTER_MAPQUAL:
+        if sam_flag & 1 and sam_flag & 64 and map_qual > filter_mapqual:
             # and mate is mapped to same reference
             if mate_ref == '=' or mate_ref == my_ref:
                 count_list.append(my_tlen)
@@ -102,24 +98,24 @@ def count_frags(file: str) -> list:
     return count_list
 
 
-def compute_probs(datalist: list) -> (list, list):
+def compute_probs(filter_minreads: int, datalist: list) -> (list, list):
     """
     Computes the probabilities for fragments with at least 100 pairs supporting it and that are at least 10 median
     deviations from the median.
+    :param filter_minreads: Minimum read count required to count the fragment
     :param datalist: A list of fragments with counts
     :return: A list of values that meet the criteria and a list of their associated probabilities
     """
-    FILTER_MINREADS = 100  # only consider fragment lengths that have at least this many read pairs supporting it
-    FILTER_MEDDEV_M = 10  # only consider fragment lengths this many median deviations above the median
+    filter_meddev_m = 10  # only consider fragment lengths this many median deviations above the median
     values = []
     probabilities = []
     med = median(datalist)
     mad = median_absolute_deviation(datalist)
 
     for item in list(set(datalist)):
-        if 0 < item <= med + FILTER_MEDDEV_M * mad:
+        if 0 < item <= med + filter_meddev_m * mad:
             data_count = datalist.count(item)
-            if data_count >= FILTER_MINREADS:
+            if data_count >= filter_minreads:
                 values.append(item)
                 probabilities.append(data_count)
     count_sum = float(sum(probabilities))
@@ -143,16 +139,23 @@ def main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-i', type=str, metavar="input", required=True, default=None,
                         help="Bam or sam input file.")
+    parser.add_argument('-m', type=int, metavar='min_reads', required=False, default=1,
+                        help="Minimum number of reads to consider the fragment (default 1). "
+                             "Use to filter out low-read areas.")
+    parser.add_argument('-q', type=int, metavar='min_mapping_quality', required=False, default=10,
+                        help="Minimum mapping quality to consider a read (default 10)")
     parser.add_argument('-o', type=str, metavar="output", required=True, default=None, help="Prefix for output")
 
     args = parser.parse_args()
     input_file = args.i
     output_prefix = args.o
+    min_reads = args.m
+    min_mapping_quality = args.q
     output = output_prefix + '.pickle.gz'
 
-    all_tlens = count_frags(input_file)
+    all_tlens = count_frags(input_file, min_mapping_quality)
     print('\nSaving model...')
-    out_vals, out_probs = compute_probs(all_tlens)
+    out_vals, out_probs = compute_probs(min_reads, all_tlens)
     pickle.dump([out_vals, out_probs], gzip.open(output, 'wb'))
     print('\nModel successfully saved.')
 
