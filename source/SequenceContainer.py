@@ -98,7 +98,7 @@ class SequenceContainer:
     def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None,
                  only_vcf=False):
 
-        # initialize basic variables
+        # initialize basic variablescould
         self.only_vcf = only_vcf
         self.x = x_offset
         self.ploidy = ploidy
@@ -364,8 +364,7 @@ class SequenceContainer:
                         for j in range(0, max_coord):
                             coverage_vals.append(
                                 coverage_vector[j + self.read_len] - coverage_vector[j] + coverage_vector[j + flv] -
-                                coverage_vector[
-                                    j + flv - self.read_len])
+                                coverage_vector[j + flv - self.read_len])
 
                         # EXPERIMENTAL
                         # quantized_cov_vals = quantize_list(coverage_vals)
