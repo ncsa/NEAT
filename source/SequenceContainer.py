@@ -98,7 +98,7 @@ class SequenceContainer:
     def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None,
                  only_vcf=False):
 
-        # initialize basic variablescould
+        # initialize basic variables
         self.only_vcf = only_vcf
         self.x = x_offset
         self.ploidy = ploidy
