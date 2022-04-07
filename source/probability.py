@@ -116,6 +116,12 @@ class DiscreteDistribution:
 # with the corresponding to a poisson distribution
 
 def poisson_list(k_range: range, input_lambda: float) -> DiscreteDistribution:
+    """
+    Returns a poisson probability distribution
+    :param k_range: Range of potential values
+    :param input_lambda: skew parameter
+    :return: DiscreteDistribution object.
+    """
     min_weight = 1e-12
     # if input_lambda is less than some arbitrarily small number,
     # return a degenerate distribution that will always give 0.
@@ -138,7 +144,7 @@ def poisson_list(k_range: range, input_lambda: float) -> DiscreteDistribution:
     # For higher lambda values, this has the effect of skewing the weights downward. For example, an input
     # lambda of 80.7525 has a w_range.index(max(w_range)) = 80 (the index of the maximum value). This  makes sense
     # as sampling from that set should give you a number near 80. But after filtering, there are only 62 elements left
-    # in the set, and the the max value moved from 80 to 28. So now when it randomly samples from this set,
+    # in the set, and the max value moved from 80 to 28. So now when it randomly samples from this set,
     # it will pick a value near 28, which is much lower than we want.
     # My solution, then, is to used a pandas dataframe to keep the counts centered properly on the lambda value
     # during the filtering step.
