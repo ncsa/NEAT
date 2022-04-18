@@ -43,22 +43,59 @@ def extract_header(vcf_file):
 
 
 def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_bed: str):
+    variant_chroms = []
+    matching_chroms = []
+
+    final_data = []
+
+
+    with open(vcf_file, mode='r') as vcf:
+        for line in vcf:
+            if line.split('\t')[0][0] != '#':
+                # print("Printing line "+str(line))
+                columns = [x for x in line.split('\t') if line.split('\t')[0][0] != '#']
+                # print(columns)
+
+                variant_chroms.append(columns[0])
+                variant_chroms = list(set(variant_chroms))
+
+                for ref_name in reference_idx.keys():
+                    if ref_name in variant_chroms:
+                        matching_chroms.append(ref_name)
+                    matching_chroms = list(set(variant_chroms))
+
+                if columns[0] in matching_chroms and ',' not in columns[4] and len(columns[3]) == 1 and len(columns[4]) == 1:
+                    final_data.append([columns[0], str(int(columns[1])-1), columns[3], columns[4], columns[7]])
+
+
+        print("Variant chroms : " + str(variant_chroms))
+        print("Matching chroms : " + str(matching_chroms))
+        # print("Final Data : " + str(final_data))
+
+
 
     variants = pd.read_csv(vcf_file, comment="#", sep="\t", header=None,
                            names=column_names,
                            usecols=['CHROM', 'POS', 'REF', 'ALT', 'INFO'],
                            dtype={'CHROM': str, 'POS': int, 'REF': str, 'ALT': str, 'INFO': str})
 
-    variant_chroms = variants['CHROM'].unique()
-    matching_chroms = []
+    # print(variants)
+    variant_chrom = variants['CHROM'].unique()
+    # print("Variant_chrom " + str(variant_chrom))
+    # matching_chroms = []
+
     for ref_name in reference_idx.keys():
         if ref_name in variant_chroms:
             matching_chroms.append(ref_name)
+    print("Matching chroms: " + str(matching_chroms))
 
     ret = variants[variants['CHROM'].isin(matching_chroms)]
+    # # print("Printing ret: ")
+    # print(ret)
 
     # We'll go ahead and filter out multiple alts, and variants where both REF and ALT are
     # more than one base. This was done to make the trinucelotide context counts make more sense.
+
     multi_alts = ret[ret['ALT'].str.contains(',')].index
     ret = ret.drop(multi_alts)
 
@@ -66,8 +103,8 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_
                        (ret['ALT'].apply(len) > 1)].index
     ret = ret.drop(complex_vars)
 
-    return ret, matching_chroms
-
+    return ret, matching_chroms, final_data
+    # return final_data, matching_chroms
 
 def cluster_list(list_to_cluster: list, delta: float) -> list:
     """
@@ -91,7 +128,6 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
 
 
 def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chroms: list, save_trinuc_file: bool):
-
     # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
     trinuc_ref_count = {}
 
@@ -197,10 +233,15 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     print(f'{PROG} - Processing VCF file...')
-    matching_variants, matching_chromosomes = read_and_filter_variants(vcf_file, columns, reference_idx, input_bed)
+    matching_variants, matching_chromosomes, final_data = read_and_filter_variants(vcf_file, columns, reference_idx, input_bed)
 
     # Check to make sure there are some matches, that not everything got filtered out.
-    if matching_variants.empty:
+    # if matching_variants.empty:
+    #     print(f"{PROG} - Found no chromosomes in common between VCF, Fasta, and/or BED. "
+    #           f'Check that files use the same naming convention for chromosomes.')
+    #     sys.exit(1)
+
+    if len(matching_variants) == 0:
         print(f"{PROG} - Found no chromosomes in common between VCF, Fasta, and/or BED. "
               f'Check that files use the same naming convention for chromosomes.')
         sys.exit(1)
@@ -208,6 +249,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     # Starting position of the actual reference, since vcf is 1-based.
     matching_variants['chr_start'] = matching_variants['POS'] - 1
 
+    # matching_variants[]
     trinuc_ref_count, bed_track_length = count_trinucleotides(reference_idx, input_bed, trinuc_count_file,
                                                               matching_chromosomes, save_trinuc)
 
@@ -224,12 +266,30 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
         variants_to_process = matching_variants[matching_variants['CHROM'] == contig]
         ref_sequence = reference_idx[contig].seq
 
+        variant_to_process = []
+        indel = []
+        snp = []
+
+        for i in range(len(final_data)):
+            if final_data[i][0] == contig:
+              variant_to_process.append(final_data[i])
+        ref_sequence = reference_idx[contig].seq
+
         # Process the variant table
         indel_variants = variants_to_process[variants_to_process['ALT'].apply(len) !=
                                              variants_to_process['REF'].apply(len)]
 
         snp_variants = variants_to_process[(variants_to_process['REF'].apply(len) == 1) &
                                            (variants_to_process['ALT'].apply(len) == 1)]
+
+        for i in range(len(variant_to_process)):
+            if len(variant_to_process[i][3]) != len(variant_to_process[i][2]):
+                indel.append(variant_to_process[i])
+            if (len(variant_to_process[i][2]) == 1) & (len(variant_to_process[i][3]) == 1):
+                snp.append(variant_to_process[i])
+
+        if len(snp) != 0:
+            pass
 
         if not snp_variants.empty:
             # only consider positions where ref allele in vcf matches the nucleotide in our reference
@@ -382,7 +442,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
     if display_counts:
         for k in sorted(trinuc_mut_prob.keys()):
-          print('p(' + k + ' mutates) =', trinuc_mut_prob[k])
+            print('p(' + k + ' mutates) =', trinuc_mut_prob[k])
 
         for k in sorted(trinuc_trans_probs.keys()):
             print('p(' + k[0] + ' --> ' + k[1] + ' | ' + k[0] + ' mutates) =', trinuc_trans_probs[k])
