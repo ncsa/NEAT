@@ -16,6 +16,7 @@ import pathlib
 import random
 import sys
 import time
+import tempfile
 import pandas as pd
 import numpy as np
 import glob
@@ -34,7 +35,7 @@ from source.constants_and_defaults import ALLOWED_NUCL
 from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, log_mssg
 from source.output_file_writer import OutputFileWriter
-from source.run_neat import execute_neat
+from source.run_neat import generate_variants, generate_fasta, generate_reads, generate_bam
 from source.vcf_func import parse_input_vcf
 
 
@@ -370,19 +371,68 @@ def main(raw_args=None):
     out_prefix = f'{out_prefix_parent_dir}/{out_prefix_name}'
 
     vcf_files = []
+    fasta_files = []
+    fastq_files = []
+    bam_files = []
 
     for contig in breaks:
+        log_mssg(f'Mutating: {contig}...', 'info')
+
         contig_variants = {x[1]: input_variants[x] for x in input_variants if x[0] == contig}
-        vcf_files.append(execute_neat(reference_index[contig],
-                                      contig,
-                                      out_prefix_name,
-                                      target_regions_dict[contig],
-                                      discard_regions_dict[contig],
-                                      mutation_rate_dict[contig],
-                                      contig_variants,
-                                      models,
-                                      options,
-                                      out_prefix))
+        reference = reference_index[contig]
+
+        # Since we're only running single threaded for now:
+        threadidx = 1
+
+        temporary_dir = tempfile.TemporaryDirectory()
+        tmp_dir_path = pathlib.Path(temporary_dir.name).resolve()
+
+        # We need the temp vcf file no matter what
+        temp_vcf_filename = tmp_dir_path / f"{out_prefix_name}_tmp_{contig}_{threadidx}.vcf"
+        log_mssg(f'temp_vcf_filename = {temp_vcf_filename}', 'debug')
+
+        if options.produce_bam:
+            temp_sam_filename = tmp_dir_path / f"{out_prefix_name}_tmp_records_{threadidx}.tsam"
+            log_mssg(f'tmp_sam_fn = {temp_sam_filename}', 'debug')
+        if options.produce_fasta:
+            temp_fasta_filename = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}.fasta"
+            log_mssg(f'tmp_fasta_fn = {temp_fasta_filename}', 'debug')
+        if options.produce_fastq:
+            temp_fastq1_filename = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}_read1.fq"
+            log_mssg(f'tmp_fastq1_fn = {temp_fastq1_filename}', 'debug')
+            if options.paired_ended:
+                temp_fastq2_filename = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}_read2.fq"
+                log_mssg(f'tmp_fastq2_fn  = {temp_fastq2_filename}', 'debug')
+
+        if threadidx == 1:
+            # init_progress_info()
+            pass
+
+        chrom_vcf_file, tmp_vcf_file = generate_variants(reference,
+                                                         contig,
+                                                         temp_vcf_filename,
+                                                         target_regions_dict[contig],
+                                                         discard_regions_dict[contig],
+                                                         mutation_rate_dict[contig],
+                                                         contig_variants,
+                                                         models,
+                                                         options,
+                                                         out_prefix)
+
+        vcf_files.append(chrom_vcf_file)
+
+        if options.produce_fasta:
+            chrom_fasta_file = generate_fasta(reference, options, tmp_vcf_file)
+            fasta_files.append(chrom_fasta_file)
+
+        if options.produce_fastq:
+            # Note that generate_reads returns None for r2 if single ended
+            chrom_fastq_r1_file, chrom_fastq_r2_file = generate_reads()
+            fastq_files.append([chrom_fastq_r1_file, chrom_fastq_r2_file])
+
+        if options.produce_bam:
+            chrom_bam_file = generate_bam()
+            bam_files.append(chrom_bam_file)
 
     if options.produce_vcf:
         log_mssg("Sorting and outputting complete golden vcf.", 'info')
@@ -398,10 +448,6 @@ def main(raw_args=None):
             item.close()
             os.remove(item.name)
 
-
-    # Step 4 (CAVA 496 - 497) - Merging tmp files and writing out final files
-
-    # Step 5 (CAVA 500 - 501) - Printing out summary and end time
 
     # End info
     print_end_info(output_file_writer, output_file_writer_cancer, starttime)
