@@ -4,7 +4,7 @@ import random
 import time
 from random import choice
 import pathlib
-from Bio.Seq import Seq
+from Bio.Seq import Seq, MutableSeq
 import numpy as np
 import bisect
 import shutil
@@ -148,54 +148,14 @@ def model_trinucs(sequence, models):
     return DiscreteDistribution(range(len(sequence)), trinuc_models)
 
 
-def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regions,
-                 mutation_rate_regions, output_variants, models, options,
-                 out_prefix):
+def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regions,
+                      mutation_rate_regions, output_variants, models, options,
+                      out_prefix):
     """
     This function will take all the setup we did in the main part and actually do NEAT stuff.
 
     TODO: need to add cancer logic to this section
     """
-    log_mssg(f'Mutating chrom: {chrom}...', 'info')
-
-    # Might be able to pre-populate this
-    final_files = []
-
-    # Setting up temp files to write to
-    tmp_fasta_fn = None
-    tmp_fastq1_fn = None
-    tmp_fastq2_fn = None
-    tmp_sam_fn = None
-    tmp_vcf_fn = None
-
-    # Since we're only running single threaded for now:
-    threadidx = 1
-    # rough count of the number of batches we want to make for this
-    num_batches = len(reference)//1000000 + 1
-
-    temporary_dir = tempfile.TemporaryDirectory()
-    tmp_dir_path = pathlib.Path(temporary_dir.name).resolve()
-
-    # We need the temp vcf file no matter what
-    tmp_vcf_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{chrom}_{threadidx}.vcf"
-    log_mssg(f'tmp_vcf_fn = {tmp_vcf_fn}', 'debug')
-
-    if options.produce_bam:
-        tmp_sam_fn = tmp_dir_path / f"{out_prefix_name}_tmp_records_{threadidx}.tsam"
-        log_mssg(f'tmp_sam_fn = {tmp_sam_fn}', 'debug')
-    if options.produce_fasta:
-        tmp_fasta_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}.fasta"
-        log_mssg(f'tmp_fasta_fn = {tmp_fasta_fn}', 'debug')
-    if options.produce_fastq:
-        tmp_fastq1_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}_read1.fq"
-        log_mssg(f'tmp_fastq1_fn = {tmp_fastq1_fn}', 'debug')
-        if options.paired_ended:
-            tmp_fastq2_fn = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}_read2.fq"
-            log_mssg(f'tmp_fastq2_fn  = {tmp_fastq2_fn}', 'debug')
-
-    if threadidx == 1:
-        # init_progress_info()
-        pass
 
     # Step 1: Create a VCF of variants (mutation and sequencing error variants)
     # We'll create a temp file first then output it if the user requested the file
@@ -227,7 +187,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
         values[2]: genotype tumor (if present in original vcf), None if not present and a cancer sample
         """
         # this should give is just the positions of the inserts. This will be used to keep track of sort order.
-        output_variants_locations = sorted(list(output_variants.keys()))
+        output_variants_locations = sorted(list(output_variants.keyschrom()))
 
     log_mssg(f'Adding random mutations for {chrom}', 'info')
     start = time.time()
@@ -337,11 +297,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                     alt = ref + insertion
                 else:
                     length = models.mutation_model['deletion_length_model'].sample()
-                    # Now we know what it is and how long, we just need to find a spot for it.
-                    ref = reference[location: location+length]
-                    for i in range(length):
-                        # At this point if we find an N, replace with random base and schedule for deletion
-                        ref += reference[location + i]
+                    ref = reference[location: location+length].seq
                     alt = reference[location]
 
             # Case 2: SNP
@@ -381,7 +337,7 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                     random.shuffle(genotype)
                     i -= 1
                 if genotype == previous_genotype:
-                    log_mssg(f"Skipping random mutation because a variant already exists there", )
+                    log_mssg(f"Skipping random mutation because a variant already exists there", 'debug')
                     continue
 
             else:
@@ -488,15 +444,31 @@ def execute_neat(reference, chrom, out_prefix_name, target_regions, discard_regi
                 else:
                     f_out.writelines(line)
 
-    temporary_dir.cleanup()
+        return chrom_vcf_file, tmp_vcf_fn
 
+    return None, tmp_vcf_fn
+
+
+def generate_fasta(reference, options, chrom_vcf_file):
     # Step 2 (optional): create a fasta with those variants inserted
+    if options.produce_fasta:
+        log_mssg(f'Generating output fasta file')
+
+        mutated_chrom = MutableSeq(reference.seq)
+        with gzip.open(chrom_vcf_file, 'r') as variants_in:
+            for line in variants_in:
+                split = line.strip().split('\t')
+                # these should all be on the same chromosome and the reference field
+                # will have been checked by now, so they are safe to just add.
+                mutated_chrom[split[1] - 1] = split[4]
+
+
+def generate_reads():
     # Step 3 (optional): create a fastq from the mutated fasta
+    pass
+
+
+def generate_bam():
     # Step 4 (optional): Create a golden bam with the reads aligned to the original reference
+    pass
 
-
-    # TODO add multithreading
-    # with WorkerPool(n_jobs=options.threads, shared_objects=jobs) as pool:
-    #     pool.map(run_neat, jobs, progress_bar=True)
-
-    return chrom_vcf_file
