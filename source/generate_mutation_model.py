@@ -48,7 +48,6 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_
 
     final_data = []
 
-
     with open(vcf_file, mode='r') as vcf:
         for line in vcf:
             if line.split('\t')[0][0] != '#':
@@ -64,15 +63,13 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_
                         matching_chroms.append(ref_name)
                     matching_chroms = list(set(variant_chroms))
 
-                if columns[0] in matching_chroms and ',' not in columns[4] and len(columns[3]) == 1 and len(columns[4]) == 1:
-                    final_data.append([columns[0], str(int(columns[1])-1), columns[3], columns[4], columns[7]])
+                if columns[0] in matching_chroms and ',' not in columns[4] and len(columns[3]) == 1 and len(
+                        columns[4]) == 1:
+                    final_data.append([columns[0], str(int(columns[1]) - 1), columns[3], columns[4], columns[7]])
 
-
-        print("Variant chroms : " + str(variant_chroms))
-        print("Matching chroms : " + str(matching_chroms))
+        print("Variant chroms: " + str(variant_chroms))
+        print("Matching chroms: " + str(matching_chroms))
         # print("Final Data : " + str(final_data))
-
-
 
     variants = pd.read_csv(vcf_file, comment="#", sep="\t", header=None,
                            names=column_names,
@@ -89,22 +86,23 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_idx, input_
             matching_chroms.append(ref_name)
     print("Matching chroms: " + str(matching_chroms))
 
-    ret = variants[variants['CHROM'].isin(matching_chroms)]
+    # ret = variants[variants['CHROM'].isin(matching_chroms)]
     # # print("Printing ret: ")
     # print(ret)
 
     # We'll go ahead and filter out multiple alts, and variants where both REF and ALT are
     # more than one base. This was done to make the trinucelotide context counts make more sense.
 
-    multi_alts = ret[ret['ALT'].str.contains(',')].index
-    ret = ret.drop(multi_alts)
+    # multi_alts = ret[ret['ALT'].str.contains(',')].index
+    # ret = ret.drop(multi_alts)
+    #
+    # complex_vars = ret[(ret['REF'].apply(len) > 1) &
+    #                    (ret['ALT'].apply(len) > 1)].index
+    # ret = ret.drop(complex_vars)
 
-    complex_vars = ret[(ret['REF'].apply(len) > 1) &
-                       (ret['ALT'].apply(len) > 1)].index
-    ret = ret.drop(complex_vars)
-
-    return ret, matching_chroms, final_data
+    return final_data, matching_chroms
     # return final_data, matching_chroms
+
 
 def cluster_list(list_to_cluster: list, delta: float) -> list:
     """
@@ -117,7 +115,7 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
     previous_value = list_to_cluster[0]
     current_index = 0
     for item in list_to_cluster[1:]:
-        if item - previous_value <= delta:
+        if int(item) - int(previous_value) <= delta:
             out_list[current_index].append(item)
         else:
             current_index += 1
@@ -233,7 +231,8 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     print(f'{PROG} - Processing VCF file...')
-    matching_variants, matching_chromosomes, final_data = read_and_filter_variants(vcf_file, columns, reference_idx, input_bed)
+    matching_variants, matching_chromosomes = read_and_filter_variants(vcf_file, columns, reference_idx,
+                                                                                   input_bed)
 
     # Check to make sure there are some matches, that not everything got filtered out.
     # if matching_variants.empty:
@@ -247,7 +246,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
         sys.exit(1)
 
     # Starting position of the actual reference, since vcf is 1-based.
-    matching_variants['chr_start'] = matching_variants['POS'] - 1
+    # matching_variants['chr_start'] = matching_variants['POS'] - 1
 
     # matching_variants[]
     trinuc_ref_count, bed_track_length = count_trinucleotides(reference_idx, input_bed, trinuc_count_file,
@@ -261,78 +260,143 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
         # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
         vcf_common = []
-
-        # Create a view that narrows variants list to current ref
-        variants_to_process = matching_variants[matching_variants['CHROM'] == contig]
-        ref_sequence = reference_idx[contig].seq
-
+        vcf_c = []
         variant_to_process = []
-        indel = []
-        snp = []
+        # Create a view that narrows variants list to current ref
+        # variants_to_process = matching_variants[matching_variants['CHROM'] == contig]
+        ## code for variants to process ##
+        for i in range(len(matching_variants)):
+            if matching_variants[i][0] == contig:
+                variant_to_process.append(matching_variants[i])
 
-        for i in range(len(final_data)):
-            if final_data[i][0] == contig:
-              variant_to_process.append(final_data[i])
         ref_sequence = reference_idx[contig].seq
 
-        # Process the variant table
-        indel_variants = variants_to_process[variants_to_process['ALT'].apply(len) !=
-                                             variants_to_process['REF'].apply(len)]
+        indel_variants = []
+        snp_variants = []
 
-        snp_variants = variants_to_process[(variants_to_process['REF'].apply(len) == 1) &
-                                           (variants_to_process['ALT'].apply(len) == 1)]
-
+        # Sequential Variants Processing ##
+        # new code start
         for i in range(len(variant_to_process)):
             if len(variant_to_process[i][3]) != len(variant_to_process[i][2]):
-                indel.append(variant_to_process[i])
+                indel_variants.append(variant_to_process[i])
             if (len(variant_to_process[i][2]) == 1) & (len(variant_to_process[i][3]) == 1):
-                snp.append(variant_to_process[i])
+                snp_variants.append(variant_to_process[i])
+        # new code end
 
-        if len(snp) != 0:
-            pass
+        # Process the variant table
+        # indel_variants = variants_to_process[variants_to_process['ALT'].apply(len) !=
+        #                                      variants_to_process['REF'].apply(len)]
+        #
+        # snp_variants = variants_to_process[(variants_to_process['REF'].apply(len) == 1) &
+        #                                    (variants_to_process['ALT'].apply(len) == 1)]
 
-        if not snp_variants.empty:
-            # only consider positions where ref allele in vcf matches the nucleotide in our reference
-            for index, row in snp_variants.iterrows():
-                # -2 for POS because the coordinates in a vcf are 1-based,
-                # and we want the nucleotide just before the REF base
-                trinuc_to_analyze = str(ref_sequence[row['chr_start'] - 1: row['chr_start'] + 2])
-                if trinuc_to_analyze not in ALL_TRI:
+        # new code start
+        if len(snp_variants) != 0:
+            for i in range(len(snp_variants)):
+                analyze = str(ref_sequence[int(snp_variants[i][1]) - 1: int(snp_variants[i][1]) + 2])
+                if analyze not in ALL_TRI:
                     continue
-                if row.REF == trinuc_to_analyze[1]:
-                    trinuc_ref = trinuc_to_analyze
-                    trinuc_alt = trinuc_to_analyze[0] + snp_variants.loc[index, 'ALT'] + trinuc_to_analyze[2]
-                    if trinuc_alt not in ALL_TRI:
+                if snp_variants[i][2] == analyze[1]:
+                    t_ref = analyze
+                    t_alt = analyze[0] + snp_variants[i][3] + analyze[2]
+                    if t_alt not in ALL_TRI:
                         continue
-
-                    key = (trinuc_ref, trinuc_alt)
+                    key = (t_ref, t_alt)
                     if key not in trinuc_transition_count:
                         trinuc_transition_count[key] = 0
                     trinuc_transition_count[key] += 1
                     snp_count += 1
 
-                    key2 = (str(row.REF), str(row.ALT))
+                    key2 = (str(snp_variants[i][3]), str(snp_variants[i][4]))
                     if key2 not in snp_transition_count:
                         snp_transition_count[key2] = 0
                     snp_transition_count[key2] += 1
+                    my_pop_freq = find_caf(str(snp_variants[i][4]))
+                    vcf_common.append((snp_variants[i][1], snp_variants[i][2], snp_variants[i][2], snp_variants[i][3], my_pop_freq))
 
-                    my_pop_freq = find_caf(row['INFO'])
-                    vcf_common.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
                 else:
                     print(f'{PROG} - Error: ref allele in variant call does not match reference.\n')
                     sys.exit(1)
+        # new code end
+
+        # if not snp_variants.empty:
+        #     # only consider positions where ref allele in vcf matches the nucleotide in our reference
+        #     for index, row in snp_variants.iterrows():
+        #         # -2 for POS because the coordinates in a vcf are 1-based,
+        #         # and we want the nucleotide just before the REF base
+        #         trinuc_to_analyze = str(ref_sequence[row['chr_start'] - 1: row['chr_start'] + 2])
+        #         if trinuc_to_analyze not in ALL_TRI:
+        #             continue
+        #         if row.REF == trinuc_to_analyze[1]:
+        #             trinuc_ref = trinuc_to_analyze
+        #             trinuc_alt = trinuc_to_analyze[0] + snp_variants.loc[index, 'ALT'] + trinuc_to_analyze[2]
+        #             if trinuc_alt not in ALL_TRI:
+        #                 continue
+        #
+        #             key = (trinuc_ref, trinuc_alt)
+        #             if key not in trinuc_transition_count:
+        #                 trinuc_transition_count[key] = 0
+        #             trinuc_transition_count[key] += 1
+        #             snp_count += 1
+        #
+        #             key2 = (str(row.REF), str(row.ALT))
+        #             if key2 not in snp_transition_count:
+        #                 snp_transition_count[key2] = 0
+        #             snp_transition_count[key2] += 1
+        #
+        #             my_pop_freq = find_caf(row['INFO'])
+        #             vcf_common.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+
+        # if len(snp) != 0:
+        #     for i in range(len(snp)):
+        #         analyze = str(ref_sequence[int(snp[i][1]) - 1: int(snp[i][1]) + 2])
+        #         if analyze not in ALL_TRI:
+        #             continue
+        #         if snp[i][2] == analyze[1]:
+        #             t_ref = analyze
+        #             t_alt = analyze[0] + snp[i][3] + analyze[2]
+        #             if t_alt not in ALL_TRI:
+        #                 continue
+        #             k1 = (t_ref, t_alt)
+        #             if k1 not in trinuc_transition_count:
+        #                 trinuc_transition_count[k1] = 0
+        #             trinuc_transition_count[k1] += 1
+        #             snp_count += 1
+        #
+        #             k2 = (str(snp[i][2]), str(snp[i][3]))
+        #             if k2 not in snp_transition_count:
+        #                 snp_transition_count[k2] = 0
+        #             snp_transition_count[k2] += 1
+        #
+        #             my_pop = find_caf(str(snp[i][4]))
+        #             vcf_c.append((int(snp[i][1]), snp[i][2], snp[i][2], snp[i][3], my_pop))
+        #
+        #         else:
+        #             print(f'{PROG} - Error: ref allele in variant call does not match reference.\n')
+        #             sys.exit(1)
+
 
         # now let's look for indels...
-        if not indel_variants.empty:
-            for index, row in indel_variants.iterrows():
-                if len(row['REF']) != len(row['ALT']):
-                    indel_len = len(row['REF']) - len(row['ALT'])
+        # if not indel_variants.empty:
+        #     for index, row in indel_variants.iterrows():
+        #         if len(row['REF']) != len(row['ALT']):
+        #             indel_len = len(row['REF']) - len(row['ALT'])
+        #             if indel_len not in indel_count:
+        #                 indel_count[indel_len] = 0
+        #             indel_count[indel_len] += 1
+        #
+        #             my_pop_freq = find_caf(row['INFO'])
+        #             vcf_common.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+
+        # # new code start
+        if len(indel_variants) != 0:
+            for i in range(len(indel_variants)):
+                if len(indel_variants[i][2]) != len(indel_variants[i][3]):
+                    indel_len = len(indel_variants[i][2]) - len(indel_variants[i][3])
                     if indel_len not in indel_count:
                         indel_count[indel_len] = 0
                     indel_count[indel_len] += 1
-
-                    my_pop_freq = find_caf(row['INFO'])
-                    vcf_common.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+        # new code end
 
         # if we didn't find anything, skip ahead along to the next reference sequence
         if not len(vcf_common):
@@ -342,6 +406,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
         # identify common mutations
         percentile_var = 95
         min_value = np.percentile([n[4] for n in vcf_common], percentile_var)
+        # min = np.percentile([n[4] for n in vcf_c], percentile_var)
         for k in sorted(vcf_common):
             if k[4] >= min_value:
                 common_variants.append((contig, k[0], k[1], k[3], k[4]))
@@ -359,8 +424,8 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
 
         candidate_regions = []
         for n in by_len:
-            ref_scalar = int((n[1] - dist_thresh) / float(scaler)) * scaler
-            alt_scalar = int((n[2] + dist_thresh) / float(scaler)) * scaler
+            ref_scalar = int((int(n[1]) - dist_thresh) / float(scaler)) * scaler
+            alt_scalar = int((int(n[2]) + dist_thresh) / float(scaler)) * scaler
             candidate_regions.append((n[0] / float(alt_scalar - ref_scalar), max([0, ref_scalar]),
                                       min([len(ref_sequence), alt_scalar])))
         minimum_value = np.percentile([n[0] for n in candidate_regions], percentile_clust)
