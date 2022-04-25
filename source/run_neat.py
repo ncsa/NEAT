@@ -315,10 +315,13 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                 transition_values = ALLOWED_NUCL
                 transition_probs = models.mutation_model['trinuc_trans_prob'][trinuc.seq].values()
                 # We want this to be an actual variant, so we'll try a few times
-                for _ in range(10):
+                alt = random.choices(transition_values, transition_probs)[0]
+                # Max 10 tries
+                j = 10
+                while alt == ref or j > 0:
                     alt = random.choices(transition_values, transition_probs)[0]
-                    if alt != ref:
-                        break
+                    j -= 1
+
                 # We tried and failed, so we give up.
                 if alt == ref:
                     log_mssg(f"Transition failed to find an alt", 'debug')
@@ -449,23 +452,103 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
     return None, tmp_vcf_fn
 
 
-def generate_fasta(reference, options, chrom_vcf_file):
-    # Step 2 (optional): create a fasta with those variants inserted
+def generate_fasta(reference, options, temporary_vcf, temporary_dir, chrom):
+    chrom_fasta_file = temporary_dir / f'{chrom}_tmp.fa'
     if options.produce_fasta:
-        log_mssg(f'Generating output fasta file')
+        log_mssg(f'Generating output fasta file', 'info')
 
         mutated_chrom = MutableSeq(reference.seq)
-        with gzip.open(chrom_vcf_file, 'r') as variants_in:
+        with open(temporary_vcf, 'r') as variants_in:
             for line in variants_in:
+                if line.startswith("#") or line.startswith('@'):
+                    continue
                 split = line.strip().split('\t')
                 # these should all be on the same chromosome and the reference field
                 # will have been checked by now, so they are safe to just add.
-                mutated_chrom[split[1] - 1] = split[4]
+                pos = split[1] - 1
+                ref = split[3]
+                # for the fasta, we'll only take the first alt
+                if ',' in split[4]:
+                    log_mssg(f'Only using the first variant of a multi-variant site', 'debug')
+                alt = split[4].split(',')[0]
+                ref_len = len(ref)
+                # Apply mutation
+                mutated_chrom = mutated_chrom[:pos] + MutableSeq(alt) + mutated_chrom[pos+ref_len:]
+
+        with open(chrom_fasta_file, 'w') as out_fasta:
+            out_fasta.write(f'>{reference.description}')
+            for i in range(0, len(reference), 80):
+                out_fasta.write(f'{reference[i: i + 80]}\n')
+
+        return chrom_fasta_file
 
 
-def generate_reads():
-    # Step 3 (optional): create a fastq from the mutated fasta
-    pass
+def generate_reads(reference_chrom, models, input_vcf, temporary_directory, options, chrom):
+    # apply errors and mutations and generate reads
+    chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq'
+    chrom_fastq_r2 = None
+    if options.paired_ended:
+        chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq'
+
+    # I think I need all the non-n regions for this analysis
+    non_n_regions = map_non_n_regions(reference_chrom)
+    total_bp_spon = sum(non_n_regions)
+
+    current_progress = 0
+    current_percent = 0
+    have_printed_100 = False
+
+    all_variants_out = {}
+    sequences = None
+    window_target_scale = 100
+
+    target_size = window_target_scale * options.read_len
+    overlap = options.read_len
+    overlap_min_window_size = options.read_len + 10
+
+    if options.paired_ended:
+        target_size = window_target_scale * options.fragment_mean
+        overlap = options.fragment_mean
+        overlap_min_window_size = max(models.fraglen_model.values) + 10
+
+    vars_to_insert = {}
+    with gzip.open(input_vcf, 'r') as input_variants:
+        for line in input_variants:
+            if line.startswith("@") or line.startswith("#"):
+                continue
+            line_split = line.strip().split('\t')
+            # Since these vars are on the same chromosome, we can index by position
+            # We don't need the ID for this so let's skip it
+            # The remaining fields will be:
+            #   - vars_to_insert[position][0] = REF
+            #   - vars_to_insert[position][1] = ALT
+            #   - vars_to_insert[position][2] = QUAL
+            #   - vars_to_insert[position][3] = FILTER
+            #   - vars_to_insert[position][4] = INFO
+            #   - vars_to_insert[position][5] = FORMAT
+            #   - vars_to_insert[position][6] = SAMPLE_1
+            #   - vars_to_insert[position][7] = SAMPLE_2 (optional)
+            vars_to_insert[line_split[1]] = line_split[3:]
+
+    log_mssg(f'Sampling reads...', 'info')
+    start = time.time()
+    """
+    I'm going to try to use a percentage N for this. Basically, if there are at least 40% 
+    Real reads, then we'll use it, otherwise we won't use it. I have no idea how illumina actually works
+    in this regard.
+    """
+    i = 0
+    while i < len(reference_chrom):
+        window = reference_chrom[i: i + target_size]
+        # calculate the percentage of valid nucleotides in the window, if it's less than 40%, skip this window
+        if sum(window)/len(window) < 0.4:
+            i += 1
+            continue
+
+        i += 1
+
+    log_mssg(f"Finished sampling reads in {time.time() - start} seconds", 'info')
+    return chrom_fastq_r1, chrom_fastq_r2
 
 
 def generate_bam():

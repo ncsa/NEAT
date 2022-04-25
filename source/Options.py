@@ -75,6 +75,7 @@ class Options(SimpleNamespace):
             self.defs['produce_bam'] = ('boolean', False, None, None)
             self.defs['produce_vcf'] = ('boolean', False, None, None)
             self.defs['produce_fasta'] = ('boolean', False, None, None)
+            self.defs['output_config'] = ('boolean', False, None, None)
             self.defs['produce_fastq'] = ('boolean', True, None, None)
             self.defs['force_coverage'] = ('boolean', False, None, None)
             self.defs['debug'] = ('boolean', False, None, None)

@@ -199,7 +199,7 @@ def main(raw_args=None):
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
     parser.add_argument('-c', '--config', default='neat_config.txt', dest='conf', metavar='config',
                         help="Any extra arguments valid for NEAT")
-    parser.add_argument('-o', '--output', required=True, dest='output', metavar='output',
+    parser.add_argument('-o', '--output', required=True,
                         help="Prefix for the output. Can include a path before it.")
 
     args = parser.parse_args(raw_args)
@@ -291,7 +291,6 @@ def main(raw_args=None):
 
     mutation_rate_dict = parse_bed(options.mutation_bed, options.reference_chromosomes,
                                    begins_with_chr, True)
-
 
     log_mssg(f'Finished reading input beds.', 'debug')
 
@@ -391,19 +390,6 @@ def main(raw_args=None):
         temp_vcf_filename = tmp_dir_path / f"{out_prefix_name}_tmp_{contig}_{threadidx}.vcf"
         log_mssg(f'temp_vcf_filename = {temp_vcf_filename}', 'debug')
 
-        if options.produce_bam:
-            temp_sam_filename = tmp_dir_path / f"{out_prefix_name}_tmp_records_{threadidx}.tsam"
-            log_mssg(f'tmp_sam_fn = {temp_sam_filename}', 'debug')
-        if options.produce_fasta:
-            temp_fasta_filename = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}.fasta"
-            log_mssg(f'tmp_fasta_fn = {temp_fasta_filename}', 'debug')
-        if options.produce_fastq:
-            temp_fastq1_filename = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}_read1.fq"
-            log_mssg(f'tmp_fastq1_fn = {temp_fastq1_filename}', 'debug')
-            if options.paired_ended:
-                temp_fastq2_filename = tmp_dir_path / f"{out_prefix_name}_tmp_{threadidx}_read2.fq"
-                log_mssg(f'tmp_fastq2_fn  = {temp_fastq2_filename}', 'debug')
-
         if threadidx == 1:
             # init_progress_info()
             pass
@@ -421,17 +407,23 @@ def main(raw_args=None):
 
         vcf_files.append(chrom_vcf_file)
 
-        if options.produce_fasta:
-            chrom_fasta_file = generate_fasta(reference, options, tmp_vcf_file)
-            fasta_files.append(chrom_fasta_file)
-
         if options.produce_fastq:
             # Note that generate_reads returns None for r2 if single ended
-            chrom_fastq_r1_file, chrom_fastq_r2_file = generate_reads()
+            chrom_fastq_r1_file, chrom_fastq_r2_file = generate_reads(reference,
+                                                                      models,
+                                                                      tmp_vcf_file,
+                                                                      tmp_dir_path,
+                                                                      options,
+                                                                      contig)
             fastq_files.append([chrom_fastq_r1_file, chrom_fastq_r2_file])
 
+        if options.produce_fasta:
+            chrom_fasta_file = generate_fasta(reference, options, tmp_vcf_file,
+                                              tmp_dir_path, contig)
+            fasta_files.append(chrom_fasta_file)
+
         if options.produce_bam:
-            chrom_bam_file = generate_bam()
+            chrom_bam_file = generate_bam(reference, options, tmp_vcf_file, tmp_dir_path, contig)
             bam_files.append(chrom_bam_file)
 
     if options.produce_vcf:
@@ -447,7 +439,6 @@ def main(raw_args=None):
         for item in chunks:
             item.close()
             os.remove(item.name)
-
 
     # End info
     print_end_info(output_file_writer, output_file_writer_cancer, starttime)

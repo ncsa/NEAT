@@ -141,9 +141,14 @@
 @produce_vcf = .
 
 # Whether to output the mutated fasta. This will output a fasta file with mutations
-# inserted.
+# inserted. It does not include sequencing errors or read information. Useful for
+# multigenerational mutations.
 # type: boolean | required = no | default = false
 @produce_fasta = .
+
+# Output config. If yes will output the config file. Useful for repeating runs.
+# type: boolean | required = no | default = false
+@output_config = .
 
 # Whether to output the fastq(s) of the reads. This is the default output. NEAT
 # will produce 1 fastq for single ended reads or 2 fastqs for paired ended.
