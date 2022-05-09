@@ -455,7 +455,7 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
 def generate_fasta(reference, options, temporary_vcf, temporary_dir, chrom):
     chrom_fasta_file = temporary_dir / f'{chrom}_tmp.fa'
     if options.produce_fasta:
-        log_mssg(f'Generating output fasta file', 'info')
+        log_mssg(f'Generating output fasta file for {chrom}', 'info')
 
         mutated_chrom = MutableSeq(reference.seq)
         with open(temporary_vcf, 'r') as variants_in:
@@ -465,7 +465,7 @@ def generate_fasta(reference, options, temporary_vcf, temporary_dir, chrom):
                 split = line.strip().split('\t')
                 # these should all be on the same chromosome and the reference field
                 # will have been checked by now, so they are safe to just add.
-                pos = split[1] - 1
+                pos = int(split[1]) - 1
                 ref = split[3]
                 # for the fasta, we'll only take the first alt
                 if ',' in split[4]:
@@ -476,9 +476,9 @@ def generate_fasta(reference, options, temporary_vcf, temporary_dir, chrom):
                 mutated_chrom = mutated_chrom[:pos] + MutableSeq(alt) + mutated_chrom[pos+ref_len:]
 
         with open(chrom_fasta_file, 'w') as out_fasta:
-            out_fasta.write(f'>{reference.description}')
-            for i in range(0, len(reference), 80):
-                out_fasta.write(f'{reference[i: i + 80]}\n')
+            out_fasta.write(f'>{reference.description}\n')
+            for i in range(0, len(mutated_chrom), 80):
+                out_fasta.write(f'{mutated_chrom[i: i + 80]}\n')
 
         return chrom_fasta_file
 

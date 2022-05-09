@@ -374,6 +374,8 @@ def main(raw_args=None):
     fastq_files = []
     bam_files = []
 
+    temporary_dir = tempfile.TemporaryDirectory()
+
     for contig in breaks:
         log_mssg(f'Mutating: {contig}...', 'info')
 
@@ -383,7 +385,6 @@ def main(raw_args=None):
         # Since we're only running single threaded for now:
         threadidx = 1
 
-        temporary_dir = tempfile.TemporaryDirectory()
         tmp_dir_path = pathlib.Path(temporary_dir.name).resolve()
 
         # We need the temp vcf file no matter what
@@ -427,7 +428,7 @@ def main(raw_args=None):
             bam_files.append(chrom_bam_file)
 
     if options.produce_vcf:
-        log_mssg("Sorting and outputting complete golden vcf.", 'info')
+        log_mssg("Outputting complete golden vcf.", 'info')
         chunks = []
         # TODO double check that breaks is in the same order as the input fasta
         for vcf in vcf_files:
@@ -439,6 +440,18 @@ def main(raw_args=None):
         for item in chunks:
             item.close()
             os.remove(item.name)
+
+    if options.produce_fasta:
+        log_mssg("Outputting final fasta file", 'info')
+
+        fasta_out = gzip.open(output_file_writer.fasta_fn, 'at')
+
+        for fasta in fasta_files:
+            in_file = open(fasta, 'r')
+            fasta_out.write(in_file.read())
+            in_file.close()
+
+        fasta_out.close()
 
     # End info
     print_end_info(output_file_writer, output_file_writer_cancer, starttime)

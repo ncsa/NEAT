@@ -20,7 +20,7 @@
 # contigs, then join the results later. NEAT does not feature translocations, so
 # this will not affect NEAT's output. Note that subdivision will only activate for
 # number of threads > 1.
-# type = string | required: yes | default = chrom | possible values: chrom, subdivision
+# type = string | required: No | default = chrom | possible values: chrom, subdivision
 @partition_mode = .
 
 # Read length of the reads in the fastq output. Only required if @produce_fastq is set to true
