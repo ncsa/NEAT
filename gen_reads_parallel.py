@@ -370,7 +370,7 @@ def main(raw_args=None):
     out_prefix = f'{out_prefix_parent_dir}/{out_prefix_name}'
 
     vcf_files = []
-    fasta_files = []
+    fasta_records = []
     fastq_files = []
     bam_files = []
 
@@ -419,9 +419,9 @@ def main(raw_args=None):
             fastq_files.append([chrom_fastq_r1_file, chrom_fastq_r2_file])
 
         if options.produce_fasta:
-            chrom_fasta_file = generate_fasta(reference, options, tmp_vcf_file,
+            chrom_fasta_dict = generate_fasta(reference, options, tmp_vcf_file,
                                               tmp_dir_path, contig)
-            fasta_files.append(chrom_fasta_file)
+            fasta_records.append(SeqRecord(Seq(chrom_fasta_dict), id=reference.id, description=reference.description))
 
         if options.produce_bam:
             chrom_bam_file = generate_bam(reference, options, tmp_vcf_file, tmp_dir_path, contig)
@@ -444,14 +444,16 @@ def main(raw_args=None):
     if options.produce_fasta:
         log_mssg("Outputting final fasta file", 'info')
 
-        fasta_out = gzip.open(output_file_writer.fasta_fn, 'at')
+        with gzip.open(output_file_writer.fasta_fn, 'at') as fasta_out:
+            SeqIO.write(fasta_records, fasta_out, 'fasta')
 
-        for fasta in fasta_files:
-            in_file = open(fasta, 'r')
-            fasta_out.write(in_file.read())
-            in_file.close()
 
-        fasta_out.close()
+        # for fasta in fasta_files:
+        #     in_file = open(fasta, 'r')
+        #     fasta_out.write(in_file.read())
+        #     in_file.close()
+        #
+        # fasta_out.close()
 
     # End info
     print_end_info(output_file_writer, output_file_writer_cancer, starttime)
