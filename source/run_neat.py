@@ -475,12 +475,12 @@ def generate_fasta(reference, options, temporary_vcf, temporary_dir, chrom):
                 # Apply mutation
                 mutated_chrom = mutated_chrom[:pos] + MutableSeq(alt) + mutated_chrom[pos+ref_len:]
 
-        with open(chrom_fasta_file, 'w') as out_fasta:
-            out_fasta.write(f'>{reference.description}\n')
-            for i in range(0, len(mutated_chrom), 80):
-                out_fasta.write(f'{mutated_chrom[i: i + 80]}\n')
+        # with open(chrom_fasta_file, 'w') as out_fasta:
+        #     out_fasta.write(f'>{reference.description}\n')
+        #     for i in range(0, len(mutated_chrom), 80):
+        #         out_fasta.write(f'{mutated_chrom[i: i + 80]}\n')
 
-        return chrom_fasta_file
+        return mutated_chrom
 
 
 def generate_reads(reference_chrom, models, input_vcf, temporary_directory, options, chrom):
@@ -551,7 +551,7 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory, opti
     return chrom_fastq_r1, chrom_fastq_r2
 
 
-def generate_bam():
+def generate_bam(reference_chrom, options, temporary_vcf, temporary_dir, chrom):
     # Step 4 (optional): Create a golden bam with the reads aligned to the original reference
     pass
 
