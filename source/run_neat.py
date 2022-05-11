@@ -363,6 +363,9 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
     start = time.time()
     filtered_by_target = 0
     filtered_by_discard = 0
+    mutated_reference = None
+    if options.produce_fasta:
+        mutated_reference = reference.seq
     # Now that we've generated a list of mutations, let's add them to the temp vcf
     with open(tmp_vcf_fn, 'a') as tmp:
         for position in output_variants_locations:
@@ -413,6 +416,11 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                         filtered_by_target += 1
                         continue
 
+                if options.produce_fasta:
+                    # for the fasta, we'll only take the first alt, if multiple present
+                    mutated_reference = add_variant_to_fasta(position, variant[i][1], variant[i][2].split(',')[0],
+                                                             mutated_reference)
+
                 # Add one to get it back into vcf coordinates
                 line = f'{chrom}\t{position + 1}\t{variant[i][0]}\t{variant[i][1]}\t{variant[i][2]}\t{variant[i][3]}' \
                        f'\t{variant[i][4]}\t{variant[i][5]}\t{variant[i][6]}\t{variant[i][7]}\n'
@@ -447,40 +455,16 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                 else:
                     f_out.writelines(line)
 
-        return chrom_vcf_file, tmp_vcf_fn
+        return chrom_vcf_file, tmp_vcf_fn, mutated_reference
 
-    return None, tmp_vcf_fn
+    return None, tmp_vcf_fn, mutated_reference
 
 
-def generate_fasta(reference, options, temporary_vcf, temporary_dir, chrom):
-    chrom_fasta_file = temporary_dir / f'{chrom}_tmp.fa'
-    if options.produce_fasta:
-        log_mssg(f'Generating output fasta file for {chrom}', 'info')
-
-        mutated_chrom = MutableSeq(reference.seq)
-        with open(temporary_vcf, 'r') as variants_in:
-            for line in variants_in:
-                if line.startswith("#") or line.startswith('@'):
-                    continue
-                split = line.strip().split('\t')
-                # these should all be on the same chromosome and the reference field
-                # will have been checked by now, so they are safe to just add.
-                pos = int(split[1]) - 1
-                ref = split[3]
-                # for the fasta, we'll only take the first alt
-                if ',' in split[4]:
-                    log_mssg(f'Only using the first variant of a multi-variant site', 'debug')
-                alt = split[4].split(',')[0]
-                ref_len = len(ref)
-                # Apply mutation
-                mutated_chrom = mutated_chrom[:pos] + MutableSeq(alt) + mutated_chrom[pos+ref_len:]
-
-        # with open(chrom_fasta_file, 'w') as out_fasta:
-        #     out_fasta.write(f'>{reference.description}\n')
-        #     for i in range(0, len(mutated_chrom), 80):
-        #         out_fasta.write(f'{mutated_chrom[i: i + 80]}\n')
-
-        return mutated_chrom
+def add_variant_to_fasta(position, ref, alt, reference_to_alter):
+    ref_len = len(ref)
+    # Apply mutation
+    reference_to_alter = reference_to_alter[:position] + Seq(alt) + reference_to_alter[position+ref_len:]
+    return reference_to_alter
 
 
 def generate_reads(reference_chrom, models, input_vcf, temporary_directory, options, chrom):
