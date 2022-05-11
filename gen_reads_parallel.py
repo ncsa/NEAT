@@ -35,7 +35,7 @@ from source.constants_and_defaults import ALLOWED_NUCL
 from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, log_mssg
 from source.output_file_writer import OutputFileWriter
-from source.run_neat import generate_variants, generate_fasta, generate_reads, generate_bam
+from source.run_neat import generate_variants, generate_reads, generate_bam
 from source.vcf_func import parse_input_vcf
 
 
@@ -195,15 +195,6 @@ def main(raw_args=None):
     along to the main processing part of gen_reads.
     """
 
-    parser = argparse.ArgumentParser(description=f'This script runs gen_reads v{VERSION}',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
-    parser.add_argument('-c', '--config', default='neat_config.txt', dest='conf', metavar='config',
-                        help="Any extra arguments valid for NEAT")
-    parser.add_argument('-o', '--output', required=True,
-                        help="Prefix for the output. Can include a path before it.")
-
-    args = parser.parse_args(raw_args)
-
     # This will by default look for a file called "neat_config.txt" in the current working dir
     args.conf = pathlib.Path(args.conf)
 
@@ -343,7 +334,7 @@ def main(raw_args=None):
     """
     Begin Analysis
     """
-    log_mssg("Beginning analysis...", 'info')
+    log_mssg("Beginning simulation...", 'info')
 
     # Find break points in the input file.
     # TODO Debug:
@@ -363,7 +354,7 @@ def main(raw_args=None):
     I think the core of run_neat should be taking in a sequence and returning a mutated sequence. The core of NEAT
     at the moment tries to be everything to everyone.
     """
-    log_mssg("Beginning simulation", 'info')
+
     # these will be the features common to each contig, for multiprocessing
     common_features = {}
 
@@ -395,16 +386,16 @@ def main(raw_args=None):
             # init_progress_info()
             pass
 
-        chrom_vcf_file, tmp_vcf_file = generate_variants(reference,
-                                                         contig,
-                                                         temp_vcf_filename,
-                                                         target_regions_dict[contig],
-                                                         discard_regions_dict[contig],
-                                                         mutation_rate_dict[contig],
-                                                         contig_variants,
-                                                         models,
-                                                         options,
-                                                         out_prefix)
+        chrom_vcf_file, tmp_vcf_file, altered_fasta = generate_variants(reference,
+                                                                        contig,
+                                                                        temp_vcf_filename,
+                                                                        target_regions_dict[contig],
+                                                                        discard_regions_dict[contig],
+                                                                        mutation_rate_dict[contig],
+                                                                        contig_variants,
+                                                                        models,
+                                                                        options,
+                                                                        out_prefix)
 
         vcf_files.append(chrom_vcf_file)
 
@@ -419,9 +410,7 @@ def main(raw_args=None):
             fastq_files.append([chrom_fastq_r1_file, chrom_fastq_r2_file])
 
         if options.produce_fasta:
-            chrom_fasta_dict = generate_fasta(reference, options, tmp_vcf_file,
-                                              tmp_dir_path, contig)
-            fasta_records.append(SeqRecord(Seq(chrom_fasta_dict), id=reference.id, description=reference.description))
+            fasta_records.append(SeqRecord(Seq(altered_fasta), id=reference.id, description=reference.description))
 
         if options.produce_bam:
             chrom_bam_file = generate_bam(reference, options, tmp_vcf_file, tmp_dir_path, contig)
@@ -430,7 +419,7 @@ def main(raw_args=None):
     if options.produce_vcf:
         log_mssg("Outputting complete golden vcf.", 'info')
         chunks = []
-        # TODO double check that breaks is in the same order as the input fasta
+
         for vcf in vcf_files:
             chunks += [gzip.open(vcf, 'r')]
 
@@ -447,24 +436,27 @@ def main(raw_args=None):
         with gzip.open(output_file_writer.fasta_fn, 'at') as fasta_out:
             SeqIO.write(fasta_records, fasta_out, 'fasta')
 
-
-        # for fasta in fasta_files:
-        #     in_file = open(fasta, 'r')
-        #     fasta_out.write(in_file.read())
-        #     in_file.close()
-        #
-        # fasta_out.close()
-
     # End info
     print_end_info(output_file_writer, output_file_writer_cancer, starttime)
 
 
 if __name__ == '__main__':
 
+    parser = argparse.ArgumentParser(description=f'This script runs gen_reads v{VERSION}',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
+    parser.add_argument('-c', '--config', default='neat_config.txt', dest='conf', metavar='config',
+                        help="Any extra arguments valid for NEAT")
+    parser.add_argument('-o', '--output', required=True,
+                        help="Prefix for the output. Can include a path before it.")
+    parser.add_argument('--log-dir', default=os.getcwd(), required=False,
+                        help="directory to put log file")
+
+    args = parser.parse_args()
+
     now = time.localtime()
     now = time.strftime('%Y_%m_%d_%H%M', now)
 
-    log_dir = os.getcwd()
+    log_dir = args.log_dir
 
     log_name = f'{log_dir}/{now}_NEAT.log'
 
@@ -493,4 +485,4 @@ if __name__ == '__main__':
 
     neat_log.addHandler(file_handler)
 
-    main()
+    main(args)
