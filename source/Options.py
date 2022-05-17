@@ -1,7 +1,5 @@
-import os
 import pathlib
 from types import SimpleNamespace
-import numpy as np
 import random
 
 from source.error_handling import premature_exit, log_mssg
@@ -43,7 +41,7 @@ class Options(SimpleNamespace):
             """
             arbitrarily_large_number = 1e8
             self.defs['reference'] = ('string', None, 'exists', None)
-            self.defs['partition_mode'] = ('string', None, None, None)
+            self.defs['partition_mode'] = ('string', 'chrom', None, None)
             self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
             self.defs['threads'] = ('int', 1, 1, arbitrarily_large_number)
             self.defs['coverage'] = ('float', 10.0, 1, arbitrarily_large_number)
@@ -80,6 +78,7 @@ class Options(SimpleNamespace):
             self.defs['force_coverage'] = ('boolean', False, None, None)
             self.defs['debug'] = ('boolean', False, None, None)
             self.defs['rng_value'] = ('int', None, None, None)
+            self.defs['min_mutations'] = ('int', None, None, None)
 
             # Cancer options (not yet implemented)
             self.cancer = False
@@ -185,6 +184,9 @@ class Options(SimpleNamespace):
         if not self.args['rng_value']:
             self.args['rng_value'] = random.randint(2**52, 2**53)
 
+        # Set the random seed for this run
+        random.seed(self.args['rng_value'])
+
         if not self.args['produce_bam'] and not self.args['produce_vcf'] \
                 and not self.args['produce_fasta'] and not self.args['produce_fastq']:
             log_mssg('No files would be produced, as all file types are set to false', 'error')
@@ -203,7 +205,7 @@ class Options(SimpleNamespace):
                 flagged = True
         if flagged:
             log_mssg("For paired ended mode, you need to supply either a "
-                          "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
+                     "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
             premature_exit(1)
 
         self.args['n_handling'] = "ignore"

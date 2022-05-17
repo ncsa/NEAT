@@ -110,13 +110,13 @@ def map_non_n_regions(sequence):
     return base_check
 
 
-def find_random_non_n(slice, safe_zones, max_attempts):
+def find_random_non_n(mutation_slice, safe_zones, max_attempts):
     for _ in range(max_attempts):
         potential_location = random.randint(0, len(safe_zones) - 1)
         if not safe_zones[potential_location]:
             continue
         else:
-            return potential_location + slice[0]
+            return potential_location + mutation_slice[0]
 
     return False
 
@@ -146,6 +146,21 @@ def model_trinucs(sequence, models):
         return None
     # else, make a discrete distribution
     return DiscreteDistribution(range(len(sequence)), trinuc_models)
+
+
+def split(my_string):
+    return [char for char in my_string]
+
+
+def check_if_deleted(all_dels, location):
+
+    for deletion in all_dels:
+        # deletion[0] = location of deletion
+        # deletion[1] = length of the deletion
+        if deletion[0] < location < deletion[0] + deletion[1]:
+            return True
+
+    return False
 
 
 def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regions,
@@ -187,7 +202,7 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
         values[2]: genotype tumor (if present in original vcf), None if not present and a cancer sample
         """
         # this should give is just the positions of the inserts. This will be used to keep track of sort order.
-        output_variants_locations = sorted(list(output_variants.keyschrom()))
+        output_variants_locations = sorted(list(output_variants.keys()))
 
     log_mssg(f'Adding random mutations for {chrom}', 'info')
     start = time.time()
@@ -209,10 +224,17 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
     max_mutations = int(len(reference) * 0.3)
     total_mutations_model = poisson_list(max_mutations, average_number_of_mutations)
 
-    # This number will serve as a counter for our loops
-    how_many_mutations = total_mutations_model.sample()
+    # This number will serve as a counter for our loops. Let's add a minimum of 1 mutation no matter what.
+    min_mutations = 1
+    if options.min_mutations:
+        min_mutations = options.min_mutations
 
-    log_mssg(f'Planning to add {how_many_mutations} mutations. The final number may be less.', 'debug')
+    how_many_mutations = total_mutations_model.sample() + min_mutations
+
+    log_mssg(f'Planning to add {how_many_mutations} mutations. The final number may be less.', 'info')
+
+    # We may need to skip locations if they were deleted
+    all_dels = []
 
     while how_many_mutations > 0:
         # Pick a region based on the mutation rates
@@ -257,7 +279,7 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
         slice_distance = mutation_slice[1] - mutation_slice[0]
         # How many variants to add in this slice (at least one, or we'll never get to the finish line)
         variants_to_add_in_slice = max(int((slice_distance/len(reference)) * how_many_mutations), 1)
-        log_mssg(f"Planning to add {variants_to_add_in_slice} variants to slice", 'debug')
+        # log_mssg(f"Planning to add {variants_to_add_in_slice} variants to slice", 'debug')
 
         subsequence = reference[mutation_slice[0]: mutation_slice[1]]
         # In the case where the end points are equal, just skip
@@ -283,10 +305,11 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
             # Case 1: indel
             if is_indel:
                 # First pick a location. This function ensures that we do not pick an N as our starting place
+                # Note that find_random_non_n helpfully adds the slice start to the location.
                 location = find_random_non_n(mutation_slice, non_n_regions, 5)
-                if not location:
-                    log_mssg(f"Found no location", 'debug')
-                    continue
+
+                if check_if_deleted(all_dels, location):
+                    continue  # No increments, no attempts, just try again.
 
                 is_insertion = random.random() <= models.mutation_model['indel_insert_percentage']
                 if is_insertion:
@@ -297,8 +320,10 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                     alt = ref + insertion
                 else:
                     length = models.mutation_model['deletion_length_model'].sample()
-                    ref = reference[location: location+length].seq
+                    # Plus one so we make sure to grab the first base too
+                    ref = reference[location: location+length+1].seq
                     alt = reference[location]
+                    all_dels.append((location, length))
 
             # Case 2: SNP
             else:
@@ -310,6 +335,10 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                 # So there is at least valid trinuc in this subsequence, so now we sample for a location
                 # It's a relative location, so we add the start point of the subsequence to that.
                 location = trinuc_probs.sample() + mutation_slice[0]
+
+                if check_if_deleted(all_dels, location):
+                    continue  # No increments, no attempts, just try again.
+
                 ref = reference[location]
                 trinuc = reference[location - 1: location + 2]
                 transition_values = ALLOWED_NUCL
@@ -335,10 +364,10 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                 previous_genotype = output_variants[location][1]
 
                 # Try to find a different arrangement. Cap this at 3 tries
-                i = 3
-                while genotype == previous_genotype or i > 0:
+                j = 3
+                while genotype == previous_genotype or j > 0:
                     random.shuffle(genotype)
-                    i -= 1
+                    j -= 1
                 if genotype == previous_genotype:
                     log_mssg(f"Skipping random mutation because a variant already exists there", 'debug')
                     continue
@@ -363,24 +392,28 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
     start = time.time()
     filtered_by_target = 0
     filtered_by_discard = 0
-    mutated_reference = None
+    offset = 0
+
+    mutated_references = []
     if options.produce_fasta:
-        mutated_reference = reference.seq
+        ref_seq_list = split(str(reference.seq))
+        mutated_references = [ref_seq_list] * options.ploidy
     # Now that we've generated a list of mutations, let's add them to the temp vcf
     with open(tmp_vcf_fn, 'a') as tmp:
-        for position in output_variants_locations:
-            variant = output_variants[position]
-
+        for i in range(len(output_variants_locations)):
+            variant = output_variants[output_variants_locations[i]]
             # If there is only one variant at this location, this will only execute once. This line skips 2 because in
             # normal vcfs, the dictionary will have one list for te variant, one for the genotype. Will need to adjust
             # for cancer samples
             count = 2
             if options.cancer:
                 count = 3
-            for i in range(0, len(variant), count):
+
+            is_del_list = []
+            for j in range(0, len(variant), count):
 
                 # Warn about monomorphic sites but let it go otherwise
-                if variant[i][2] == '.':
+                if variant[j][2] == '.':
                     log_mssg(f'Found monomorphic reference variant. '
                              f'These prevent mutations from being added at that location.', 'info')
 
@@ -393,12 +426,13 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                     for coords in target_regions:
                         # Check that this location is valid.
                         # Note that we are assuming the coords are half open here.
-                        if coords[0] <= position < coords[1]:
+                        if coords[0] <= output_variants_locations[i] < coords[1]:
                             in_region = True
                             # You can stop looking when you find it
                             break
                     if not in_region:
-                        log_mssg(f'Variant filtered out by target regions bed: {chrom}: {position}', 'debug')
+                        log_mssg(f'Variant filtered out by target regions bed: {chrom}: '
+                                 f'{output_variants_locations[i]}', 'debug')
                         filtered_by_target += 1
                         continue
 
@@ -408,25 +442,43 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                     for coords in discard_regions:
                         # Check if this location is in an excluded zone
                         # Note that we are assuming the coords are half open here
-                        if coords[0] <= position < coords[1]:
+                        if coords[0] <= output_variants_locations[i] < coords[1]:
                             in_region = True
                             break
                     if in_region:
-                        log_mssg(f'Variant filtered out by discard regions bed: {chrom}: {position}', 'debug')
+                        log_mssg(f'Variant filtered out by discard regions bed: {chrom}: '
+                                 f'{output_variants_locations[i]}', 'debug')
                         filtered_by_target += 1
                         continue
 
                 if options.produce_fasta:
-                    # for the fasta, we'll only take the first alt, if multiple present
-                    mutated_reference = add_variant_to_fasta(position, variant[i][1], variant[i][2].split(',')[0],
-                                                             mutated_reference)
+
+                    ref = variant[j][1]
+                    alt = variant[j][2]
+                    alt = alt.split(',')
+
+                    genotype = variant[j + 1]
+                    for k in range(len(genotype)):
+                        if genotype[k]:
+                            position = output_variants_locations[i] + offset
+                            if mutated_references[k][position: position+len(ref)] != ref:
+                                # if our base has been deleted or changed already, we'll skip this one.
+                                continue
+                            mutated_references[k] = add_variant_to_fasta(output_variants_locations[i] + offset,
+                                                                         ref, alt,
+                                                                         mutated_references[k])
+
+                    # offset is a running total of the position modification caused by insertions and deletions
+                    # We update it after inserting the variant, so that the next one is in the correct position.
+                    offset += len(alt) - len(ref)
 
                 # Add one to get it back into vcf coordinates
-                line = f'{chrom}\t{position + 1}\t{variant[i][0]}\t{variant[i][1]}\t{variant[i][2]}\t{variant[i][3]}' \
-                       f'\t{variant[i][4]}\t{variant[i][5]}\t{variant[i][6]}\t{variant[i][7]}\n'
+                line = f'{chrom}\t{output_variants_locations[i] + 1}\t{variant[j][0]}\t{variant[j][1]}' \
+                       f'\t{variant[j][2]}\t{variant[j][3]}\t{variant[j][4]}\t{variant[j][5]}' \
+                       f'\t{variant[j][6]}\t{variant[j][7]}\n'
 
                 if options.cancer:
-                    line += f'\t{variant[i][8]}'
+                    line += f'\t{variant[j][8]}'
 
                 tmp.write(line)
 
@@ -455,15 +507,15 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                 else:
                     f_out.writelines(line)
 
-        return chrom_vcf_file, tmp_vcf_fn, mutated_reference
+        return chrom_vcf_file, tmp_vcf_fn, mutated_references
 
-    return None, tmp_vcf_fn, mutated_reference
+    return None, tmp_vcf_fn, mutated_references
 
 
-def add_variant_to_fasta(position, ref, alt, reference_to_alter):
+def add_variant_to_fasta(position: int, ref: str, alt: str, reference_to_alter: list):
     ref_len = len(ref)
     # Apply mutation
-    reference_to_alter = reference_to_alter[:position] + Seq(alt) + reference_to_alter[position+ref_len:]
+    reference_to_alter[position:position+ref_len] = alt
     return reference_to_alter
 
 
@@ -474,26 +526,29 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory, opti
     if options.paired_ended:
         chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq'
 
-    # I think I need all the non-n regions for this analysis
-    non_n_regions = map_non_n_regions(reference_chrom)
-    total_bp_spon = sum(non_n_regions)
+    # # I think I need all the non-n regions for this analysis
+    # non_n_regions = map_non_n_regions(reference_chrom)
+    # total_bp_spon = sum(non_n_regions)
+    #
+    # current_progress = 0
+    # current_percent = 0
+    # have_printed_100 = False
+    #
+    # all_variants_out = {}
+    # sequences = None
+    # window_target_scale = 100
+    #
+    # target_size = window_target_scale * options.read_len
+    # overlap = options.read_len
+    # overlap_min_window_size = options.read_len + 10
+    #
+    # if options.paired_ended:
+    #     target_size = window_target_scale * options.fragment_mean
+    #     overlap = options.fragment_mean
+    #     overlap_min_window_size = max(models.fraglen_model.values) + 10
 
-    current_progress = 0
-    current_percent = 0
-    have_printed_100 = False
-
-    all_variants_out = {}
-    sequences = None
-    window_target_scale = 100
-
-    target_size = window_target_scale * options.read_len
-    overlap = options.read_len
-    overlap_min_window_size = options.read_len + 10
-
-    if options.paired_ended:
-        target_size = window_target_scale * options.fragment_mean
-        overlap = options.fragment_mean
-        overlap_min_window_size = max(models.fraglen_model.values) + 10
+    scale_fator = options.fragment_mean if options.paired_ended else options.read_len
+    window_scale = 100 * scale_fator
 
     vars_to_insert = {}
     with gzip.open(input_vcf, 'r') as input_variants:
@@ -523,11 +578,19 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory, opti
     """
     i = 0
     while i < len(reference_chrom):
-        window = reference_chrom[i: i + target_size]
-        # calculate the percentage of valid nucleotides in the window, if it's less than 40%, skip this window
-        if sum(window)/len(window) < 0.4:
+        # window = reference_chrom[i: i + target_size]
+        # # calculate the percentage of valid nucleotides in the window, if it's less than 40%, skip this window
+        # if sum(window)/len(window) < 0.4:
+        #     i += 1
+        #     continue
+        # sample_reads(window)
+        if reference_chrom[i] == "N":
             i += 1
             continue
+
+        # Found a non-N
+        start = i - random.randint(0, 25)
+        end = start + window_scale
 
         i += 1
 

@@ -5,33 +5,27 @@ The purpose of this script is to run gen reads in multithreaded mode. The way it
 split the reference fasta up into chromosomes and then run gen_reads in one thread per chromosome mode.
 Finally, it will recombine the final output into one.
 
-Note that I'm planninng to hijack NEAT's features for this.
+Note that I'm planning to hijack NEAT's features for this.
 """
 
 import argparse
-import bisect
 import gzip
+import io
 import logging
 import pathlib
-import random
 import sys
 import time
 import tempfile
-import pandas as pd
-import numpy as np
-import glob
 from heapq import merge
+from itertools import chain
 import os
-import atexit
 
 from Bio import SeqIO
 from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 
 from source.Models import Models
 from source.Options import Options
 from source.bed_func import parse_bed
-from source.constants_and_defaults import ALLOWED_NUCL
 from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, log_mssg
 from source.output_file_writer import OutputFileWriter
@@ -67,8 +61,13 @@ def print_end_info(output_class, cancer_output_class, starting_time):
     log_mssg("Wrote the following files:", 'info')
     i = 1
     for item in list_to_iterate:
-        log_mssg(f"\t{i}. {item}", 'info')
-        i += 1
+        if type(item) == list:
+            for file in item:
+                log_mssg(f"\t{i}. {file}", 'info')
+                i += 1
+        else:
+            log_mssg(f"\t{i}. {item}", 'info')
+            i += 1
     log_mssg("NEAT finished successfully.", "info")
     log_mssg(f"Total runtime: {str(endtime - starting_time)}", 'info')
     print("-------------------------------------------------------------------------")
@@ -94,7 +93,7 @@ def print_configuration(args, options):
     else:
         log_mssg(f'Multithreading coming soon!!', 'info')
         log_mssg(f"Single threading - 1 thread.", 'info')
-        # We'll work on mulitthreading later...
+        # We'll work on multithreading later...
         # print_and_log(f'Multithreading - {options.threads} threads', 'info')
     if options.paired_ended:
         log_mssg(f'Running in paired-ended mode.', 'INFO')
@@ -134,7 +133,7 @@ def print_configuration(args, options):
     if options.force_coverage:
         log_mssg(f'Ignoring models and forcing coverage value.', 'INFO')
     log_mssg(f'Debug Mode Activated.', 'debug')
-    log_mssg(f'RNG seed value: {options.rng_value}', 'debug')
+    log_mssg(f'RNG seed value: {options.rng_value}', 'info')
 
 
 def find_file_breaks(threads: int, mode: str, reference_index: dict) -> dict:
@@ -313,19 +312,19 @@ def main(raw_args=None):
         output_file_writer = OutputFileWriter(output_normal,
                                               bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              options_file=options
+                                              options=options
                                               )
         output_file_writer_cancer = OutputFileWriter(output_tumor,
                                                      bam_header=bam_header,
                                                      vcf_header=vcf_header,
-                                                     options_file=options
+                                                     options=options
                                                      )
     else:
         outfile = out_prefix_parent_dir / out_prefix_name
         output_file_writer = OutputFileWriter(outfile,
                                               bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              options_file=options
+                                              options=options
                                               )
         output_file_writer_cancer = None
 
@@ -361,9 +360,10 @@ def main(raw_args=None):
     out_prefix = f'{out_prefix_parent_dir}/{out_prefix_name}'
 
     vcf_files = []
-    fasta_records = []
+    fasta_record = []
     fastq_files = []
     bam_files = []
+    print_fasta_tell = False
 
     temporary_dir = tempfile.TemporaryDirectory()
 
@@ -386,16 +386,16 @@ def main(raw_args=None):
             # init_progress_info()
             pass
 
-        chrom_vcf_file, tmp_vcf_file, altered_fasta = generate_variants(reference,
-                                                                        contig,
-                                                                        temp_vcf_filename,
-                                                                        target_regions_dict[contig],
-                                                                        discard_regions_dict[contig],
-                                                                        mutation_rate_dict[contig],
-                                                                        contig_variants,
-                                                                        models,
-                                                                        options,
-                                                                        out_prefix)
+        chrom_vcf_file, tmp_vcf_file, altered_fastas = generate_variants(reference,
+                                                                         contig,
+                                                                         temp_vcf_filename,
+                                                                         target_regions_dict[contig],
+                                                                         discard_regions_dict[contig],
+                                                                         mutation_rate_dict[contig],
+                                                                         contig_variants,
+                                                                         models,
+                                                                         options,
+                                                                         out_prefix)
 
         vcf_files.append(chrom_vcf_file)
 
@@ -410,7 +410,20 @@ def main(raw_args=None):
             fastq_files.append([chrom_fastq_r1_file, chrom_fastq_r2_file])
 
         if options.produce_fasta:
-            fasta_records.append(SeqRecord(Seq(altered_fasta), id=reference.id, description=reference.description))
+            recombined_altered_fastas = altered_fastas
+            if options.threads > 1:
+                log_mssg(f'Multithreading not yet implemented!', 'INFO')
+                """
+                Once implemented, we will need to recombine the altered fastas from each thread here
+                For now we just set it equal to the altered_fastas list
+                """
+                recombined_altered_fastas = altered_fastas
+            if not print_fasta_tell and options.ploidy > 1:
+                log_mssg("Producing one output Fasta per ploid", 'info')
+                print_fasta_tell = True
+            for i in range(len(recombined_altered_fastas)):
+                fasta_record = ''.join(recombined_altered_fastas[i])
+                output_file_writer.write_fasta_record(i, chromosome=contig, read=fasta_record)
 
         if options.produce_bam:
             chrom_bam_file = generate_bam(reference, options, tmp_vcf_file, tmp_dir_path, contig)
@@ -430,12 +443,6 @@ def main(raw_args=None):
             item.close()
             os.remove(item.name)
 
-    if options.produce_fasta:
-        log_mssg("Outputting final fasta file", 'info')
-
-        with gzip.open(output_file_writer.fasta_fn, 'at') as fasta_out:
-            SeqIO.write(fasta_records, fasta_out, 'fasta')
-
     # End info
     print_end_info(output_file_writer, output_file_writer_cancer, starttime)
 
@@ -450,8 +457,13 @@ if __name__ == '__main__':
                         help="Prefix for the output. Can include a path before it.")
     parser.add_argument('--log-dir', default=os.getcwd(), required=False,
                         help="directory to put log file")
+    parser.add_argument('--silent-mode', required=False, action="store_true", default=False)
 
     args = parser.parse_args()
+
+    if args.silent_mode:
+        text_trap = io.StringIO()
+        sys.stdout = text_trap
 
     now = time.localtime()
     now = time.strftime('%Y_%m_%d_%H%M', now)
@@ -486,3 +498,4 @@ if __name__ == '__main__':
     neat_log.addHandler(file_handler)
 
     main(args)
+    sys.stdout = sys.__stdout__
