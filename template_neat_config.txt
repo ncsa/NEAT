@@ -165,8 +165,13 @@
 # type: boolean | required = no | default = false
 @debug = .
 
-# Set an RNG seed value. Runs using idetical RNG values should produce identical results
+# Set an RNG seed value. Runs using identical RNG values should produce identical results
 # so things like read locations, variant positions, error positions, etc. should be the same.
 # Useful for debugging.
 # type: int | required = no
 @rng_value = .
+
+# Set an absolute minimum number of mutations. The program always adds at least 1 mutation.
+# Useful for very small datasets.
+# type: int | required = no
+@min_mutations = .
