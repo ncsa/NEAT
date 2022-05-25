@@ -429,7 +429,7 @@ class SequenceContainer:
     def insert_mutations(self, input_list):
         for input_variable in input_list:
             which_ploid = []
-            wps = input_variable[4][0]
+            wps = input_variable[4]
 
             # if no genotype given, assume heterozygous and choose a single ploid based on their mut rates
             if wps is None:
