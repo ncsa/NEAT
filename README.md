@@ -71,27 +71,27 @@ The most commonly added options are --pe, --bam, --vcf, and -c.
 | @coverage <float>     | Average coverage for the entire genome. | required: no | default = 10.0
 | @error_model <str>    | Absolute path to file with sequencing error model. required: no | default: <NEAT_DIR>/models/errorModel_default.pickle.gz
 | @avg_seq_error <float>| Average sequencing error rate for the sequencing machine. Must be between 0.0 and 0.3. | required = no
-| @ploidy <int>       | Desired ploidy. | required = no | default = 2                                                                                   
-| @mutation_bed <str> | Absolute path to a bed file with mutation rates by region. Rates must be in the fourth column and be of the form "mut_rate=x.xx". Rates must be between 0.00 and 0.03. | required = no
-| @discard_bed <str>  | Absolute path to bed file containing reference regions that the simulation should discard. | required = no
-| -to <float>         | off-target coverage scalar [0.02]                                                                                                                                                                                             |
-| -m <str>            | mutation model data file                                                                                                                                                                                                      |
-| -M <float>          | Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. These random mutations are inserted in addition to the once specified in the -v option.                 |
-| -Mb <str>           | Bed file containing positional mutation rates                                                                                                                                                                                 |
+| @ploidy <int>         | Desired ploidy. | required = no | default = 2
+| @mutation_bed <str>   | Absolute path to a bed file with mutation rates by region. Rates must be in the fourth column and be of the form "mut_rate=x.xx". Rates must be between 0.00 and 0.03. | required = no
+| @discard_bed <str>    | Absolute path to bed file containing reference regions that the simulation should discard. | required = no
+| -to <float>           | off-target coverage scalar [0.02]                                                                                                                                                                                             |
+| @mutation_model <str> | Absolute path to the mutation model pickle file. Omitting this value will cause NEAT to use the default model, with some standard parameters, and generally uniform biases. | required = no | default: None
+|-@mutation_rate <float>| Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3.
+| -Mb <str>             | Bed file containing positional mutation rates                                                                                                                                                                                 |
 | -N <int>	           | Below this quality score, base-call's will be replaced with N's                                                                                                                                                               |
 | -v <str>            | Input VCF file. Variants from this VCF will be inserted into the simulated sequence with 100% certainty.                                                                                                                      |
 | --pe <int> <int>    | Paired-end fragment length mean and standard deviation. To produce paired end data, one of --pe or --pe-model must be specified.                                                                                              |
 | --pe-model <str>    | Empirical fragment length distribution. Can be generated using [computeFraglen.py](#computefraglenpy). To produce paired end data, one of --pe or --pe-model must be specified.                                               |
 | --gc-model <str>    | Empirical GC coverage bias distribution.  Can be generated using [computeGC.py](#computegcpy)                                                                                                                                 |
-| --bam               | Output golden BAM file                                                                                                                                                                                                        |
-| --vcf               | Output golden VCF file                                                                                                                                                                                                        |
-| --fa	               |   Output FASTA instead of FASTQ                                                                                                                                                                                               |
+| @produce_bam <bool>  | Whether to produce the golden bam file. This file will contain the reads aligned with the exact region of the genome. | required = no | default = false
+| @produce_vcf <bool>  | Whether to produce a vcf file containing all the mutation errors added by NEAT. | required = no | default = false
+| @produce_fasta <bool>| Whether to output the mutated fasta. This will output a fasta file with mutations inserted. It does not include sequencing errors or read information. Useful for multigenerational mutations. | required = no | default = false
 | @rng <int>          | Set an RNG seed value. Runs using identical RNG values should produce identical results so things like read locations, variant positions, error positions, etc. should be the same. Useful for debugging. | required = no
 | --gz                | Gzip output FQ and VCF                                                                                                                                                                                                        |
 | --no-fastq          | Bypass generation of FASTQ read files                                                                                                                                                                                         |
 | --discard-offtarget | Discard reads outside of targeted regions                                                                                                                                                                                     |
 | --rescale-qual      | Rescale Quality scores to match -E input                                                                                                                                                                                      |
-| @debug <boolean>    | Turn on debug mode by setting this to true. Debug mode will print certain messages that may help you pinpoint the problem. | required = no | default = false      
+| @debug <bool>    | Turn on debug mode by setting this to true. Debug mode will print certain messages that may help you pinpoint the problem. | required = no | default = false      
 
 
 
