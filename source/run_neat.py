@@ -148,7 +148,7 @@ def model_trinucs(sequence, models):
     return DiscreteDistribution(range(len(sequence)), trinuc_models)
 
 
-def split(my_string):
+def split_sequence(my_string):
     return [char for char in my_string]
 
 
@@ -172,11 +172,7 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
     TODO: need to add cancer logic to this section
     """
 
-    # Step 1: Create a VCF of variants (mutation and sequencing error variants)
-    # We'll create a temp file first then output it if the user requested the file
-    with open(tmp_vcf_fn, 'w') as tmp_vcf_file:
-        tmp_vcf_file.write(f'@NEAT temporary file, for generating the list of mutations.\n')
-
+    # Step 1: Create a VCF of mutations
     log_mssg(f'Generating chromosome map', 'info')
     mutation_map = parse_mutation_rate_dict(mutation_rate_regions, models.mutation_model['avg_mut_rate'], reference)
 
@@ -347,7 +343,7 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                 alt = random.choices(transition_values, transition_probs)[0]
                 # Max 10 tries
                 j = 10
-                while alt == ref or j > 0:
+                while alt == ref and j > 0:
                     alt = random.choices(transition_values, transition_probs)[0]
                     j -= 1
 
@@ -396,9 +392,14 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
 
     mutated_references = []
     if options.produce_fasta:
-        ref_seq_list = split(str(reference.seq))
-        mutated_references = [ref_seq_list] * options.ploidy
-    # Now that we've generated a list of mutations, let's add them to the temp vcf
+        ref_seq_list = split_sequence(str(reference.seq))
+        if options.fasta_per_ploid:
+            mutated_references = [ref_seq_list] * options.ploidy
+            offset = [0] * options.ploidy
+        else:
+            mutated_references = ref_seq_list
+
+    # Now that we've generated a list of mutations, let's add them to the temp vcf and fasta (if indicated)
     with open(tmp_vcf_fn, 'a') as tmp:
         for i in range(len(output_variants_locations)):
             variant = output_variants[output_variants_locations[i]]
@@ -458,19 +459,32 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                     alt = alt.split(',')
 
                     genotype = variant[j + 1]
-                    for k in range(len(genotype)):
-                        if genotype[k]:
+                    if options.fasta_per_ploid:
+                        for k in range(len(genotype)):
+                            if genotype[k]:
+                                position = output_variants_locations[i] + offset[k]
+                                if mutated_references[k][position: position+len(ref)] != ref:
+                                    # if our base has been deleted or changed already, we'll skip this one.
+                                    continue
+                                mutated_references[k] = add_variant_to_fasta(output_variants_locations[i] + offset[k],
+                                                                             ref, alt,
+                                                                             mutated_references[k])
+                                # offset is a running total of the position modification caused by insertions and deletions
+                                # We update it after inserting the variant, so that the next one is in the correct position.
+                                offset[k] += len(alt) - len(ref)
+                    else:
+                        if 1 in genotype:
                             position = output_variants_locations[i] + offset
-                            if mutated_references[k][position: position+len(ref)] != ref:
-                                # if our base has been deleted or changed already, we'll skip this one.
+                            # If the string of that sequence is different it means our base(s) have been altered.
+                            if ''.join(mutated_references[position: position + len(ref)]) != ref:
+                                # if our base(s) has been deleted or changed already, we'll skip this one.
                                 continue
-                            mutated_references[k] = add_variant_to_fasta(output_variants_locations[i] + offset,
-                                                                         ref, alt,
-                                                                         mutated_references[k])
-
-                    # offset is a running total of the position modification caused by insertions and deletions
-                    # We update it after inserting the variant, so that the next one is in the correct position.
-                    offset += len(alt) - len(ref)
+                            mutated_references = add_variant_to_fasta(output_variants_locations[i] + offset,
+                                                                      ref, alt,
+                                                                      mutated_references)
+                            # offset is a running total of the position modification caused by insertions and deletions
+                            # We update it after inserting the variant, so that the next one is in the correct position.
+                            offset += len(alt) - len(ref)
 
                 # Add one to get it back into vcf coordinates
                 line = f'{chrom}\t{output_variants_locations[i] + 1}\t{variant[j][0]}\t{variant[j][1]}' \
@@ -500,12 +514,9 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
 
         chrom_vcf_file = f"{out_prefix}_{chrom}.vcf.gz"
 
-        with open(tmp_vcf_fn, 'r') as f_in, gzip.open(chrom_vcf_file, 'wt') as f_out:
-            for line in f_in:
-                if line.startswith('@'):
-                    continue
-                else:
-                    f_out.writelines(line)
+        # If needed, save a copy of the temp file out as a gzipped vcf.
+        with open(tmp_vcf_fn, 'rb') as f_in, gzip.open(chrom_vcf_file, 'wb') as f_out:
+            f_out.writelines(f_in)
 
         return chrom_vcf_file, tmp_vcf_fn, mutated_references
 

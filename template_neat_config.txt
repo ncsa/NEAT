@@ -175,3 +175,8 @@
 # Useful for very small datasets.
 # type: int | required = no
 @min_mutations = .
+
+# If you would like to produce 1 fasta per ploid, set this value to true.
+# Otherwise NEAT will attempt to write them all to one fasta (which may result in some data loss)
+# type: bool | required = no | default = false
+@fasta_per_ploid = false

@@ -146,7 +146,7 @@ class OutputFileWriter:
         # Set up filenames based on booleans
         files_to_write = []
         if self.write_fasta:
-            if options.ploidy > 1:
+            if options.ploidy > 1 and options.fasta_per_ploid:
                 self.fasta_fns = [out_prefix.parent / f'{out_prefix.name}_ploid{i+1}.fasta.gz'
                                   for i in range(options.ploidy)]
             else:
@@ -256,10 +256,11 @@ class OutputFileWriter:
                 line = f'@{read_name}/2\n{str(read2)}\n+\n{quality2}\n'
                 fq2.write(line.encode())
 
-    def write_fasta_record(self, index, read: str = None, chromosome: str = None):
+    def write_fasta_record(self, index, read: list = None, chromosome: str = None):
         """
         Needs to take the input given and make a fasta record. We'll assume if a read is input, it is
-        a full read, not a fragment or something.
+        a full read, not a fragment or something. This can either write a list of reads or a chromosome or
+        both. If it gets no data, nothing will be written.
 
         :param index: Required. This gives the ploid number of the file to write.
         :param read: Not required. If present this should be a string.
@@ -267,13 +268,15 @@ class OutputFileWriter:
         """
         file = self.fasta_fns[index]  # set the file to modify
 
-        with gzip.open(file, 'at') as f:
-            if chromosome:
-                f.write(f'>{chromosome}\n')
+        out_fasta = gzip.open(file, 'at')
+        if chromosome:
+            out_fasta.write(f'>{chromosome}\n')
 
-            if read:
-                for i in range(0, len(read), 80):
-                    f.write(f'{read[i:i + 80]}\n')
+        if read:
+            for i in range(0, len(read), 80):
+                print(*read[i:i+80], sep="", file=out_fasta, end='\n')
+
+        out_fasta.close()
 
     def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info, frmt, sample):
         with gzip.open(self.vcf_fn, 'at') as f:
