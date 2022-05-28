@@ -417,13 +417,14 @@ def main(raw_args=None):
                 Once implemented, we will need to recombine the altered fastas from each thread here
                 For now we just set it equal to the altered_fastas list
                 """
-                recombined_altered_fastas = altered_fastas
-            if not print_fasta_tell and options.ploidy > 1:
+                pass
+            if not print_fasta_tell and options.fasta_per_ploid:
                 log_mssg("Producing one output Fasta per ploid", 'info')
                 print_fasta_tell = True
-            for i in range(len(recombined_altered_fastas)):
-                fasta_record = ''.join(recombined_altered_fastas[i])
-                output_file_writer.write_fasta_record(i, chromosome=contig, read=fasta_record)
+                for i in range(len(recombined_altered_fastas)):
+                    output_file_writer.write_fasta_record(i, chromosome=contig, read=recombined_altered_fastas[i])
+            else:
+                output_file_writer.write_fasta_record(0, chromosome=contig, read=recombined_altered_fastas)
 
         if options.produce_bam:
             chrom_bam_file = generate_bam(reference, options, tmp_vcf_file, tmp_dir_path, contig)

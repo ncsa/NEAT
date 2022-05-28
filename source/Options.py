@@ -79,6 +79,7 @@ class Options(SimpleNamespace):
             self.defs['debug'] = ('boolean', False, None, None)
             self.defs['rng_value'] = ('int', None, None, None)
             self.defs['min_mutations'] = ('int', None, None, None)
+            self.defs['fasta_per_ploid'] = ('boolean', False, None, None)
 
             # Cancer options (not yet implemented)
             self.cancer = False
