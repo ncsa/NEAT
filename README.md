@@ -63,22 +63,26 @@ The most commonly added options are --pe, --bam, --vcf, and -c.
 
 | Option              | Description                                                                                                                                                                                                                   |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| -h, --help          | Displays usage information                                                                                                                                                                                                    |
+| @help                 | Displays usage information.
 | @reference <str>      | Absolute path to input reference fasta file. | required = yes
 | @partition_mode <str> | How to partition the reference for analysis. By default, NEAT will attempt to process one contig per thread. However, if you have very large fasta files, you will see additional runtime benefit from choosing the subdivision method, which will split the contigs up into equal sizes for processing. If you need further speedups and have access to a distributed system you can use a shell script wrapper around NEAT to split the fasta into contigs, then join the results later. NEAT does not feature translocations, so this will not affect NEAT's output. Note that subdivision will only activate for number of threads > 1. | required = no | default = chrom | possible values: chrom, subdivision
 | @read_len <int>       | Read length of the reads in the fastq output. Only required if @produce_fastq is set to true. required = no | default = 101
 | @threads <int>        | Number of threads to request for NEAT. The recommended amount is the number of chromosomes in your input fasta plus 1. required: no | default = 1
-| -o <str>              | Output prefix. Use this option to specify where and what to call output files. Required                                                                                                                                       |
+| @output <str>         | Output prefix. Use this option to specify where and what to call output files. | required = yes
 | @coverage <float>     | Average coverage for the entire genome. | required: no | default = 10.0
 | @error_model <str>    | Absolute path to file with sequencing error model. required: no | default: <NEAT_DIR>/models/errorModel_default.pickle.gz
 | @avg_seq_error <float>| Average sequencing error rate for the sequencing machine. Must be between 0.0 and 0.3. | required = no
+| @rescale__qualities <bool> | This scales the quality scores to match the desired average sequencing error rate specified by @avg_seq_error. | required = no | default = false
 | @ploidy <int>         | Desired ploidy. | required = no | default = 2
-| @mutation_bed <str>   | Absolute path to a bed file with mutation rates by region. Rates must be in the fourth column and be of the form "mut_rate=x.xx". Rates must be between 0.00 and 0.03. | required = no
+| @include_vcf <str>    | Absolute path to vcf file containing variants that will always be included, regardless of genotype and filter. You can pre-filter your vcf for these fields before inputting it if this is not the desired behavior. | required = no
+| @target_bed <str>     | Absolute path to bed file containing reference regions that the simulation should target. | required = no
 | @discard_bed <str>    | Absolute path to bed file containing reference regions that the simulation should discard. | required = no
-| -to <float>           | off-target coverage scalar [0.02]                                                                                                                                                                                             |
+| @off_target_coverage <float> | Scalar value for coverage in regions outside the targeted bed. For example, 0.5 would yield roughly half the coverage as the on target areas. | required = no | default = 0.0                                                                     |
+| @discard_offtarget <bool> | Whether to discard areas outside the targeted bed region. By default, this is set to false and NEAT will use a different model for off-target regions but still include them in the final output. | required = no | default = false
+| @discard_bed <str> | Absolute path to bed file containing reference regions that the simulation should discard. | required = no
 | @mutation_model <str> | Absolute path to the mutation model pickle file. Omitting this value will cause NEAT to use the default model, with some standard parameters, and generally uniform biases. | required = no | default: None
-|-@mutation_rate <float>| Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3.
-| -Mb <str>             | Bed file containing positional mutation rates                                                                                                                                                                                 |
+| @mutation_rate <float>| Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3.
+| @mutation_bed <str>   | Absolute path to a bed file with mutation rates by region. Rates must be in the fourth column and be of the form "mut_rate=x.xx". Rates must be between 0.00 and 0.03. | required = no
 | -N <int>	           | Below this quality score, base-call's will be replaced with N's                                                                                                                                                               |
 | -v <str>            | Input VCF file. Variants from this VCF will be inserted into the simulated sequence with 100% certainty.                                                                                                                      |
 | --pe <int> <int>    | Paired-end fragment length mean and standard deviation. To produce paired end data, one of --pe or --pe-model must be specified.                                                                                              |
