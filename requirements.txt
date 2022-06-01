@@ -5,3 +5,5 @@ pysam>=0.16.0.1
 setuptools>=58.0.4
 biopython==1.79
 matplotlib_venn>=0.11.6
+scipy~=1.8.0
+pybedtools~=0.9.0

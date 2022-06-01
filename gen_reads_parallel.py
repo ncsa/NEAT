@@ -9,19 +9,15 @@ Note that I'm planning to hijack NEAT's features for this.
 """
 
 import argparse
-import gzip
 import io
 import logging
 import pathlib
 import sys
 import time
 import tempfile
-from heapq import merge
-from itertools import chain
 import os
 
 from Bio import SeqIO
-from Bio.Seq import Seq
 
 from source.Models import Models
 from source.Options import Options
@@ -116,7 +112,7 @@ def print_configuration(args, options):
         log_mssg(f'Vcf of variants to include: {options.include_vcf}', 'INFO')
     if options.target_bed:
         log_mssg(f'BED of regions to target: {options.target_bed}', 'INFO')
-        log_mssg(f'Off-target coverage rate: {options.off_target_coverage}', 'INFO')
+        log_mssg(f'Off-target coverage rate: {options.off_target_scalar}', 'INFO')
         log_mssg(f'Discarding off target regions: {options.discard_offtarget}', 'INFO')
     if options.discard_bed:
         log_mssg(f'BED of regions to discard: {options.discard_bed}', 'INFO')
@@ -405,6 +401,9 @@ def main(raw_args=None):
                                                                       models,
                                                                       tmp_vcf_file,
                                                                       tmp_dir_path,
+                                                                      target_regions_dict[contig],
+                                                                      discard_regions_dict[contig],
+                                                                      mutation_rate_dict[contig],
                                                                       options,
                                                                       contig)
             fastq_files.append([chrom_fastq_r1_file, chrom_fastq_r2_file])
@@ -432,17 +431,7 @@ def main(raw_args=None):
 
     if options.produce_vcf:
         log_mssg("Outputting complete golden vcf.", 'info')
-        chunks = []
-
-        for vcf in vcf_files:
-            chunks += [gzip.open(vcf, 'r')]
-
-        with gzip.open(output_file_writer.vcf_fn, 'ab') as vcf_out:
-            vcf_out.writelines(merge(*chunks))
-
-        for item in chunks:
-            item.close()
-            os.remove(item.name)
+        output_file_writer.merge_temp_vcfs(vcf_files)
 
     # End info
     print_end_info(output_file_writer, output_file_writer_cancer, starttime)

@@ -588,6 +588,12 @@ def main(raw_args=None):
                     skip_this_window = True
 
                 # print len(coverage_dat[2]), sum(coverage_dat[2])
+                # Programmer's NOTE: this line makes no sense. coverage_dat[2] is a list of scalars.
+                # It's basically looking to see if at least half the region is covered.
+                # So the sum < 50 essentially means
+                # That less than 50 of the bases of this region are covered. Why 50? That's roughly 1/2
+                # of the original default read length. Idk. seems arbitrary
+                # This is a weird way of doing it.
                 if sum(coverage_dat[2]) < low_cov_thresh:
                     coverage_avg = 0.0
                     skip_this_window = True
