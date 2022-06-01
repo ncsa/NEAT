@@ -206,6 +206,8 @@ class SequenceContainer:
             tr_cov_vals = [[] for _ in range(self.ploidy)]
             avg_out = []
             self.coverage_distribution = []
+
+            # This feels like it doesn't belong here.
             for i in range(self.ploidy):
                 # Combined a couple of lines for this. I'm trying to divorce these calculations from the cigar creation
                 if len(self.sequences[i]) - self.read_len > 0:

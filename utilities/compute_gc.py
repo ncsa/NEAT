@@ -19,6 +19,7 @@ import time
 
 import numpy as np
 from Bio import SeqIO
+import pybedtools
 
 
 def process_fasta(file: str) -> dict:
@@ -61,12 +62,10 @@ def process_genomecov(file: str, ref_dict: dict, window: int) -> dict:
     current_line = 0
     current_ref = None
     current_cov = 0
-    lines_processed = 0
 
     f = open(file, 'r')
     for line in f:
         splt = line.strip().split('\t')
-        lines_processed += 1
         if current_line == 0:
             current_ref = splt[0]
             current_pos = int(splt[1]) - 1
@@ -155,12 +154,7 @@ def main():
         y_out.append(gc_bins[k])
 
     print('saving model...')
-<<<<<<< HEAD
-    pickle.dump([window_size, y_out], open(out_p, 'wb'))
-=======
     pickle.dump([range(window_size + 1), y_out], gzip.open(out_p + ".pickle.gz", 'wb'))
->>>>>>> 3586db16b51d5d9162c481c46638ae3b4f298cb1
-
     print(time.time() - tt, '(sec)')
 
 

@@ -98,12 +98,12 @@ def parse_bed(input_bed: str, chromosomes: list,
         in_ref_only = [k for k in chromosomes if k not in ret_dict]
         if in_ref_only:
             log_mssg(f'Warning: Reference contains sequences not found in BED file {input_bed}. '
-                          f'These chromosomes will be omitted from the outputs.', 'warning')
+                     f'These chromosomes will be omitted from the outputs.', 'warning')
             log_mssg(f"In reference only regions: {in_ref_only}", 'debug')
 
         if in_bed_only:
             log_mssg(f'BED file {input_bed} contains sequence names '
-                          f'not found in reference. These regions will be ignored.', 'warning')
+                     f'not found in reference. These regions will be ignored.', 'warning')
             log_mssg(f'Regions ignored: {in_bed_only}', 'debug')
 
     # Returns an empty dict if there is no file to process.

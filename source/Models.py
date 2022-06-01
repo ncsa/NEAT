@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from bisect import bisect_left
+from scipy.stats import poisson
 
 from source.constants_and_defaults import DEFAULT_MUTATION_MODEL, DEFAULT_CANCER_MUTATION_MODEL, TRI_IND, \
     ALL_TRI, ALL_IND, NUC_IND, ALLOWED_NUCL
@@ -380,9 +381,14 @@ class Models:
                 self.fraglen_model = DiscreteDistribution(fraglen_values, fraglen_probability)
                 options.set_value('fragment_mean', fraglen_values[mean_ind_of_weighted_list(fraglen_probability)])
 
-            # Using artificial fragment length distribution, if the parameters were specified
-            # fragment length distribution: normal distribution that goes out to +- 6 standard deviations
             else:
+                """
+                Using artificial fragment length distribution. If the parameters were not specified, 
+                the Options checker should have caught it before this point. If not this will trow a python error.
+
+                Fragment length distribution: normal distribution that goes out to +- 6 standard deviations 
+                from the mean.
+                """
                 log_mssg(f'Using artificial fragment length distribution.', 'info')
                 if options.fragment_st_dev == 0:
                     self.fraglen_model = DiscreteDistribution([options.fragment_mean], [1],
@@ -397,5 +403,7 @@ class Models:
                     fraglen_probability = [np.exp(-(((n - options.fragment_mean) ** 2) /
                                                     (2 * (options.fragment_st_dev ** 2)))) for n in
                                            fraglen_values]
+                    # TODO: this seems like an obvious place to use a normal distribution.
+                    #  We have a mean and standard deviation and instead construct a manual model.
                     self.fraglen_model = DiscreteDistribution(fraglen_values, fraglen_probability)
             log_mssg(f'Loaded paired-end models', 'debug')

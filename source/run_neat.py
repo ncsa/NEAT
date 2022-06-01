@@ -7,6 +7,7 @@ import pathlib
 from Bio.Seq import Seq, MutableSeq
 import numpy as np
 import bisect
+import re
 import shutil
 
 from source.error_handling import log_mssg, premature_exit
@@ -89,6 +90,36 @@ def parse_mutation_rate_dict(mutation_rate_map, avg_rate, reference):
     if ret_list[-1][1] != len(reference):
         ret_list.append((start, len(reference), avg_rate))
     return ret_list
+
+
+def find_ngaps_seq(name, seq):
+    """Find the N-gaps in the given sequence.
+
+    Parameters
+    ----------
+    name : str
+        Name of sequence.
+    seq : str or Bio.Seq
+        Sequence of bases in which to find the N-gaps.
+
+    Returns
+    -------
+    seq_ngap_info : list[dict[str, Any]]
+        Information about the N-gaps found in the given sequence or empty list.
+    """
+    seq_ngap_info = []
+    gap_num = 0
+    for match in re.finditer("N+", str(seq)):
+        gap_num += 1
+        info = {
+            "chrom": name,
+            "chrom_start": match.start(),
+            "chrom_end": match.end(),
+            "name": f"{name}_N{gap_num}",
+        }
+        seq_ngap_info.append(info)
+
+    return seq_ngap_info
 
 
 def map_non_n_regions(sequence):
@@ -530,36 +561,21 @@ def add_variant_to_fasta(position: int, ref: str, alt: str, reference_to_alter: 
     return reference_to_alter
 
 
-def generate_reads(reference_chrom, models, input_vcf, temporary_directory, options, chrom):
+def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
+                   targeted_regions, discarded_regions, mutation_rates, options, chrom):
     # apply errors and mutations and generate reads
     chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq'
     chrom_fastq_r2 = None
     if options.paired_ended:
         chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq'
 
-    # # I think I need all the non-n regions for this analysis
-    # non_n_regions = map_non_n_regions(reference_chrom)
-    # total_bp_spon = sum(non_n_regions)
-    #
-    # current_progress = 0
-    # current_percent = 0
-    # have_printed_100 = False
-    #
-    # all_variants_out = {}
-    # sequences = None
-    # window_target_scale = 100
-    #
-    # target_size = window_target_scale * options.read_len
-    # overlap = options.read_len
-    # overlap_min_window_size = options.read_len + 10
-    #
-    # if options.paired_ended:
-    #     target_size = window_target_scale * options.fragment_mean
-    #     overlap = options.fragment_mean
-    #     overlap_min_window_size = max(models.fraglen_model.values) + 10
-
-    scale_fator = options.fragment_mean if options.paired_ended else options.read_len
-    window_scale = 100 * scale_fator
+    # overlap size also functions as the scale factor for determining the window size
+    overlap = options.read_len
+    minimum_window_size = options.read_len + 10
+    if options.paired_ended:
+        overlap = options.fragment_mean
+        minimum_window_size = max(models.fraglen_model.values) + 10
+    window_scale = 100 * overlap
 
     vars_to_insert = {}
     with gzip.open(input_vcf, 'r') as input_variants:
@@ -589,21 +605,23 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory, opti
     """
     i = 0
     while i < len(reference_chrom):
-        # window = reference_chrom[i: i + target_size]
-        # # calculate the percentage of valid nucleotides in the window, if it's less than 40%, skip this window
-        # if sum(window)/len(window) < 0.4:
-        #     i += 1
-        #     continue
-        # sample_reads(window)
+
         if reference_chrom[i] == "N":
             i += 1
             continue
 
+        # the fraction of N's a read is allowed to have (hard-coded to 40% for now)
+        fraction_ns = 0.4
+
         # Found a non-N
         start = i - random.randint(0, 25)
         end = start + window_scale
+        break
 
-        i += 1
+    buffer = 0
+    for i in range(len(reference_chrom)):
+        number_of_target_windows = max([1, len(reference_chrom) // window_scale])
+
 
     log_mssg(f"Finished sampling reads in {time.time() - start} seconds", 'info')
     return chrom_fastq_r1, chrom_fastq_r2

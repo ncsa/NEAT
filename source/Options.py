@@ -52,7 +52,7 @@ class Options(SimpleNamespace):
             self.defs['include_vcf'] = ('string', None, 'exists', None)
             self.defs['target_bed'] = ('string', None, 'exists', None)
             self.defs['discard_bed'] = ('string', None, 'exists', None)
-            self.defs['off_target_coverage'] = ('float', 0.0, 0, 1)
+            self.defs['off_target_scalar'] = ('float', 0.02, 0, 1)
             self.defs['discard_offtarget'] = ('boolean', False, None, None)
             self.defs['mutation_model'] = ('string', None, 'exists', None)
             self.defs['mutation_rate'] = ('float', None, 0, 0.3)
@@ -212,3 +212,15 @@ class Options(SimpleNamespace):
         self.args['n_handling'] = "ignore"
         if self.args['paired_ended']:
             self.args['n_handling'] = "random"
+
+        # If discard_offtarget set to true and there is a targeted regions bed, set off_target_scalar to 0
+        # If there is no targeted regions bed and discard_offtarget set to true, throw an error
+        if self.args['discard_offtarget'] and self.args['target_bed']:
+            self.args['off_target_scalar'] = 0.0
+        elif self.args['discard_offtarget'] and not self.args['target_bed']:
+            log_mssg("@discard_offtarget set to true, but there is no target bed.")
+            premature_exit(1)
+        if self.args['target_bed']:
+            # We'll set this manually, since we don't actually want it to be a user input
+            self.args['on_target_scalar'] = 1 - self.args['off_target_scalar']
+

@@ -4,6 +4,8 @@ import re
 import shutil
 import tempfile
 from struct import pack
+from heapq import merge
+import os
 
 import pysam
 from Bio import bgzf
@@ -199,7 +201,6 @@ class OutputFileWriter:
                 vcf_file.write(f'##INFO=<ID=VNX,Number=1,Type=String,'
                                f'Description="SNP is Nonsense in these Read Frames">\n')
                 vcf_file.write(f'##INFO=<ID=VFX,Number=1,Type=String,Description="Indel Causes Frameshift">\n')
-                vcf_file.write(f'##INFO=<ID=WP,Number=A,Type=Integer,Description="NEAT-GenReads ploidy indicator">\n')
                 vcf_file.write(f'##ALT=<ID=DEL,Description="Deletion">\n')
                 vcf_file.write(f'##ALT=<ID=DUP,Description="Duplication">\n')
                 vcf_file.write(f'##ALT=<ID=INS,Description="Insertion of novel sequence">\n')
@@ -278,10 +279,17 @@ class OutputFileWriter:
 
         out_fasta.close()
 
-    def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info, frmt, sample):
-        with gzip.open(self.vcf_fn, 'at') as f:
-            f.write(f'{str(chrom)}\t{str(pos)}\t{str(id_str)}\t{str(ref)}\t'
-                    f'{str(alt)}\t{str(qual)}\t{str(filt)}\t{str(info)}\t{str(frmt)}\t{str(sample)}\n')
+    def merge_temp_vcfs(self, temporary_files: list):
+        chunks = []
+        for vcf in temporary_files:
+            chunks += [gzip.open(vcf, 'r')]
+
+        with gzip.open(self.vcf_fn, 'ab') as vcf_out:
+            vcf_out.writelines(merge(*chunks))
+
+        for item in chunks:
+            item.close()
+            os.remove(item.name)
 
     def write_sam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
                          mate_pos=None, aln_map_quality: int = 70):
