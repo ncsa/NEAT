@@ -30,8 +30,6 @@ def generate_coverage_model(coverage_dat: list, sequence: Seq = None, options: d
         target_cov_vals.append(target_cov_scalars[0])
 
 
-
-
 def compute_gc_bias(input_sequence: Seq, size_of_window: int, gc_weight_list: list):
     """
     Takes a Biopython Sequence, a window size and a list of gc weights for the window
