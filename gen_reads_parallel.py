@@ -364,10 +364,12 @@ def main(raw_args=None):
     temporary_dir = tempfile.TemporaryDirectory()
 
     for contig in breaks:
-        log_mssg(f'Mutating: {contig}...', 'info')
 
         contig_variants = {x[1]: input_variants[x] for x in input_variants if x[0] == contig}
         reference = reference_index[contig]
+
+        log_mssg(f'Creating trinucleotide map for {contig}...', 'info')
+        chrom_trinuc_map = map_chromosome(reference, contig)
 
         # Since we're only running single threaded for now:
         threadidx = 1

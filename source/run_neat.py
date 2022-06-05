@@ -157,11 +157,11 @@ def model_trinucs(sequence, models):
     By virtue of the fact that we're trying to speed this up, we'll allow Ns, and
     just set the probs for those at 0
     :param sequence: the sequence to model
-    :models: the models for this simulation
+    :param models: the models for this simulation
     :return: A map of the trinuc probs
     """
     # Set up the model dictionary
-    trinuc_models = [0] * len(sequence)
+    trinuc_models = [0.0] * len(sequence)
     # We're going to rewrite this to operate on subslices of the reference
     # To do that we need to know the safe zones of just this region.
     # Start at +1 so we get a trinucleotide to start and end one shy for the same reason
@@ -169,7 +169,7 @@ def model_trinucs(sequence, models):
         trinuc = sequence[i - 1:i + 2].seq
         # Let's double check to make sure we didn't pick up a stray N
         if any([j for j in trinuc if j not in ALLOWED_NUCL]):
-            trinuc_models[i] = 0.0
+            continue
         trinuc_models[i] = models.mutation_model['trinuc_bias'][trinuc]
     trinuc_models = np.array(trinuc_models)
     # What if there are valid bases, but no valid trinculeotides? Skip this one.
@@ -198,7 +198,25 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
                       mutation_rate_regions, output_variants, models, options,
                       out_prefix):
     """
-    This function will take all the setup we did in the main part and actually do NEAT stuff.
+    This function will generate variants to add to the dataset. In the event that the user only wants a vcf, then
+    this will translate the vcf.
+
+    TODO: rewrite variants so they have a consistent format, in order to facilitate structural variants
+     it makes sense to me to do these in the temporary vcf
+
+    One representation of variants:
+    DUP: pos, len
+    INV: pos, len
+    DEL: pos, len
+    INS: pos1, len, pos2,
+    TRA: pos1, len1, pos2, len2
+
+    Here is the same thing done in a consistent format:
+    DUP: pos1, len1, pos2=pos1+len1, len2=NULL
+    INV: pos1, len1, pos2=NULL, len2=-len1
+    DEL: pos1, len1, pos2=NULL, len2=NULL
+    INS: pos1, len1, pos2, len2=NULL
+    TRA: pos1, len1, pos2, len2
 
     TODO: need to add cancer logic to this section
     """
@@ -304,7 +322,8 @@ def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regi
         # Sorting assures that wherever we found the end point, the coordinates will be in the correct order for slicing
         mutation_slice = sorted([window_start, end_point])
         slice_distance = mutation_slice[1] - mutation_slice[0]
-        # How many variants to add in this slice (at least one, or we'll never get to the finish line)
+        # How many variants to add in this slice. currently set to 1, because if we got this far we have at least
+        # 1 mutation to add and if we set this to 0, it might spin all day before it finds a suitable location.
         variants_to_add_in_slice = max(int((slice_distance/len(reference)) * how_many_mutations), 1)
         # log_mssg(f"Planning to add {variants_to_add_in_slice} variants to slice", 'debug')
 
