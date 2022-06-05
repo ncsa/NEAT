@@ -154,7 +154,7 @@ def main(raw_args=None):
         sys.exit(1)
 
     if create_fasta:
-        no_fastq = True
+        no_fastq = False
         print("Writing output in FASTA format...")
 
     if no_fastq:
