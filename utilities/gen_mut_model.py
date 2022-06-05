@@ -397,8 +397,8 @@ def main():
     # if for some reason we didn't find any valid input variants, exit gracefully...
     total_var = SNP_COUNT + sum(INDEL_COUNT.values())
     if total_var == 0:
-        print(
-            '\nError: No valid variants were found, model could not be created. (Are you using the correct reference?)\n')
+        print(f'\nError: No valid variants were found, model could not be created. '
+              f'(Are you using the correct reference?)\n')
         exit(1)
 
 
