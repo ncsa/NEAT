@@ -55,7 +55,7 @@ if you want to restrict the VCF by a bed file. See specific tools for more infor
 Here's the simplest invocation of genReads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
 
 ```
-python gen_reads.py -r ref.fa -R 101 -o simulated_data
+python gen_reads.py @reference ref.fa @read_len 101 @produce_fastq simulated_data
 ``` 
 
 The most commonly added options are --pe, --bam, --vcf, and -c. 
