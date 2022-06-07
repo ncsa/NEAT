@@ -58,7 +58,7 @@ Here's the simplest invocation of genReads using default parameters. This comman
 python gen_reads.py @reference ref.fa @read_len 101 @produce_fastq simulated_data
 ``` 
 
-The most commonly added options are --pe, --bam, --vcf, and -c. 
+The most commonly added options are @paired_ended_data, @produce_bam, @produce_vcf, and @coverage. 
 
 
 | Option              | Description                                                                                                                                                                                                                   |
@@ -66,7 +66,7 @@ The most commonly added options are --pe, --bam, --vcf, and -c.
 | @help                 | Displays usage information.
 | @reference <str>      | Absolute path to input reference fasta file. | required = yes
 | @partition_mode <str> | How to partition the reference for analysis. By default, NEAT will attempt to process one contig per thread. However, if you have very large fasta files, you will see additional runtime benefit from choosing the subdivision method, which will split the contigs up into equal sizes for processing. If you need further speedups and have access to a distributed system you can use a shell script wrapper around NEAT to split the fasta into contigs, then join the results later. NEAT does not feature translocations, so this will not affect NEAT's output. Note that subdivision will only activate for number of threads > 1. | required = no | default = chrom | possible values: chrom, subdivision
-| @read_len <int>       | Read length of the reads in the fastq output. Only required if @produce_fastq is set to true. required = no | default = 101
+| @read_len <int>    | Read length of the reads in the fastq output. Only required if @produce_fastq is set to true. required = no | default = 101
 | @threads <int>        | Number of threads to request for NEAT. The recommended amount is the number of chromosomes in your input fasta plus 1. required: no | default = 1
 | @output <str>         | Output prefix. Use this option to specify where and what to call output files. | required = yes
 | @coverage <float>     | Average coverage for the entire genome. | required: no | default = 10.0
@@ -77,7 +77,7 @@ The most commonly added options are --pe, --bam, --vcf, and -c.
 | @include_vcf <str>    | Absolute path to vcf file containing variants that will always be included, regardless of genotype and filter. You can pre-filter your vcf for these fields before inputting it if this is not the desired behavior. | required = no
 | @target_bed <str>     | Absolute path to bed file containing reference regions that the simulation should target. | required = no
 | @discard_bed <str>    | Absolute path to bed file containing reference regions that the simulation should discard. | required = no
-| @off_target_coverage <float> | Scalar value for coverage in regions outside the targeted bed. For example, 0.5 would yield roughly half the coverage as the on target areas. | required = no | default = 0.0                                                                     |
+| @off_target_coverage <float> | Scalar value for coverage in regions outside the targeted bed. For example, 0.5 would yield roughly half the coverage as the on target areas. | required = no | default = 0.0
 | @discard_offtarget <bool> | Whether to discard areas outside the targeted bed region. By default, this is set to false and NEAT will use a different model for off-target regions but still include them in the final output. | required = no | default = false
 | @discard_bed <str> | Absolute path to bed file containing reference regions that the simulation should discard. | required = no
 | @mutation_model <str> | Absolute path to the mutation model pickle file. Omitting this value will cause NEAT to use the default model, with some standard parameters, and generally uniform biases. | required = no | default: None
@@ -91,6 +91,7 @@ The most commonly added options are --pe, --bam, --vcf, and -c.
 | @fragment_model <str> | Absolute path to a pickle file containing the fragment length model output from compute_fraglen.py. One such file, fraglenModel_default.pickle.gz is included in the models dir. | required = no
 | @fragment_mean <float> | Mean for the paired end fragment length. This only applies if paired-ended is set to true. This number will form the mean for the sample distribution of the fragment lengths in the simulation. Note: This number is REQUIRED if paired_ended is set to true, unless a fragment length model is used. | required = no (unless paired-ended)
 | @fragment_st_dev <float> | Standard deviation for the paired end fragment length. This only applies if paired-ended is set to true. This number will form the standard deviation about the mean specified above for the sample distribution of the fragment lengths in the simulation. | required = no (unless paired-ended)
+| @output_prefix <str> | Prefix to golden files produced by NEAT. | required = no
 | @produce_bam <bool>  | Whether to produce the golden bam file. This file will contain the reads aligned with the exact region of the genome. | required = no | default = false
 | @produce_vcf <bool>  | Whether to produce a vcf file containing all the mutation errors added by NEAT. | required = no | default = false
 | @produce_fasta <bool>| Whether to output the mutated fasta. This will output a fasta file with mutations inserted. It does not include sequencing errors or read information. Useful for multigenerational mutations. | required = no | default = false
@@ -137,40 +138,40 @@ The following commands are examples for common types of data to be generated. Th
 Simulate whole genome dataset with random variants inserted according to the default model. 
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30
+python gen_reads.py                             \
+        @reference hg19.fa                      \
+        @read_len 126                           \
+        @output_prefix /home/me/simulated_reads \
+        @produce_bam                            \
+        @produce_vcf                            \
+        @paired_ended_data 300 30               \
 ```
 
 ### Targeted region simulation
 Simulate a targeted region of a genome, e.g. exome, with -t.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30                 \
-        -t hg19_exome.bed
+python gen_reads.py                             \
+        @reference hg19.fa                      \
+        @read_len 126                           \
+        @output_prefix /home/me/simulated_reads \
+        @produce_bam                            \
+        @produce_vcf                            \
+        @paired_ended_data 300 30               \
+        @target_bed hg19_exome.bed
 ```
 
 ### Insert specific variants
 Simulate a whole genome dataset with only the variants in the provided VCF file using -v and -M.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30                 \
+python gen_reads.py                             \
+        @reference hg19.fa                      \
+        @read_len 126                           \
+        @output_prefix /home/me/simulated_reads \
+        @produce_bam                            \
+        @produce_vcf                            \
+        @paired_ended_data 300 30               \
         -v NA12878.vcf              \
         -M 0
 ```
@@ -179,12 +180,12 @@ python gen_reads.py                  \
 Simulate single-end reads by omitting the --pe option.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       
+python gen_reads.py                             \
+        @reference hg19.fa                      \
+        @read_len 126                           \
+        @output_prefix /home/me/simulated_reads \
+        @produce_bam                            \
+        @produce_vcf                            \
 ```
 
 ### Large single end reads
@@ -192,8 +193,8 @@ Simulate PacBio-like reads by providing an error model.
 
 ```
 python gen_reads.py                             \
-	-r hg19.fa                                  \
-	-R 5000                                     \
+        @reference hg19.fa                      \
+        @read_len 5050                           \
 	-e models/errorModel_pacbio_toy.pickle.gz   \
 	-E 0.10                                     \
 	-o /home/me/simulated_reads        
