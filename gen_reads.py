@@ -716,8 +716,8 @@ def main(raw_args=None):
                         if len(outside_boundaries) and any(outside_boundaries):
                             continue
 
-                        my_read_name = out_prefix_name + '-' + ref_index[chrom][0] + '-' + str(read_name_count)
-                        my_read_name = "NEAT" + '-' + str(read_name_count) + '-' + ref_index[chrom][0]
+                        # fastq read id name
+                        my_read_name = out_prefix_name + '-' + str(read_name_count) + '-' + ref_index[chrom][0]
 
                         read_name_count += len(my_read_data)
 
