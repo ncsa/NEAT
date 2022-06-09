@@ -756,10 +756,7 @@ def main(raw_args=None):
 
                         # write SE output
                         if len(my_read_data) == 1:
-                            if is_forward:
-                                my_read_name += '-' + str(my_read_data[0][0]+1)
-                            else:
-                                my_read_name += '-' + str(my_read_data[1][0]+1)
+                            my_read_name += '-' + str(my_read_data[0][0]+1)
                                 
                             if not no_fastq:
                                 if is_forward:
