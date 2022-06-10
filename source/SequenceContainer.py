@@ -871,10 +871,11 @@ class ReadContainer:
     Container for read data: computes quality scores and positions to insert errors
     """
 
-    def __init__(self, read_len, error_model, rescaled_error, rescale_qual=False):
+    def __init__(self, read_len, error_model, rescaled_error, rescale_qual=False, max_q=50):
 
         self.read_len = read_len
         self.rescale_qual = rescale_qual
+        self.max_q = max_q
 
         model_path = pathlib.Path(error_model)
         try:
@@ -925,6 +926,10 @@ class ReadContainer:
         else:
             print('\nError: Something wrong with error model.\n')
             sys.exit(1)
+
+        # Ensure that max q is an encodable ASCII character with Q offset
+        if self.max_q + off_q > 126:
+            raise RuntimeError(f'max Q {self.max_q} and Q offset {off_q} exceed max ASCII value of 126')
 
         self.q_err_rate = [0.] * (max(q_scores) + 1)
         for q in q_scores:
@@ -1046,8 +1051,13 @@ class ReadContainer:
                     s_err.append(i)
 
             if self.rescale_qual:  # do we want to rescale qual scores to match rescaled error?
-                q_out = [max([0, int(-10. * np.log10(self.error_scale * self.q_err_rate[n]) + 0.5)]) for n in q_out]
-                q_out = [min([int(self.q_err_rate[-1]), n]) for n in q_out]
+                
+                # Add machine epsilon to log to prevent log(0) error
+                q_out = [max([0, int(-10. * np.log10(self.error_scale * self.q_err_rate[n] + np.finfo(float).eps) + 0.5)]) for n in q_out]
+
+                # Enforce max Q score
+                q_out = [min([self.max_q, n]) for n in q_out]
+
                 q_out = ''.join([chr(n + self.off_q) for n in q_out])
             else:
                 q_out = ''.join([chr(n + self.off_q) for n in q_out])
