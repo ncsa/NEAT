@@ -100,6 +100,8 @@ def main(raw_args=None):
                         help='[debug] ignore fancy models, force coverage to be constant')
     parser.add_argument('--rescale-qual', required=False, action='store_true', default=False,
                         help='Rescale quality scores to match -E input')
+    parser.add_argument('--max-q', required=False, type=int, default=50, help='Max Q score after rescaling [50]')
+
     # TODO implement a broader debugging scheme for subclasses.
     parser.add_argument('-d', required=False, action='store_true', default=False, help='Activate Debug Mode')
     args = parser.parse_args(raw_args)
@@ -123,9 +125,12 @@ def main(raw_args=None):
     # cancer params (disabled currently)
     # (cancer, cancer_model, cancer_purity) = (args.cancer, args.cm, args.cp)
     (cancer, cancer_model, cancer_purity) = (False, None, 0.8)
-    (off_target_scalar, off_target_discard, force_coverage, rescale_qual) = (args.to,
+    (off_target_scalar, off_target_discard, force_coverage, rescale_qual, max_q) = (args.to,
                                                                              args.discard_offtarget,
-                                                                             args.force_coverage, args.rescale_qual)
+                                                                             args.force_coverage,
+                                                                             args.rescale_qual,
+                                                                             args.max_q)
+
     # important flags
     (save_bam, save_vcf, create_fasta, no_fastq) = \
         (args.bam, args.vcf, args.fa, args.no_fastq)
@@ -210,10 +215,10 @@ def main(raw_args=None):
     if se_model is None:
         print('Using default sequencing error model.')
         se_model = sim_path / 'models/errorModel_default.pickle.gz'
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
+        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual=rescale_qual, max_q=max_q)
     else:
         # probably need to do some sanity checking
-        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
+        se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual=rescale_qual, max_q=max_q)
 
     # GC-bias model
     if gc_bias_model is None:
