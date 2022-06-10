@@ -696,8 +696,6 @@ class SequenceContainer:
 
         # choose a random position within the ploid, and generate quality scores / sequencing errors
         reads_to_sample = []
-        read_position = -1
-        frag_length = -1
         if frag_len is None:
             r_pos = self.coverage_distribution[my_ploid].sample()
 
@@ -705,11 +703,6 @@ class SequenceContainer:
             r_dat = self.sequences[my_ploid][r_pos:r_pos + self.read_len]
             (my_qual, my_errors) = sequencing_model.get_sequencing_errors(r_dat)
             reads_to_sample.append([r_pos, my_qual, my_errors, r_dat])
-
-            # frag_len is None when doing SE sim
-            # in that case, set frag_length to read length
-            read_position = r_pos
-            frag_length = self.read_len
 
         else:
             """
@@ -733,10 +726,6 @@ class SequenceContainer:
             (my_qual2, my_errors2) = sequencing_model.get_sequencing_errors(r_dat2, is_reverse_strand=True)
             reads_to_sample.append([r_pos1, my_qual1, my_errors1, r_dat1])
             reads_to_sample.append([r_pos2, my_qual2, my_errors2, r_dat2])
-
-            # r_pos1 appears to be index into ref orientation
-            read_position = r_pos1
-            frag_length = frag_len
 
         # error format:
         # myError[i] = (type, len, pos, ref, alt)
