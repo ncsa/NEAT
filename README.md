@@ -59,49 +59,49 @@ python gen_reads.py @reference ref.fa @read_len 101 @produce_fastq simulated_dat
 The most commonly added options are @paired_ended_data, @produce_bam, @produce_vcf, and @coverage. 
 
 
-| Option              | Description                                                                                                                                                                                                                   |
-|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Option              | Description		| Required/Default Value                                                                                                                                                                                                                   |
+|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
 | @help                          | Displays usage information.
-| @reference <str>               | Absolute path to input reference fasta file. | required = yes
-| @partition_mode <str>          | How to partition the reference for analysis. By default, NEAT will attempt to process one contig per thread. However, if you have very large fasta files, you will see additional runtime benefit from choosing the subdivision method, which will split the contigs up into equal sizes for processing. If you need further speedups and have access to a distributed system you can use a shell script wrapper around NEAT to split the fasta into contigs, then join the results later. NEAT does not feature translocations, so this will not affect NEAT's output. Note that subdivision will only activate for number of threads > 1. | required = no | default = chrom | possible values: chrom, subdivision
-| @read_len <int>                | Read length of the reads in the fastq output. Only required if @produce_fastq is set to true. | required = no | default = 101
-| @threads <int>                 | Number of threads to request for NEAT. The recommended amount is the number of chromosomes in your input fasta plus 1. | required = no | default = 1
-| @output <str>                  | Output prefix. Use this option to specify where and what to call output files. | required = yes
-| @coverage <float>              | Average coverage for the entire genome. | required = no | default = 10.0
-| @error_model <str>             | Absolute path to file with sequencing error model. | required = no | default: <NEAT_DIR>/models/errorModel_default.pickle.gz
-| @avg_seq_error <float>         | Average sequencing error rate for the sequencing machine. Must be between 0.0 and 0.3. | required = no
-| @rescale_qualities <bool>      | This scales the quality scores to match the desired average sequencing error rate specified by @avg_seq_error. | required = no | default = false
-| @ploidy <int>                  | Desired ploidy. | required = no | default = 2
-| @include_vcf <str>             | Absolute path to vcf file containing variants that will always be included, regardless of genotype and filter. You can pre-filter your vcf for these fields before inputting it if this is not the desired behavior. | required = no
-| @target_bed <str>              | Absolute path to bed file containing reference regions that the simulation should target. | required = no
-| @discard_bed <str>             | Absolute path to bed file containing reference regions that the simulation should discard. | required = no
-| @off_target_coverage <float>   | Scalar value for coverage in regions outside the targeted bed. For example, 0.5 would yield roughly half the coverage as the on target areas.          | required = no | default = 0.0
-| @discard_offtarget <bool>      | Whether to discard areas outside the targeted bed region. By default, this is set to false and NEAT will use a different model for off-target regions but still include them in the final output. | required = no | default = false
-| @discard_bed <str>             | Absolute path to bed file containing reference regions that the simulation should discard. | required = no
-| @mutation_model <str>          | Absolute path to the mutation model pickle file. Omitting this value will cause NEAT to use the default model, with some standard parameters, and generally uniform biases. | required = no | default = None
-| @mutation_rate <float>         | Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. | required = no
-| @mutation_bed <str>            | Absolute path to a bed file with mutation rates by region. Rates must be in the fourth column and be of the form "mut_rate=x.xx". Rates must be between 0.00 and 0.03. | required = no
-| @n_cutoff = <int>	         | Cutoff score for changing a base-call to N.  Below the cutoff, base will be changed to N. If omitted, all bases will be shown, regardless of quality score. | required = no
-| @input_vcf <str>               | Input VCF file. Variants from this VCF will be inserted into the simulated sequence with 100% certainty. | required = no
-| @paired_ended_data <int> <int> | Paired-end fragment length mean and standard deviation. To produce paired end data, @paired_ended_model must be specified. | required = no
-| @paired_ended_model <str>      | Whether the output should be paired ended. For certain conditions (i.e., vcf only or fasta only), this will be ignored. If this is true, then there must be an included fragment length model output from compute_fraglen.py or a mean and standard deviation by declaring values for @fragment_mean and @fragment_std_dev. | required = no | default = false
-| @gc_model <str>                | Absolute path to GC content model generated by compute_gc.py. | required = no | default = <NEAT_DIR>/models/gcBias_default.pickle.gz
-| @fragment_model <str>          | Absolute path to a pickle file containing the fragment length model output from compute_fraglen.py. One such file, fraglenModel_default.pickle.gz is included in the models dir. | required = no
-| @fragment_mean <float>         | Mean for the paired end fragment length. This only applies if paired-ended is set to true. This number will form the mean for the sample distribution of the fragment lengths in the simulation. Note: This number is REQUIRED if paired_ended is set to true, unless a fragment length model is used.   | required = no (unless paired-ended)
-| @fragment_st_dev <float>       | Standard deviation for the paired end fragment length. This only applies if paired-ended is set to true. This number will form the standard deviation about the mean specified above for the sample distribution of the fragment lengths in the simulation. | required = no (unless paired-ended)
-| @output_prefix <str>           | Prefix to golden files produced by NEAT. | required = no
-| @produce_bam <bool>            | Whether to produce the golden bam file. This file will contain the reads aligned with the exact region of the genome. | required = no | default = false
-| @produce_vcf <bool>            | Whether to produce a vcf file containing all the mutation errors added by NEAT. | required = no | default = false
-| @produce_fasta <bool>          | Whether to output the mutated fasta. This will output a fasta file with mutations inserted. It does not include sequencing errors or read information. Useful for multigenerational mutations. | required = no | default = false
-| @produce_fastq <bool>          | Whether to output the fastq(s) of the reads. This is the default output. NEAT will produce 1 fastq for single ended reads or 2 fastqs for paired ended. | required = no | default = true
-| @rng <int>                     | Set an RNG seed value. Runs using identical RNG values should produce identical results so things like read locations, variant positions, error positions, etc. should be the same. Useful for debugging. | required = no
-| @gzip <bool>                   | Gzip output FASTQ and VCF. | required = no
-| @min_mutations <int>           | Set an absolute minimum number of mutations. The program always adds at least 1 mutation. Useful for very small datasets. | required = no
-| @discard_offtarget <bool>      | Discard reads outside of targeted regions. | required = no
-| @rescale_qual                  | Rescale quality scores to match @error_model input
-| @force_coverage <bool>         | If set to true, this will ignore statistical models and force coverage to be constant across the genome. This is considered a debugging feature. | required = no | default = false
-| @output_config <bool>          | Output config. If yes will output the config file. Useful for repeating runs. | required = no | default = false 
-| @debug <bool>                  | Turn on debug mode by setting this to true. Debug mode will print certain messages that may help you pinpoint the problem. | required = no | default = false      
+| @reference <str>               | Absolute path to input reference fasta file. | required
+| @partition_mode <str>          | How to partition the reference for analysis. By default, NEAT will attempt to process one contig per thread. However, if you have very large fasta files, you will see additional runtime benefit from choosing the subdivision method, which will split the contigs up into equal sizes for processing. If you need further speedups and have access to a distributed system you can use a shell script wrapper around NEAT to split the fasta into contigs, then join the results later. NEAT does not feature translocations, so this will not affect NEAT's output. Note that subdivision will only activate for number of threads > 1. | default = chrom, possible values: chrom, subdivision
+| @read_len <int>                | Read length of the reads in the fastq output. Only required if @produce_fastq is set to true. | default = 101
+| @threads <int>                 | Number of threads to request for NEAT. The recommended amount is the number of chromosomes in your input fasta plus 1. | default = 1
+| @output <str>                  | Output prefix. Use this option to specify where and what to call output files. | required
+| @coverage <float>              | Average coverage for the entire genome. | default = 10.0
+| @error_model <str>             | Absolute path to file with sequencing error model. | default = <NEAT_DIR>/models/errorModel_default.pickle.gz
+| @avg_seq_error <float>         | Average sequencing error rate for the sequencing machine. Must be between 0.0 and 0.3. |
+| @rescale_qualities <bool>      | This scales the quality scores to match the desired average sequencing error rate specified by @avg_seq_error. | default = false
+| @ploidy <int>                  | Desired ploidy. | default = 2
+| @include_vcf <str>             | Absolute path to vcf file containing variants that will always be included, regardless of genotype and filter. You can pre-filter your vcf for these fields before inputting it if this is not the desired behavior. | 
+| @target_bed <str>              | Absolute path to bed file containing reference regions that the simulation should target. | 
+| @discard_bed <str>             | Absolute path to bed file containing reference regions that the simulation should discard. | 
+| @off_target_coverage <float>   | Scalar value for coverage in regions outside the targeted bed. For example, 0.5 would yield roughly half the coverage as the on target areas.          | default = 0.0
+| @discard_offtarget <bool>      | Whether to discard areas outside the targeted bed region. By default, this is set to false and NEAT will use a different model for off-target regions but still include them in the final output. | default = false
+| @discard_bed <str>             | Absolute path to bed file containing reference regions that the simulation should discard. |
+| @mutation_model <str>          | Absolute path to the mutation model pickle file. Omitting this value will cause NEAT to use the default model, with some standard parameters, and generally uniform biases. | default = None
+| @mutation_rate <float>         | Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. |
+| @mutation_bed <str>            | Absolute path to a bed file with mutation rates by region. Rates must be in the fourth column and be of the form "mut_rate=x.xx". Rates must be between 0.00 and 0.03. |
+| @n_cutoff = <int>	         | Cutoff score for changing a base-call to N.  Below the cutoff, base will be changed to N. If omitted, all bases will be shown, regardless of quality score. |
+| @input_vcf <str>               | Input vcf file. Variants from this vcf will be inserted into the simulated sequence with 100% certainty. |
+| @paired_ended_data <int> <int> | Paired-end fragment length mean and standard deviation. To produce paired end data, @paired_ended_model must be specified. |
+| @paired_ended_model <str>      | Whether the output should be paired ended. For certain conditions (i.e., vcf only or fasta only), this will be ignored. If this is true, then there must be an included fragment length model output from compute_fraglen.py or a mean and standard deviation by declaring values for @fragment_mean and @fragment_std_dev. | default = false
+| @gc_model <str>                | Absolute path to GC content model generated by compute_gc.py. | default = <NEAT_DIR>/models/gcBias_default.pickle.gz
+| @fragment_model <str>          | Absolute path to a pickle file containing the fragment length model output from compute_fraglen.py. One such file, fraglenModel_default.pickle.gz is included in the models dir. |
+| @fragment_mean <float>         | Mean for the paired end fragment length. This only applies if paired-ended is set to true. This number will form the mean for the sample distribution of the fragment lengths in the simulation. Note: This number is REQUIRED if paired_ended is set to true, unless a fragment length model is used.   | required if paired_ended_model = True
+| @fragment_st_dev <float>       | Standard deviation for the paired end fragment length. This only applies if paired-ended is set to true. This number will form the standard deviation about the mean specified above for the sample distribution of the fragment lengths in the simulation. | required if paired_ended_model = True
+| @output_prefix <str>           | Prefix to golden files produced by NEAT. |
+| @produce_bam <bool>            | Whether to produce the golden bam file. This file will contain the reads aligned with the exact region of the genome. | default = false
+| @produce_vcf <bool>            | Whether to produce a vcf file containing all the mutation errors added by NEAT. | default = false
+| @produce_fasta <bool>          | Whether to output the mutated fasta. This will output a fasta file with mutations inserted. It does not include sequencing errors or read information. Useful for multigenerational mutations. | default = false
+| @produce_fastq <bool>          | Whether to output the fastq(s) of the reads. This is the default output. NEAT will produce 1 fastq for single ended reads or 2 fastqs for paired ended. | default = true
+| @rng <int>                     | Set an RNG seed value. Runs using identical RNG values should produce identical results so things like read locations, variant positions, error positions, etc. should be the same. Useful for debugging. |
+| @gzip <bool>                   | Gzip output fastq and vcf. |
+| @min_mutations <int>           | Set an absolute minimum number of mutations. The program always adds at least 1 mutation. Useful for very small datasets. |
+| @discard_offtarget <bool>      | Discard reads outside of targeted regions. |
+| @rescale_qual                  | Rescale quality scores to match @error_model input. |
+| @force_coverage <bool>         | If set to true, this will ignore statistical models and force coverage to be constant across the genome. This is considered a debugging feature. | default = false
+| @output_config <bool>          | Output config. If yes will output the config file. Useful for repeating runs. | default = false 
+| @debug <bool>                  | Turn on debug mode by setting this to true. Debug mode will print certain messages that may help you pinpoint the problem. | default = false      
 
 ## Functionality
 
@@ -122,15 +122,15 @@ Features:
 - Simulates quality scores using either the default model or empirically learned quality scores using utilities/fastq_to_qscoreModel.py
 - Introduces sequencing substitution errors using either the default model or empirically learned from utilities/
 - Accounts for GC% coverage bias using model learned from utilities/computeGC.py
-- Output a VCF file with the 'golden' set of true positive variants. These can be compared to bioinformatics workflow output (includes coverage and allele balance information)
-- Output a BAM file with the 'golden' set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
+- Output a VCF file with the "golden" set of true positive variants. These can be compared to bioinformatics workflow output (includes coverage and allele balance information)
+- Output a BAM file with the "golden" set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
 - Create paired tumour/normal datasets using characteristics learned from real tumour data
 - Parallelized. Can run multiple "partial" simulations in parallel and merge results
 - Low memory footprint. Constant (proportional to the size of the reference sequence)
 
 ## Examples
 
-The following commands are examples for common types of data to be generated. The simulation uses a reference genome in fasta format to generate reads of 126 bases with default 10X coverage. Outputs paired fastq files, a BAM file and a VCF file. The random variants inserted into the sequence will be present in the VCF and all of the reads will show their proper alignment in the BAM. Unless specified, the simulator will also insert some "sequencing error" -- random variants in some reads that represents false positive results from sequencing.
+The following commands are examples for common types of data to be generated. The simulation uses a reference genome in fasta format to generate reads of 126 bases with default 10X coverage. Outputs paired fastq files, a BAM file and a VCF file. The random variants inserted into the sequence will be present in the VCF and all of the reads will show their proper alignment in the BAM. Unless specified, the simulator will also insert some "sequencing error," or random variants in some reads that represents false positive results from sequencing.
 
 ### Whole genome simulation
 Simulate whole genome dataset with random variants inserted according to the default model. 
