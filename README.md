@@ -34,7 +34,7 @@ Table of Contents
     * [genSeqErrorModel.py](#genseqerrormodelpy)
     * [plot_mut_model.py](#plotmutmodelpy)
     * [vcf_compare_OLD.py](#vcf_compare_oldpy)
-      * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
+  * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
 
 
 ## Requirements
