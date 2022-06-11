@@ -136,26 +136,26 @@ The following commands are examples for common types of data to be generated. Th
 Simulate whole genome dataset with random variants inserted according to the default model. 
 
 ```
-python gen_reads.py                             \
-        @reference hg19.fa                      \
-        @read_len 126                           \
-        @output_prefix /home/me/simulated_reads \
-        @produce_bam                            \
-        @produce_vcf                            \
-        @paired_ended_data 300 30               \
+python gen_reads.py                           		     \
+        @reference hg19.fa                      	     \
+        @read_len 126                           	     \
+        @output_prefix /home/me/simulated_reads 	     \
+        @produce_bam                            	     \
+        @produce_vcf                            	     \
+        @paired_ended_data 300 30               	     \
 ```
 
 ### Targeted region simulation
 Simulate a targeted region of a genome, (e.g., exome), with @target_bed.
 
 ```
-python gen_reads.py                             \
-        @reference hg19.fa                      \
-        @read_len 126                           \
-        @output_prefix /home/me/simulated_reads \
-        @produce_bam                            \
-        @produce_vcf                            \
-        @paired_ended_data 300 30               \
+python gen_reads.py                             	     \
+        @reference hg19.fa                      	     \
+        @read_len 126                          	 	     \
+        @output_prefix /home/me/simulated_reads 	     \
+        @produce_bam                            	     \
+        @produce_vcf                           		     \
+        @paired_ended_data 300 30               	     \
         @target_bed hg19_exome.bed
 ```
 
@@ -163,14 +163,14 @@ python gen_reads.py                             \
 Simulate a whole genome dataset with only the variants in the provided VCF file using @input_vcf and @mutation_rate.
 
 ```
-python gen_reads.py                             \
-        @reference hg19.fa                      \
-        @read_len 126                           \
-        @output_prefix /home/me/simulated_reads \
-        @produce_bam                            \
-        @produce_vcf                            \
-        @paired_ended_data 300 30               \
-        @input_vcf NA12878.vcf              \
+python gen_reads.py                             	     \
+        @reference hg19.fa                      	     \
+        @read_len 126                           	     \
+        @output_prefix /home/me/simulated_reads 	     \
+        @produce_bam                            	     \
+        @produce_vcf                            	     \
+        @paired_ended_data 300 30              	 	     \
+        @input_vcf NA12878.vcf             		     \
         @mutation_rate 0
 ```
 
@@ -178,23 +178,23 @@ python gen_reads.py                             \
 Simulate single-end reads by omitting the @paired_ended_data option.
 
 ```
-python gen_reads.py                             \
-        @reference hg19.fa                      \
-        @read_len 126                           \
-        @output_prefix /home/me/simulated_reads \
-        @produce_bam                            \
-        @produce_vcf                            \
+python gen_reads.py                             	     \
+        @reference hg19.fa                      	     \
+        @read_len 126                          		     \
+        @output_prefix /home/me/simulated_reads 	     \
+        @produce_bam                            	     \
+        @produce_vcf                            
 ```
 
 ### Large single end reads
 Simulate PacBio-like reads by providing an error model.
 
 ```
-python gen_reads.py                             \
-        @reference hg19.fa                      \
-        @read_len 5050                           \
-	@error_model models/errorModel_pacbio_toy.pickle.gz   \
-	@avg_seq_error 0.10                                     \
+python gen_reads.py                      	             \
+        @reference hg19.fa                    		     \
+        @read_len 5050                           	     \
+	@error_model models/errorModel_pacbio_toy.pickle.gz  \
+	@avg_seq_error 0.10                                  \
 	@output_prefix /home/me/simulated_reads        
 ```
 
