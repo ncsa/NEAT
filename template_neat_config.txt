@@ -7,6 +7,10 @@
 ## not modify this template, but instead make a copy in your working directory. Done this
 ## way, you can run without even needing to declare -c.
 
+# Displays usage information.
+# required: no
+@help = .
+
 # Absolute path to input reference fasta file
 # type = string | required: yes
 @reference = REQUIRED
@@ -31,6 +35,10 @@
 # your input fasta plus 1.
 # type = int | required: no | default = 1
 @threads = .
+
+# Output prefix. Use this option to specify where and what to call output files.
+# type = str | required: yes
+@output	= .
 
 # Average Coverage for the entire genome.
 # type = float | required: no | default = 10.0
@@ -112,6 +120,10 @@
 # type: boolean | required = no | default = false
 @paired_ended = .
 
+# Paired-end fragment length mean and standard deviation. To produce paired end data,
+# @paired_ended must be specified.
+@paired_ended_data = .
+
 # Absolute path to a pickle file containing the fragment length model output
 # from compute_fraglen.py. One such file, fraglenModel_default.pickle.gz is included in the models dir.
 # type: string | required = no
@@ -146,24 +158,24 @@
 # type: boolean | required = no | default = false
 @produce_fasta = .
 
-# Output config. If yes will output the config file. Useful for repeating runs.
-# type: boolean | required = no | default = false
-@output_config = .
-
 # Whether to output the fastq(s) of the reads. This is the default output. NEAT
 # will produce 1 fastq for single ended reads or 2 fastqs for paired ended.
 # type: boolean | required = no | default = true
 @produce_fastq = .
 
+# Output config. If yes will output the config file. Useful for repeating runs.
+# type: boolean | required = no | default = false
+@output_config = .
+
+# Set an absolute minimum number of mutations. The program always adds at least 1 mutation.
+# Useful for very small datasets.
+# type: int | required = no
+@min_mutations = .
+
 # If set to true, this will ignore statistical models and force coverage to be
 # constant across the genome. This is considered a debugging feature.
 # type: boolean | required = no | default = false
 @force_coverage = .
-
-# Turn on debug mode by setting this to true. Debug mode will print certain messages
-# that may help you pinpoint the problem.
-# type: boolean | required = no | default = false
-@debug = .
 
 # Set an RNG seed value. Runs using identical RNG values should produce identical results
 # so things like read locations, variant positions, error positions, etc. should be the same.
@@ -171,7 +183,7 @@
 # type: int | required = no
 @rng_value = .
 
-# Set an absolute minimum number of mutations. The program always adds at least 1 mutation.
-# Useful for very small datasets.
-# type: int | required = no
-@min_mutations = .
+# Turn on debug mode by setting this to true. Debug mode will print certain messages
+# that may help you pinpoint the problem.
+# type: boolean | required = no | default = false
+@debug = .
