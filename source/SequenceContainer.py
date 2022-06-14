@@ -28,7 +28,7 @@ ALL_TRI = [NUCL[i] + NUCL[j] + NUCL[k] for i in range(len(NUCL)) for j in range(
 ALL_IND = {ALL_TRI[i]: i for i in range(len(ALL_TRI))}
 
 # DEBUG
-IGNORE_TRINUC = False
+IGNORE_TRINUC = True
 
 # percentile resolution used for fraglen quantizing
 COV_FRAGLEN_PERCENTILE = 10.
@@ -38,7 +38,7 @@ LARGE_NUMBER = 9999999999
 DEFAULT MUTATION MODELS
 """
 
-DEFAULT_1_OVERALL_MUT_RATE = 0.001
+DEFAULT_1_OVERALL_MUT_RATE = 0.0
 DEFAULT_1_HOMOZYGOUS_FREQ = 0.010
 DEFAULT_1_INDEL_FRACTION = 0.05
 DEFAULT_1_INS_VS_DEL = 0.6
@@ -63,7 +63,7 @@ DEFAULT_MODEL_1 = [DEFAULT_1_OVERALL_MUT_RATE,
                    DEFAULT_1_TRI_FREQS,
                    DEFAULT_1_TRINUC_BIAS]
 
-DEFAULT_2_OVERALL_MUT_RATE = 0.002
+DEFAULT_2_OVERALL_MUT_RATE = 0.0
 DEFAULT_2_HOMOZYGOUS_FREQ = 0.200
 DEFAULT_2_INDEL_FRACTION = 0.1
 DEFAULT_2_INS_VS_DEL = 0.3
@@ -143,7 +143,7 @@ class SequenceContainer:
             self.mut_scalar = self.mut_rescale / (mut_rate_sum / len(self.model_data))
 
         # how are mutations spread to each ploid, based on their specified mut rates?
-        self.ploid_mut_frac = [float(n[0]) / mut_rate_sum for n in self.model_data]
+        self.ploid_mut_frac = [float(n[0]) / mut_rate_sum if mut_rate_sum != 0 else 0 for n in self.model_data]
         self.ploid_mut_prior = DiscreteDistribution(self.ploid_mut_frac, range(self.ploidy))
 
         # init mutation models
@@ -229,7 +229,7 @@ class SequenceContainer:
             self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data)))
 
         # how are mutations spread to each ploid, based on their specified mut rates?
-        self.ploid_mut_frac = [float(n[0]) / mut_rate_sum for n in self.model_data]
+        self.ploid_mut_frac = [float(n[0]) / mut_rate_sum if mut_rate_sum != 0 else 0 for n in self.model_data]
         self.ploid_mut_prior = DiscreteDistribution(self.ploid_mut_frac, range(self.ploidy))
         self.models = []
         for n in self.model_data:
