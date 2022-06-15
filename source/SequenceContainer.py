@@ -38,7 +38,7 @@ LARGE_NUMBER = 9999999999
 DEFAULT MUTATION MODELS
 """
 
-DEFAULT_1_OVERALL_MUT_RATE = 0.0
+DEFAULT_1_OVERALL_MUT_RATE = 0.001
 DEFAULT_1_HOMOZYGOUS_FREQ = 0.010
 DEFAULT_1_INDEL_FRACTION = 0.05
 DEFAULT_1_INS_VS_DEL = 0.6
@@ -63,7 +63,7 @@ DEFAULT_MODEL_1 = [DEFAULT_1_OVERALL_MUT_RATE,
                    DEFAULT_1_TRI_FREQS,
                    DEFAULT_1_TRINUC_BIAS]
 
-DEFAULT_2_OVERALL_MUT_RATE = 0.0
+DEFAULT_2_OVERALL_MUT_RATE = 0.001
 DEFAULT_2_HOMOZYGOUS_FREQ = 0.200
 DEFAULT_2_INDEL_FRACTION = 0.1
 DEFAULT_2_INS_VS_DEL = 0.3
@@ -110,6 +110,7 @@ class SequenceContainer:
         self.all_cigar = [[] for _ in range(self.ploidy)]
         self.fm_pos = [[] for _ in range(self.ploidy)]
         self.fm_span = [[] for _ in range(self.ploidy)]
+        self.mut_rate = mut_rate
 
         # Blacklist explanation:
         # black_list[ploid][pos] = 0		safe to insert variant here
@@ -135,13 +136,13 @@ class SequenceContainer:
             self.model_data = copy.deepcopy(mut_models)
 
         # do we need to rescale mutation frequencies?
-        mut_rate_sum = sum([n[0] for n in self.model_data])
+        mut_rate_sum = sum([n[0] for n in self.model_data if n[0] is not None])
         self.mut_rescale = mut_rate
         if self.mut_rescale is None:
             self.mut_scalar = 1.0
         else:
             self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data))) if mut_rate_sum != 0 else 1.0
-
+        
         # how are mutations spread to each ploid, based on their specified mut rates?
         self.ploid_mut_frac = [float(n[0]) / mut_rate_sum if mut_rate_sum != 0 else 0 for n in self.model_data]
         self.ploid_mut_prior = DiscreteDistribution(self.ploid_mut_frac, range(self.ploidy))
@@ -1117,13 +1118,17 @@ class ReadContainer:
 
 
 # parse mutation model pickle file
-def parse_input_mutation_model(model=None, which_default=1):
+def parse_input_mutation_model(model=None, which_default=1, mut_rate=None):
 
     if which_default == 1:
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_1]
+        if mut_rate:
+            out_model[0] = mut_rate
     elif which_default == 2:
         # for cancer
         out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_2]
+        if mut_rate:
+            out_model[0] = mut_rate
     else:
         print('\nError: Unknown default mutation model specified\n')
         sys.exit(1)

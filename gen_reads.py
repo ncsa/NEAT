@@ -201,16 +201,17 @@ def main(raw_args=None):
     LOAD INPUT MODELS
     """
 
-    # mutation models
-    mut_model = parse_input_mutation_model(mut_model, 1)
-    if cancer:
-        cancer_model = parse_input_mutation_model(cancer_model, 2)
     if mut_rate < 0.:
         mut_rate = None
 
     if mut_rate != -1 and mut_rate is not None:
         is_in_range(mut_rate, 0.0, 0.3, 'Error: -M must be between 0 and 0.3')
 
+    # mutation models
+    mut_model = parse_input_mutation_model(mut_model, 1, mut_rate)
+    if cancer:
+        cancer_model = parse_input_mutation_model(cancer_model, 2, mut_rate)
+    
     # sequencing error model
     if se_model is None:
         print('Using default sequencing error model.')
@@ -621,6 +622,8 @@ def main(raw_args=None):
                 # insert variants
                 sequences.insert_mutations(vars_from_prev_overlap + vars_in_window)
                 all_inserted_variants = sequences.random_mutations()
+                
+                print(f"inserting {len(all_inserted_variants)} variants")
 
                 # init coverage
                 if sum(coverage_dat[2]) >= low_cov_thresh:
