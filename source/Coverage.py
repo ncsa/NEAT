@@ -6,7 +6,7 @@ from Bio.Seq import Seq
 from Bio import SeqRecord
 
 
-def generate_coverage_model(coverage_dat: list, sequence: Seq = None, options: dict = None,
+def generate_coverage_model(coverage_dat: list, sequence: Seq = None, options: Options = None,
                             models: Models = None, degenerate: bool = False):
 
     # Incorporate force coverage HERE
@@ -91,7 +91,7 @@ def compute_coverage(window: (int, int), reference: SeqRecord, chromosome: str, 
             targeted_regions.insert(0, -1)
             for j in range(start, end):
                 if not (bisect.bisect(targeted_regions, j) % 2):
-                    coverage_data[2].append(options.on_target_scalar)
+                    coverage_data[2].append(1 - options.off_target_scalar)
                     target_hits += 1
                 else:
                     coverage_data[2].append(options.off_target_scalar)
