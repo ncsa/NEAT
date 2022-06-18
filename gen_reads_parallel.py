@@ -22,6 +22,7 @@ from Bio import SeqIO
 from source.Models import Models
 from source.Options import Options
 from source.bed_func import parse_bed
+from source.ref_func import map_chromosome
 from source.constants_and_defaults import VERSION
 from source.error_handling import premature_exit, log_mssg
 from source.output_file_writer import OutputFileWriter
@@ -251,6 +252,7 @@ def main(raw_args=None):
                                                              options.ploidy,
                                                              models.mutation_model['homozygous_freq'],
                                                              reference_index,
+                                                             options,
                                                              tumor_normal=True)
             # TODO figure out what these were going to be used for
             tumor_ind = sample_names.index('tumor_sample')
@@ -259,7 +261,8 @@ def main(raw_args=None):
             (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
                                                              options.ploidy,
                                                              models.mutation_model['homozygous_freq'],
-                                                             reference_index)
+                                                             reference_index,
+                                                             options)
 
         log_mssg("Finished reading @include_vcf file.", "info")
 
@@ -369,7 +372,8 @@ def main(raw_args=None):
         reference = reference_index[contig]
 
         log_mssg(f'Creating trinucleotide map for {contig}...', 'info')
-        chrom_trinuc_map = map_chromosome(reference, contig)
+        chrom_trinuc_map = map_chromosome(reference, models)
+        log_mssg(f'Finished creating trinuc map for {contig}', 'debug')
 
         # Since we're only running single threaded for now:
         threadidx = 1
@@ -387,6 +391,7 @@ def main(raw_args=None):
         chrom_vcf_file, tmp_vcf_file, altered_fastas = generate_variants(reference,
                                                                          contig,
                                                                          temp_vcf_filename,
+                                                                         chrom_trinuc_map,
                                                                          target_regions_dict[contig],
                                                                          discard_regions_dict[contig],
                                                                          mutation_rate_dict[contig],
@@ -449,6 +454,8 @@ if __name__ == '__main__':
                         help="Prefix for the output. Can include a path before it.")
     parser.add_argument('--log-dir', default=os.getcwd(), required=False,
                         help="directory to put log file")
+    parser.add_argument('--log-name', default=None, required=False,
+                        help="Name for the log file (NEAT will append '.log')")
     parser.add_argument('--silent-mode', required=False, action="store_true", default=False)
 
     args = parser.parse_args()
@@ -457,12 +464,13 @@ if __name__ == '__main__':
         text_trap = io.StringIO()
         sys.stdout = text_trap
 
-    now = time.localtime()
-    now = time.strftime('%Y_%m_%d_%H%M', now)
-
     log_dir = args.log_dir
 
-    log_name = f'{log_dir}/{now}_NEAT.log'
+    log_name = f'{log_dir}/{args.log_name}.log'
+    if not log_name:
+        now = time.localtime()
+        now = time.strftime('%Y_%m_%d_%H%M', now)
+        log_name = f'{log_dir}/{now}_NEAT.log'
 
     neat_log = logging.getLogger()
     neat_log.setLevel(logging.DEBUG)
