@@ -129,7 +129,7 @@ def print_configuration(args, options):
     if options.force_coverage:
         log_mssg(f'Ignoring models and forcing coverage value.', 'INFO')
     log_mssg(f'Debug Mode Activated.', 'debug')
-    log_mssg(f'RNG seed value: {options.rng_value}', 'info')
+    log_mssg(f'RNG seed value: {options.rng_seed}', 'info')
 
 
 def find_file_breaks(threads: int, mode: str, reference_index: dict) -> dict:
