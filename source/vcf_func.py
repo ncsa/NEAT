@@ -1,14 +1,12 @@
 import gzip
-import io
-import logging
-import random
-from Bio import SeqIO
 
-import pandas as pd
+from Bio import SeqIO
+from numpy.random import Generator
 
 from source.error_handling import premature_exit, log_mssg
 from source.ploid_functions import pick_ploids
 from source.constants_and_defaults import ALLOWED_NUCL
+from source.Options import Options
 
 
 def retrieve_attribute_from_format(my_record, value, which_sample):
@@ -20,7 +18,8 @@ def retrieve_attribute_from_format(my_record, value, which_sample):
     return [int(x) for x in ret]
 
 
-def parse_input_vcf(vcf_path: str, ploidy: int, homozygous_frequency: float, reference: SeqIO, tumor_normal: bool = False) -> dict:
+def parse_input_vcf(vcf_path: str, ploidy: int, homozygous_frequency: float,
+                    reference: SeqIO, options: Options, tumor_normal: bool = False) -> dict:
 
     log_mssg(f"Parsing input vcf {vcf_path}", 'debug')
     # Read in the raw vcf using pandas' csv reader.
@@ -152,7 +151,7 @@ def parse_input_vcf(vcf_path: str, ploidy: int, homozygous_frequency: float, ref
                         # But we'll cap it at 10 tries
                         i = 10
                         while genotype_tumor == genotype or i > 0:
-                            random.shuffle(genotype_tumor)
+                            options.rng.shuffle(genotype_tumor)
                             i -= 1
                         if genotype == genotype_tumor:
                             log_mssg(f'Skipping variant that already had a '
