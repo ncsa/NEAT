@@ -1,16 +1,14 @@
 import bisect
-import copy
-import random
+
 from typing import Union
 from scipy.stats import poisson
 
 import numpy as np
-import pandas as pd
-
-import scipy
+from numpy.random import Generator
 
 from source.constants_and_defaults import LOW_PROBABILITY_THRESHOLD
 from source.error_handling import premature_exit, log_mssg
+from source.Options import Options
 
 
 def mean_ind_of_weighted_list(candidate_list: list) -> int:
@@ -30,7 +28,6 @@ def mean_ind_of_weighted_list(candidate_list: list) -> int:
 
 class DiscreteDistribution:
     def __init__(self, values, weights, degenerate_val=None):
-
         # some sanity checking
         if not len(weights) or not len(values):
             log_mssg('Weight or value vector given to DiscreteDistribution() are 0-length.', 'error')
@@ -49,7 +46,7 @@ class DiscreteDistribution:
             else:
                 self.degenerate_value = values[0]
         else:
-            self.weights = weights/sum_weight
+            self.weights = np.divide(weights, sum_weight)
             self.values = values
             if len(self.values) != len(self.weights):
                 log_mssg('Length and weights and values vectors must be the same.', 'error')
@@ -58,7 +55,7 @@ class DiscreteDistribution:
             self.cum_prob = np.zeros_like(self.weights)
             self.cum_prob[1:] = np.cumsum(self.weights)[:-1]
 
-    def sample(self) -> Union[int, float]:
+    def sample(self, options: Options) -> Union[int, float]:
         """
         This is one of the slowest parts of the code. Or it just gets hit the most times. Will need
         to investigate at some point.
@@ -71,7 +68,7 @@ class DiscreteDistribution:
             return self.degenerate_value
 
         else:
-            r = random.random()
+            r = options.rng.random()
             return self.values[bisect.bisect(self.cum_prob, r) - 1]
 
 

@@ -1,6 +1,6 @@
 import pathlib
 from types import SimpleNamespace
-import random
+import numpy as np
 
 from source.error_handling import premature_exit, log_mssg
 
@@ -13,8 +13,9 @@ class Options(SimpleNamespace):
     """
     class representing the options
     """
-
     def __init__(self, config_file=None):
+        SimpleNamespace.__init__(self)
+
         # For testing purposes, we'll allow a blank options object
         if not config_file:
             self.is_debug = True
@@ -77,7 +78,7 @@ class Options(SimpleNamespace):
             self.defs['produce_fastq'] = ('boolean', True, None, None)
             self.defs['force_coverage'] = ('boolean', False, None, None)
             self.defs['debug'] = ('boolean', False, None, None)
-            self.defs['rng_value'] = ('int', None, None, None)
+            self.defs['rng_seed'] = ('int', None, None, None)
             self.defs['min_mutations'] = ('int', None, None, None)
             self.defs['fasta_per_ploid'] = ('boolean', False, None, None)
 
@@ -165,7 +166,7 @@ class Options(SimpleNamespace):
                                 raise ValueError
                         except ValueError:
                             log_mssg(f'\nBoolean key @{key} requires a value of "true" or "false" '
-                                          f'(case-insensitive).', 'error')
+                                     f'(case-insensitive).', 'error')
                             premature_exit(1)
                     else:
                         log_mssg(f'BUG: Undefined type in the Options dictionary: {type_of_var}.', 'critical')
@@ -176,17 +177,24 @@ class Options(SimpleNamespace):
             if key not in list(self.args.keys()):
                 self.args[key] = default
 
-    def check_options(self) -> int:
+    def check_options(self):
         """
         Some sanity checks and corrections to the options.
         """
 
         # initialize random seed
-        if not self.args['rng_value']:
-            self.args['rng_value'] = random.randint(2**52, 2**53)
+        if not self.args['rng_seed']:
+            """
+            We want to allow for reproducibility in NEAT, so we'll need to generate a random number to set as the seed.
+            I know this is statistically not as good, but Numpy made it more difficult to achieve a different way. 
+            So we set the rng to a random state, then use that to pick a random integer, then use that as the seed for
+            the simulation RNG.
+            """
+            seed_rng = np.random.default_rng()
+            self.set_value('rng_seed', seed_rng.integers(2**52, 2**53, dtype=int))
 
-        # Set the random seed for this run
-        random.seed(self.args['rng_value'])
+        # Create the rng for this run
+        self.set_value('rng', np.random.default_rng(self.args['rng_seed']))
 
         if not self.args['produce_bam'] and not self.args['produce_vcf'] \
                 and not self.args['produce_fasta'] and not self.args['produce_fastq']:
@@ -197,8 +205,8 @@ class Options(SimpleNamespace):
         flagged = False
         if self.args['paired_ended']:
             if self.args['fragment_model']:
-                self.args['fragment_mean'] = None
-                self.args['fragment_st_dev'] = None
+                self.set_value('fragment_mean', None)
+                self.set_value('fragment_st_dev', None)
             elif self.args['fragment_mean']:
                 if not self.args['fragment_st_dev']:
                     flagged = True
@@ -209,18 +217,14 @@ class Options(SimpleNamespace):
                      "@fragment_model or both @fragment_mean and @fragment_st_dev", 'error')
             premature_exit(1)
 
-        self.args['n_handling'] = "ignore"
+        self.set_value('n_handling', 'ignore')
         if self.args['paired_ended']:
-            self.args['n_handling'] = "random"
+            self.set_value('n_handling', 'random')
 
         # If discard_offtarget set to true and there is a targeted regions bed, set off_target_scalar to 0
         # If there is no targeted regions bed and discard_offtarget set to true, throw an error
         if self.args['discard_offtarget'] and self.args['target_bed']:
-            self.args['off_target_scalar'] = 0.0
+            self.set_value('off_target_scalar', 0.0)
         elif self.args['discard_offtarget'] and not self.args['target_bed']:
-            log_mssg("@discard_offtarget set to true, but there is no target bed.")
+            log_mssg("@discard_offtarget set to true, but there is no target bed.", 'error')
             premature_exit(1)
-        if self.args['target_bed']:
-            # We'll set this manually, since we don't actually want it to be a user input
-            self.args['on_target_scalar'] = 1 - self.args['off_target_scalar']
-

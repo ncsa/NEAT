@@ -1,28 +1,26 @@
-import copy
 import gzip
 import pickle
-import math
-import random
 
 import numpy as np
 import pandas as pd
 
 from bisect import bisect_left
-from scipy.stats import poisson
+
+from source.Options import Options
 
 from source.constants_and_defaults import DEFAULT_MUTATION_MODEL, DEFAULT_CANCER_MUTATION_MODEL, TRI_IND, \
-    ALL_TRI, ALL_IND, NUC_IND, ALLOWED_NUCL
+    ALL_TRI, ALLOWED_NUCL
 from source.error_handling import premature_exit, log_mssg
-from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
+from source.probability import DiscreteDistribution
 
 
-def pickle_load_model(file, mssg) -> list:
+def pickle_load_model(file, mssg):
     """
     This will pickle load a file for processing, checking some standard errors that can happen with the pickle
     files created by the utilities.
     :file: the pathlib object to the file.
     :mssg: the error message to print if things go awry
-    :return: returns the contents if the file, which should all be lists
+    :return: returns the contents if the file
     """
     try:
         return pickle.load(file)
@@ -132,20 +130,20 @@ def parse_input_mutation_model(model, is_cancer: bool = False):
     return out_model
 
 
-def take_closest(myList, myNumber):
+def take_closest(my_list, my_number):
     """
-    Assumes myList is sorted. Returns closest value to myNumber.
+    Assumes my_list is sorted. Returns closest value to my_number.
 
     If two numbers are equally close, return the smallest number.
     """
-    pos = bisect_left(myList, myNumber)
+    pos = bisect_left(my_list, my_number)
     if pos == 0:
-        return myList[0]
-    if pos == len(myList):
-        return myList[-1]
-    before = myList[pos - 1]
-    after = myList[pos]
-    if after - myNumber < myNumber - before:
+        return my_list[0]
+    if pos == len(my_list):
+        return my_list[-1]
+    before = my_list[pos - 1]
+    after = my_list[pos]
+    if after - my_number < my_number - before:
         return after
     else:
         return before
@@ -155,7 +153,7 @@ class SequencingErrorModel:
     """
     This class represents the parameters needed to model quality scores.
     """
-    def __init__(self, options):
+    def __init__(self, options: Options):
         """
         This is a function version of the old SequencingErrors class. May convert to a class
         if it seems valuable. For now, let's try this.
@@ -183,12 +181,12 @@ class SequencingErrorModel:
         mssg = "Problem loading Sequencing error model data @error_model"
         error_model = pickle_load_model(gzip.open(options.error_model, 'rb'), mssg)
         # Convert qual scores to numpy array for faster recall.
-        self.quality_scores = np.array(error_model['quality_scores'])
+        self.quality_scores = np.array(error_model['quality_scores'], dtype=int)
         # pre-compute the error rate for each quality score
         self.quality_score_error_rate = {x: 10. ** (-x / 10) for x in error_model['quality_scores']}
         self.average_error = error_model['average_error']
         self.read_length = error_model['read_length']
-        self.uniform_quality_score = None
+        self.uniform_quality_score = 0
         self.rescale_qualities = options.rescale_qualities
         if error_model['is_uniform']:
             # Near as I can tell, this number is the average error translated into a phred score, but plus 0.5
@@ -227,10 +225,11 @@ class SequencingErrorModel:
             self.quality_index_remap = np.array([max([0, len(error_model["quality_score_probabilities"]) * n //
                                                 options.read_len]) for n in range(options.read_len)])
 
-    def get_sequencing_errors(self, read_data, is_reverse_strand=False):
+    def get_sequencing_errors(self, options: Options, read_data, is_reverse_strand=False):
         """
         Inserts errors of type substitution, insertion, or deletion into read_data, and assigns a quality score
         based on the container model.
+        :param options: Options object to use for the sequencing errors
         :param read_data: sequence to insert errors into
         :param is_reverse_strand: whether to treat this as the reverse strand or not
         :return: modified sequence and associated quality scores
@@ -244,10 +243,10 @@ class SequencingErrorModel:
             # Let's only bother to do this if they even want errors. If error_scale was set to 0, then skip
             if self.error_scale != 0:
                 for i in range(self.read_length):
-                    if random.random() < self.error_scale * self.quality_score_error_rate[self.uniform_quality_score]:
+                    if options.rng.random() < self.error_scale * self.quality_score_error_rate[self.uniform_quality_score]:
                         sequencing_errors.append(i)
         else:
-            temp_quality_array = [self.quality_score_probabilities[n].sample()
+            temp_quality_array = [self.quality_score_probabilities[n].sample(options)
                                   for n in range(len(self.quality_score_probabilities))]
 
             # Now we remap the quality scores to the array based on the remap defined above.
@@ -261,7 +260,7 @@ class SequencingErrorModel:
             # Let's only bother to do this if they even want errors. If error_scale was set to 0, then skip
             if self.error_scale != 0:
                 for i in range(self.read_length):
-                    if random.random() < self.error_scale * self.quality_score_error_rate[out_qualities[i]]:
+                    if options.rng.random() < self.error_scale * self.quality_score_error_rate[out_qualities[i]]:
                         sequencing_errors.append(i)
 
             # We'll see if this has any effect on bins. I doubt it. But since this method allows for bins of size 1,
@@ -295,7 +294,7 @@ class SequencingErrorModel:
             if index != 0 and \
                     index != self.read_length - 1 - max(self.indel_lengths) and \
                     abs(index - previous_indel) > 1:
-                if random.random() < self.indel_probability:
+                if options.rng.random() < self.indel_probability:
                     is_sub = False
 
             # Insert substitution error
@@ -303,18 +302,18 @@ class SequencingErrorModel:
                 current_nucleotide = read_data[index]
                 nuc_index = ALLOWED_NUCL.index(current_nucleotide)
                 # take the zero index because this returns a list of length 1.
-                new_nucleotide = self.substitution_model[nuc_index].sample()
+                new_nucleotide = self.substitution_model[nuc_index].sample(options)
                 introduced_errors.append(('S', 1, index, current_nucleotide, new_nucleotide))
 
             # insert indel error:
             else:
                 # Need to take the first element because this returns a list with 1 element.
-                indel_len = self.indel_length_model.sample()
+                indel_len = self.indel_length_model.sample(options)
 
                 # insertion error:
-                if random.random() < self.insertion_probability:
+                if options.rng.random() < self.insertion_probability:
                     current_nucleotide = read_data[index]
-                    insert = random.choices(ALLOWED_NUCL, self.nucleotide_insertion_model, k=indel_len)
+                    insert = options.rng.choice(ALLOWED_NUCL, p=self.nucleotide_insertion_model, size=indel_len)
                     new_nucleotide = current_nucleotide + "".join(insert)
                     introduced_errors.append(('I', len(new_nucleotide) - 1, index, current_nucleotide, new_nucleotide))
 
@@ -369,17 +368,8 @@ class Models:
                 mssg = 'Problem loading the empirical fragment length model @fragment_model. Please check file and try' \
                        'again.'
                 log_mssg("Using empirical fragment length distribution", 'info')
-                potential_values, potential_prob = pickle_load_model(open(options.fragment_model, 'rb'), mssg)
-
-                fraglen_values = []
-                fraglen_probability = []
-                for i in range(len(potential_values)):
-                    if potential_values[1] > options.read_len:
-                        fraglen_values.append(potential_values[i])
-                        fraglen_probability.append(potential_prob[i])
-
-                self.fraglen_model = DiscreteDistribution(fraglen_values, fraglen_probability)
-                options.set_value('fragment_mean', fraglen_values[mean_ind_of_weighted_list(fraglen_probability)])
+                fraglen_mean, fraglen_std = pickle_load_model(open(options.fragment_model, 'rb'), mssg)
+                self.fraglen_model = {'fragment_mean': fraglen_mean, 'fragment_st_dev': fraglen_std}
 
             else:
                 """
@@ -390,20 +380,8 @@ class Models:
                 from the mean.
                 """
                 log_mssg(f'Using artificial fragment length distribution.', 'info')
-                if options.fragment_st_dev == 0:
-                    self.fraglen_model = DiscreteDistribution([options.fragment_mean], [1],
-                                                              degenerate_val=options.fragment_mean)
-                else:
-                    potential_values = range(max(0, int(options.fragment_mean - 6 * options.fragment_st_dev)),
-                                             int(options.fragment_mean + 6 * options.fragment_st_dev) + 1)
-                    fraglen_values = []
-                    for i in range(len(potential_values)):
-                        if potential_values[i] > options.read_len:
-                            fraglen_values.append(potential_values[i])
-                    fraglen_probability = [np.exp(-(((n - options.fragment_mean) ** 2) /
-                                                    (2 * (options.fragment_st_dev ** 2)))) for n in
-                                           fraglen_values]
-                    # TODO: this seems like an obvious place to use a normal distribution.
-                    #  We have a mean and standard deviation and instead construct a manual model.
-                    self.fraglen_model = DiscreteDistribution(fraglen_values, fraglen_probability)
+
+                self.fraglen_model = {'fragment_mean': options.fragment_mean,
+                                      'fragment_st_dev': options.fragment_st_dev}
+
             log_mssg(f'Loaded paired-end models', 'debug')

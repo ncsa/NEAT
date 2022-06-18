@@ -1,20 +1,36 @@
 import gzip
+import math
+import random
 import time
+from random import choice
+import pathlib
+from Bio.Seq import Seq, MutableSeq
 import numpy as np
 import bisect
 import re
+import shutil
 
-from numpy.random import Generator
-from Bio.Seq import Seq
-from Bio import SeqRecord
-from matplotlib import pyplot as plt
-
-from source.error_handling import log_mssg
+from source.error_handling import log_mssg, premature_exit
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.probability import DiscreteDistribution, poisson_list
-from source.ploid_functions import pick_ploids
-from source.Fragment import Fragment
-from source.Options import Options
+from source.ploid_functions import which_ploid, pick_ploids
+from source.vcf_func import parse_input_vcf
+import tempfile
+import pandas as pd
+import io
+import glob
+from heapq import merge
+
+import shutil
+
+
+def close_temp_files(tmp_files):
+    for file_handle in tmp_files:
+        file_handle.close()
+
+
+def close_temp_dir(temp_dir):
+    temp_dir.cleanup()
 
 
 def remove_blacklisted(which_ploids, genotype, location, blacklist):
@@ -125,9 +141,9 @@ def map_non_n_regions(sequence):
     return base_check
 
 
-def find_random_non_n(rng: Generator, mutation_slice, safe_zones, max_attempts):
+def find_random_non_n(mutation_slice, safe_zones, max_attempts):
     for _ in range(max_attempts):
-        potential_location = rng.integers(0, len(safe_zones), dtype=int)
+        potential_location = random.randint(0, len(safe_zones) - 1)
         if not safe_zones[potential_location]:
             continue
         else:
@@ -136,18 +152,31 @@ def find_random_non_n(rng: Generator, mutation_slice, safe_zones, max_attempts):
     return False
 
 
-def model_trinucs(trinuc_submap):
+def model_trinucs(sequence, models):
     """
     By virtue of the fact that we're trying to speed this up, we'll allow Ns, and
     just set the probs for those at 0
-    :param trinuc_submap: The section of the trinuc map correpsonding to the sequence of interest
+    :param sequence: the sequence to model
+    :param models: the models for this simulation
     :return: A map of the trinuc probs
     """
-
-    if not any(trinuc_submap):
+    # Set up the model dictionary
+    trinuc_models = [0.0] * len(sequence)
+    # We're going to rewrite this to operate on subslices of the reference
+    # To do that we need to know the safe zones of just this region.
+    # Start at +1 so we get a trinucleotide to start and end one shy for the same reason
+    for i in range(1, len(sequence) - 1):
+        trinuc = sequence[i - 1:i + 2].seq
+        # Let's double check to make sure we didn't pick up a stray N
+        if any([j for j in trinuc if j not in ALLOWED_NUCL]):
+            continue
+        trinuc_models[i] = models.mutation_model['trinuc_bias'][trinuc]
+    trinuc_models = np.array(trinuc_models)
+    # What if there are valid bases, but no valid trinculeotides? Skip this one.
+    if not any(trinuc_models):
         return None
     # else, make a discrete distribution
-    return DiscreteDistribution(range(len(trinuc_submap)), trinuc_submap)
+    return DiscreteDistribution(range(len(sequence)), trinuc_models)
 
 
 def split_sequence(my_string):
@@ -165,53 +194,8 @@ def check_if_deleted(all_dels, location):
     return False
 
 
-def is_low_coverage(input_list, test_val):
-    for x in input_list:
-        if x < test_val:
-            return True
-    return False
-
-
-def count_coverage(fragment_list: list, val: int):
-    count = 0
-    for frag in fragment_list:
-        if frag.position > val:
-            # We can quit once we pass the position of interest
-            break
-        elif frag.contains(val):
-            count += 1
-        else:
-            continue
-    return count
-
-
-def is_too_many_n(segment):
-    n = segment.count('N')
-    return n/len(segment) >= 0.2
-
-
-def create_windows(sequence: SeqRecord, size: int, overlap: int):
-    """
-    Create a list of windows
-    :param sequence: Sequence to split
-    :param size: size of windows
-    :param overlap: size of overlap between windows
-    :return: list of windows
-    """
-    windows = []
-    for i in range(0, len(sequence), size):
-        if i < overlap and i + size + overlap < len(sequence):
-            windows.append((i, i+size+overlap))
-        if i + size + overlap < len(sequence):
-            windows.append((i-overlap, i+size+overlap))
-        else:
-            windows.append((i, len(sequence)))
-
-    return windows
-
-
-def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map, target_regions, discard_regions,
-                      mutation_rate_regions, output_variants, models, options: Options,
+def generate_variants(reference, chrom, tmp_vcf_fn, target_regions, discard_regions,
+                      mutation_rate_regions, output_variants, models, options,
                       out_prefix):
     """
     This function will generate variants to add to the dataset. In the event that the user only wants a vcf, then
@@ -290,7 +274,7 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
     if options.min_mutations:
         min_mutations = options.min_mutations
 
-    how_many_mutations = total_mutations_model.sample(options) + min_mutations
+    how_many_mutations = total_mutations_model.sample() + min_mutations
 
     log_mssg(f'Planning to add {how_many_mutations} mutations. The final number may be less.', 'info')
 
@@ -300,20 +284,20 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
     while how_many_mutations > 0:
         # Pick a region based on the mutation rates
         # (default is one rate for the whole chromosome, so this will be trivial in that case
-        mut_region = mutation_regions_model.sample(options)
+        mut_region = mutation_regions_model.sample()
         # Pick a random starting place. Randint is inclusive of endpoints, so we subtract 1
-        window_start = options.rng.integers(mut_region[0], mut_region[1] - 1, dtype=int)
+        window_start = random.randint(mut_region[0], mut_region[1] - 1)
         found = False
         if reference[window_start] not in ALLOWED_NUCL:
             # pick a random location to the right
-            plus = options.rng.integers(window_start + 1, mut_region[1] - 1, dtype=int)
+            plus = random.randint(window_start + 1, mut_region[1] - 1)
             if reference[plus] in ALLOWED_NUCL:
                 found = True
                 window_start = plus
             else:
                 # If that didn't work pick a random location to the left
                 if window_start - 1 > mut_region[0]:
-                    minus = options.rng.integers(mut_region[0], window_start - 1, dtype=int)
+                    minus = random.randint(mut_region[0], window_start - 1)
                     if reference[minus] in ALLOWED_NUCL:
                         found = True
                         window_start = minus
@@ -326,14 +310,10 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
             continue
 
         # at this point the location is found. Now we need a second endpoint. Grab 1000 bases or to the end.
-        end_point = options.rng.integers(window_start,
-                                         min(mut_region[1], window_start + max_window_size) - 1,
-                                         dtype=int)
+        end_point = random.randint(window_start, min(mut_region[1], window_start + max_window_size) - 1)
         if reference[end_point] not in ALLOWED_NUCL:
             # Didn't find it to the right, look to the left
-            end_point = options.rng.integers(max(window_start - max_window_size, mut_region[0]),
-                                             window_start,
-                                             dtype=int)
+            end_point = random.randint(max(window_start - max_window_size, mut_region[0]), window_start)
             if reference[end_point] not in ALLOWED_NUCL:
                 # No suitable end_point, so we try again
                 log_mssg(f"No suitable end_point", 'debug')
@@ -367,26 +347,25 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
             how_many_mutations -= 1
 
             # Now figure out the type of random mutation to insert
-            is_indel = options.rng.random() <= models.mutation_model['indel_freq']
+            is_indel = random.random() <= models.mutation_model['indel_freq']
             # Case 1: indel
             if is_indel:
                 # First pick a location. This function ensures that we do not pick an N as our starting place
                 # Note that find_random_non_n helpfully adds the slice start to the location.
-                location = find_random_non_n(options.rng, mutation_slice, non_n_regions, 5)
+                location = find_random_non_n(mutation_slice, non_n_regions, 5)
 
                 if check_if_deleted(all_dels, location):
                     continue  # No increments, no attempts, just try again.
 
-                is_insertion = options.rng.random() <= models.mutation_model['indel_insert_percentage']
+                is_insertion = random.random() <= models.mutation_model['indel_insert_percentage']
                 if is_insertion:
-                    length = models.mutation_model['insert_length_model'].sample(options)
+                    length = models.mutation_model['insert_length_model'].sample()
                     # Try to find a location to insert. Give it ten tries, then give up.
                     ref = reference[location]
-                    # Check if a p= parameter is needed here
-                    insertion = ''.join(options.rng.choice(ALLOWED_NUCL, size=length))
+                    insertion = ''.join(random.choices(ALLOWED_NUCL, k=length))
                     alt = ref + insertion
                 else:
-                    length = models.mutation_model['deletion_length_model'].sample(options)
+                    length = models.mutation_model['deletion_length_model'].sample()
                     # Plus one so we make sure to grab the first base too
                     ref = reference[location: location+length+1].seq
                     alt = reference[location]
@@ -394,14 +373,14 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
 
             # Case 2: SNP
             else:
-                trinuc_probs = model_trinucs(trinucleotide_map[mutation_slice[0]: mutation_slice[1]])
+                trinuc_probs = model_trinucs(subsequence, models)
                 # If we have some edge case where there was no actual valid trinucleotides, we'll skip this
                 if not trinuc_probs:
                     log_mssg(f"Could not build trinuc probs", 'debug')
                     continue
                 # So there is at least valid trinuc in this subsequence, so now we sample for a location
                 # It's a relative location, so we add the start point of the subsequence to that.
-                location = trinuc_probs.sample(options) + mutation_slice[0]
+                location = trinuc_probs.sample() + mutation_slice[0]
 
                 if check_if_deleted(all_dels, location):
                     continue  # No increments, no attempts, just try again.
@@ -409,13 +388,13 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
                 ref = reference[location]
                 trinuc = reference[location - 1: location + 2]
                 transition_values = ALLOWED_NUCL
-                transition_probs = list(models.mutation_model['trinuc_trans_prob'][trinuc.seq].values())
+                transition_probs = models.mutation_model['trinuc_trans_prob'][trinuc.seq].values()
                 # We want this to be an actual variant, so we'll try a few times
-                alt = options.rng.choice(transition_values, p=transition_probs)
+                alt = random.choices(transition_values, transition_probs)[0]
                 # Max 10 tries
                 j = 10
                 while alt == ref and j > 0:
-                    alt = options.rng.choice(transition_values, p=transition_probs)
+                    alt = random.choices(transition_values, transition_probs)[0]
                     j -= 1
 
                 # We tried and failed, so we give up.
@@ -424,7 +403,7 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
                     continue
 
             # Now we have a location, an alt and a ref, so we figure out which ploid is mutated
-            genotype = pick_ploids(options.rng, options.ploidy, models.mutation_model['homozygous_freq'])
+            genotype = pick_ploids(options.ploidy, models.mutation_model['homozygous_freq'])
 
             if location in output_variants_locations:
                 # grab the genotype of the existing mutation at that location
@@ -433,7 +412,7 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
                 # Try to find a different arrangement. Cap this at 3 tries
                 j = 3
                 while genotype == previous_genotype or j > 0:
-                    options.rng.shuffle(genotype)
+                    random.shuffle(genotype)
                     j -= 1
                 if genotype == previous_genotype:
                     log_mssg(f"Skipping random mutation because a variant already exists there", 'debug')
@@ -609,19 +588,16 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
     if options.paired_ended:
         chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq'
 
-    read_length = int(options.read_len)
-    average_fragment_size = int(options.read_len)
+    # overlap size also functions as the scale factor for determining the window size
+    overlap = options.read_len
+    minimum_window_size = options.read_len + 10
     if options.paired_ended:
-        average_fragment_size = int(options.fragment_mean)
-    coverage_vector = [0.0] * len(reference_chrom)
+        overlap = options.fragment_mean
+        minimum_window_size = max(models.fraglen_model.values) + 10
+    window_scale = 100 * overlap
 
     vars_to_insert = {}
-    frag_mean = None
-    frag_std = None
-    if options.paired_ended:
-        frag_mean = models.fraglen_model['fragment_mean']
-        frag_std = models.fraglen_model['fragment_st_dev']
-    with open(input_vcf, 'r') as input_variants:
+    with gzip.open(input_vcf, 'r') as input_variants:
         for line in input_variants:
             if line.startswith("@") or line.startswith("#"):
                 continue
@@ -641,124 +617,30 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
 
     log_mssg(f'Sampling reads...', 'info')
     start = time.time()
-    min_length = read_length
-    max_length = len(reference_chrom)
-    if options.paired_ended:
-        max_length = int(min(max_length, frag_mean + (6 * frag_std)))
+    """
+    I'm going to try to use a percentage N for this. Basically, if there are at least 40% 
+    Real reads, then we'll use it, otherwise we won't use it. I have no idea how illumina actually works
+    in this regard.
+    """
+    i = 0
+    while i < len(reference_chrom):
 
-    total_bp_spanned = len(reference_chrom)
-    current_progress = 0
-    have_printed100 = False
-    window_size = min(total_bp_spanned, average_fragment_size * 100)
-    overlap = average_fragment_size
-    windows = create_windows(reference_chrom, window_size, overlap)
+        if reference_chrom[i] == "N":
+            i += 1
+            continue
 
-    # for each pass over the chromosome, we need to create size many fragments to cover it
-    # +1 accounts for any rounding errors
-    size = len(reference_chrom) // int(options.read_len) + 1
-    if options.paired_ended:
-        size = len(reference_chrom) // average_fragment_size + 2
+        # the fraction of N's a read is allowed to have (hard-coded to 40% for now)
+        fraction_ns = 0.4
 
-    # For debugging
-    def get_cmap(n, name='hsv'):
-        return plt.cm.get_cmap(name, n)
+        # Found a non-N
+        start = i - random.randint(0, 25)
+        end = start + window_scale
+        break
 
-    # Generate a bunch of fragments to sample from
-    fragments = []
-    fragments_by_read = []
-    for j in range(int(options.coverage) * 2):
-        i = 0
-        done = False
-        fragment_tracking = []
-        while i < len(reference_chrom) and not done:
-            segment = reference_chrom[i: i + average_fragment_size]
+    buffer = 0
+    for i in range(len(reference_chrom)):
+        number_of_target_windows = max([1, len(reference_chrom) // window_scale])
 
-            # Make sure the segments will come out to at around 80% valid bases
-            if is_too_many_n(segment.seq):
-                i += 1
-                continue
-
-            if j != 0:
-                # after the first iteration, we want to introduce some random offset
-                i += round(options.rng.triangular(1, options.read_len, average_fragment_size))
-
-            # check if we are in a targeted region
-            # check if we are in a discard region
-
-            dist = [read_length] * size
-            if options.paired_ended:
-                # Generate a pool of possible fragment lengths based on the mean and standard deviation
-                dist = options.rng.normal(loc=frag_mean,
-                                          scale=frag_std,
-                                          size=size)
-                # filter down to lengths between the min and max, then round to the nearest int
-                dist = [round(i) for i in dist if min_length <= i <= max_length]
-
-            for fragment_length in dist:
-                position = i
-
-                end_point = position+fragment_length
-                # need to make sure we have enough bases to generate reads toward the end
-                if end_point >= len(reference_chrom):
-                    low_cov = is_low_coverage(coverage_vector[position: len(reference_chrom)],
-                                              options.coverage)
-                    if not low_cov:
-                        # If we're already covered, we'll stop trying
-                        done = True
-                        break
-                    elif position + read_length > len(reference_chrom):
-                        # If we can't squeeze in a minimum read, and we still need to cover the end of the genome,
-                        # we'll shift position back to make sure
-                        # we don't get caught in a loop trying to finish up the coverage vector.
-                        position = len(reference_chrom) - read_length
-
-                    fragment_length = len(reference_chrom) - position
-
-                if 'N' in segment:
-                    modified_segment = ""
-                    for base in segment:
-                        if base not in ALLOWED_NUCL:
-                            modified_segment += options.rng.choice(ALLOWED_NUCL)
-                        else:
-                            modified_segment += base
-
-                    segment = Seq(modified_segment)
-
-                read_1 = (position, position+read_length)
-                read_2 = None
-                if options.paired_ended:
-                    read_2 = (position + fragment_length - read_length, position + fragment_length)
-                for k in range(read_1[0], read_1[1]):
-                    coverage_vector[k] += 1
-                    # Add variants and sequencing errors
-
-                if options.paired_ended:
-                    for m in range(read_2[0], read_2[1]):
-                        coverage_vector[m] += 1
-                        # add variants and sequencing errors
-
-                frag = Fragment(reference_chrom, position, fragment_length)
-                bisect.insort_left(fragments, frag)
-                bisect.insort_left(fragment_tracking, frag)
-
-                # This will pick a value between 1 and read length/10, with a mode of 10.
-                # Maybe we can improve this in the future
-                i = end_point + round(options.rng.triangular(1, 10, options.read_len//10))
-                if i >= len(reference_chrom):
-                    done = True
-                    break
-
-        fragments_by_read.append(fragment_tracking)
-
-    plt.barh(1.1, len(reference_chrom), height=0.1)
-    pos = 1
-    for fragments_this_read in fragments_by_read:
-        cmap = get_cmap(len(fragments_this_read))
-        for i in range(len(fragments_this_read)):
-            plt.barh(pos, fragments_this_read[i].length,
-                     left=fragments_this_read[i].position, color=cmap(i), height=0.1)
-        pos -= 0.1
-    plt.savefig(f'/home/jallen17/testing_frags/{j}_{chrom}.png')
 
     log_mssg(f"Finished sampling reads in {time.time() - start} seconds", 'info')
     return chrom_fastq_r1, chrom_fastq_r2
@@ -766,5 +648,5 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
 
 def generate_bam(reference_chrom, options, temporary_vcf, temporary_dir, chrom):
     # Step 4 (optional): Create a golden bam with the reads aligned to the original reference
-    print(reference_chrom, options, temporary_vcf, temporary_dir, chrom)
+    pass
 

@@ -1,20 +1,11 @@
-import gzip
-import logging
-import pathlib
-import random
-import time
-import numpy as np
-
-from Bio.Seq import MutableSeq
 from Bio.Seq import Seq
+from Bio import SeqRecord
 
 from source.constants_and_defaults import ALLOWED_NUCL
-from source.error_handling import premature_exit, log_mssg
-from source.probability import DiscreteDistribution
 from source.Models import Models
 
 
-def find_habitable_regions_alt(reference) -> dict:
+def find_habitable_regions_alt(reference: SeqRecord) -> dict:
     """
     Finds N regions in the sequence
     :param reference: Biopython SeqRecord object containing the sequence to scan.
@@ -54,10 +45,6 @@ def find_habitable_regions_alt(reference) -> dict:
     return non_n_atlas
 
 
-def generate_trinuc_probs(trinuc: Seq, mutation_model: dict):
-    yield mutation_model['trinuc_bias'][trinuc]
-
-
 def map_chromosome(sequence: Seq, models: Models):
     """
     This will create a trinucleotide probability map for the chromosome of interest. Creating this on the fly
@@ -69,16 +56,13 @@ def map_chromosome(sequence: Seq, models: Models):
     """
     # Set up the model dictionary
     trinuc_models = [0.0] * len(sequence)
-    # Start at +1 so we get a trinucleotide to start and end one shy for the same reason
+    # Start at +1 so we get a trinucleotide to start, and end one shy for the same reason
     for i in range(1, len(sequence) - 1):
-        trinuc = sequence[i - 1:i + 2].seq
+        trinuc = sequence[i-1: i + 2].seq
         # Let's double check to make sure we didn't pick up a stray N
         if any([j for j in trinuc if j not in ALLOWED_NUCL]):
+            # leave the probability at 0
             continue
-        trinuc_models[i] = generate_trinuc_probs(trinuc, models.mutation_model)
-    trinuc_models = np.array(trinuc_models)
-    # What if there are valid bases, but no valid trinculeotides? Skip this one.
-    if not any(trinuc_models):
-        return None
-    # else, make a discrete distribution
-    return DiscreteDistribution(range(len(sequence)), trinuc_models)
+        trinuc_models[i] = models.mutation_model['trinuc_bias'][trinuc]
+
+    return trinuc_models
