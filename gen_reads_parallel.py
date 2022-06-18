@@ -466,11 +466,13 @@ if __name__ == '__main__':
 
     log_dir = args.log_dir
 
-    log_name = f'{log_dir}/{args.log_name}.log'
+    log_name = f'{args.log_name}.log'
     if not log_name:
         now = time.localtime()
         now = time.strftime('%Y_%m_%d_%H%M', now)
-        log_name = f'{log_dir}/{now}_NEAT.log'
+        log_name = f'{now}_NEAT.log'
+
+    log_name = f'{log_dir}/{log_name}'
 
     neat_log = logging.getLogger()
     neat_log.setLevel(logging.DEBUG)
