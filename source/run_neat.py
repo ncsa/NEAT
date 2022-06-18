@@ -759,6 +759,7 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
                      left=fragments_this_read[i].position, color=cmap(i), height=0.1)
         pos -= 0.1
     plt.savefig(f'/home/jallen17/testing_frags/{j}_{chrom}.png')
+    # plt.savefig(f'{j}_{chrom}.png')
 
     log_mssg(f"Finished sampling reads in {time.time() - start} seconds", 'info')
     return chrom_fastq_r1, chrom_fastq_r2
