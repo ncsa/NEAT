@@ -623,8 +623,6 @@ def main(raw_args=None):
                 sequences.insert_mutations(vars_from_prev_overlap + vars_in_window)
                 all_inserted_variants = sequences.random_mutations()
                 
-                print(f"inserting {len(all_inserted_variants)} variants")
-
                 # init coverage
                 if sum(coverage_dat[2]) >= low_cov_thresh:
                     if paired_end:
