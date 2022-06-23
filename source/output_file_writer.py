@@ -446,3 +446,28 @@ class OutputFileWriter:
     def close_bam_file(self):
         if self.bam_file:
             self.bam_file.close()
+
+
+def write_fastq_record(read_name, read1, qual1, read2=None, qual2=None, orientation=False):
+    """
+    This method writes a fastq record. We're going to try this method of only touching the file when we write
+    to it and see if it is any faster. If not, we'll have to make a function that just returns the open file
+    object, and then pass that into this function instead of using self.fastqX_fn to open it.
+    """
+    # Since read1 and read2 are Seq objects from Biopython, they have reverse_complement methods built-in
+    (read1, quality1) = (read1, qual1)
+    if read2 and orientation:
+        (read2, quality2) = (read2.reverse_complement(), qual2[::-1])
+    elif read2 and not orientation:
+        read2_tmp = read2
+        qual2_tmp = qual2
+        (read2, quality2) = (read1, qual1)
+        (read1, quality1) = (read2_tmp.reverse_complement(), qual2_tmp[::-1])
+
+    with gzip.open(self.fastq1_fn, 'a') as fq1:
+        line = f'@{read_name}/1\n{str(read1)}\n+\n{quality1}\n'
+        fq1.write(line.encode())
+    if read2 is not None:
+        with gzip.open(self.fastq2_fn, 'a') as fq2:
+            line = f'@{read_name}/2\n{str(read2)}\n+\n{quality2}\n'
+            fq2.write(line.encode())

@@ -357,7 +357,13 @@ class Models:
 
         mssg = "f'ERROR: problem reading @gc_model. Please check file path and try again. " \
                "This file should be the output of compute_gc.py'"
-        self.gc_model = pickle_load_model(gzip.open(options.gc_model, 'r'), mssg)
+        # initialize gc_model
+        self.gc_model = {'window_size': 0, 'gc_bias': []}
+
+        # assign the model attributes.
+        window_size, gc_bias = pickle_load_model(gzip.open(options.gc_model, 'r'), mssg)
+        self.gc_model['window_size'] = window_size
+        self.gc_model['gc_bias'] = gc_bias
 
         log_mssg('GC Bias model loaded', 'debug')
 

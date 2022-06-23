@@ -3,6 +3,7 @@ import time
 import numpy as np
 import bisect
 import re
+import pathlib
 
 from numpy.random import Generator
 from Bio.Seq import Seq
@@ -13,9 +14,10 @@ from source.error_handling import log_mssg
 from source.constants_and_defaults import ALLOWED_NUCL
 from source.probability import DiscreteDistribution, poisson_list
 from source.ploid_functions import pick_ploids
-from source.Fragment import Fragment
+from source.Read import Read
 from source.Options import Options
-
+from source.Models import Models
+from output_file_writer import write_fastq_record
 
 def remove_blacklisted(which_ploids, genotype, location, blacklist):
     remove_ploid = []
@@ -165,9 +167,11 @@ def check_if_deleted(all_dels, location):
     return False
 
 
-def is_low_coverage(input_list, test_val):
-    for x in input_list:
-        if x < test_val:
+def is_low_coverage(input_list, bias_vector, test_val):
+    # We'll give ourselves a padding of 10% to prevent oversampling
+    allowance = 0.9
+    for i in range(len(input_list)):
+        if input_list[i] < test_val * bias_vector[i] * allowance:
             return True
     return False
 
@@ -183,6 +187,17 @@ def count_coverage(fragment_list: list, val: int):
         else:
             continue
     return count
+
+
+def create_coverage_bias_vector(sequence, gc_model):
+    window_size = gc_model['window_size']
+    gc_bias = gc_model['gc_bias']
+    coverage_bias = []
+    for i in range(0, len(sequence), window_size):
+        subsequence = sequence[i: i+window_size]
+        gc_count = subsequence.count('G') + subsequence.count('C')
+        coverage_bias.extend([gc_bias[gc_count]] * window_size)
+    return coverage_bias
 
 
 def is_too_many_n(segment):
@@ -540,8 +555,9 @@ def generate_variants(reference: SeqRecord, chrom, tmp_vcf_fn, trinucleotide_map
                                 mutated_references[k] = add_variant_to_fasta(output_variants_locations[i] + offset[k],
                                                                              ref, alt,
                                                                              mutated_references[k])
-                                # offset is a running total of the position modification caused by insertions and deletions
-                                # We update it after inserting the variant, so that the next one is in the correct position.
+                                # offset is a running total of the position modification caused by insertions and
+                                # deletions. We update it after inserting the variant,
+                                # so that the next one is in the correct position.
                                 offset[k] += len(alt) - len(ref)
                     else:
                         if 1 in genotype:
@@ -601,8 +617,9 @@ def add_variant_to_fasta(position: int, ref: str, alt: str, reference_to_alter: 
     return reference_to_alter
 
 
-def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
-                   targeted_regions, discarded_regions, mutation_rates, options, chrom):
+def generate_reads(reference: SeqRecord, models: Models, input_vcf: str, temporary_directory: str or pathlib.Path,
+                   targeted_regions: list, discarded_regions: list, mutation_rates: list,
+                   options: Options, chrom: str):
     # apply errors and mutations and generate reads
     chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq'
     chrom_fastq_r2 = None
@@ -612,8 +629,7 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
     read_length = int(options.read_len)
     average_fragment_size = int(options.read_len)
     if options.paired_ended:
-        average_fragment_size = int(options.fragment_mean)
-    coverage_vector = [0.0] * len(reference_chrom)
+        average_fragment_size = int(models.fraglen_model['fragment_mean'])
 
     vars_to_insert = {}
     frag_mean = None
@@ -641,78 +657,75 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
 
     log_mssg(f'Sampling reads...', 'info')
     start = time.time()
-    min_length = read_length
-    max_length = len(reference_chrom)
-    if options.paired_ended:
-        max_length = int(min(max_length, frag_mean + (6 * frag_std)))
 
-    total_bp_spanned = len(reference_chrom)
-    current_progress = 0
-    have_printed100 = False
+    base_name = f'{pathlib.Path(options.output).name}-{chrom}'
+    total_bp_spanned = len(reference)
+    coverage_vector = [0.0] * len(reference)
+    coverage_bias = create_coverage_bias_vector(reference.seq, models.gc_model)
     window_size = min(total_bp_spanned, average_fragment_size * 100)
     overlap = average_fragment_size
-    windows = create_windows(reference_chrom, window_size, overlap)
-
-    # for each pass over the chromosome, we need to create size many fragments to cover it
-    # +1 accounts for any rounding errors
-    size = len(reference_chrom) // int(options.read_len) + 1
+    windows = create_windows(reference, window_size, overlap)
+    min_length = read_length
+    max_length = window_size
     if options.paired_ended:
-        size = len(reference_chrom) // average_fragment_size + 2
+        max_length = int(min(max_length, frag_mean + (6 * frag_std)))
 
     # For debugging
     def get_cmap(n, name='hsv'):
         return plt.cm.get_cmap(name, n)
 
-    # Generate a bunch of fragments to sample from
-    fragments = []
-    fragments_by_read = []
-    for j in range(int(options.coverage) * 2):
-        i = 0
-        done = False
-        fragment_tracking = []
-        while i < len(reference_chrom) and not done:
-            segment = reference_chrom[i: i + average_fragment_size]
+    left_reads = []
+    right_reads = []
+    previous_percent = 0
+    i = 0  # Counter number of loops
+    for window in windows:
+        current_window_size = window[1] - window[0]
+        random_positions = list(range(window[0], window[1]))
+        options.rng.shuffle(random_positions)
+        for position in random_positions:
+
+            # Simple progress tracker
+            current_percent = (i * 100)//current_window_size
+            if current_percent > previous_percent:
+                print(f'{current_percent}%', end='\r')
+                previous_percent = current_percent
+
+            # A sample segment to check for N concentration
+            segment = reference[i: i + average_fragment_size]
 
             # Make sure the segments will come out to at around 80% valid bases
             if is_too_many_n(segment.seq):
                 i += 1
                 continue
 
-            if j != 0:
-                # after the first iteration, we want to introduce some random offset
-                i += round(options.rng.triangular(1, options.read_len, average_fragment_size))
-
             # check if we are in a targeted region
             # check if we are in a discard region
 
-            dist = [read_length] * size
+            dist = [read_length] * (int(options.coverage) * 3)
             if options.paired_ended:
                 # Generate a pool of possible fragment lengths based on the mean and standard deviation
                 dist = options.rng.normal(loc=frag_mean,
                                           scale=frag_std,
-                                          size=size)
+                                          size=int(options.coverage) * 3)
                 # filter down to lengths between the min and max, then round to the nearest int
-                dist = [round(i) for i in dist if min_length <= i <= max_length]
+                dist = [round(m) for m in dist if min_length <= m <= max_length]
 
             for fragment_length in dist:
-                position = i
-
-                end_point = position+fragment_length
+                end_point = position + fragment_length
+                low_cov = is_low_coverage(coverage_vector[position: len(reference)], coverage_bias,
+                                          options.coverage)
+                if not low_cov:
+                    break
                 # need to make sure we have enough bases to generate reads toward the end
-                if end_point >= len(reference_chrom):
-                    low_cov = is_low_coverage(coverage_vector[position: len(reference_chrom)],
-                                              options.coverage)
-                    if not low_cov:
-                        # If we're already covered, we'll stop trying
-                        done = True
-                        break
-                    elif position + read_length > len(reference_chrom):
+                if end_point >= len(reference):
+                    if position + read_length > len(reference):
                         # If we can't squeeze in a minimum read, and we still need to cover the end of the genome,
                         # we'll shift position back to make sure
                         # we don't get caught in a loop trying to finish up the coverage vector.
-                        position = len(reference_chrom) - read_length
+                        position = len(reference) - read_length
 
-                    fragment_length = len(reference_chrom) - position
+                    # Since we have enough room, we'll just grab to the end of the reference
+                    fragment_length = len(reference) - position
 
                 if 'N' in segment:
                     modified_segment = ""
@@ -724,42 +737,59 @@ def generate_reads(reference_chrom, models, input_vcf, temporary_directory,
 
                     segment = Seq(modified_segment)
 
-                read_1 = (position, position+read_length)
+                read_name = f'{base_name}-{str(i)}'
+                read_1 = Read(read_name, reference, position, position + read_length)
                 read_2 = None
+                if read_1 not in left_reads:
+                    left_reads.append(read_1)
+                    # This counts the new coverage of the bases, only if we added the read.
+                    for n in range(read_1.position, read_1.end):
+                        coverage_vector[n] += 1
+                        # Add variants and sequencing errors
                 if options.paired_ended:
-                    read_2 = (position + fragment_length - read_length, position + fragment_length)
-                for k in range(read_1[0], read_1[1]):
-                    coverage_vector[k] += 1
-                    # Add variants and sequencing errors
+                    read_2 = Read(read_name, reference, position + fragment_length - read_length,
+                                  position + fragment_length)
+                    if read_2 not in right_reads:
+                        right_reads.append(read_2)
+                        # This counts the new coverage of the bases, only if we added the read.
+                        for p in range(read_2.position, read_2.end):
+                            coverage_vector[p] += 1
+                            # Add variants and sequencing errors
 
-                if options.paired_ended:
-                    for m in range(read_2[0], read_2[1]):
-                        coverage_vector[m] += 1
-                        # add variants and sequencing errors
+            i += 1
 
-                frag = Fragment(reference_chrom, position, fragment_length)
-                bisect.insort_left(fragments, frag)
-                bisect.insort_left(fragment_tracking, frag)
+    print("100%")
 
-                # This will pick a value between 1 and read length/10, with a mode of 10.
-                # Maybe we can improve this in the future
-                i = end_point + round(options.rng.triangular(1, 10, options.read_len//10))
-                if i >= len(reference_chrom):
-                    done = True
-                    break
+    print([x for x in left_reads + right_reads if x.contains(1)])
 
-        fragments_by_read.append(fragment_tracking)
-
-    plt.barh(1.1, len(reference_chrom), height=0.1)
+    plt.barh(1.1, len(reference), height=0.1)
     pos = 1
-    for fragments_this_read in fragments_by_read:
-        cmap = get_cmap(len(fragments_this_read))
-        for i in range(len(fragments_this_read)):
-            plt.barh(pos, fragments_this_read[i].length,
-                     left=fragments_this_read[i].position, color=cmap(i), height=0.1)
+    cmap = get_cmap(len(left_reads))
+    i = 0
+    for read1 in left_reads:
+        plt.barh(pos, read_length, left=read1.position, color=cmap(i), height=0.1)
         pos -= 0.1
-    plt.savefig(f'/home/jallen17/testing_frags/{j}_{chrom}.png')
-    # plt.savefig(f'{j}_{chrom}.png')
+        i += 1
+
+    if options.paired_ended:
+        pos = 1
+        j = len(left_reads)
+        for read2 in right_reads:
+            plt.barh(pos, read_length, left=read2.position, color=cmap(i + 1), height=0.1)
+            pos -= 0.1
+            j -= 1
+
+    # plt.savefig(f'/home/jallen17/testing_frags/{j}_{chrom}.png')
+    plt.show()
+
+    # Generate quality scores
+    for read in left_reads:
+        read.generate_quals()
+
+    # Add reads to the fastq
+    for read in left_reads:
+        with open(chrom_fastq_r1) as out1:
+            write_fastq_record(read, out1)
 
     log_mssg(f"Finished sampling reads in {time.time() - start} seconds", 'info')
     return chrom_fastq_r1, chrom_fastq_r2

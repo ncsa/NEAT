@@ -72,6 +72,7 @@ def compute_coverage(window: (int, int), reference: SeqRecord, chromosome: str, 
     :param options: NEAT gen_reads options object.
     :return:
     """
+    # TODO fix for updated model
     gc_scale_value = models.gc_model
     window_size = len(gc_scale_value) - 1
     start = window[0]
