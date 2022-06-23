@@ -206,7 +206,7 @@ def main(raw_args=None):
 
     # Reads in the user-entered options from the config file and performs
     # some basic checks and corrections.
-    options = Options(args.conf)
+    options = Options(args.output, args.conf)
 
     if not options.debug:
         file_handler.setLevel(logging.INFO)

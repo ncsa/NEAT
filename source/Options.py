@@ -13,7 +13,7 @@ class Options(SimpleNamespace):
     """
     class representing the options
     """
-    def __init__(self, config_file=None):
+    def __init__(self, output_path: pathlib.Path, config_file: str = None):
         SimpleNamespace.__init__(self)
 
         # For testing purposes, we'll allow a blank options object
@@ -66,7 +66,7 @@ class Options(SimpleNamespace):
             self.defs['cancer_purity'] = ('float', 0.8, 0.0, 1.0)
 
             self.defs['n_cutoff'] = ('int', None, 1, 40)
-            self.defs['gc_model'] = ('string', NEAT_PATH / 'models/gcBias_default.pickle.gz', 'exists', None)
+            self.defs['gc_model'] = ('string', NEAT_PATH / 'models/gc_bias_new_default.pickle.gz', 'exists', None)
             self.defs['paired_ended'] = ('boolean', False, None, None)
             self.defs['fragment_model'] = ('string', None, 'exists', None)
             self.defs['fragment_mean'] = ('float', None, 1, arbitrarily_large_number)
@@ -92,6 +92,8 @@ class Options(SimpleNamespace):
             self.read()
             # Some options checking to clean up the args dict.
             self.check_options()
+
+            self.args['output'] = output_path
 
             self.__dict__.update(self.args)
 
