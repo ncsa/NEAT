@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "neat"
+version = "4.0"
+description = "NGS Simulation toolkit"
+authors = ["Joshua Allen <jallen17@illinois.edu>"]
+license = "BSD 3-Clause License"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+biopython = "1.79"
+matplotlib = "^3.5"
+numpy = "^1.23"
+PyYAML = "^6.0"
+pysam = "^0.19.1"
+pybedtools = "^0.9.0"
+
+[tool.poetry.dev-dependencies]
+poetry = "^1.1.13"
+ipython = "^8.4.0"
+
+[tool.poetry.scripts]
+neat = 'neat.cli.cli:run'
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
