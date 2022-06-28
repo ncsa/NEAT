@@ -4,7 +4,7 @@ Command line interface for NEAT's compute fragment length function
 
 import argparse
 
-from ...compute_fraglen import compute_fraglen_runner
+from ...gen_frag_model import compute_fraglen_runner
 from .base import BaseCommand
 from .options import output_group
 
@@ -13,7 +13,7 @@ class Command(BaseCommand):
     """
     Class that generates a model of the fragment length distribution, derived from real data
     """
-    name = "compute_fraglen"
+    name = "gen_frag_model"
     description = "Generate fragment length model from a BAM or SAM file."
 
     def add_arguments(self, parser: argparse.ArgumentParser):
@@ -25,9 +25,18 @@ class Command(BaseCommand):
         parser.add_argument('-i',
                             type=str,
                             metavar="input_file",
+                            dest="input_file",
                             required=True,
                             default=None,
                             help="Bam or sam input file.")
+
+        parser.add_argument('--min_reads',
+                            type=int,
+                            metavar="minimum_number_reads",
+                            required=False,
+                            default=2,
+                            help="Minimum number of reads for a fragment length to consider it in the model. Set to "
+                                 "0 to turn off filtering.")
 
         output_group.add_to_parser(parser)
 
@@ -37,4 +46,4 @@ class Command(BaseCommand):
 
         :param arguments: The namespace with arguments and their values.
         """
-        compute_fraglen_runner(arguments.input_file, arguments.output)
+        compute_fraglen_runner(arguments.input_file, arguments.min_reads, arguments.output)

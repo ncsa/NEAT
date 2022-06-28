@@ -10,7 +10,9 @@ import time
 import pkgutil
 import sys
 import os
+
 from typing import Final
+from datetime import datetime
 
 from ..common import setup_logging
 from .commands import BaseCommand
@@ -48,7 +50,7 @@ class Cli:
         self.parser.add_argument(
             "--log-name",
             type=str,
-            default="neat.log",
+            default=f"{datetime.timestamp(datetime.now())}.neat.log",
             help="Name of the log to write the files (default is NEAT.log)"
         )
         self.parser.add_argument(
