@@ -6,6 +6,8 @@ import io
 import os
 import sys
 import logging
+
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,19 +19,19 @@ LOG_DETAIL = {
 
 
 def setup_logging(
+        filename: str,
         severity: str = "INFO",
         verbosity: str = "MEDIUM",
         directory: str = os.getcwd(),
-        filename: str = "neat.log",
         silent_mode: bool = False
 ):
     """
     Configure logging for the run
 
+    :param filename: Name to give the log. Default is <timestamp>.neat.log in the current working directory
     :param severity: Severity of events that will be tracked. Defaults to "INFO."
     :param verbosity: Changes the amount of information in the log output.
     :param directory: Directory to store the log. Default is the current working directory.
-    :param filename: Name to give the log. Default is neat.log in the current working directory
     :param silent_mode: Default is to output part of the logs to stdout in addition to writing the file
                         Setting this flag will cause it to not print to stdout.
     """
@@ -43,10 +45,10 @@ def setup_logging(
         text_trap = io.StringIO()
         sys.stdout = text_trap
 
-    print(f'directory = {directory}')
-    print(f'filename = {filename}')
-
     log_file = Path(f'{directory}/{filename}')
+
+    print(f'working directory = {directory}')
+    print(f'log file name = {log_file}')
 
     level = getattr(logging, severity.upper(), logging.INFO)
     kwargs['level'] = level
