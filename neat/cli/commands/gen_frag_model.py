@@ -35,8 +35,9 @@ class Command(BaseCommand):
                             metavar="minimum_number_reads",
                             required=False,
                             default=2,
-                            help="Minimum number of reads for a fragment length to consider it in the model. Set to "
-                                 "0 to turn off filtering.")
+                            help="Minimum number of reads for a fragment length to consider it in the model. The "
+                                 "default is 2, to handle smaller datasets. Set to 0 to turn off filtering. "
+                                 "For a larger dataset, try 100 and adjust from there.")
 
         output_group.add_to_parser(parser)
 
