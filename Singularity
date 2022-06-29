@@ -27,8 +27,5 @@ from: condaforge/mambaforge
 
 %runscript
     echo "Running neat"
-    neat gen_frag_model \
-        -i /home/jallen17/neat_data/hg38_aligned.sorted.dedupped.bam \
-        -o /home/jallen17/testing_frags/new_fraglen \
-        --min_reads 100
+    neat gen_frag_model ${1}
     echo "neat finished"
