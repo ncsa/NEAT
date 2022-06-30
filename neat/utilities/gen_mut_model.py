@@ -251,7 +251,8 @@ def main():
                 if trinuc not in TRINUC_REF_COUNT:
                     TRINUC_REF_COUNT[trinuc] = 0
                 TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
-    else:
+    else:from ..models import FragmentLengthModel
+
         print('Found trinucCounts file, using that.')
 
     # Load and process variants in each reference sequence individually, for memory reasons...
