@@ -9,7 +9,7 @@ from typing import Any
 
 class BaseOption(abc.ABC):
     """
-    A comman interface for reusable options and groups of options.
+    A common interface for reusable options and groups of options.
     """
 
     @abc.abstractmethod
