@@ -6,7 +6,8 @@ channels:
 dependencies:
   - python=3.10.*
   - poetry
-  - biopython
+  - biopython=1.79
+  - pkginfo
   - matplotlib
   - numpy
   - pyyaml
