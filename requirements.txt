@@ -1,6 +1,7 @@
-numpy
-matplotlib
-pandas
-pysam
+numpy==1.22.2
+matplotlib>=3.3.4
+pandas>=1.2.1
+pysam>=0.16.0.1
+setuptools>=58.0.4
 biopython==1.79
-matplotlib_venn
+matplotlib_venn>=0.11.6
