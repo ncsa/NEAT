@@ -329,6 +329,7 @@ class SequenceContainer:
                     self.coverage_distribution.append(DiscreteDistribution(coverage_vals, range(len(coverage_vals))))
 
                 # fragment length nightmare
+                # This shit is bananas. Why are they doing this?
                 else:
                     current_thresh = 0.
                     index_list = [0]

@@ -209,7 +209,7 @@ def main(raw_args=None):
     # sequencing error model
     if se_model is None:
         print('Using default sequencing error model.')
-        se_model = sim_path / 'models/errorModel_default.pickle.gz'
+        se_model = sim_path / 'models/default_error_model.pickle.gz'
         se_class = ReadContainer(read_len, se_model, se_rate, rescale_qual)
     else:
         # probably need to do some sanity checking

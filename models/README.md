@@ -16,8 +16,8 @@ Used by genReads.py for simulating various characteristics of NGS datasets.
 
 * Used via '-e' parameter
 
+**default_error_model.pickle.gz** - Paired end sequencing error model based on publicly available NA24694
 **errorModel_toy.pickle.gz** - Sequencing error statistics derived from in-house NGS data.
-
 
 ## paired-end fragment length distribution model
 

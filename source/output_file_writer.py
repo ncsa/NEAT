@@ -111,7 +111,7 @@ class OutputFileWriter:
             self.fq1_file = bgzf.open(fq1, 'w')
 
             self.fq2_file = None
-            if paired:
+            if paired and not self.fasta_instead:
                 self.fq2_file = bgzf.open(fq2, 'w')
 
         # VCF OUTPUT
