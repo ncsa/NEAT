@@ -80,7 +80,7 @@ def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):
 
         # sanity-check readlengths
         if len(qualities_to_check) - 1 != actual_readlen:
-            print('skipping read with unexpected length...')
+            # print('skipping read with unexpected length...')
             continue
 
         for i in range(actual_readlen):
