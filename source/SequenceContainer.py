@@ -138,7 +138,7 @@ class SequenceContainer:
         # do we need to rescale mutation frequencies?
         mut_rate_sum = sum([n[0] for n in self.model_data if n[0] is not None])
         self.mut_rescale = mut_rate
-        if self.mut_rescale is None:
+        if self.mut_rescale is None or mut_rate_sum == 0:
             self.mut_scalar = 1.0
         else:
             self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data))) if mut_rate_sum != 0 else 1.0

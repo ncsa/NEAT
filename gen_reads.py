@@ -501,6 +501,7 @@ def main(raw_args=None):
 
             # if for some reason our region is too small to process, skip it! (sorry)
             if number_target_windows == 1 and (final_position - initial_position) < overlap_min_window_size:
+                print('ELEMBIO: skipping region due to small window size (the sorry region)')
                 continue
 
             start = initial_position
@@ -517,7 +518,7 @@ def main(raw_args=None):
                 for j in range(v_index_from_prev, len(valid_variants_from_vcf)):
                     variants_position = valid_variants_from_vcf[j][0]
                     # update: changed <= to <, so variant cannot be inserted in first position
-                    if start < variants_position < end:
+                    if start < variants_position < end + overlap:
                         # vcf --> array coords
                         vars_in_window.append(tuple([variants_position - 1] + list(valid_variants_from_vcf[j][1:])))
                     if variants_position >= end - overlap - 1 and updated is False:
