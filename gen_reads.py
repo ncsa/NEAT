@@ -517,7 +517,7 @@ def main(raw_args=None):
                 for j in range(v_index_from_prev, len(valid_variants_from_vcf)):
                     variants_position = valid_variants_from_vcf[j][0]
                     # update: changed <= to <, so variant cannot be inserted in first position
-                    if start < variants_position < end + overlap:
+                    if start < variants_position < end:
                         # vcf --> array coords
                         vars_in_window.append(tuple([variants_position - 1] + list(valid_variants_from_vcf[j][1:])))
                     if variants_position >= end - overlap - 1 and updated is False:
@@ -526,27 +526,6 @@ def main(raw_args=None):
                     if variants_position >= end:
                         break
 
-                # determine which structural variants will affect our sampling window positions
-                structural_vars = []
-                for n in vars_in_window:
-                    # change: added abs() so that insertions are also buffered.
-                    buffer_needed = max([max([abs(len(n[1]) - len(alt_allele)), 1]) for alt_allele in n[2]])
-                    # -1 because going from VCF coords to array coords
-                    structural_vars.append((n[0] - 1, buffer_needed))
-
-                # adjust end-position of window based on inserted structural mutations
-                keep_going = True
-                while keep_going:
-                    keep_going = False
-                    for n in structural_vars:
-                        # adding "overlap" here to prevent SVs from being introduced in overlap regions
-                        # (which can cause problems if random mutations from the previous window land on top of them)
-                        delta = (end - 1) - (n[0] + n[1]) - 2 - overlap
-                        if delta < 0:
-                            buffer_added = -delta
-                            end += buffer_added
-                            keep_going = True
-                            break
                 next_start = end - overlap
                 next_end = min([next_start + base_pair_distance, final_position])
                 if next_end - next_start < base_pair_distance:
