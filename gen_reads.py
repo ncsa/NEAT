@@ -144,6 +144,8 @@ def main(raw_args=None):
 
     debug = args.d
 
+    assert fragment_size > read_len, 'Variants may be skipped if fragment size is < read length'
+
     """
     INPUT ERROR CHECKING
     """
