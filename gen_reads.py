@@ -37,7 +37,7 @@ Some constants needed for analysis
 """
 
 # target window size for read sampling. How many times bigger than read/frag length
-WINDOW_TARGET_SCALE = 5
+WINDOW_TARGET_SCALE = 100
 
 # allowed nucleotides
 ALLOWED_NUCL = ['A', 'C', 'G', 'T']
