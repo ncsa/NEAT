@@ -120,9 +120,6 @@ class SequenceContainer:
 
         # disallow mutations to occur on window overlap points
         self.win_buffer = window_overlap
-        for p in range(self.ploidy):
-            self.black_list[p][-self.win_buffer] = 3
-            self.black_list[p][-self.win_buffer - 1] = 3
 
         # initialize mutation models
         if not mut_models:
@@ -206,9 +203,6 @@ class SequenceContainer:
 
         # disallow mutations to occur on window overlap points
         self.win_buffer = window_overlap
-        for p in range(self.ploidy):
-            self.black_list[p][-self.win_buffer] = 3
-            self.black_list[p][-self.win_buffer - 1] = 3
 
     def update_mut_models(self, mut_models, mut_rate):
         if not mut_models:
