@@ -624,7 +624,7 @@ def main(raw_args=None):
                 vars_from_prev_overlap = []
                 vars_cancer_from_prev_overlap = []
                 for n in all_inserted_variants:
-                    if n[0] >= end - overlap - 1:
+                    if n[0] > end - overlap - 1:
                         vars_from_prev_overlap.append(n)
                 if cancer:
                     for n in all_cancer_variants:
@@ -847,7 +847,6 @@ def main(raw_args=None):
                     all_variants_out[n] = True
 
                 # prepare indices of next window
-
                 start = next_start
                 end = next_end
                 if is_last_time:
