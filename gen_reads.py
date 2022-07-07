@@ -144,7 +144,8 @@ def main(raw_args=None):
 
     debug = args.d
 
-    assert fragment_size > read_len, 'Variants may be skipped if mean fragment size is < read length'
+    if fragment_size:
+        assert fragment_size > read_len, 'Variants may be skipped if mean fragment size is < read length'
 
     """
     INPUT ERROR CHECKING
@@ -520,7 +521,7 @@ def main(raw_args=None):
                 for j in range(v_index_from_prev, len(valid_variants_from_vcf)):
                     variants_position = valid_variants_from_vcf[j][0]
                     # update: changed <= to <, so variant cannot be inserted in first position
-                    if start < variants_position < end:
+                    if start < variants_position <= end:
                         # vcf --> array coords
                         vars_in_window.append(tuple([variants_position - 1] + list(valid_variants_from_vcf[j][1:])))
                     if variants_position >= end - overlap - 1 and updated is False:
@@ -604,7 +605,7 @@ def main(raw_args=None):
                 # insert variants
                 sequences.insert_mutations(vars_from_prev_overlap + vars_in_window)
                 all_inserted_variants = sequences.random_mutations()
-                
+
                 # init coverage
                 if sum(coverage_dat[2]) >= low_cov_thresh:
                     if paired_end:
@@ -846,6 +847,7 @@ def main(raw_args=None):
                     all_variants_out[n] = True
 
                 # prepare indices of next window
+
                 start = next_start
                 end = next_end
                 if is_last_time:
