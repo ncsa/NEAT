@@ -204,16 +204,17 @@ def main(raw_args=None):
     LOAD INPUT MODELS
     """
 
-    # mutation models
-    mut_model = parse_input_mutation_model(mut_model, 1)
-    if cancer:
-        cancer_model = parse_input_mutation_model(cancer_model, 2)
     if mut_rate < 0.:
         mut_rate = None
 
     if mut_rate != -1 and mut_rate is not None:
         is_in_range(mut_rate, 0.0, 0.3, 'Error: -M must be between 0 and 0.3')
 
+    # mutation models
+    mut_model = parse_input_mutation_model(mut_model, 1, mut_rate)
+    if cancer:
+        cancer_model = parse_input_mutation_model(cancer_model, 2, mut_rate)
+    
     # sequencing error model
     if se_model is None:
         print('Using default sequencing error model.')
@@ -650,6 +651,7 @@ def main(raw_args=None):
                     # if coverage is so low such that no reads are to be sampled, skip region
                     #      (i.e., remove buffer of +1 reads we add to every window)
                     if reads_to_sample == 1 and sum(coverage_dat[2]) < low_cov_thresh:
+                        print("Warning: dropping region due to low coverage")
                         reads_to_sample = 0
 
                     # sample reads
@@ -703,7 +705,9 @@ def main(raw_args=None):
                         if len(outside_boundaries) and any(outside_boundaries):
                             continue
 
-                        my_read_name = out_prefix_name + '-' + ref_index[chrom][0] + '-' + str(read_name_count)
+                        # fastq read id name
+                        my_read_name = out_prefix_name + '-' + ref_index[chrom][0]
+
                         read_name_count += len(my_read_data)
 
                         # if desired, replace all low-quality bases with Ns
@@ -735,9 +739,14 @@ def main(raw_args=None):
                                 unmapped_records.append((my_read_name + '/1', my_read_data[0], flag1))
 
                         my_ref_index = indices_by_ref_name[ref_index[chrom][0]]
+                        
+
+                        
 
                         # write SE output
                         if len(my_read_data) == 1:
+                            my_read_name += '-' + str(my_read_data[0][0]+1)
+                                
                             if not no_fastq:
                                 if is_forward:
                                     output_file_writer.write_fastq_record(my_read_name, my_read_data[0][2],
@@ -764,6 +773,11 @@ def main(raw_args=None):
                                                                             output_sam_flag=flag1)
                         # write PE output
                         elif len(my_read_data) == 2:
+                            if is_forward:
+                                my_read_name += '-' + str(my_read_data[0][0]+1) + '-' + str(my_read_data[1][0]+1)
+                            else:
+                                my_read_name += '-' + str(my_read_data[1][0]+1) + '-' + str(my_read_data[0][0]+1)
+                                
                             if no_fastq is not True:
                                 output_file_writer.write_fastq_record(my_read_name, my_read_data[0][2],
                                                                       my_read_data[0][3],
