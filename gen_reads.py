@@ -705,7 +705,7 @@ def main(raw_args=None):
                             continue
 
                         # fastq read id name
-                        my_read_name = out_prefix_name + '-' + str(read_name_count) + '-' + ref_index[chrom][0]
+                        my_read_name = out_prefix_name + '-' + ref_index[chrom][0]
 
                         read_name_count += len(my_read_data)
 
