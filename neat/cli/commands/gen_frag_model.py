@@ -13,7 +13,7 @@ class Command(BaseCommand):
     """
     Class that generates a model of the fragment length distribution, derived from real data
     """
-    name = "gen_frag_model"
+    name = "gen-frag-model"
     description = "Generate fragment length model from a BAM or SAM file."
 
     def add_arguments(self, parser: argparse.ArgumentParser):

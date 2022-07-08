@@ -51,7 +51,7 @@ class Cli:
             "--log-name",
             type=str,
             default=f"{datetime.timestamp(datetime.now())}.neat.log",
-            help="Name of the log to write the files (default is NEAT.log)"
+            help="Name of the log to write the files (default is <timestamp>.NEAT.log)"
         )
         self.parser.add_argument(
             "--log-level",

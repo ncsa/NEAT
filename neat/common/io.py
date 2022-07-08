@@ -167,4 +167,4 @@ def validate_output_path(path: str | Path, is_file: bool = True):
             if not os.access(path, os.W_OK):
                 raise PermissionError(f"cannot write to '{path}', access denied")
         else:
-            path.mkdir(parents=True)
+            path.parent.mkdir(parents=True, exist_ok=True)

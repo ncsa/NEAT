@@ -16,4 +16,5 @@ dependencies:
   - pip:
     - pysam
     - pybedtools
+    - frozendict
 

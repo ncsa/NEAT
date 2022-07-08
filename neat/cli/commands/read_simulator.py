@@ -19,7 +19,7 @@ class Command(BaseCommand):
         a fasta file containing the inserted variants only (no errors).
     """
 
-    name = "read_simulator"
+    name = "read-simulator"
     description = "Simulate NGS reads dataset (See README for complete description of the config input)."
 
     def add_arguments(self, parser: argparse.ArgumentParser):
