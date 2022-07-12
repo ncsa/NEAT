@@ -71,7 +71,7 @@ def open_input(path: str | Path) -> Iterator[TextIO]:
 
 
 @contextlib.contextmanager
-def open_output(path: str | Path, mode: str = 'xt') -> Iterator[TextIO]:
+def open_output(path: str | Path, gzipped: bool = False, mode: str = 'xt') -> Iterator[TextIO]:
     """
     Opens a file for writing.
 
@@ -79,6 +79,7 @@ def open_output(path: str | Path, mode: str = 'xt') -> Iterator[TextIO]:
     automatically.
 
     :param path: The path to the output file.
+    :param gzipped: If true, forces gzipped mode
     :param mode: The mode with which to open the file.
     :return: The handle to the text file where data should be written to.
 
@@ -94,7 +95,7 @@ def open_output(path: str | Path, mode: str = 'xt') -> Iterator[TextIO]:
     output_dir = output_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     open_: Callable[..., TextIO]
-    if 'b' in mode:
+    if 'b' in mode or gzipped:
         handle = gzip.open(output_path, mode=mode)
     else:
         handle = open(output_path, mode=mode, encoding='utf-8', newline="")
@@ -140,7 +141,7 @@ def validate_input_path(path: str | Path, key: str = None):
         raise PermissionError(mssg)
 
 
-def validate_output_path(path: str | Path, is_file: bool = True):
+def validate_output_path(path: str | Path, is_file: bool = True, overwrite: bool = False):
     """
     Determine if the output path is valid.
 
@@ -150,6 +151,7 @@ def validate_output_path(path: str | Path, is_file: bool = True):
 
     :param path: The path to validate.
     :param is_file: (optional) If set, validate the path assuming that it points to a file (default).
+    :param overwrite: (optional) If set, NEAT will overwrite existing output
 
     Raises
     ------
@@ -160,7 +162,7 @@ def validate_output_path(path: str | Path, is_file: bool = True):
     """
     path = Path(path)
     if is_file:
-        if path.is_file():
+        if path.is_file() and not overwrite:
             raise FileExistsError(f"file '{path}' already exists")
     else:
         if path.is_dir():

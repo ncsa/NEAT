@@ -123,6 +123,10 @@ class Deletion(Variant):
                      Greater than 1 returns a list of ints.
         :return: int or list of ints.
         """
+        if size == 1:
+            # Using size = anything results in an array return, so we simplify when size = 1 to get an int return
+            return self.rng.choice(a=self.deletion_lengths, p=self.del_len_weights, shuffle=False)
+
         return self.rng.choice(a=self.deletion_lengths, p=self.del_len_weights, size=size, shuffle=False)
 
 
@@ -207,6 +211,10 @@ class Substitution(Variant):
             # choice by default assumes a uniform distribution
             return int(self.rng.choice(a=np.arange(len(trinuc_map))))
         else:
+            # Normalize the values
+            trinuc_map = np.array(trinuc_map)
+            trinuc_map /= sum(trinuc_map)
+
             return int(self.rng.choice(a=np.arange(len(trinuc_map)), p=trinuc_map))
 
 
@@ -245,7 +253,7 @@ class MutationModel(Substitution, Deletion, Insertion):
         Insertion.__init__(self, insertion_lengths, insertion_weights)
         Deletion.__init__(self, deletion_lengths, deletion_weights)
 
-        self.possible_variant_types = [Substitution, Insertion, Deletion]
+        self.possible_variant_types = [Insertion, Deletion, Substitution]
 
         # We'll insert more mutation types as we go
         self.avg_mut_rate = avg_mut_rate
@@ -265,7 +273,7 @@ class MutationModel(Substitution, Deletion, Insertion):
 
         :return: One of the defined mutation classes.
         """
-        return self.rng.choice(a=repr(MutationModel.__mro__),
+        return self.rng.choice(a=self.possible_variant_types,
                                p=(self.insertion_chance, self.deletion_chance, self.substitution_chance))
 
     def is_homozygous(self) -> bool:

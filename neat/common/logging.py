@@ -46,9 +46,6 @@ def setup_logging(
 
     log_file = Path(f'{directory}/{filename}')
 
-    print(f'working directory = {directory}')
-    print(f'log file name = {log_file}')
-
     level = getattr(logging, severity.upper(), logging.INFO)
     kwargs['level'] = level
 

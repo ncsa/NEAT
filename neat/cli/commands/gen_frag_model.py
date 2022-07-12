@@ -39,6 +39,12 @@ class Command(BaseCommand):
                                  "default is 2, to handle smaller datasets. Set to 0 to turn off filtering. "
                                  "For a larger dataset, try 100 and adjust from there.")
 
+        parser.add_argument('--overwrite',
+                            type=bool,
+                            metavar="overwrite_output",
+                            required=False,
+                            default=False,
+                            help="Set this flag to overwrite existing output.")
         output_group.add_to_parser(parser)
 
     def execute(self, arguments: argparse.Namespace):
@@ -47,4 +53,4 @@ class Command(BaseCommand):
 
         :param arguments: The namespace with arguments and their values.
         """
-        compute_fraglen_runner(arguments.input_file, arguments.min_reads, arguments.output)
+        compute_fraglen_runner(arguments.input_file, arguments.min_reads, arguments.output, arguments.overwrite)

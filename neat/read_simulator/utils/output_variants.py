@@ -1,22 +1,44 @@
 """
 This task generates the variants that will become the VCF or the basis for downstream files. This is the heart
 of the NEAT generate_reads task and will always be run in a NEAT generate_reads call.
+
+
+TODO: rewrite variants so they have a consistent format, in order to facilitate structural variants
+     it makes sense to me to do these in the temporary vcf
+
+    One representation of variants:
+    DUP: pos, len
+    INV: pos, len
+    DEL: pos, len
+    INS: pos1, len, pos2,
+    TRA: pos1, len1, pos2, len2
+
+    Here is the same thing done in a consistent format:
+    DUP: pos1, len1, pos2=pos1+len1, len2=NULL
+    INV: pos1, len1, pos2=NULL, len2=-len1
+    DEL: pos1, len1, pos2=NULL, len2=NULL
+    INS: pos1, len1, pos2, len2=NULL
+    TRA: pos1, len1, pos2, len2
 """
 
 import logging
-import numpy as np
 import time
 import bisect
+import numpy as np
 
 from Bio import SeqRecord
 from numpy.random import Generator
+from pathlib import Path
 
-import neat.models as models
-from .options import Options
-from .ploid_functions import pick_ploids
-from ...common import ALLOWED_NUCL, open_input, open_output
+from ...models import MutationModel, Insertion, Deletion, Substitution
+from ..utils import Options, pick_ploids
+from ...common import ALLOWED_NUCL, NUC_IND, DINUC_IND, open_input, open_output
 
 _LOG = logging.getLogger(__name__)
+
+__all__ = [
+    "generate_variants"
+]
 
 
 def add_variant_to_fasta(position: int, ref: str, alt: str, reference_to_alter: list):
@@ -69,113 +91,104 @@ def map_non_n_regions(sequence):
 
 def parse_mutation_rate_dict(avg_rate: float,
                              reference: SeqRecord,
-                             mutation_rate_map: dict[dict[int, int], dict[float]] = None)\
+                             mutation_rate_map: list[tuple[int, int, ...]] = None)\
                              -> (list[int, int], list[float]):
     """
     This parses the mutation rate dict and fills in any gaps, so it can be more easily cycled through
     later.
 
-    example mutation_rate_map {'H1N1_HA': {'regions': [(22, 500), (510, 750)],
-                                           'rates': [0.001, , 0.003]}
-                               'H1N1_PB': {...}, ...}
+    example mutation_rate_map {'H1N1_HA': [(22, 500, 0.001), (510, 750, 0.003)],
+                               'H1N1_PB': [...], ...}
     The input to this function is the dict for a single chromosome.
 
     :param avg_rate: The average mutation rate desired for this dataset
     :param reference: The SeqRecord for this contig
-    :param mutation_rate_map: A dictionary based on the input from the bed file. If there was no input,
-                              then this will set a uniform mutation rate across the chromosome.
+    :param mutation_rate_map: A list based on the input from the bed file. If there was no input,
+                              then this will be empty.
     :return: A tuple with the list of regions (tuples with start, end indexes)
-             and a list of the corresponing mutation rates
+             and a list of the corresponding mutation rates
     """
 
-    region_list = []
-    mutation_list = []
+    regions = []
+    rates = []
     start = 0
     if mutation_rate_map:
         for region in mutation_rate_map:
             if region[0] > start:
-                region_list.append((start, region[0]))
-                mutation_list.append(avg_rate)
+                regions.append((start, region[0]))
+                rates.append(avg_rate)
                 start = region[1]
-                region_list.append((region[0], region[1]))
-                mutation_list.append(region[2])
+                regions.append((region[0], region[1]))
+                rates.append(region[2])
             elif region[0] == start:
-                region_list.append((region[0], region[1]))
-                mutation_list.append(region[2])
+                regions.append((region[0], region[1]))
+                rates.append(region[2])
                 start = region[1]
     else:
-        region_list.append((0, len(reference)))
-        mutation_list.append(avg_rate)
-    if region_list[-1][1] != len(reference):
-        region_list.append((start, len(reference)))
-        mutation_list.append(avg_rate)
-    return region_list, mutation_list
+        regions.append((0, len(reference)))
+        rates.append(avg_rate)
+    if regions[-1][1] != len(reference):
+        regions.append((start, len(reference)))
+        rates.append(avg_rate)
+
+    regions = np.array(regions)
+    rates = np.array(rates)
+
+    # Normalize the weights:
+    rates /= sum(rates)
+
+    return regions, rates
 
 
 def generate_variants(reference: SeqRecord,
-                      tmp_vcf_fn: str,
+                      variant_file: Path,
                       trinucleotide_map: list,
                       target_regions: dict,
                       discard_regions: dict,
-                      mutation_rate_regions: dict[dict[int, int], dict[float]],
-                      output_variants: dict,
-                      error_model: models.SequencingErrorModel,
-                      mut_model: models.MutationModel,
-                      options: Options):
+                      mutation_rate_regions: list[tuple[int, int, ...]],
+                      forced_variants: dict,
+                      max_qual_score: int,
+                      mutation_model: MutationModel,
+                      options: Options,
+                      fasta_file: Path = None):
     """
-    This function will generate variants to add to the dataset. In the event that the user only wants a vcf, then
-    this will translate the vcf.
-
-    TODO: rewrite variants so they have a consistent format, in order to facilitate structural variants
-     it makes sense to me to do these in the temporary vcf
-
-    One representation of variants:
-    DUP: pos, len
-    INV: pos, len
-    DEL: pos, len
-    INS: pos1, len, pos2,
-    TRA: pos1, len1, pos2, len2
-
-    Here is the same thing done in a consistent format:
-    DUP: pos1, len1, pos2=pos1+len1, len2=NULL
-    INV: pos1, len1, pos2=NULL, len2=-len1
-    DEL: pos1, len1, pos2=NULL, len2=NULL
-    INS: pos1, len1, pos2, len2=NULL
-    TRA: pos1, len1, pos2, len2
+    This function will generate variants to add to the dataset, by writing them to the input tepm vcf file.
 
     TODO: need to add cancer logic to this section
 
-    :param reference: A record from a fasta file
-    :param tmp_vcf_fn: The filename where to write the temp vcf for this chromosome
-    :param trinucleotide_map: The trinucleotide map of this chromosome
-    :param target_regions: User input regions to target
-    :param discard_regions: User input regions to discard
-    :param mutation_rate_regions: User input regions with mutation rates, parsed into a dictionary
-    :param output_variants: Variants input by the user that must be included in the output
-    :param error_model: The sequencing error model derived from real data
-    :param mut_model: The mutation model derived from real data
-    :param options: User options for this run
-    :return:
-        tmp_vcf_fn: The NEAT generated mutations in vcf format
-        mutated_references: The mutated fasta or fastas for downstream use
+    :param reference: The reference to generate variants off of. This should be a SeqRecord object
+    :param variant_file: The filename to write the variants to
+    :param trinucleotide_map: A map of the trinucleotide bias in the dataset
+    :param target_regions: Regions to target when generating variants
+    :param discard_regions: Regions to ignore when generating variants
+    :param mutation_rate_regions: Genome segments with associated mutation rates
+    :param forced_variants: Variants input by user that will always be included
+    :param max_qual_score: The maximum quality score for the dataset
+    :param mutation_model: The mutation model for the dataset
+    :param options: The options for the run
+    :param fasta_file: The temporary file to write the fasta information to
     """
 
     # Step 1: Create a VCF of mutations
-    _LOG.info(f'Generating chromosome mutation map.')
-    mutation_map, mutation_rates = parse_mutation_rate_dict(mut_model.avg_mut_rate, reference, mutation_rate_regions)
+    mutation_map, mutation_rates = parse_mutation_rate_dict(mutation_model.avg_mut_rate,
+                                                            reference,
+                                                            mutation_rate_regions)
 
     # Trying to use a random window to keep memory under control. May need to adjust this number.
     max_window_size = 1000
     n_added = 0
-    random_mutation_quality_score = max(error_model.quality_scores)
+    random_mutation_quality_score = max_qual_score
     random_mutation_filter = "PASS"
     """
-    Checking current mutations from input vcf. If there were no variants, output_variants will be empty
+    Checking current mutations from input vcf. If there were no variants, forced_variants will be empty
     """
-    output_variants_locations = []
-    if output_variants:
+    all_variants = {}
+    all_variant_locations = []
+    if forced_variants:
         """
-        For reference, the columns in output_variants, and their indices:
+        We start by adding in any forced (i.e., user-input variants) and making a sorted list of their locations.
+
+        For reference, the columns in forced_variants, and their indices:
         key: POS
         values[0]: ID [0], REF [1], ALT [2], QUAL [3], FILTER [4], INFO [5], 
                 FORMAT [6, optional], SAMPLE1 [7, optional], SAMPLE2 [8, optional]
@@ -183,9 +196,9 @@ def generate_variants(reference: SeqRecord,
         values[2]: genotype tumor (if present in original vcf), None if not present and a cancer sample
         """
         # this should give is just the positions of the inserts. This will be used to keep track of sort order.
-        output_variants_locations = sorted(list(output_variants.keys()))
+        all_variants = forced_variants
+        all_variant_locations = sorted(list(all_variants.keys()))
 
-    _LOG.info(f'Adding random mutations for {reference.id}')
     start = time.time()
 
     """
@@ -193,13 +206,13 @@ def generate_variants(reference: SeqRecord,
     """
     total = len(reference)
     factors = []
-    for region in mutation_rate_regions:
-        region_len = abs(region[1] - region[0])
+    for i in range(len(mutation_map)):
+        region_len = abs(mutation_map[i][1] - mutation_map[i][0])
         # Weigh each region by its total length
-        factors.append(region_len * region[2])
+        factors.append(region_len * mutation_rates[i])
         total -= region_len
     # Whatever is left is weighted by the average rate
-    factors.append(total * mut_model.avg_mut_rate)
+    factors.append(total * mutation_model.avg_mut_rate)
     overall_mutation_average = sum(factors)/len(reference)
     average_number_of_mutations = round(len(reference) * overall_mutation_average)
     max_mutations = round(len(reference) * 0.3)
@@ -210,7 +223,7 @@ def generate_variants(reference: SeqRecord,
     # Pick a random number from a poisson distribution. We want at least min_mutations and at most max mutations.
     how_many_mutations = min(max(options.rng.poisson(average_number_of_mutations), min_mutations), max_mutations)
 
-    _LOG.info(f'Planning to add {how_many_mutations} mutations. The final number may be less.')
+    _LOG.debug(f'Planning to add {how_many_mutations} mutations. The final number may be less.')
 
     # We may need to skip locations if they were deleted
     all_dels = []
@@ -280,9 +293,9 @@ def generate_variants(reference: SeqRecord,
             how_many_mutations -= 1
 
             # Now figure out the type of random mutation to insert
-            variant_type = mut_model.get_mutation_type()
+            variant_type = mutation_model.get_mutation_type()
             # Case 1: indel
-            if variant_type == models.Insertion or variant_type == models.Deletion:
+            if variant_type == Insertion or variant_type == Deletion:
                 # First pick a location. This function ensures that we do not pick an N as our starting place
                 # Note that find_random_non_n helpfully adds the slice start to the location.
                 location = find_random_non_n(options.rng, mutation_slice, non_n_regions, 5)
@@ -290,15 +303,15 @@ def generate_variants(reference: SeqRecord,
                 if check_if_deleted(all_dels, location):
                     continue  # No increments, no attempts, just try again.
 
-                if variant_type == models.Insertion:
-                    length = mut_model.get_insertion_length()
+                if variant_type == Insertion:
+                    length = mutation_model.get_insertion_length()
                     # Try to find a location to insert. Give it ten tries, then give up.
                     ref = reference[location]
                     # Check if a p= parameter is needed here
                     insertion = ''.join(options.rng.choice(ALLOWED_NUCL, size=length))
                     alt = ref + insertion
                 else:
-                    length = mut_model.get_deletion_length()
+                    length = mutation_model.get_deletion_length()
                     # Plus one so we make sure to grab the first base too
                     ref = reference[location: location+length+1].seq
                     alt = reference[location]
@@ -308,7 +321,7 @@ def generate_variants(reference: SeqRecord,
             else:
                 # We'll sample for the location within this slice
                 # It's a relative location, so we add the start point of the subsequence to that.
-                location = mut_model.sample_trinucs(trinucleotide_map[mutation_slice[0]: mutation_slice[1]]) \
+                location = mutation_model.sample_trinucs(trinucleotide_map[mutation_slice[0]: mutation_slice[1]]) \
                            + mutation_slice[0]
 
                 if check_if_deleted(all_dels, location):
@@ -317,9 +330,11 @@ def generate_variants(reference: SeqRecord,
                 ref = reference[location]
                 trinuc = reference[location - 1: location + 2]
                 transition_values = ALLOWED_NUCL
-                # TODO figure out how to fix this next line. Pretty sure this won't work as written
-                transition_probs = list(mut_model.trinuc_trans_matrices[trinuc.seq])
-                # We want this to be an actual variant, so we'll try a few times
+                # First determine which matrix to use
+                transition_matrix = mutation_model.trinuc_trans_matrices[DINUC_IND[trinuc[:2].seq]]
+                # then determine the trans probs based on the middle nucleotide
+                transition_probs = transition_matrix[NUC_IND[trinuc[1]]]
+                # Now pick a random alt, weighted by the probabilities
                 alt = options.rng.choice(transition_values, p=transition_probs)
                 # Max 10 tries
                 j = 10
@@ -332,11 +347,11 @@ def generate_variants(reference: SeqRecord,
                     continue
 
             # Now we have a location, an alt and a ref, so we figure out which ploid is mutated
-            genotype = pick_ploids(options.rng, options.ploidy, mut_model.homozygous_freq)
+            genotype = pick_ploids(options.ploidy, mutation_model.homozygous_freq, 1, options.rng)
 
-            if location in output_variants_locations:
+            if location in all_variant_locations:
                 # grab the genotype of the existing mutation at that location
-                previous_genotype = output_variants[location][1]
+                previous_genotype = all_variants[location][1]
 
                 # Try to find a different arrangement. Cap this at 3 tries
                 j = 3
@@ -347,15 +362,15 @@ def generate_variants(reference: SeqRecord,
                     continue
 
             else:
-                output_variants[location] = []
+                all_variants[location] = []
 
             # The logic for this command is find the position to insert with the very fast bisect algorithm,
             # then insert it there. This ensures that the list stays sorted.
-            output_variants_locations.insert(bisect.bisect(output_variants_locations, location), location)
+            all_variant_locations.insert(bisect.bisect(all_variant_locations, location), location)
 
             # This will add a second mutation if applicable plus the warning status, or just the mutation.
-            output_variants[location].extend([['.', ref, alt, random_mutation_quality_score, random_mutation_filter,
-                                             '.', 'GT', '/'.join([str(x) for x in genotype])], genotype])
+            all_variants[location].extend([['.', ref, alt, random_mutation_quality_score, random_mutation_filter,
+                                            '.', 'GT', '/'.join([str(x) for x in genotype])], genotype])
             # The count will tell us how many we actually added v how many we were trying to add
             n_added += 1
 
@@ -378,9 +393,9 @@ def generate_variants(reference: SeqRecord,
             mutated_references = ref_seq_list
 
     # Now that we've generated a list of mutations, let's add them to the temp vcf and fasta (if indicated)
-    with open(tmp_vcf_fn, 'a') as tmp:
-        for i in range(len(output_variants_locations)):
-            variant = output_variants[output_variants_locations[i]]
+    with open(variant_file, 'a') as tmp:
+        for loc in all_variant_locations:
+            variant = all_variants[loc]
             # If there is only one variant at this location, this will only execute once. This line skips 2 because in
             # normal vcfs, the dictionary will have one list for te variant, one for the genotype. Will need to adjust
             # for cancer samples
@@ -405,13 +420,13 @@ def generate_variants(reference: SeqRecord,
                     for coords in target_regions:
                         # Check that this location is valid.
                         # Note that we are assuming the coords are half open here.
-                        if coords[0] <= output_variants_locations[i] < coords[1]:
+                        if coords[0] <= loc < coords[1]:
                             in_region = True
                             # You can stop looking when you find it
                             break
                     if not in_region:
                         _LOG.debug(f'Variant filtered out by target regions bed: {reference.id}: '
-                                   f'{output_variants_locations[i]}')
+                                   f'{all_variants[loc]}')
                         filtered_by_target += 1
                         continue
 
@@ -421,12 +436,12 @@ def generate_variants(reference: SeqRecord,
                     for coords in discard_regions:
                         # Check if this location is in an excluded zone
                         # Note that we are assuming the coords are half open here
-                        if coords[0] <= output_variants_locations[i] < coords[1]:
+                        if coords[0] <= loc < coords[1]:
                             in_region = True
                             break
                     if in_region:
                         _LOG.debug(f'Variant filtered out by discard regions bed: {reference.id}: '
-                                   f'{output_variants_locations[i]}')
+                                   f'{all_variant[loc]}')
                         filtered_by_target += 1
                         continue
 
@@ -440,11 +455,11 @@ def generate_variants(reference: SeqRecord,
                     if options.fasta_per_ploid:
                         for k in range(len(genotype)):
                             if genotype[k]:
-                                position = output_variants_locations[i] + offset[k]
+                                position = loc + offset[k]
                                 if mutated_references[k][position: position+len(ref)] != ref:
                                     # if our base has been deleted or changed already, we'll skip this one.
                                     continue
-                                mutated_references[k] = add_variant_to_fasta(output_variants_locations[i] + offset[k],
+                                mutated_references[k] = add_variant_to_fasta(loc + offset[k],
                                                                              ref, alt,
                                                                              mutated_references[k])
                                 # offset is a running total of the position modification caused by insertions and
@@ -453,12 +468,12 @@ def generate_variants(reference: SeqRecord,
                                 offset[k] += len(alt) - len(ref)
                     else:
                         if 1 in genotype:
-                            position = output_variants_locations[i] + offset
+                            position = loc + offset
                             # If the string of that sequence is different it means our base(s) have been altered.
                             if ''.join(mutated_references[position: position + len(ref)]) != ref:
                                 # if our base(s) has been deleted or changed already, we'll skip this one.
                                 continue
-                            mutated_references = add_variant_to_fasta(output_variants_locations[i] + offset,
+                            mutated_references = add_variant_to_fasta(loc + offset,
                                                                       ref, alt,
                                                                       mutated_references)
                             # offset is a running total of the position modification caused by insertions and deletions
@@ -466,7 +481,7 @@ def generate_variants(reference: SeqRecord,
                             offset += len(alt) - len(ref)
 
                 # Add one to get it back into vcf coordinates
-                line = f'{reference.id}\t{output_variants_locations[i] + 1}\t{variant[j][0]}\t{variant[j][1]}' \
+                line = f'{reference.id}\t{loc + 1}\t{variant[j][0]}\t{variant[j][1]}' \
                        f'\t{variant[j][2]}\t{variant[j][3]}\t{variant[j][4]}\t{variant[j][5]}' \
                        f'\t{variant[j][6]}\t{variant[j][7]}\n'
 
@@ -477,7 +492,7 @@ def generate_variants(reference: SeqRecord,
 
     if filtered_by_target:
         _LOG.info(f'{filtered_by_target} variants excluded because '
-                 f'of target regions with discard off-target enabled')
+                  f'of target regions with discard off-target enabled')
 
     if filtered_by_discard:
         _LOG.info(f'{filtered_by_discard} variants excluded because '
@@ -495,7 +510,5 @@ def generate_variants(reference: SeqRecord,
     #     chrom_vcf_file = f"{out_prefix}_{reference.id}.vcf.gz"
     #
     #     # If needed, save a copy of the temp file out as a gzipped vcf.
-    #     with open_input(tmp_vcf_fn) as f_in, open_output(chrom_vcf_file) as f_out:
+    #     with open_input(variant_file) as f_in, open_output(chrom_vcf_file) as f_out:
     #         f_out.writelines(f_in)
-
-    return tmp_vcf_fn, mutated_references

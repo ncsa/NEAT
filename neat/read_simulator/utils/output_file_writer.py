@@ -1,8 +1,6 @@
 import gzip
-import pathlib
 import re
 import shutil
-import tempfile
 from struct import pack
 from heapq import merge
 import os
@@ -11,12 +9,18 @@ import logging
 import pysam
 from Bio import bgzf
 from Bio.Seq import Seq
+from pathlib import Path
 
-from .neat_cigar import CigarString
 from ...common import validate_output_path, open_output, open_input
 from .read import Read
+from .options import Options
+from .neat_cigar import CigarString
 
 _LOG = logging.getLogger(__name__)
+
+__all__ = [
+    "OutputFileWriter"
+]
 
 # Some Constants
 # TODO make bam compression a configurable option
@@ -89,83 +93,77 @@ def sam_flag(string_list: list) -> int:
 
 
 class OutputFileWriter:
-    def __init__(self, out_prefix, bam_header=None, vcf_header=None, options=None):
+    """
+    This class sets up the output files and has methods for writing out records
+    in the various formats.
+
+    :param options: Options for the current run.
+    :param bam_header: A dictionary of lengths of each contig from the reference, keyed by contig id.
+    """
+    def __init__(self,
+                 options: Options,
+                 bam_header: dict = None):
+
         # set the booleans
         self.write_fastq = options.produce_fastq
         self.write_fasta = options.produce_fasta
         self.write_bam = options.produce_bam
         self.write_vcf = options.produce_vcf
         self.paired = options.paired_ended
-        self.vcf_header = vcf_header
+        self.temporary_dir = options.temp_dir_path
+
         self.bam_header = bam_header
+
         # Set the file names
         self.fasta_fns = None
         self.fastq1_fn = None
         self.fastq2_fn = None
+
         self.bam_fn = None
         self.vcf_fn = None
         self.sam_fn = None
-        self.sam_temp_dir = None
-
-        # Need a special file handle for the bam  file, because bgzf writer can't currently append, only truncate
-        self.bam_file = None
-
-        # A couple of quick sanity checks. These could indicate something wrong with the code.
-        # They could potentially also be tripped by faulty input files.
-        try:
-            assert self.write_vcf and not self.vcf_header
-        except AssertionError:
-            _LOG.error("Something wrong with VCF header.")
-            raise
-
-        try:
-            assert self.write_bam and not self.bam_header
-        except AssertionError:
-            _LOG.error('Something wrong with BAM header.')
-            raise
 
         # Set up filenames based on booleans
         files_to_write = []
         if self.write_fasta:
             if options.ploidy > 1 and options.fasta_per_ploid:
-                self.fasta_fns = [out_prefix.parent / f'{out_prefix.name}_ploid{i+1}.fasta.gz'
+                self.fasta_fns = [options.output.parent / f'{options.output.stem}_ploid{i+1}.fasta.gz'
                                   for i in range(options.ploidy)]
             else:
-                self.fasta_fns = [out_prefix.parent / f'{out_prefix.name}.fasta.gz']
-            files_to_write.append(self.fasta_fns)
+                self.fasta_fns = [options.output.parent / f'{options.output.stem}_allploid.fasta.gz']
+            files_to_write.extend(self.fasta_fns)
         if self.paired and self.write_fastq:
-            self.fastq1_fn = out_prefix.parent / f'{out_prefix.name}_read1.fq.gz'
-            self.fastq2_fn = out_prefix.parent / f'{out_prefix.name}_read2.fq.gz'
+            self.fastq1_fn = options.output.parent / f'{options.output.stem}_read1.fastq.gz'
+            self.fastq2_fn = options.output.parent / f'{options.output.stem}_read2.fastq.gz'
             files_to_write.extend([self.fastq1_fn, self.fastq2_fn])
         elif self.write_fastq:
-            self.fastq1_fn = out_prefix.parent / f'{out_prefix.name}.fq.gz'
+            self.fastq1_fn = options.output.parent / f'{options.output.stem}.fastq.gz'
             files_to_write.append(self.fastq1_fn)
         if self.write_bam:
-            self.bam_fn = out_prefix.parent / f'{out_prefix.name}_golden.bam'
-            self.bam_first_write = True
-            self.sam_temp_dir = tempfile.TemporaryDirectory(prefix="sam_")
-            self.sam_pref = pathlib.Path(self.sam_temp_dir.name)
-            self.sam_fn = self.sam_pref / f'{out_prefix.name}_temp.sam'
+            self.bam_fn = options.output.parent / f'{options.output.stem}_golden.bam'
+            self.sam_fn = self.temporary_dir / f'{options.output.stem}_temp.sam'
             self.bam_keys = list(bam_header.keys())
             files_to_write.append(self.sam_fn)
             files_to_write.append(self.bam_fn)
         if self.write_vcf:
-            self.vcf_fn = out_prefix.parent / f'{out_prefix.name}_golden.vcf.gz'
+            self.vcf_fn = options.output.parent / f'{options.output.stem}_golden.vcf.gz'
             files_to_write.append(self.vcf_fn)
 
         self.files_to_write = files_to_write
 
         # Create files as applicable
-        for files in self.files_to_write:
-            for file in files:
-                validate_output_path(file)
+        for file in self.files_to_write:
+            validate_output_path(file, True, options.overwrite_output)
 
+        mode = 'xt'
+        if options.overwrite_output:
+            mode = 'wt'
         # Initialize the vcf and write the header, if applicable
         if self.write_vcf:
             # Writing the vcf header.
-            with open_output(self.vcf_fn) as vcf_file:
+            with open_output(self.vcf_fn, gzipped=True, mode=mode) as vcf_file:
                 vcf_file.write(f'##fileformat=VCFv4.1\n')
-                vcf_file.write(f'##reference={vcf_header[0]}\n')
+                vcf_file.write(f'##reference={Path(options.reference).resolve()}\n')
                 vcf_file.write(f'##Generated by NEAT with RNG value: {options.rng_seed}\n')
                 vcf_file.write(f'##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n')
                 vcf_file.write(f'##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n')
@@ -185,50 +183,42 @@ class OutputFileWriter:
                 # Add a neat sample column
                 vcf_file.write(f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n')
 
-        # Create the bam header, if applicable.
-        # Note that this will not write this yet. That comes later, because the BAM file must be open the entire time
-        # it is being written (a limitation of bgzf.BgzfWriter)
         if self.write_bam:
-            # sam method
-            with open_output(self.sam_fn) as s:
+            # Write the temp sam file
+            with open_output(self.sam_fn, mode=mode) as s:
                 s.write('@HD\tVN:1.5\tSO:coordinate\n')
-                for key in self.bam_header.keys():
-                    s.write('@SQ\tSN:' + str(key) + '\tLN:' + str(len(self.bam_header[key])) + '\n')
+                for key in self.bam_keys:
+                    s.write(f'@SQ\tSN:{str(key)}\tLN:{str(self.bam_header[key])}\n')
                 s.write('@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n')
 
-            # bam method
-            # create BAM header
-            header = '@HD\tVN:1.5\tSO:coordinate\n'
-            for key in self.bam_keys:
-                header += '@SQ\tSN:' + str(key) + '\tLN:' + str(len(self.bam_header[key])) + '\n'
-            header += '@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n'
-            self.bamfile_header = header
-            self.bamfile_header_bytes = len(header)
-            self.bamfile_num_refs = len(self.bam_header)
+    def write_fastq_record(self,
+                           read1: Read,
+                           read2: Read = None,
+                           reverse: bool = False):
+        """
+        This method writes a fastq record. We're going to try this method of only touching the file when we write
+        to it and see if it is any faster. If not, we'll have to make a function that just returns the open file
+        object, and then pass that into this function instead of using self.fastqX_fn to open it.
 
-    # def write_fastq_record(self, read_name, read1, qual1, read2=None, qual2=None, orientation=False):
-    #     """
-    #     This method writes a fastq record. We're going to try this method of only touching the file when we write
-    #     to it and see if it is any faster. If not, we'll have to make a function that just returns the open file
-    #     object, and then pass that into this function instead of using self.fastqX_fn to open it.
-    #     """
-    #     # Since read1 and read2 are Seq objects from Biopython, they have reverse_complement methods built-in
-    #     (read1, quality1) = (read1, qual1)
-    #     if read2 and orientation:
-    #         (read2, quality2) = (read2.reverse_complement(), qual2[::-1])
-    #     elif read2 and not orientation:
-    #         read2_tmp = read2
-    #         qual2_tmp = qual2
-    #         (read2, quality2) = (read1, qual1)
-    #         (read1, quality1) = (read2_tmp.reverse_complement(), qual2_tmp[::-1])
-    #
-    #     with gzip.open(self.fastq1_fn, 'a') as fq1:
-    #         line = f'@{read_name}/1\n{str(read1)}\n+\n{quality1}\n'
-    #         fq1.write(line.encode())
-    #     if read2 is not None:
-    #         with gzip.open(self.fastq2_fn, 'a') as fq2:
-    #             line = f'@{read_name}/2\n{str(read2)}\n+\n{quality2}\n'
-    #             fq2.write(line.encode())
+        :param read1: The first read of the pair, or the only read (if single ended)
+        :param read2: If paired ended, this is the second read of the pair.
+        :param reverse: If True, then orientation is reversed
+        """
+        # Since read1 and read2 contain Seq objects from Biopython, they have reverse_complement methods built-in
+        if read2 and not reverse:
+            read2 = read2.get_reverse_complement()
+        elif read2 and reverse:
+            read2_tmp = read2
+            read2 = read1
+            read1 = read2_tmp.get_reverse_complement()
+
+        with gzip.open(self.fastq1_fn, 'a') as fq1:
+            line = f'@{read1.name}/1\n{str(read1)}\n+\n{read1.quality_array}\n'
+            fq1.write(line.encode())
+        if read2:
+            with gzip.open(self.fastq2_fn, 'a') as fq2:
+                line = f'@{read2.name}/2\n{str(read2)}\n+\n{read2.quality_array}\n'
+                fq2.write(line.encode())
 
     def write_fasta_record(self, index, sequence: Seq = None, chromosome: str = None):
         """
@@ -238,7 +228,7 @@ class OutputFileWriter:
 
         :param index: Required. This gives the ploid number of the file to write.
         :param sequence: Optional. If present this should be a Seq object containing the sequence to write
-                         If ommitted, then this function will only write the name.
+                         If omitted, then this function will only write the name.
         :param chromosome: Not required. If present, this should be a string.
         """
         file = self.fasta_fns[index]  # set the file to modify
@@ -254,16 +244,11 @@ class OutputFileWriter:
         out_fasta.close()
 
     def merge_temp_vcfs(self, temporary_files: list):
-        chunks = []
-        for vcf in temporary_files:
-            chunks.append(open_input(vcf))
+        with open_output(self.vcf_fn, gzipped=True, mode='at') as vcf_out:
+            for temp_file in temporary_files:
+                with open_input(temp_file) as infile:
+                    vcf_out.write(infile.read())
 
-        with gzip.open(self.vcf_fn, 'ab') as vcf_out:
-            vcf_out.writelines(merge(*chunks))
-
-        for item in chunks:
-            item.close()
-            os.remove(item.name)
 
     def write_sam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
                          mate_pos=None, aln_map_quality: int = 70):
@@ -273,7 +258,7 @@ class OutputFileWriter:
 
         I'll look more closely at how Zach originally handled this.
         I don't see any real reason this can't be calculated in the moin body of the code then just input into
-        this functiion. Outside will have info about the chromosome and stuff.
+        this function. Outside will have info about the chromosome and stuff.
         """
 
         my_t_len = 0
@@ -408,35 +393,10 @@ class OutputFileWriter:
     def sort_bam(self):
         if self.bam_file:
             self.bam_file.close()
-        with tempfile.TemporaryDirectory() as tempdir:
-            output = pathlib.Path(tempdir)
-            output = output / 'sorted.bam'
-            pysam.sort("-o", str(output), str(self.bam_fn))
-            shutil.copyfile(output, self.bam_fn)
+        output = self.temporary_dir / 'sorted.bam'
+        pysam.sort("-o", str(output), str(self.bam_fn))
+        shutil.copyfile(output, self.bam_fn)
 
     def close_bam_file(self):
         if self.bam_file:
             self.bam_file.close()
-
-
-def write_fastq_record(read1: Read, fh1, read2: Read = None, fh2=None, orientation=False):
-    """
-    This method writes a fastq record. We're going to try this method of only touching the file when we write
-    to it and see if it is any faster. If not, we'll have to make a function that just returns the open file
-    object, and then pass that into this function instead of using self.fastqX_fn to open it.
-    """
-    # Since read1 and read2 contain Seq objects from Biopython, they have reverse_complement methods built-in
-    if read2 and orientation:
-        read2 = read2.get_reverse_complement()
-    elif read2 and not orientation:
-        read2_tmp = read2
-        read2 = read1
-        read1 = read2_tmp.get_reverse_complement()
-
-    with gzip.open(fh1, 'a') as fq1:
-        line = f'@{read1.name}/1\n{str(read1)}\n+\n{read1.quality_array}\n'
-        fq1.write(line.encode())
-    if read2:
-        with gzip.open(fh2, 'a') as fq2:
-            line = f'@{read2.name}/2\n{str(read2)}\n+\n{read2.quality_array}\n'
-            fq2.write(line.encode())

@@ -18,14 +18,13 @@ from types import SimpleNamespace
 import numpy as np
 import logging
 import yaml
-import importlib
 
 try:
     from yaml import CLoader as Loader, CDumper as Dumper
 except ImportError:
     from yaml import Loader, Dumper
 
-from typing import Final
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 from ...common import validate_input_path
@@ -39,21 +38,18 @@ class Options(SimpleNamespace):
     class representing the options
     """
     def __init__(self,
-                 output_path: str | Path,
-                 config_file: str | Path):
+                 output_path: Path,
+                 config_file: Path):
+
         SimpleNamespace.__init__(self)
 
-        self.defs = {}
-        self.config_file = config_file
-
         """
-        Options flags for gen_reads. This metadata dict gives the type of variable (matching the python types)
+        Options defitions for gen_reads. This metadata dict gives the type of variable (matching the python types)
         the default value ('.' means no default), and checks. There are four fields: option type (corresponding to
         a python type), default (or None, if no default), criteria 1 and criteria 2. Any items without values 
         should use None as a placeholder.
 
-        Option Type: Current possible value are string, int, float, and boolean. These correspond to str, int, 
-        float, and bool Python types. For files and directories, use string type.
+        Option Type: Current possible value are str, int, float, and bool.
 
         Criteria 1: There are two modes of checking: files and numbers. For files, criteria 1 should be set to
         'exists' to check file existence or None to skip a check, because that is not a user 
@@ -63,45 +59,86 @@ class Options(SimpleNamespace):
         should be the highest acceptable value (inclusive).
         (type, default, criteria1 (low/'exists'), criteria2 (high/None))
         """
+        self.defs = {}
+        self.config_file = config_file
+
         arbitrarily_large_number = 1e8
-        self.defs['reference'] = ('string', None, 'exists', None)
-        self.defs['partition_mode'] = ('string', 'chrom', None, None)
-        self.defs['read_len'] = ('int', 101, 10, arbitrarily_large_number)
-        self.defs['threads'] = ('int', 1, 1, arbitrarily_large_number)
-        self.defs['coverage'] = ('float', 10.0, 1, arbitrarily_large_number)
-        self.defs['error_model'] = ('string', None, 'exists', None)
-        self.defs['avg_seq_error'] = ('float', None, 0, 0.3)
-        self.defs['rescale_qualities'] = ('boolean', False, None, None)
-        self.defs['ploidy'] = ('int', 2, 1, 100)
-        self.defs['include_vcf'] = ('string', None, 'exists', None)
-        self.defs['target_bed'] = ('string', None, 'exists', None)
-        self.defs['discard_bed'] = ('string', None, 'exists', None)
-        self.defs['off_target_scalar'] = ('float', 0.02, 0, 1)
-        self.defs['discard_offtarget'] = ('boolean', False, None, None)
-        self.defs['mutation_model'] = ('string', None, 'exists', None)
-        self.defs['mutation_rate'] = ('float', None, 0, 0.3)
-        self.defs['mutation_bed'] = ('string', None, 'exists', None)
-        self.defs['n_handling'] = ('string', None, None, None)
+        self.defs['reference'] = (str, None, 'exists', None)
+        self.defs['partition_mode'] = (str, 'chrom', None, None)
+        self.defs['read_len'] = (int, 101, 10, arbitrarily_large_number)
+        self.defs['threads'] = (int, 1, 1, arbitrarily_large_number)
+        self.defs['coverage'] = (float, 10.0, 1, arbitrarily_large_number)
+        self.defs['error_model'] = (str, None, 'exists', None)
+        self.defs['avg_seq_error'] = (float, None, 0, 0.3)
+        self.defs['rescale_qualities'] = (bool, False, None, None)
+        self.defs['ploidy'] = (int, 2, 1, 100)
+        self.defs['include_vcf'] = (str, None, 'exists', None)
+        self.defs['target_bed'] = (str, None, 'exists', None)
+        self.defs['discard_bed'] = (str, None, 'exists', None)
+        self.defs['off_target_scalar'] = (float, 0.02, 0, 1)
+        self.defs['discard_offtarget'] = (bool, False, None, None)
+        self.defs['mutation_model'] = (str, None, 'exists', None)
+        self.defs['mutation_rate'] = (float, None, 0, 0.3)
+        self.defs['mutation_bed'] = (str, None, 'exists', None)
+        self.defs['n_handling'] = (str, None, None, None)
 
         # Params for cancer (not implemented yet)
-        self.defs['cancer'] = ('boolean', False, None, None)
-        self.defs['cancer_model'] = ('string', None, 'exists', None)
-        self.defs['cancer_purity'] = ('float', 0.8, 0.0, 1.0)
+        self.defs['cancer'] = (bool, False, None, None)
+        self.defs['cancer_model'] = (str, None, 'exists', None)
+        self.defs['cancer_purity'] = (float, 0.8, 0.0, 1.0)
 
-        self.defs['gc_model'] = ('string', None, 'exists', None)
-        self.defs['paired_ended'] = ('boolean', False, None, None)
-        self.defs['fragment_model'] = ('string', None, 'exists', None)
-        self.defs['fragment_mean'] = ('float', None, 1, arbitrarily_large_number)
-        self.defs['fragment_st_dev'] = ('float', None, 1, arbitrarily_large_number)
-        self.defs['produce_bam'] = ('boolean', False, None, None)
-        self.defs['produce_vcf'] = ('boolean', False, None, None)
-        self.defs['produce_fasta'] = ('boolean', False, None, None)
-        self.defs['output_config'] = ('boolean', False, None, None)
-        self.defs['produce_fastq'] = ('boolean', True, None, None)
-        self.defs['no_coverage_bias'] = ('boolean', False, None, None)
-        self.defs['rng_seed'] = ('int', None, None, None)
-        self.defs['min_mutations'] = ('int', 1, None, None)
-        self.defs['fasta_per_ploid'] = ('boolean', False, None, None)
+        self.defs['gc_model'] = (str, None, 'exists', None)
+        self.defs['paired_ended'] = (bool, False, None, None)
+        self.defs['fragment_model'] = (str, None, 'exists', None)
+        self.defs['fragment_mean'] = (float, None, 1, arbitrarily_large_number)
+        self.defs['fragment_st_dev'] = (float, None, 1, arbitrarily_large_number)
+        self.defs['produce_bam'] = (bool, False, None, None)
+        self.defs['produce_vcf'] = (bool, False, None, None)
+        self.defs['produce_fasta'] = (bool, False, None, None)
+        self.defs['produce_fastq'] = (bool, True, None, None)
+        self.defs['no_coverage_bias'] = (bool, False, None, None)
+
+        # These are primarily debug options
+        self.defs['rng_seed'] = (int, None, None, None)
+        self.defs['min_mutations'] = (int, 1, None, None)
+        self.defs['fasta_per_ploid'] = (bool, False, None, None)
+        self.defs['overwrite_output'] = (bool, False, None, None)
+
+        # Create base variables, for update by the config
+        self.reference = None
+        self.partition_mode = 'chrom'
+        self.read_len = 101
+        self.threads = None
+        self.coverage = None
+        self.error_model = None
+        self.avg_seq_error = None
+        self.rescale_qualities = False
+        self.ploid = 2
+        self.include_vcf = None
+        self.target_bed = None
+        self.discard_bed = None
+        self.off_target_scalar = 0.02
+        self.discard_offtarget = False
+        self.mutation_model = None
+        self.mutation_rate = None
+        self.mutation_bed = None
+        self.n_handling = None
+
+        self.gc_model = None
+        self.paired_ended = False
+        self.fragment_model = None
+        self.fragment_mean = None
+        self.fragment_st_dev = None
+        self.produce_bam = False
+        self.produce_fasta = False
+        self.produce_vcf = False
+        self.produce_fastq = True
+        self.no_coverage_bias = False
+
+        self.rng_seed = None
+        self.min_mutations = 1
+        self.fasta_per_ploid = False
+        self.overwrite_output = False
 
         # Cancer options (not yet implemented)
         self.cancer = False
@@ -120,7 +157,9 @@ class Options(SimpleNamespace):
         # Some options checking to clean up the args dict
         self.check_options()
 
-        self.args['output'] = output_path
+        self.output = output_path
+        self.temporary_dir = TemporaryDirectory()
+        self.temp_dir_path = Path(self.temporary_dir.name)
 
         self.__dict__.update(self.args)
 
@@ -153,30 +192,13 @@ class Options(SimpleNamespace):
 
                 # Now we check that the type is correct and it is in range, depending on the type defined for it
                 # If it passes that it gets put into the args dictionary.
-                if type_of_var == 'string':
-                    temp = str(value)
-                    self.check_and_log_error(key, temp, criteria1, criteria2)
-                    self.args[key] = temp
-                elif type_of_var == 'int':
-                    try:
-                        temp = int(value)
-                    except Exception as ex:
-                        _LOG.error(f'The value for {key} must be an integer. No decimals allowed.')
-                        raise ex
-                    self.check_and_log_error(key, temp, criteria1, criteria2)
-                    self.args[key] = temp
-                elif type_of_var == 'float':
-                    try:
-                        temp = float(value)
-                    except ValueError:
-                        _LOG.error(f'The value for {key} must be a float.')
-                        raise
-                    self.check_and_log_error(key, temp, criteria1, criteria2)
-                    self.args[key] = temp
-                elif type_of_var == 'boolean':
-                    self.args[key] = value
-                else:
-                    raise KeyError(f'BUG: Undefined type in the Options dictionary: {type_of_var}.')
+                try:
+                    temp = type_of_var(value)
+                except ValueError:
+                    raise ValueError(f"Incorrect type for value entered for {key}: {type_of_var}")
+
+                self.check_and_log_error(key, temp, criteria1, criteria2)
+                self.args[key] = temp
 
     def check_options(self):
         """
