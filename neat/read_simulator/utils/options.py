@@ -113,7 +113,7 @@ class Options(SimpleNamespace):
         self.error_model = None
         self.avg_seq_error = None
         self.rescale_qualities = False
-        self.ploid = 2
+        self.ploidy = 2
         self.include_vcf = None
         self.target_bed = None
         self.discard_bed = None

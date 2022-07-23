@@ -10,10 +10,11 @@ from Bio import SeqIO
 from pathlib import Path
 
 from .utils import Options, parse_input_vcf, parse_bed, OutputFileWriter, find_file_breaks, map_chromosome, \
-    generate_variants
+    generate_variants, write_local_file
 from ..common import validate_input_path, validate_output_path
 from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, GcModel
 from ..models.default_cancer_mutation_model import *
+from ..variants import ContigVariants
 
 
 __all__ = ["read_simulator_runner"]
@@ -30,12 +31,13 @@ def initalize_all_models(options: Options):
     :param options: the options for this run
     """
 
+    # Load mutation model or instantiate default
     if options.mutation_model:
         mut_model = pickle.load(gzip.open(options.mutation_model))
+        mut_model.rng = options.rng
     else:
-        mut_model = MutationModel()
-    # Set the rng for the mutation model
-    mut_model.rng = options.rng
+        mut_model = MutationModel(rng=options.rng)
+
     # Set user input mutation rate:
     if options.mutation_rate:
         mut_model.avg_mut_rate = options.mutation_rate
@@ -46,20 +48,15 @@ def initalize_all_models(options: Options):
         # Set the rng for the cancer mutation model
         cancer_model.rng = options.rng
     elif options.cancer:
+        # Note all parameters not entered here use the mutation madel defaults
         cancer_model = MutationModel(avg_mut_rate=default_cancer_avg_mut_rate,
                                      homozygous_freq=default_cancer_homozygous_freq,
-                                     insertion_chance=default_cancer_insertion_chance,
-                                     deletion_chance=default_cancer_deletion_chance,
-                                     trinuc_trans_matrices=default_cancer_trinuc_trans_matrices,
-                                     trinuc_trans_bias=default_cancer_trinuc_trans_bias,
-                                     insertion_lengths=default_cancer_insertion_lengths,
-                                     insertion_weights=default_cancer_insertion_weights,
-                                     deletion_lengths=default_cancer_deletion_lengths,
-                                     deletion_weights=default_cancer_deletion_weights,
+                                     variant_probs=default_cancer_variant_probs,
+                                     insert_len_model=default_cancer_insert_len_model,
                                      is_cancer=True,
                                      rng=options.rng)
 
-    _LOG.debug("Mutation models loaded", 'debug')
+    _LOG.debug("Mutation models loaded")
 
     # We need sequencing errors to get the quality score attributes, even for the vcf
     if options.error_model:
@@ -69,7 +66,7 @@ def initalize_all_models(options: Options):
     # Set the rng for the sequencing error model
     error_model.rng = options.rng
 
-    _LOG.debug('Sequencing error model loaded', 'debug')
+    _LOG.debug('Sequencing error model loaded')
 
     # initialize gc_model
     if options.gc_model:
@@ -79,7 +76,7 @@ def initalize_all_models(options: Options):
     # Set the rng for the GC bias model
     gc_model.rng = options.rng
 
-    _LOG.debug('GC Bias model loaded', 'debug')
+    _LOG.debug('GC Bias model loaded')
 
     if options.fragment_model:
         fraglen_model = pickle.load(gzip.open(options.fragment_model))
@@ -88,7 +85,7 @@ def initalize_all_models(options: Options):
     # Set the rng for the fragment length model
     fraglen_model.rng = options.rng
 
-    _LOG.debug("Fragment length model loaded", 'debug')
+    _LOG.debug("Fragment length model loaded")
 
     return mut_model, cancer_model, error_model, gc_model, fraglen_model
 
@@ -159,25 +156,27 @@ def read_simulator_runner(config: str, output: str):
     reference_contigs = list(reference_index.keys())
     options.set_value("reference_contigs", reference_contigs)
 
-    input_variants = None
+    input_variants_dict = {x: ContigVariants() for x in reference_contigs}
     if options.include_vcf:
         _LOG.info(f"Reading input VCF: {options.include_vcf}.")
         if options.cancer:
-            (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
-                                                             options.ploidy,
-                                                             mut_model.homozygous_freq,
-                                                             reference_index,
-                                                             options,
-                                                             tumor_normal=True)
+            sample_names = parse_input_vcf(input_variants_dict,
+                                           options.include_vcf,
+                                           options.ploidy,
+                                           mut_model.homozygous_freq,
+                                           reference_index,
+                                           options,
+                                           tumor_normal=True)
 
-            tumor_ind = sample_names.index('tumor_sample')
-            normal_ind = sample_names.index('normal_sample')
+            tumor_ind = sample_names['tumor_sample']
+            normal_ind = sample_names['normal_sample']
         else:
-            (sample_names, input_variants) = parse_input_vcf(options.include_vcf,
-                                                             options.ploidy,
-                                                             mut_model.homozygous_freq,
-                                                             reference_index,
-                                                             options)
+            sample_names = parse_input_vcf(input_variants_dict,
+                                           options.include_vcf,
+                                           options.ploidy,
+                                           mut_model.homozygous_freq,
+                                           reference_index,
+                                           options)
 
         _LOG.debug("Finished reading input vcf file")
 
@@ -203,7 +202,7 @@ def read_simulator_runner(config: str, output: str):
     if options.produce_bam:
         # This is a dictionary that is the list of the contigs and the length of each.
         # This information will be needed later to create the bam header.
-        bam_header = {key: len(reference_index[key]) for key in reference_index.keys()}
+        bam_header = {key: len(reference_index[key]) for key in reference_index}
 
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf.
@@ -236,18 +235,17 @@ def read_simulator_runner(config: str, output: str):
     common_features = {}
 
     vcf_files = []
-    fasta_record = []
+    fasta_files = []
     fastq_files = []
     bam_files = []
     print_fasta_tell = False
 
     for contig in breaks:
+
         _LOG.info(f"Generating variants for {contig}")
 
         # Todo genericize breaks
-        local_variants = None
-        if input_variants:
-            local_variants = {x[1]: input_variants[x] for x in input_variants if x[0] == contig}
+        local_variants = input_variants_dict[contig]
         local_reference = reference_index[contig]
 
         _LOG.info(f'Creating trinucleotide map for {contig}...')
@@ -268,21 +266,32 @@ def read_simulator_runner(config: str, output: str):
             pass
 
         generate_variants(reference=local_reference,
-                          variant_file=local_variant_file,
-                          trinucleotide_map=local_trinuc_map,
-                          target_regions=target_regions_dict[contig],
-                          discard_regions=discard_regions_dict[contig],
                           mutation_rate_regions=mutation_rate_dict[contig],
-                          forced_variants=local_variants,
-                          max_qual_score=max(seq_error_model.quality_scores),
+                          contig_variants=local_variants,
                           mutation_model=mut_model,
-                          options=options,
-                          fasta_file=local_fasta_file)
+                          max_qual_score=max(seq_error_model.quality_scores),
+                          options=options)
 
-        if options.produce_vcf:
-            vcf_files.append(local_variant_file)
+        _LOG.info(f'Outputting temp vcf for {contig} for later use')
+        if options.produce_fasta:
+            _LOG.info(f'Outputting temp fasta for {contig} for later use')
+        # This function produces the variant file and the fasta file, if requested.
+        write_local_file(local_variant_file,
+                         local_variants,
+                         local_reference,
+                         target_regions_dict[contig],
+                         discard_regions_dict[contig],
+                         options,
+                         local_fasta_file)
+        vcf_files.append(local_variant_file)
+        fasta_files.append(local_fasta_file)
+
 
     if options.produce_vcf:
-        _LOG.info("Outputting golden vcf.")
+        _LOG.info(f"Outputting golden vcf: {output_file_writer.vcf_fn}")
         output_file_writer.merge_temp_vcfs(vcf_files)
+
+    if options.produce_fasta:
+        _LOG.info(f"Outputting fasta file(s): {output_file_writer.fasta_fns}")
+        output_file_writer.merge_temp_fastas(fasta_files)
 

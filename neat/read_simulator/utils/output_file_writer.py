@@ -1,9 +1,15 @@
+"""
+Functions and classes for writing out the output.
+"""
+
+__all__ = [
+    "OutputFileWriter"
+]
+
 import gzip
 import re
 import shutil
 from struct import pack
-from heapq import merge
-import os
 import logging
 
 import pysam
@@ -18,9 +24,6 @@ from .neat_cigar import CigarString
 
 _LOG = logging.getLogger(__name__)
 
-__all__ = [
-    "OutputFileWriter"
-]
 
 # Some Constants
 # TODO make bam compression a configurable option
@@ -90,7 +93,6 @@ def sam_flag(string_list: list) -> int:
         elif n == 'supplementary':
             out_val += 2048
     return out_val
-
 
 class OutputFileWriter:
     """
@@ -249,6 +251,12 @@ class OutputFileWriter:
                 with open_input(temp_file) as infile:
                     vcf_out.write(infile.read())
 
+    def merge_temp_fastas(self, temporary_files: list):
+        for file in self.fasta_fns:
+            with open_output(file, mode='at') as vcf_out:
+                for temp_file in temporary_files:
+                    with open_input(temp_file) as infile:
+                        vcf_out.write(infile.read())
 
     def write_sam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
                          mate_pos=None, aln_map_quality: int = 70):

@@ -3,13 +3,14 @@ The following is the default sequencing error, based on Illumina analysis
 """
 
 import numpy as np
+from ..variants import Insertion, Deletion, SingleNucleotideVariant
 
 # The following default model parameters are here, for tweaking and revision.
 default_avg_seq_error = 0.01
 default_read_length = 151
 
 # This is based on the input model NEAT was using previously
-default_transition_matrix = np.array(
+default_error_transition_matrix = np.array(
     [[0.0, 0.4918, 0.3377, 0.1705],
      [0.5238, 0.0, 0.2661, 0.2101],
      [0.3754, 0.2355, 0.0, 0.389],
@@ -28,8 +29,6 @@ default_qual_score_probs = np.array([
     np.full(151, 0.76899)
 ]).T
 
-default_insertion_probability = 0.004
-default_deletion_probability = 0.006
-default_indel_lengths = np.array([1, 2])
-default_indel_weights = np.array([0.999, 0.001])
+default_error_variant_probs = {Insertion: 0.004, Deletion: 0.006, SingleNucleotideVariant: 0.99}
+default_indel_len_model = {1: 0.999, 2: 0.001}
 default_insertion_model = np.array([0.25, 0.25, 0.25, 0.25])
