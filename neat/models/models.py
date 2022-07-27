@@ -73,15 +73,15 @@ class Insertion(VariantTypes):
                 we'll need the rng to perform certain methods.
     """
     def __init__(self,
-                 insert_lengths: np.ndarray[int, ...],
-                 ins_len_weights: np.ndarray[float, ...],
+                 insert_lengths: np.ndarray[int],
+                 ins_len_weights: np.ndarray[float],
                  rng: Generator = None):
         super().__init__("Insertion", "An insertion of N nucleotides into a chromosome.")
         self.insert_lengths = insert_lengths
         self.ins_len_weights = ins_len_weights
         self.rng = rng
 
-    def get_insertion_length(self, size: int = 1) -> int | list[int, ...]:
+    def get_insertion_length(self, size: int = 1) -> int | list[int]:
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 
@@ -103,15 +103,15 @@ class Deletion(VariantTypes):
             we'll need the rng to perform certain methods.
     """
     def __init__(self,
-                 deletion_lengths: np.ndarray[int, ...],
-                 del_len_weights: np.ndarray[float, ...],
+                 deletion_lengths: np.ndarray[int],
+                 del_len_weights: np.ndarray[float],
                  rng: Generator = None):
         super().__init__("Deletion", "A deletion of N bases")
         self.deletion_lengths = deletion_lengths
         self.del_len_weights = del_len_weights
         self.rng = rng
 
-    def get_deletion_length(self, size: int = 1) -> int | list[int, ...]:
+    def get_deletion_length(self, size: int = 1) -> int | list[int]:
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 
@@ -141,7 +141,7 @@ class Substitution(VariantTypes):
             we'll need the rng to perform certain methods.
     """
     def __init__(self,
-                 trinuc_trans_matrices: np.ndarray[float, ...] = None,
+                 trinuc_trans_matrices: np.ndarray[float] = None,
                  trinuc_trans_bias: dict = None,
                  rng: Generator = None):
 
@@ -226,20 +226,20 @@ class MutationModel(Substitution, Deletion, Insertion):
                  insertion_chance: float,
                  deletion_chance: float,
                  substitution_chance: float,
-                 trinuc_trans_matrices: np.ndarray[float, ...],
+                 trinuc_trans_matrices: np.ndarray[float],
                  trinuc_trans_bias: dict,
-                 insertion_lengths: np.ndarray[int, ...],
-                 insertion_weights: np.ndarray[float, ...],
-                 deletion_lengths: np.ndarray[int, ...],
-                 deletion_weights: np.ndarray[float, ...],
+                 insertion_lengths: np.ndarray[int],
+                 insertion_weights: np.ndarray[float],
+                 deletion_lengths: np.ndarray[int],
+                 deletion_weights: np.ndarray[float],
                  is_cancer: bool = False,
                  rng: Generator = None):
 
         # Any new mutation types will need to be instantiated in the mutation model here
 
-        super(Substitution).__init__(trinuc_trans_matrices, trinuc_trans_bias)
-        super(Insertion).__init__(insertion_lengths, insertion_weights)
-        super(Deletion).__init__(deletion_lengths, deletion_weights)
+        Substitution.__init__(trinuc_trans_matrices, trinuc_trans_bias)
+        Insertion.__init__(insertion_lengths, insertion_weights)
+        Deletion.__init__(deletion_lengths, deletion_weights)
 
         # We'll insert more mutation types as we go
         self.avg_mut_rate = avg_mut_rate
