@@ -1,8 +1,7 @@
 name: neat
 channels:
-  - conda-forge
-  - r
   - bioconda
+  - conda-forge
   - defaults
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
@@ -19,7 +18,6 @@ dependencies:
   - cachy=0.3.0=py_0
   - certifi=2022.6.15=py310hff52083_0
   - cffi=1.15.0=py310h0fdd8cc_0
-  - charset-normalizer=2.0.12=pyhd8ed1ab_0
   - cleo=0.8.1=pyhd8ed1ab_2
   - clikit=0.6.2=pyh9f0ad1d_0
   - crashtest=0.3.1=pyhd8ed1ab_0
@@ -37,7 +35,7 @@ dependencies:
   - fonts-conda-ecosystem=1=0
   - fonts-conda-forge=1=0
   - fonttools=4.33.3=py310h5764c6d_0
-  - freetype=2.11.0=h70c0345_0
+  - freetype=2.10.4=h0708190_1
   - gettext=0.19.8.1=h73d1719_1008
   - giflib=5.2.1=h36c2ea0_2
   - glib=2.70.2=h780b84a_4
@@ -49,7 +47,7 @@ dependencies:
   - idna=3.3=pyhd8ed1ab_0
   - jack=0.125.0=hf484d3e_1001
   - jeepney=0.8.0=pyhd8ed1ab_0
-  - jpeg=9e=h166bdaf_1
+  - jpeg=9e=h166bdaf_2
   - json-c=0.16=hc379101_0
   - keyring=23.6.0=py310hff52083_0
   - keyutils=1.6.1=h166bdaf_0
@@ -64,8 +62,8 @@ dependencies:
   - libbrotlienc=1.0.9=h166bdaf_7
   - libcap=2.64=ha37c62d_0
   - libcblas=3.9.0=15_linux64_openblas
-  - libclang=14.0.5=default_h2e3cab8_0
-  - libclang13=14.0.5=default_h3a83d3e_0
+  - libclang=14.0.6=default_h2e3cab8_0
+  - libclang13=14.0.6=default_h3a83d3e_0
   - libcups=2.3.3=hf5a7f15_1
   - libdb=6.1.26=0
   - libdeflate=1.12=h166bdaf_0
@@ -102,6 +100,8 @@ dependencies:
   - libzlib=1.2.12=h166bdaf_1
   - lockfile=0.12.2=py_1
   - lz4-c=1.9.3=h9c3ff4c_1
+  - matplotlib=3.5.2=py310hff52083_0
+  - matplotlib-base=3.5.2=py310h5701ce4_0
   - msgpack-python=1.0.4=py310hbf28c38_0
   - munkres=1.0.7=py_1
   - mysql-common=8.0.29=haf5c9bc_1
@@ -136,14 +136,14 @@ dependencies:
   - pyyaml=6.0=py310h5764c6d_4
   - qt-main=5.15.4=ha5833f6_2
   - readline=8.1.2=h0f457ee_0
-  - requests=2.28.0=pyhd8ed1ab_1
   - requests-toolbelt=0.9.1=py_0
+  - scipy=1.8.1=py310h7612f91_0
   - secretstorage=3.3.2=py310hff52083_1
   - setuptools=62.6.0=py310hff52083_0
   - shellingham=1.4.0=pyh44b312d_0
   - sip=6.5.1=py310h122e73d_2
   - six=1.16.0=pyh6c4a22f_0
-  - sqlite=3.38.5=h4ff8645_0
+  - sqlite=3.39.0=h4ff8645_0
   - tk=8.6.12=h27826a3_0
   - toml=0.10.2=pyhd8ed1ab_0
   - tomlkit=0.11.0=pyha770c72_0
@@ -152,7 +152,6 @@ dependencies:
   - tzdata=2022a=h191b570_0
   - unicodedata2=14.0.0=py310h5764c6d_1
   - urllib3=1.26.9=pyhd8ed1ab_0
-  - virtualenv=20.15.0=py310hff52083_0
   - webencodings=0.5.1=py_1
   - wheel=0.37.1=pyhd8ed1ab_0
   - xcb-util=0.4.0=h166bdaf_0
@@ -165,20 +164,19 @@ dependencies:
   - xz=5.2.5=h516909a_1
   - yaml=0.2.5=h7f98852_2
   - zlib=1.2.12=h166bdaf_1
-  - zstd=1.5.2=h8a70e8d_1
+  - zstd=1.5.2=h8a70e8d_2
   - pip:
     - asttokens==2.0.5
     - backcall==0.2.0
+    - charset-normalizer==2.0.12
     - cryptography==37.0.3
     - decorator==5.1.1
     - executing==0.8.3
-    - frozendict==2.3.2
+    - frozendict==2.3.4
     - ipython==8.4.0
     - jedi==0.18.1
-    - matplotlib==3.5.2
     - matplotlib-inline==0.1.3
     - neat==4.0
-    - pandas==1.4.3
     - parso==0.8.3
     - pickleshare==0.7.5
     - platformdirs==2.5.2
@@ -188,13 +186,12 @@ dependencies:
     - pygments==2.12.0
     - pyqt5-sip==12.9.0
     - pysam==0.19.1
-    - pytz==2022.1
-    - scipy==1.8.1
+    - requests==2.28.0
     - setuptools-scm==7.0.2
-    - sqlitedict==2.0.0
     - stack-data==0.3.0
     - tomli==2.0.1
     - traitlets==5.3.0
     - typing-extensions==4.2.0
+    - virtualenv==20.15.0
     - wcwidth==0.2.5
-prefix: /home/joshfactorial/anaconda3/envs/neat
+prefix: /u/jallen17/.conda/envs/neat
