@@ -248,8 +248,8 @@ def read_simulator_runner(config: str, output: str):
         local_variants = input_variants_dict[contig]
         local_reference = reference_index[contig]
 
-        _LOG.info(f'Creating trinucleotide map for {contig}...')
-        local_trinuc_map = map_chromosome(local_reference, mut_model)
+        # _LOG.info(f'Creating trinucleotide map for {contig}...')
+        # local_trinuc_map = map_chromosome(local_reference, mut_model)
 
         # Since we're only running single threaded for now:
         threadidx = 1
