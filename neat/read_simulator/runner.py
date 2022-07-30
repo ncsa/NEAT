@@ -152,6 +152,11 @@ def read_simulator_runner(config: str, output: str):
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
     _LOG.debug("Reference file indexed.")
+    if _LOG.getEffectiveLevel() < 20:
+        count = 0
+        for contig in reference_index:
+            count += len(reference_index[contig])
+        _LOG.debug(f"Length of reference: {count}")
 
     reference_contigs = list(reference_index.keys())
     options.set_value("reference_contigs", reference_contigs)
