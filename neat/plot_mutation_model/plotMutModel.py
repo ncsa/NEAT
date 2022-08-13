@@ -17,6 +17,8 @@ import matplotlib.colors as colors
 import matplotlib.pyplot as mpl
 import numpy as np
 
+from .models import MutationModel
+
 # mpl.rc('text',usetex=True)
 # mpl.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
 
@@ -75,6 +77,7 @@ def get_bed_overlap(track, ind_s, ind_e):
 #				ocount += 1
 #	return ocount
 
+def plot_mut_model:
 OUP = args.o
 LAB = args.l
 # print LAB

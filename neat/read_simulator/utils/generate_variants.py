@@ -99,9 +99,6 @@ def parse_mutation_rate_dict(avg_rate: float,
     regions = np.array(regions)
     rates = np.array(rates)
 
-    # Normalize the weights:
-    rates /= sum(rates)
-
     return regions, rates
 
 
@@ -139,6 +136,7 @@ def generate_variants(reference: SeqRecord,
     Decide how many and where any random mutations will happen in this contig
     """
     total = len(reference)
+    _LOG.debug(f"Contig length: {total}")
     factors = []
     for i in range(len(mutation_map)):
         region_len = abs(mutation_map[i][1] - mutation_map[i][0])
@@ -154,6 +152,7 @@ def generate_variants(reference: SeqRecord,
     # This number will serve as a counter for our loops. Default is 1 mutation per chromosome.
     min_mutations = options.min_mutations
 
+    _LOG.debug(f"Average number of mutations for this contig: {average_number_of_mutations}")
     # Pick a random number from a poisson distribution. We want at least min_mutations and at most max mutations.
     how_many_mutations = min(max(options.rng.poisson(average_number_of_mutations), min_mutations), max_mutations)
 
@@ -162,7 +161,9 @@ def generate_variants(reference: SeqRecord,
     while how_many_mutations > 0:
         # Pick a region based on the mutation rates
         # (default is one rate for the whole chromosome, so this will be trivial in that case
-        mut_region = options.rng.choice(a=mutation_map, p=mutation_rates)
+        # for this selection, we'll normalize the mutation rates
+        probability_rates = mutation_rates / sum(mutation_rates)
+        mut_region = options.rng.choice(a=mutation_map, p=probability_rates)
         # Pick a random starting place. Randint is inclusive of endpoints, so we subtract 1
         window_start = options.rng.integers(mut_region[0], mut_region[1] - 1, dtype=int)
         found = False

@@ -299,4 +299,3 @@ def read_simulator_runner(config: str, output: str):
     if options.produce_fasta:
         _LOG.info(f"Outputting fasta file(s): {output_file_writer.fasta_fns}")
         output_file_writer.merge_temp_fastas(fasta_files)
-
