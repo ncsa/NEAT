@@ -1,6 +1,10 @@
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
+# NEAT v4.0 - beta
+- Rewritten codebase to be modular and pip installable, using the poetry package
+- Working on optimizing code and implementing final features
+
 # NEAT v3.1
 
 Bug Fixes:

@@ -1,11 +1,11 @@
-# The NEAT Project v3.2
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.2. Neat has now been updated with Python 3, and is moving toward PEP8 standards. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+# The NEAT Project v4.0
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.0. This is our beta release of the newest version of NEAT. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
-NEAT's gen_reads.py is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
+NEAT's read-simulator is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
 
-This is an in-progress v3.2 of the software. For a stable release of the previous repo, please see: [genReads1](https://github.com/zstephens/genReads1) (or check out our v2.0 tag)
+This is an pre-release v4.0 of the software. For a stable release, please see: [NEAT 3.0](https://github.com/ncsa/NEAT/releases/tag/3.3) (or check out older tagged releases)
 
 To cite this work, please use:
 
@@ -18,6 +18,7 @@ Table of Contents
   * [neat-genreads](#neat-genreads)
   * [Table of Contents](#table-of-contents)
     * [Requirements](#requirements)
+    * [Installation] (#installation)
     * [Usage](#usage)
     * [Functionality](#functionality)
     * [Examples](#examples)
@@ -37,66 +38,140 @@ Table of Contents
       * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
 
 
-## Requirements
+## Requirements (the most up-to-date requirements are found in the environment.yml file)
 
-* python >= 3.8
+* Python == 3.10.*
+* poetry
 * biopython == 1.79
-* matplotlib >= 3.3.4 (optional, for plotting utilities)
-* matplotlib-venn >= 0.11.6 (optional, for plotting utilities)
-* pandas >= 1.2.1
-* numpy >= 1.22.2
-* pysam >= 0.16.0.1
+* pkginfo
+* matplotlib
+* numpy
+* pyyaml
+* scipy
+* pysam
+* pybedtools
+* frozendict
+
+## Installation
+To install NEAT, you must create a virtual environment using a tool such as conda. Once activated, you can
+use the poetry module in build a wheel file, which can then be pip installed. You will need to run these
+commands from within the NEAT directory.
 
 ```
-git clone https://github.com/ncsa/NEAT.git
-UNTESTED:
-python -m pip install -e /path/to/NEAT/
+> conda env create -f environmental.yml -n neat
+> conda activate neat
+> poetry build
+> pip install dist/neat*whl
+```
+
+Alternatively, if you wish to work with NEAT in the development environment, you can use poetry install within
+the NEAT repo, after creating the conda environment:
+```
+> conda env create -f environmental.yml -n neat
+> conda activate neat
+> poetry install
+```
+
+Test your install by running:
+```
+> neat --help
 ```
 
 ## Usage
-NEAT's core functionality is invoked using the gen_reads.py command. Here's the simplest invocation of gen_reads using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
+NEAT's core functionality is invoked using the read-simulator command. Here's the simplest invocation of read-simulator using default parameters. This command produces a single ended fastq file with reads of length 101, ploidy 2, coverage 10X, using the default sequencing substitution, GC% bias, and mutation rate models.
+
+Contents of neat_config.yml
+```
+reference: /path/to/my/genome.fa
+```
 
 ```
-python gen_reads.py -r sample_data/ecoli.fa -R 101 -o simulated_data
-``` 
+neat read-simulator -c neat_config.yaml -o simulated_data
+```
 
-The most commonly added options are --pe (to activate paired-end mode), --bam (to output golden bam), --vcf (to output golden vcf), and -c (to specify average coverage).
+The output prefix should not specify a file extension (i.e., .fasta, .fastq, etc.),
+as these will be appended by NEAT.
 
-| Option              | Description                                                                                                                                                                                                                   |
-|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| -h, --help          | Displays usage information                                                                                                                                                                                                    |
-| -r <str>            | Reference sequence file in fasta format. A reference index (.fai) will be created if one is not found in the directory of the reference as [reference filename].fai. Required. The index can be created using samtools faidx. |
-| -R <int>            | Read length. Required.                                                                                                                                                                                                        |
-| -o <str>            | Output prefix. Use this option to specify where and what to call output files. Required                                                                                                                                       |
-| -c <float>          | Average coverage across the entire dataset. Default: 10                                                                                                                                                                       |
-| -e <str>            | Sequencing error model data file                                                                                                                                                                                              |
-| -E <float>          | Average sequencing error rate. The sequencing error rate model is rescaled to make this the average value.                                                                                                                    |
-| -p <int>            | Sample Ploidy, default 2                                                                                                                                                                                                      |
-| -tr <str>           | Bed file containing targeted regions; default coverage for targeted regions is 98% of -c option; default coverage outside targeted regions is 2% of -c option                                                                 |
-| -dr <str>           | Bed file with sample regions to discard.                                                                                                                                                                                      |
-| -to <float>         | off-target coverage scalar [0.02]                                                                                                                                                                                             |
-| -m <str>            | mutation model data file                                                                                                                                                                                                      |
-| -M <float>          | Average mutation rate. The mutation rate model is rescaled to make this the average value. Must be between 0 and 0.3. These random mutations are inserted in addition to the once specified in the -v option.                 |
-| -Mb <str>           | Bed file containing positional mutation rates                                                                                                                                                                                 |
-| -N <int>	           | Below this quality score, base-call's will be replaced with N's                                                                                                                                                               |
-| -v <str>            | Input VCF file. Variants from this VCF will be inserted into the simulated sequence with 100% certainty.                                                                                                                      |
-| --pe <int> <int>    | Paired-end fragment length mean and standard deviation. To produce paired end data, one of --pe or --pe-model must be specified.                                                                                              |
-| --pe-model <str>    | Empirical fragment length distribution. Can be generated using [computeFraglen.py](#computefraglenpy). To produce paired end data, one of --pe or --pe-model must be specified.                                               |
-| --gc-model <str>    | Empirical GC coverage bias distribution.  Can be generated using [computeGC.py](#computegcpy)                                                                                                                                 |
-| --bam               | Output golden BAM file                                                                                                                                                                                                        |
-| --vcf               | Output golden VCF file                                                                                                                                                                                                        |
-| --fa	               |   Output FASTA instead of FASTQ                                                                                                                                                                                               |
-| --rng <int>         | rng seed value; identical RNG value should produce identical runs of the program, so things like read locations, variant positions, error positions, etc, should all be the same.                                             |
-| --no-fastq          | Bypass generation of FASTQ read files                                                                                                                                                                                         |
-| --discard-offtarget | Discard reads outside of targeted regions                                                                                                                                                                                     |
-| --rescale-qual      | Rescale Quality scores to match -E input                                                                                                                                                                                      |
-| -d                  | Turn on debugging mode (useful for development)                                                                                                                                                                               |
+A config file is required. The config is a yaml file specifying the input parameters. The following is a brief
+description of the potential inputs in the config file. See NEAT/config_template/template_neat_config.yaml for a
+template config file to copy and use for your runs.
+
+reference: full path to a fasta file to generate reads from
+read_len: The length of the reads for the fastq (if using). Integer value, default 101.
+coverage: desired coverage value. Float or int, default = 10
+ploidy: Desired value for ploidy (# of copies of each chromosome). Default is 2
+paired_ended: If paired-ended reads are desired, set this to True. Setting this to true requires
+    either entering values for fragment_mean and fragment_st_dev or entering the path to a
+    valid fragment_model.
+fragment_mean: Use with paired-ended reads, set a fragment length mean manually
+fragment_st_dev: use with paired-ended reads, set the standard deviation of the fragment length dataset
+
+The following values can be set to true or omitted to use defaults. If True, NEAT will produce the file type.
+The default is given:
+produce_bam: False
+produce_vcf: False
+produce_fasta: False
+produce_fastq: True
+
+error_model: full path to an error model generated by NEAT. Leave empty to use default model
+    (default model based on human, sequenced by Illumina)
+mutation_model: full path to a mutation model generated by NEAT. Leave empty to use a default
+    model (default model based on human data sequenced by Illumina)
+fragment_model: full path to fragment length model generate by NEAT. Leave empty to use default model
+    (default model based on human data sequenced by Illumina)
+gc_model: Full path to model for correlating GC concentration and coverage, produced by NEAT.
+    (default model is based on human data, sequenced by Illumina)
+
+
+partition_mode: by chromosome ("chrom"), or subdivide the chromosomes ("subdivision").
+    Note: this feature is not yet fully implemented
+threads: The number of threads for NEAT to use.
+    Note: this feature is not yet fully implemented
+avg_seq_error: average sequencing error rate for the sequencing machine. Use to increase or
+    decrease the rate of errors in the reads. Float betwoon 0 and 0.3. Default is set by the error model.
+rescale_qualities: rescale the quality scores to reflect the avg_seq_error rate above. Set True to activate.
+include_vcf: full path to list of variants in vcf format to include in the simulation.
+target_bed: full path to list of regions in bed format to target. All areas outside these regions will have
+    very low coverage.
+off_target_scalar: manually set the off-target-scalar when using a target bed. Default is 0.02
+    (i.e., off target areas will have only 2% of the average coverage)
+discard_offtarget: throws out reads from off-target regions. Regions of overlap may still have reads.
+    Set True to activate
+discard_bed: full path to a list of regions to discard, in BED format.
+mutation_rate: Desired rate of mutation for the dataset. Float between 0 and 0.3
+    (default is determined by the mutation model)
+mutation_bed: full path to a list of regions with a column describing the mutation rate of that region,
+    as a float with values between 0 and 0.3. The mutation rate must be in the third column.
+no_coverage_bias: Set to true to produce a dataset free of coverage bias
+rng_seed: Manually enter a seed for the random number generator. Used for repeating runs.
+min_mutations: Set the minimum number of mutations that NEAT should add, per contig. Default is 1.
+fasta_per_ploid: Produce one fasta per ploid. Default behavior is to produce
+    a single fasta showing all variants.                                                                                                                                                                        |
+
+The command line options for NEAT are as follows:
+
+Universal options can be applied to any subfunction. The commands should come before the function name (e.g., neat --log-level DEBUG read-simulator ...), excetp -h or --help, which can appear anywhere in the command.
+| Universal Options   | Description                          |
+|---------------------|--------------------------------------|
+| -h, --help          | Displays usage information           |
+| --no-log            | Turn off log file creation           |
+| --log-dir LOG_DIR   | Sets the log directory to custom path (default is current working directory |
+| --log-name LOG_NAME | Custom name for log file (default is timestamped) |
+| --log-level VALUE   | VALUE must be one of [DEBUG, INFO, WARN, WARNING, ERROR] - sets level of log to display |
+| --log-detal VALUE   | VALUE must be one of [LOW, MEDIUM, HIGH] - how much info to write for each log record |
+| --silent-mode       | Writes logs, but suppresses stdout messages |
+
+read-simulator command line options
+| Option              | Description                         |
+|---------------------|-------------------------------------|
+| -c VALUE, --config VALUE | The VALUE should be the name of the config file to use for this run |
+| -o OUTPUT, --output OUTPUT | The path, including filename prefix, to use to write the output files |
 
 ## Functionality
 
 ![Diagram describing the way that genReads simulates datasets](docs/NEATNEAT.png "Diagram describing the way that gen_reads simulates datasets")
 
-AT produces simulated sequencing datasets. It creates FASTQ files with reads sampled from a provided reference genome, using sequencing error rates and mutation rates learned from real sequencing data. The strength of NEAT lies in the ability for the user to customize many sequencing parameters, produce 'golden,' true positive datasets. We are working on expanding the functionality even further to model more species, generate larger variants, model tumor/normal data and more!
+NEAT produces simulated sequencing datasets. It creates FASTQ files with reads sampled from a provided reference genome, using sequencing error rates and mutation rates learned from real sequencing data. The strength of NEAT lies in the ability for the user to customize many sequencing parameters, produce 'golden,' true positive datasets. We are working on expanding the functionality even further to model more species, generate larger variants, model tumor/normal data and more!
 
 Features:
 
@@ -115,7 +190,6 @@ Features:
 - Output a BAM file with the 'golden' set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
 - Create paired tumour/normal datasets using characteristics learned from real tumour data
 - Parallelization. COMING SOON!
-- Low memory footprint. Constant (proportional to the size of the reference sequence)
 
 ## Examples
 
@@ -125,75 +199,100 @@ The following commands are examples for common types of data to be generated. Th
 Simulate whole genome dataset with random variants inserted according to the default model. 
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30
+[contents of neat_config.yml]
+reference: hg19.fa
+read_len: 126
+produce_bam: True
+produce_vcf: True
+paired_ended: True
+fragment_mean: 300
+fragment_st_dev: 30
+
+neat read-simulator                  \
+        -c neat_config.yaml          \
+        -o /home/me/simulated_reads
 ```
 
 ### Targeted region simulation
-Simulate a targeted region of a genome, e.g. exome, with -tr.
+Simulate a targeted region of a genome, e.g. exome, with a targeted bed:
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30                 \
-        -tr hg19_exome.bed
+<<<<<<< HEAD
+[contents of neat_config.yml]
+reference: hg19.fa
+read_len: 126
+produce_bam: True
+produce_vcf: True
+paired_ended: True
+fragment_mean: 300
+fragment_st_dev: 30
+targed_bed: hg19_exome.bed
+
+neat read-simulator                 \
+        -c neat_config              \
+        -o /home/me/simulated_reads
+
 ```
 
 ### Insert specific variants
 Simulate a whole genome dataset with only the variants in the provided VCF file using -v and setting mutation rate to 0 with -M.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       \
-        --pe 300 30                 \
-        -v NA12878.vcf              \
-        -M 0
+[contents of neat_config.yml]
+reference: hg19.fa
+read_len: 126
+produce_bam: True
+produce_vcf: True
+paired_ended: True
+fragment_mean: 300
+fragment_st_dev: 30
+input_variants: NA12878.vcf
+mutation_rate: 0
+
+neat read-simulator                 \
+        -c neat_config.yml          \
+        -o /home/me/simulated_reads
 ```
 
 ### Single end reads
-Simulate single-end reads by omitting the --pe option.
+Simulate single end reads by omitting paired ended options.
 
 ```
-python gen_reads.py                  \
-        -r hg19.fa                  \
-        -R 126                      \
-        -o /home/me/simulated_reads \
-        --bam                       \
-        --vcf                       
+[contents of neat_config.yml]
+reference: hg18.fa
+read_len: 126
+produce_bam: True
+produce_vcf: True
+
+neat read-simulator                 \
+        -c neat_config.yml          \
+        -o /home/me/simulated_reads
 ```
 
 ### Large single end reads
 Simulate PacBio-like reads by providing an error model.
+(Not yet implemented in NEAT 4.0)
 
 ```
-python gen_reads.py                             \
-	-r hg19.fa                                  \
-	-R 5000                                     \
-	-e models/errorModel_pacbio_toy.pickle.gz   \
-	-E 0.10                                     \
-	-o /home/me/simulated_reads        
+[contents of neat-config.yml]
+reference: hg19.fa
+read_len: 5000
+error_model: errorModel_pacbio.pickle.gz
+avg_seq_error: 0.1
+
+neat read-simulator                 \
+        -c neat_config.yml          \
+        -o /home/me/simulated_reads
 ```
 
 # Utilities	
 Several scripts are distributed with gen_reads that are used to generate the models used for simulation.
 
-## compute_gc.py
+## neat compute_gc_bias
 
 Computes GC% coverage bias distribution from sample (bedrolls genomecov) data.
 Takes .genomecov files produced by BEDtools genomeCov (with -d option).
+(Not yet implemented in NEAT 4.0)
 
 ```
 bedtools genomecov
@@ -203,32 +302,32 @@ bedtools genomecov
 ```
 
 ```
-python compute_gc.py                \
+neat compute_gc_bias                \
         -r reference.fa             \
         -i genomecovfile            \
         -w [sliding window length]  \
         -o /path/to/prefix
 ```
 
-## compute_fraglen.py
+## neat create_fraglen_model
 
 Computes empirical fragment length distribution from sample data.
-Takes SAM file via stdin:
+Takes SAM/BAM file via stdin (Not yet implemented in NEAT 4.0):
 
-    python computeFraglen.py \
-        -i input.bam         \
+    neat create_fraglen_model   \
+        -i input.bam            \
         -o /prefix/for/output
 
 and creates fraglen.pickle.gz model in working directory.
 
-## gen_mut_model.py
+## neat create_mutation_model
 
-Takes references genome and TSV file to generate mutation models:
+Takes references genome and VCF file to generate mutation models (Not yet implemented in NEAT 4.0):
 
 ```
-python gen_mut_model.py               \
+neat create_mutation_model          \
         -r hg19.fa                  \
-        -m inputVariants.tsv        \
+        -m inputVariants.vcf        \
         -o /home/me/models
 ```
 
@@ -244,16 +343,14 @@ Trinucleotides are identified in the reference genome and the variant file. Freq
 | --human-sample  | Use to skip unnumbered scaffolds in human references                         |
 | --skip-common   | Do not save common snps or high mutation areas                               |
 
-	
+## neat generate_error_model
 
-## genSeqErrorModel.py
-
-Generates sequence error model for gen_reads.py -e option.
-This script needs revision, to improve the quality-score model eventually, and to include code to learn sequencing errors from pileup data.
+Generates sequencing error model for neat.
+This script needs revision, to improve the quality-score model eventually, and to include code to learn sequencing errors from pileup data (Not yet implemented in NEAT 4.0).
 
 ```
-python genSeqErrorModel.py                            \
-        -i input_read1.fq (.gz) / input_read1.sam/bam \
+neat generate_error_model                             \
+        -i input_read1.fq (.gz) / input_read1.sam     \
         -o /output/prefix                             \
         -i2 input_read2.fq (.gz) / input_read2.sam/bam\
         -p input_alignment.pileup                     \
@@ -261,26 +358,26 @@ python genSeqErrorModel.py                            \
         -Q maximum quality score [41]                 \
         -n maximum number of reads to process [all]   \
         -s number of simulation iterations [1000000]  \
-        --plot (perform some optional ploting)
+        --plot (perform some optional plotting)
 ```
 
-## plotMutModel.py
+## neat plot_mutation_model
 
-Performs plotting and comparison of mutation models generated from genMutModel.py.
+Performs plotting and comparison of mutation models generated from genMutModel.py (Not yet implemented in NEAT 4.0).
 
 ```
-python plotMutModel.py                                                  \
+neat plot_mutation_model                                                \
         -i model1.pickle.gz [model2.pickle.gz] [model3.pickle.gz]...    \
         -l legend_label1 [legend_label2] [legend_label3]...             \
         -o path/to/pdf_plot_prefix
 ```
 
-## vcf_compare_OLD.py
+## neat vcf_compare
 
-Tool for comparing VCF files.
+Tool for comparing VCF files (Not yet implemented in NEAT 4.0).
 
 ```
-python vcf_compare_OLD.py
+neat vcf_compare
         -r <ref.fa>        * Reference Fasta                           \
         -g <golden.vcf>    * Golden VCF                                \
         -w <workflow.vcf>  * Workflow VCF                              \

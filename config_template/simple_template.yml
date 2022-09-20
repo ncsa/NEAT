@@ -1,0 +1,35 @@
+reference: REQUIRED
+read_len: .
+coverage: .
+ploidy: .
+paired_ended: .
+fragment_mean: .
+fragment_st_dev: .
+
+produce_bam: .
+produce_vcf: .
+produce_fasta: .
+produce_fastq: .
+
+error_model: .
+mutation_model: .
+fragment_model: .
+gc_model: .
+
+partition_mode: .
+threads: .
+avg_seq_error: .
+rescale_qualities: .
+quality_offset: .
+include_vcf: .
+target_bed: .
+off_target_scalar: .
+discard_offtarget: .
+discard_bed: .
+mutation_rate: .
+mutation_bed: .
+no_coverage_bias: .
+rng_seed: .
+min_mutations: .
+fasta_per_ploid: .
+overwrite_output: .
