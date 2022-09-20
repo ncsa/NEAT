@@ -110,13 +110,13 @@ class ContigVariants:
         """
         Turns variants at a location into a vcf output. Only outputs items it has data for,
         but in the correct vcf format and order. Note that for a VCF, Insertion and Deletion
-        type variant positions start at the first unaltered base, so that the alt or ref is
+        type variant positions start at the first unaltered base, so that the alternate or ref is
         not empty. Also, VCF numbering is 1-based rather than 0-based. For an insertion, for example
         this means the location is location - 1 + 1, to account for both of the previous facts.
 
         We may improve this later, but for now, we will output one variant per line.
 
-        :param variant: The variant to retrieve ref and alt for
+        :param variant: The variant to retrieve ref and alternate for
         :param reference: The reference SeqRecord for this contig
         :return: A list of vcf lines based on the variants for that location
         """
@@ -125,17 +125,17 @@ class ContigVariants:
 
         if type(variant) == Insertion:
             ref = reference[variant.position1]
-            alt = variant.alt
+            alt = variant.get_alt()
         elif type(variant) == Deletion:
             ref = str(reference[variant.position1: variant.position1 + variant.length].seq)
             alt = reference[variant.position1]
         elif type(variant) == SingleNucleotideVariant:
             ref = reference[variant.position1]
-            alt = variant.alt
+            alt = variant.get_alt()
         else:
-            # Unknown types must have an explicit ref and alt in metadata
+            # Unknown types must have an explicit ref and alternate in metadata
             ref = variant.metadata['REF']
-            alt = variant.metadata['ALT']
+            alt = variant.get_alt()
 
         return ref, alt
 
@@ -153,7 +153,7 @@ class ContigVariants:
             if not self.contig_variants[variant.position]:
                 self.variant_locations.remove(variant.position)
 
-    def __getitem__(self, input_location: int):
+    def __getitem__(self, input_location: int) -> list:
         """
         Fetches all variants at input location
         :param input_location: The location to retrieve variants from

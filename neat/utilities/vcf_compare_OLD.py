@@ -212,7 +212,7 @@ def parse_line(splt, col_dict, col_samp):
     alt_alleles = []
     alt_freqs = [None]
     
-    #	any alt alleles?
+    #	any alternate alleles?
     alt_split = aa.split(',')
     if len(alt_split) > 1:
         alt_alleles = alt_split
@@ -268,7 +268,7 @@ def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
     v_targ_len = {}
     n_below_min_r_len = 0
     line_unique = 0  # number of lines in vcf file containing unique variant
-    hash_coll = 0  # number of times we saw a hash collision ("per line" so non-unique alt alleles don't get counted multiple times)
+    hash_coll = 0  # number of times we saw a hash collision ("per line" so non-unique alternate alleles don't get counted multiple times)
     var_filtered = 0  # number of variants excluded due to filters (e.g. hom-refs, qual)
     var_merged = 0  # number of variants we merged into another due to having the same position specified
     col_dict = {}
@@ -555,7 +555,7 @@ def main():
 
         # correct_hashed[var] = 1: were not found
         #                    = 2: should be discluded because we were found
-        #                    = 3: should be discluded because an alt was found
+        #                    = 3: should be discluded because an alternate was found
         not_found = [n for n in sorted(correct_hashed.keys()) if correct_hashed[n] == 1]
         fp_variants = [n for n in sorted(workflow_hashed.keys()) if workflow_hashed[n] == 1]
 

@@ -11,7 +11,7 @@ from Bio import SeqIO
 
 from ...common import open_input, pick_ploids, get_genotype_string
 from .options import Options
-from ...variants import ContigVariants
+from ...variants import ContigVariants, SingleNucleotideVariant, Insertion, Deletion, UnknownVariant
 
 __all__ = [
     "parse_input_vcf"
@@ -159,7 +159,7 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
 
                 # We'll need the genotype when we generate reads, and output the records, if applicable
                 genotype = None
-                normal_sample_field= None
+                normal_sample_field = None
                 tumor_sample_field = None
 
                 if has_format:
@@ -250,24 +250,23 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                     temp_genotype = variant_genotype(options.ploidy, genotype, count)
                     if len(ref) == len(alt) == 1:
                         # Type = SNV
-                        temp_variant = SingleNucleotideVariant(location, alt, temp_genotype, record[5], is_input=True, kwargs=data)
+                        temp_variant = SingleNucleotideVariant(
+                            location, alt, temp_genotype, record[5], is_input=True, kwargs=data
+                        )
                     elif len(ref) == 1 and len(ref) > len(alt):
                         # type = deletion
-                        # In the Deletion class, the location is the first base deleted,
-                        # whereas in the vcf they grab the base before, hence +1 to location, -1 from length, so
-                        # we get only the bases actually deleted.
-                        temp_variant = Deletion(location + 1, len(alt) - 1, temp_genotype, record[5], is_input=True, kwargs=data)
+                        temp_variant = Deletion(
+                            location, len(alt), temp_genotype, record[5], is_input=True, kwargs=data
+                        )
                     elif len(alt) == 1 and len(ref) < len(alt):
                         # type = insertion
-                        # In the Insertion class, the location is the first base inserted,
-                        # whereas in the vcf they grab the base before, hence, +1 to location,
-                        # and input alt from 1 on, so we get only the novel bases.
-                        alt = alt[1:]
-                        temp_variant = Insertion(location + 1, len(alt), alt, temp_genotype, record[5], is_input=True, kwargs=data)
+                        temp_variant = Insertion(
+                            location, len(alt), alt, temp_genotype, record[5], is_input=True, kwargs=data)
                     else:
-                        # We'll need the alt, so we'll add it to data.
+                        # We'll need the alternate, so we'll add it to data.
                         data["ALT"] = alt
-                        temp_variant = UnknownVariant(location, temp_genotype, record[5], is_input=True, kwargs=data)
+                        temp_variant = UnknownVariant(location, temp_genotype, record[5], is_input=True, kwargs=data
+                                                      )
 
                     rc = input_dict[chrom].add_variant(temp_variant)
                     if rc == 1:

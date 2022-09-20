@@ -11,6 +11,7 @@ import abc
 from bisect import bisect_left
 from numpy.random import Generator
 from Bio.Seq import Seq
+from Bio import SeqRecord
 
 from neat import variants
 
@@ -27,7 +28,8 @@ __all__ = [
     "FragmentLengthModel",
     "InsertionModel",
     "DeletionModel",
-    "SnvModel"
+    "SnvModel",
+    "ErrorContainer"
 ]
 
 _LOG = logging.getLogger(__name__)
@@ -83,7 +85,7 @@ class InsertionModel(VariantModel):
         self.insert_len_model = insert_len_model
         self.rng = rng
 
-    def get_insertion_length(self, size: int = 1) -> int | list[int, ...]:
+    def get_insertion_length(self, size: int = None) -> int | list[int, ...]:
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 
@@ -114,7 +116,7 @@ class DeletionModel(VariantModel):
         self.deletion_len_model = deletion_len_model
         self.rng = rng
 
-    def get_deletion_length(self, size: int = 1) -> int | list[int, ...]:
+    def get_deletion_length(self, size: int = None) -> int | list[int, ...]:
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 
@@ -122,12 +124,6 @@ class DeletionModel(VariantModel):
                      Greater than 1 returns a list of ints.
         :return: int or list of ints.
         """
-        if size == 1:
-            # Using size = anything results in an array return, so we simplify when size = 1 to get an int return
-            return self.rng.choice(a=[*self.deletion_len_model],
-                                   p=[*self.deletion_len_model.values()],
-                                   shuffle=False)
-
         return self.rng.choice(a=[*self.deletion_len_model],
                                p=[*self.deletion_len_model.values()],
                                size=size, shuffle=False)
@@ -306,7 +302,7 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[:2]]]
         # then determine the trans probs based on the middle nucleotide
         transition_probs = transition_matrix[NUC_IND[trinucleotide[1]]]
-        # Now pick a random alt, weighted by the probabilities
+        # Now pick a random alternate, weighted by the probabilities
         alt = self.rng.choice(ALLOWED_NUCL, p=transition_probs)
         temp_snv = SingleNucleotideVariant(reference_location, alt=alt)
         self.all_ins.append(temp_snv)
@@ -335,9 +331,9 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         :return:
         """
         # Note that the deletion length model is based on the number of bases deleted,
-        # so we add 1 to account for the common base between ref and alt.
+        # so we add 1 to account for the common base between ref and alternate.
         length = self.get_deletion_length() + 1
-        # Plus one so we make sure to grab the first base too
+        # Plus one so we make sure to grab the first base too.
         # Note: if we happen to go past the end of the sequence, it will just be shorter.
         temp_del = Deletion(location, length)
         self.all_dels.append(temp_del)
@@ -363,8 +359,8 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     :param rescale_qualities: If set to true, NEAT will attempt to rescale the qualities based on the input error
                               model, rather than using the qualities derived from the real data.
     :param variant_probs: Probability dict for each valid variant type
-    :param indel_len_model: Similar to mutation model, but simpler because errors tend not to be complicated. One dict
-        covers both insertions and deletions.
+    :param indel_len_model: Similar to mutation model, but simpler because errors tend not to be complicated. The
+        three possible variant types for errors are Insertion, Deletion, and SNV
     :param is_uniform: Some machines use uniform quality scores. This makes simulation a little easier.
     :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
         we'll need the rng to perform certain methods.
@@ -410,88 +406,97 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         self.rng = rng
 
     def get_sequencing_errors(self,
+                              read_length: int,
+                              reference_segment: SeqRecord,
                               quality_scores: np.ndarray):
         """
         Inserts errors of type substitution, insertion, or deletion into read_data, and assigns a quality score
         based on the container model.
+        :param read_length: The length of the read to generate errors for.
+        :param reference_segment: The section of the reference from which the read is drawn
         :param quality_scores: Array of quality scores for the read
         :return: modified sequence and associated quality scores
 
         """
 
-        sequencing_errors = []
+        error_indexes = []
+        introduced_errors = []
 
         # The use case here would be someone running a simulation where they want no sequencing errors.
         # No need to run any loops in this case.
         if self.average_error == 0:
-            return sequencing_errors
+            return introduced_errors
         else:
-            for i in range(self.read_length):
+            for i in range(read_length):
                 if self.rng.random() < self.quality_score_error_rate[quality_scores[i]]:
-                    sequencing_errors.append(i)
+                    error_indexes.append(i)
 
+        num_indels_so_far = 0
+        # To prevent deletion collisions
+        del_blacklist = []
 
-        # number_deletions_so_far = 0
-        # # don't allow indel errors to occur on subsequent positions
-        # previous_indel = -2
-        # # don't allow other sequencing errors to occur on bases removed by deletion errors
-        # del_blacklist = []
-        #
-        # for index in sequencing_errors[::-1]:
-        #     # determine error type
-        #     is_sub = True
-        #     # This check checks that we are not trying to insert indels at the end of a read,
-        #     # or overlapping with a different indel.
-        #     if index != 0 and \
-        #             index != self.read_length - 1 - max(self.indel_lengths) and \
-        #             abs(index - previous_indel) > 1:
-        #         if rng.random() < self.indel_probability:
-        #             is_sub = False
-        #
-        #     # Insert substitution error
-        #     if is_sub:
-        #         current_nucleotide = read_data[index]
-        #         nuc_index = ALLOWED_NUCL.index(current_nucleotide)
-        #         # take the zero index because this returns a list of length 1.
-        #         new_nucleotide = self.substitution_model[nuc_index].sample()
-        #         introduced_errors.append(('S', 1, index, current_nucleotide, new_nucleotide))
-        #
-        #     # insert indel error:
-        #     else:
-        #         # Need to take the first element because this returns a list with 1 element.
-        #         indel_len = self.indel_length_model.sample()
-        #
-        #         # insertion error:
-        #         if options.rng.random() < self.insertion_probability:
-        #             current_nucleotide = read_data[index]
-        #             insert = options.rng.choice(ALLOWED_NUCL, p=self.nucleotide_insertion_model, size=indel_len)
-        #             new_nucleotide = current_nucleotide + "".join(insert)
-        #             introduced_errors.append(('I', len(new_nucleotide) - 1, index, current_nucleotide, new_nucleotide))
-        #
-        #         elif index < self.read_length - 2 - number_deletions_so_far:
-        #             current_nucleotide = read_data[index: index + indel_len + 1]
-        #             new_nucleotide = read_data[index]
-        #             number_deletions_so_far += len(current_nucleotide) - 1
-        #             introduced_errors.append(('D', len(current_nucleotide) - 1, index,
-        #                                       current_nucleotide, new_nucleotide))
-        #             del_blacklist.extend(list(range(index + 1, index + indel_len + 1)))
-        #
-        #         previous_indel = indexsubstitution_probability
-        #
-        # # Remove blacklisted errors
-        # for i in range(len(introduced_errors) - 1, -1, -1):
-        #     if introduced_errors[i][2] in del_blacklist:
-        #         del introduced_errors[i]
-        #
-        # return out_qualities, introduced_errors
-        return sequencing_errors
+        for index in error_indexes[::-1]:
+            # determine error type. Most will be SNVs
+            error_type = SingleNucleotideVariant
+
+            # Not too sure about how realistic it is to model errors as indels, but I'm leaving the code in for now.
+
+            # This is to prevent deletion error collisions and to keep there from being too many indel errors.
+            if 0 < index < self.read_length - max(self.deletion_len_model) and num_indels_so_far > self.read_length//2:
+                error_type = self.rng.choice(a=list(self.variant_probs), p=list(self.variant_probs.values()))
+
+            # Deletion error
+            if error_type == Deletion:
+                deletion_length = self.get_deletion_length()
+                deletion_reference = reference_segment.seq[index: index + deletion_length + 1]
+                deletion_alternate = deletion_reference[0]
+                introduced_errors.append(
+                    ErrorContainer(Deletion, index, deletion_length, deletion_reference, deletion_alternate)
+                )
+                num_indels_so_far += deletion_length
+                del_blacklist.extend(list(range(index, index + deletion_length)))
+
+            elif error_type == Insertion:
+                insertion_length = self.get_insertion_length()
+                insertion_reference = reference_segment[index]
+                insert_string = ''.join(self.rng.choice(ALLOWED_NUCL, size=insertion_length))
+                insertion_alternate = insertion_reference + insert_string
+                introduced_errors.append(
+                    ErrorContainer(Insertion, index, insertion_length, insertion_reference, insertion_alternate)
+                )
+                num_indels_so_far += insertion_length
+
+            # Insert substitution error
+            # Programmer note: if you add new error types, they can be added as elifs above, leaving the final
+            # else dedicated to SNVs.
+            else:
+                snv_reference = reference_segment[index]
+                nuc_index = ALLOWED_NUCL.index(snv_reference)
+                # take the zero index because this returns a list of length 1.
+                snv_alt = self.rng.choice(ALLOWED_NUCL, p=self.transition_matrix[nuc_index])
+                introduced_errors.append(
+                    ErrorContainer(SingleNucleotideVariant, index, 1, snv_reference, snv_alt)
+                )
+
+        # Remove blacklisted errors
+        for i in range(len(introduced_errors) - 1, -1, -1):
+            if introduced_errors[i].location in del_blacklist:
+                del introduced_errors[i]
+
+        return introduced_errors
 
     def quality_index_remap(self, input_read_length):
+        """
+        Adjusts the quality map to the suitable read length.
+
+        :param input_read_length: The desired length for the current read.
+        :return: An index map from the default read length to the new one.
+        """
         if input_read_length == self.read_length:
-            return list(range(self.read_length))
+            return np.arange(self.read_length)
         else:
             # This is basically a way to evenly spread the distribution across the number of bases in the read
-            return np.array([max([0, input_read_length * n // self.read_length]) for n in range(self.read_length)])
+            return np.array([max([0, self.read_length * n // input_read_length]) for n in range(input_read_length)])
 
     def get_quality_scores(self,
                            input_read_length: int) -> np.ndarray:
@@ -524,7 +529,31 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # Now rebin the quality scores.
             temp_qual_array = np.array([take_closest(self.quality_scores, n) for n in rescaled_quals])
 
-        return temp_qual_array
+        return temp_qual_array[:input_read_length]
+
+
+class ErrorContainer:
+    """
+    Holds data for a single error
+
+    :param error_type - the type of error this is
+    :param location - the index of the start position of the variant in 0-based coordinates
+    :param length - the length of the error
+    :param ref - the reference sequence of the error includes base before insertion or deletion, as applicable,
+        which is the same notation used in a VCF file.
+    :param alt - the alternate sequence of the error (i.e., the error itself)
+    """
+    def __init__(self,
+                 error_type: VariantTypes,
+                 location: int,
+                 length: int,
+                 ref: str or Seq,
+                 alt: str or Seq):
+        self.error_type = error_type
+        self.location = location
+        self.length = length
+        self.ref = ref
+        self.alt = alt
 
 
 class GcModel:
@@ -537,14 +566,30 @@ class GcModel:
 
     :param window_size: the size of the sliding window used to measure GC content.
     :param gc_bias: The coverage bias at each GC-count for the window size
+    :param coverage: The coverage target for this particular run
     """
 
     def __init__(self,
-                 window_size: int = default_window_size,
-                 gc_bias: np.ndarray = default_gc_bias):
+                 window_size: int = None,
+                 gc_bias: np.ndarray = None,
+                 coverage: int = None
+                 # May need rng
+                 ):
         # assign the model attributes.
-        self.window_size = window_size
-        self.gc_bias = gc_bias
+        self.window_size = window_size if window_size else default_window_size
+        self.gc_bias = gc_bias if gc_bias else default_gc_bias
+        self.coverage = coverage
+
+    @property
+    def bias_values(self):
+        if self.coverage:
+            return self.coverage * self.gc_bias
+        else:
+            return np.ones(len(self.gc_bias))
+
+        # TODO check if these are needed
+        # self.mean = self.bias_vector.mean()
+        # self.deviation = self.bias_vector.std()
 
     def create_coverage_bias_vector(self, sequence: Seq) -> np.ndarray:
         """
@@ -552,55 +597,65 @@ class GcModel:
         :param sequence: A sequence to check coverage for and generate the vector.
         :return: A numpy array of the coverage bias, per position.
         """
-        coverage_bias = []
+        bias_values = self.bias_values
+        target_vector = [0.0] * len(sequence)
         for i in range(0, len(sequence), self.window_size):
             subsequence = sequence[i: i + self.window_size]
             gc_count = subsequence.count('G') + subsequence.count('C')
-            coverage_bias.extend([self.gc_bias[gc_count]] * self.window_size)
-        return np.array(coverage_bias)
+            scaling_factor = bias_values[gc_count]
+            target_vector[i: i+self.window_size] = [scaling_factor] * self.window_size
+        return np.array(target_vector[:len(sequence)])
 
 
 class FragmentLengthModel:
     """
-    A model of the fragment length based on mean and standard deviation of the dataset.
+    A model of the fragment length based on mean and standard deviation of the dataset. Used both
+    to generate random fragment lengths and random read lengths. Since a read is essentially a fragment as well,
+    and the stastistical models used in NEAT are similar, we'll use fragment to mean read here.
 
     :param fragment_mean: the mean of the collection of fragment lengths derived from data
     :param fragment_std: the standard deviation of the collection of fragment lengths derived from data
     :param fragment_max: the largest fragment observed in the data
     :param fragment_min: the smallest fragment observed in data
+    :param rng: the random number generator for the run
     """
 
     def __init__(self,
-                 fragment_mean: float = default_fragment_mean,
-                 fragment_std: float = default_fragment_std,
-                 fragment_max: int = default_fragment_max,
-                 fragment_min: int = default_fragment_min,
+                 fragment_mean: float = None,
+                 fragment_std: float = None,
+                 fragment_max: int = None,
+                 fragment_min: int = None,
                  rng: Generator = None):
-        self.fragment_mean = fragment_mean
-        self.fragment_st_dev = fragment_std
-        self.fragment_max = fragment_max
-        self.fragment_min = fragment_min
+        self.fragment_mean = fragment_mean if fragment_mean else default_fragment_mean
+        self.fragment_st_dev = fragment_std if fragment_std else default_fragment_std
+        self.fragment_max = fragment_max if fragment_max else default_fragment_max
+        self.fragment_min = fragment_min if fragment_min else default_fragment_min
         self.rng = rng
 
     def generate_fragments(self,
-                           count: int) -> np.array:
+                           total_length: int,
+                           read_length: int,
+                           coverage: int) -> list:
         """
-        Generates count number of fragments based on the mean and standard deviation.
+        Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set.
 
-        :param count: How many fragments to generate. Some may get filtered out, so the count is not
-                      guaranteed.
-        :return: A numpy list of fragment random fragment lengths sampled from the model.
+        :param total_length: Length of the reference segment we are covering.
+        :param read_length: average length of the reads
+        :param coverage: the target coverage number
+        :return: A list of fragment random fragment lengths sampled from the model.
         """
+        # Estimate the number of fragments needed (with a 2x padding)
+        number_of_fragments = int(round(total_length / read_length) * (coverage * 2))
         # generates a distribution, assuming normality, then rounds the result and converts to ints
-        dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=count)).astype(int)
+        dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
         # filter the list to throw out outliers.
-        dist = np.array([x for x in dist if self.fragment_min <= x <= self.fragment_max])
-        if len(dist) < count/2:
-            # This is an edge case, but just in case we had a very weird sample, we'll try to add a few more.
-            add_on = self.generate_fragments(count//2)
-            np.concatenate((dist, add_on))
+        dist = [x for x in dist if self.fragment_min <= x <= self.fragment_max]
+        # Just a sanity check to make sure our data isn't too thin:
+        while number_of_fragments - len(dist) > 0:
+            additional_read = self.rng.normal(loc=self.fragment_mean, scale=self.fragment_st_dev)
+            if additional_read > read_length:
+                distance_away = read_length - additional_read
+                additional_read = read_length - distance_away
+            dist.append(round(additional_read))
 
         return dist
-
-
-

@@ -9,8 +9,8 @@ import gzip
 from Bio import SeqIO
 from pathlib import Path
 
-from .utils import Options, parse_input_vcf, parse_bed, OutputFileWriter, find_file_breaks, map_chromosome, \
-    generate_variants, write_local_file
+from .utils import Options, parse_input_vcf, parse_beds, fill_out_bed_dict, OutputFileWriter, find_file_breaks, \
+    map_chromosome, generate_variants, write_local_file, generate_reads
 from ..common import validate_input_path, validate_output_path
 from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, GcModel
 from ..models.default_cancer_mutation_model import *
@@ -22,7 +22,7 @@ __all__ = ["read_simulator_runner"]
 _LOG = logging.getLogger(__name__)
 
 
-def initalize_all_models(options: Options):
+def initialize_all_models(options: Options):
     """
     Helper function that initializes models for use in the rest of the program.
     This includes loading the model and attaching the rng for this run
@@ -34,11 +34,12 @@ def initalize_all_models(options: Options):
     # Load mutation model or instantiate default
     if options.mutation_model:
         mut_model = pickle.load(gzip.open(options.mutation_model))
-        mut_model.rng = options.rng
     else:
-        mut_model = MutationModel(rng=options.rng)
+        mut_model = MutationModel()
 
-    # Set user input mutation rate:
+    # Set random number generator for the mutations:
+    mut_model.rng = options.rng
+    # Set custom mutation rate for the run, or set the option to the input rate so we can use it later
     if options.mutation_rate:
         mut_model.avg_mut_rate = options.mutation_rate
 
@@ -72,22 +73,48 @@ def initalize_all_models(options: Options):
     if options.gc_model:
         gc_model = pickle.load(gzip.open(options.gc_model))
     else:
+        # Creates a default model
         gc_model = GcModel()
-    # Set the rng for the GC bias model
-    gc_model.rng = options.rng
+    # Set the coverage target for the GC bias model
+    gc_model.coverage = options.coverage
 
     _LOG.debug('GC Bias model loaded')
 
-    if options.fragment_model:
-        fraglen_model = pickle.load(gzip.open(options.fragment_model))
-    else:
-        fraglen_model = FragmentLengthModel()
-    # Set the rng for the fragment length model
-    fraglen_model.rng = options.rng
+    fraglen_model = None
+    if options.paired_ended:
+        if options.fragment_model:
+            fraglen_model = pickle.load(gzip.open(options.fragment_model))
+        else:
+            fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev)
+
+        # Set the rng for the fragment length model
+        fraglen_model.rng = options.rng
+
+    """
+    These read length parameters are estimates come from analyzing fastq data from the publicly available NA12878
+    dataset, to give single ended data some more realistic flavor. Previously, NEAT assumed uniform read length, but
+    the data showed this was not strictly true:
+        - the standard deviation for fastq reads was low. After normalizing the list of all read lengths from the fastq,
+          we found the standard deviation to be a factor of 0.0088 * read_length.
+        - There is a hard limit for the read_length. It is occasionally smaller, but never bigger. This
+          makes sense, as the machine runs a set number of cycles, so it is not possible for a read to have
+          greater than that length, but some fragments will be smaller.
+        - The raw fastqc data is available in NEAT/data/NA12878, for reference.
+        
+    For now, this readlen model is hard coded. We may improve this in the future.
+    """
+    read_std = 0.0088 * options.read_len
+    readlen_model = FragmentLengthModel(
+        fragment_mean=options.read_len,
+        fragment_std=read_std,
+        fragment_max=options.read_len,
+        fragment_min=int(options.read_len - (10 * read_std)),  # 10 is essentially arbitrary
+        rng=options.rng
+    )
 
     _LOG.debug("Fragment length model loaded")
 
-    return mut_model, cancer_model, error_model, gc_model, fraglen_model
+    return mut_model, cancer_model, error_model, gc_model, fraglen_model, readlen_model
 
 
 def read_simulator_runner(config: str, output: str):
@@ -142,8 +169,9 @@ def read_simulator_runner(config: str, output: str):
         cancer_model,
         seq_error_model,
         gc_bias_model,
-        fraglen_model
-    ) = initalize_all_models(options)
+        fraglen_model,
+        readlen_model
+    ) = initialize_all_models(options)
 
     """
     Process Inputs
@@ -158,10 +186,7 @@ def read_simulator_runner(config: str, output: str):
             count += len(reference_index[contig])
         _LOG.debug(f"Length of reference: {count}")
 
-    reference_contigs = list(reference_index.keys())
-    options.set_value("reference_contigs", reference_contigs)
-
-    input_variants_dict = {x: ContigVariants() for x in reference_contigs}
+    input_variants_dict = {x: ContigVariants() for x in reference_index}
     if options.include_vcf:
         _LOG.info(f"Reading input VCF: {options.include_vcf}.")
         if options.cancer:
@@ -185,21 +210,20 @@ def read_simulator_runner(config: str, output: str):
 
         _LOG.debug("Finished reading input vcf file")
 
+    # Note that parse_beds will return None for any empty or non-input files
+    bed_files = (options.target_bed, options.discard_bed, options.mutation_bed)
+
     # parse input targeted regions, if present.
-    if options.target_bed or options.discard_bed or options.mutation_bed:
+    if any(bed_files):
         _LOG.info(f"Reading input bed files.")
 
-    # Note that parse_bed will return None for any empty or non-input files
-    target_regions_dict = parse_bed(options.target_bed, options.reference_contigs,
-                                    False)
+    (
+        target_regions_dict,
+        discard_regions_dict,
+        mutation_rate_dict
+    ) = parse_beds(options, reference_index, mut_model.avg_mut_rate)
 
-    discard_regions_dict = parse_bed(options.discard_bed, options.reference_contigs,
-                                     False)
-
-    mutation_rate_dict = parse_bed(options.mutation_bed, options.reference_contigs,
-                                   True)
-
-    if any([target_regions_dict, discard_regions_dict, mutation_rate_dict]):
+    if any(bed_files):
         _LOG.debug("Finished reading input beds.")
 
     # Prepare headers
@@ -239,9 +263,12 @@ def read_simulator_runner(config: str, output: str):
     # these will be the features common to each contig, for multiprocessing
     common_features = {}
 
+    all_variants = {}  # dict of all ContigVariants objects, indexed by contig, which we will collect at the end.
     vcf_files = []
     fasta_files = []
     fastq_files = []
+    temporary_sam_files = []
+    temporary_sam_order = []
     bam_files = []
     print_fasta_tell = False
 
@@ -250,7 +277,10 @@ def read_simulator_runner(config: str, output: str):
         _LOG.info(f"Generating variants for {contig}")
 
         # Todo genericize breaks
-        local_variants = input_variants_dict[contig]
+
+        input_variants = input_variants_dict[contig]
+        # TODO: add the ability to pick up input variants here from previous loop
+
         local_reference = reference_index[contig]
 
         # _LOG.info(f'Creating trinucleotide map for {contig}...')
@@ -259,7 +289,7 @@ def read_simulator_runner(config: str, output: str):
         # Since we're only running single threaded for now:
         threadidx = 1
 
-        local_variant_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.vcf'
+        local_variant_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.vcf.gz'
         local_fasta_file = None
         if options.produce_fasta:
             local_fasta_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.fasta'
@@ -270,17 +300,19 @@ def read_simulator_runner(config: str, output: str):
             # init_progress_info()
             pass
 
-        generate_variants(reference=local_reference,
-                          mutation_rate_regions=mutation_rate_dict[contig],
-                          contig_variants=local_variants,
-                          mutation_model=mut_model,
-                          max_qual_score=max(seq_error_model.quality_scores),
-                          options=options)
+        local_variants = generate_variants(reference=local_reference,
+                                           mutation_rate_regions=mutation_rate_dict[contig],
+                                           existing_variants=input_variants,
+                                           mutation_model=mut_model,
+                                           max_qual_score=max(seq_error_model.quality_scores),
+                                           options=options)
 
         _LOG.info(f'Outputting temp vcf for {contig} for later use')
         if options.produce_fasta:
             _LOG.info(f'Outputting temp fasta for {contig} for later use')
-        # This function produces the variant file and the fasta file, if requested.
+        # This function produces the variant file and the fasta file, if requested
+        # TODO pickle dump the ContigVariants object instead. Combine them into one fasta/vcf
+        #     at the end.
         write_local_file(local_variant_file,
                          local_variants,
                          local_reference,
@@ -291,11 +323,41 @@ def read_simulator_runner(config: str, output: str):
         vcf_files.append(local_variant_file)
         fasta_files.append(local_fasta_file)
 
+        if options.produce_fastq or options.produce_bam:
+            read1_fastq, read2_fastq, temporary_sam, sam_sorted_order = \
+                generate_reads(local_reference,
+                               seq_error_model,
+                               gc_bias_model,
+                               fraglen_model,
+                               readlen_model,
+                               local_variants,
+                               options.temp_dir_path,
+                               target_regions_dict[contig],
+                               discard_regions_dict[contig],
+                               options,
+                               contig)
+
+            fastq_files.append((read1_fastq, read2_fastq))
+            temporary_sam_files.append(temporary_sam)
+            temporary_sam_order.append(sam_sorted_order)
 
     if options.produce_vcf:
-        _LOG.info(f"Outputting golden vcf: {output_file_writer.vcf_fn}")
+        _LOG.info(f"Outputting golden vcf: {str(output_file_writer.vcf_fn)}")
         output_file_writer.merge_temp_vcfs(vcf_files)
 
     if options.produce_fasta:
-        _LOG.info(f"Outputting fasta file(s): {output_file_writer.fasta_fns}")
+        _LOG.info(f"Outputting fasta file(s): {', '.join([str(x) for x in output_file_writer.fasta_fns]).strip(', ')}")
         output_file_writer.merge_temp_fastas(fasta_files)
+
+    sam_rename: dict = {}
+    if options.produce_fastq or options.produce_bam:
+        _LOG.info(f"Outputting fastq file(s): {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
+        sam_rename = output_file_writer.merge_temp_fastqs_and_sort_bams(
+            fastq_files, options.produce_fastq, temporary_sam_order, options.rng
+        )
+
+    if options.produce_bam:
+        _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")
+        output_file_writer.combine_tsam_into_bam(
+            temporary_sam_files, sam_rename, temporary_sam_order
+        )

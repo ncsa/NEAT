@@ -36,7 +36,7 @@ def find_random_non_n(rng: Generator,
     return int(rng.choice(positions, p=safe_zones))
 
 
-def map_non_n_regions(sequence) -> None or np.ndarray:
+def map_non_n_regions(sequence) -> np.ndarray:
     """
     We know our endpoints are both allowed characters, so we just need to make sure
     that the sequence in question isn't too N-heavy
@@ -49,62 +49,14 @@ def map_non_n_regions(sequence) -> None or np.ndarray:
 
     # Less than 90% non-N's we'll skip
     if np.average(base_check) <= 0.90:
-        return None
+        return np.empty(0)
 
     return base_check
 
 
-def parse_mutation_rate_dict(avg_rate: float,
-                             reference: SeqRecord,
-                             mutation_rate_map: list[tuple[int, int]] = None)\
-                             -> (list[int, int], list[float]):
-    """
-    This parses the mutation rate dict and fills in any gaps, so it can be more easily cycled through
-    later.
-
-    example mutation_rate_map {'H1N1_HA': [(22, 500, 0.001), (510, 750, 0.003)],
-                               'H1N1_PB': [...], ...}
-    The input to this function is the dict for a single chromosome.
-
-    :param avg_rate: The average mutation rate desired for this dataset
-    :param reference: The SeqRecord for this contig
-    :param mutation_rate_map: A list based on the input from the bed file. If there was no input,
-                              then this will be empty.
-    :return: A tuple with the list of regions (tuples with start, end indexes)
-             and a list of the corresponding mutation rates
-    """
-
-    regions = []
-    rates = []
-    start = 0
-    if mutation_rate_map:
-        for region in mutation_rate_map:
-            if region[0] > start:
-                regions.append((start, region[0]))
-                rates.append(avg_rate)
-                start = region[1]
-                regions.append((region[0], region[1]))
-                rates.append(region[2])
-            elif region[0] == start:
-                regions.append((region[0], region[1]))
-                rates.append(region[2])
-                start = region[1]
-    else:
-        regions.append((0, len(reference)))
-        rates.append(avg_rate)
-    if regions[-1][1] != len(reference):
-        regions.append((start, len(reference)))
-        rates.append(avg_rate)
-
-    regions = np.array(regions)
-    rates = np.array(rates)
-
-    return regions, rates
-
-
 def generate_variants(reference: SeqRecord,
                       mutation_rate_regions: list[tuple[int, int]],
-                      contig_variants: ContigVariants,
+                      existing_variants: ContigVariants,
                       mutation_model: MutationModel,
                       options: Options,
                       max_qual_score: int):
@@ -115,16 +67,16 @@ def generate_variants(reference: SeqRecord,
 
     :param reference: The reference to generate variants off of. This should be a SeqRecord object
     :param mutation_rate_regions: Genome segments with associated mutation rates
-    :param contig_variants: The variants storage object for this contig, already includes the input variants, if any
+    :param existing_variants: Any input variants or overlaps to pick up from the previous contig
     :param mutation_model: The mutation model for the dataset
     :param options: The options for the run
     :param max_qual_score: the maximum quality score for the run.
     """
-
+    return_variants = existing_variants
     # Step 1: Create a VCF of mutations
-    mutation_map, mutation_rates = parse_mutation_rate_dict(mutation_model.avg_mut_rate,
-                                                            reference,
-                                                            mutation_rate_regions)
+
+    # pase out the mutation rates
+    mutation_rates = np.array([x[2] for x in mutation_rate_regions])
 
     # Trying to use a random window to keep memory under control. May need to adjust this number.
     max_window_size = 1000
@@ -138,8 +90,8 @@ def generate_variants(reference: SeqRecord,
     total = len(reference)
     _LOG.debug(f"Contig length: {total}")
     factors = []
-    for i in range(len(mutation_map)):
-        region_len = abs(mutation_map[i][1] - mutation_map[i][0])
+    for i in range(len(mutation_rate_regions)):
+        region_len = abs(mutation_rate_regions[i][1] - mutation_rate_regions[i][0])
         # Weigh each region by its total length
         factors.append(region_len * mutation_rates[i])
         total -= region_len
@@ -163,7 +115,7 @@ def generate_variants(reference: SeqRecord,
         # (default is one rate for the whole chromosome, so this will be trivial in that case
         # for this selection, we'll normalize the mutation rates
         probability_rates = mutation_rates / sum(mutation_rates)
-        mut_region = options.rng.choice(a=mutation_map, p=probability_rates)
+        mut_region = options.rng.choice(a=mutation_rate_regions, p=probability_rates)
         # Pick a random starting place. Randint is inclusive of endpoints, so we subtract 1
         window_start = options.rng.integers(mut_region[0], mut_region[1] - 1, dtype=int)
         found = False
@@ -252,7 +204,7 @@ def generate_variants(reference: SeqRecord,
                 location = position + mutation_slice[0]  # location relative to reference
                 if location == 0:
                     continue
-                trinuc = reference[location-1: location+2].seq
+                trinuc = reference[location: location+3].seq
                 temp_variant = mutation_model.generate_snv(trinuc, location)
 
             else:
@@ -262,15 +214,15 @@ def generate_variants(reference: SeqRecord,
             temp_variant.genotype = pick_ploids(options.ploidy, mutation_model.homozygous_freq, 1, options.rng)
 
             # There shouldn't be a ton of overlapping variants, but this is to handle those.
-            if location in contig_variants:
+            if location in return_variants:
                 """
                 If the location already exists, then we'll need to force it to pick a ploid 
                 that currently doesn't have a variant. This overrides the default genotype
                 variable created above, but it shouldn't happen very often.
                 """
-                if contig_variants.find_dups(temp_variant):
+                if return_variants.find_dups(temp_variant):
                     # This compiles all the variants at this location, giving a 1 for every ploid that has a variant.
-                    composite_genotype = contig_variants.compile_genotypes_for_location(location)
+                    composite_genotype = return_variants.compile_genotypes_for_location(location)
                     if 0 not in composite_genotype:
                         # Here's a counter to make sure we're not getting stuck on a single location
                         debug += 1
@@ -289,8 +241,8 @@ def generate_variants(reference: SeqRecord,
                     temp_variant.genotype = genotype
 
             # Make sure this new variant doesn't overlap an existing insertion or deletion
-            in_deletion = contig_variants.check_if_del(temp_variant)
-            in_insertion = contig_variants.check_if_ins(temp_variant)
+            in_deletion = return_variants.check_if_del(temp_variant)
+            in_insertion = return_variants.check_if_ins(temp_variant)
 
             if in_deletion:
                 if type(temp_variant) == Insertion:
@@ -306,10 +258,13 @@ def generate_variants(reference: SeqRecord,
                     continue
 
             temp_variant.qual_score = max_qual_score
-            contig_variants.add_variant(temp_variant)
+            return_variants.add_variant(temp_variant)
             # The count will tell us how many we actually added v how many we were trying to add
             n_added += 1
 
     _LOG.info(f'Finished generating random mutations in {(time.time() - start)/60:.2f} minutes')
     _LOG.info(f'Added {n_added} mutations to {reference.id}')
+
+    return return_variants
+
 

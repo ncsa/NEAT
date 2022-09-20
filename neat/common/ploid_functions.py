@@ -23,7 +23,7 @@ def pick_ploids(ploidy: int,
     Applies alts to random ploids. Picks at least one, maybe more.
     :param ploidy: how many copies of each chromosome this organism has
     :param homozygous_frequency: the freqency of homozygous mutations.
-    :param number_alts: If there is more than one alt, this will assign a random alt to the ploids
+    :param number_alts: If there is more than one alternate, this will assign a random alternate to the ploids
     :param rng: the random number generator for this run
     :return: a list of strings representing the genotype of each ploid.
     """
@@ -51,7 +51,7 @@ def pick_ploids(ploidy: int,
     wp = np.zeros(ploidy)
     while how_many > 0:
         x = rng.choice(range(ploidy))
-        # pick a random alt. in VCF terminology, 0 = REF, 1 = ALT1, 2 = ALT2, etc
+        # pick a random alternate. in VCF terminology, 0 = REF, 1 = ALT1, 2 = ALT2, etc
         wp[x] = rng.choice(range(1, number_alts + 1))
         how_many -= 1
 

@@ -18,7 +18,7 @@ class TSamRecord:
         Each parameter corresponds to the official SAM format field indicated
 
         :param qname: QNAME - query name
-        :param flag: FLAEG - combination bitwise flags
+        :param flag: FLAG - combination bitwise flags
         :param rname: RNAME - reference sequence name of the alignment, must match an SQ header
         :param pos: POS - 1-based leftmost mapping position. This will be stored as 0-based to make calculations easier
         :param mapq: MAPQ - mapping quality of the read, integer

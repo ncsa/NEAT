@@ -23,7 +23,7 @@ class UnknownVariant(BaseVariant):
     def __init__(self,
                  position1: int,
                  genotype: np.ndarray,
-                 qual_score: int,
+                 qual_score: int | None = None,
                  is_input: bool = False,
                  **kwargs):
 
@@ -52,3 +52,11 @@ class UnknownVariant(BaseVariant):
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.position1})'
+
+    def get_ref_len(self):
+        """
+        This particular type of variant stores the reference string in the metadata, so we can retrieve it later
+
+        :return: The reference sequence
+        """
+        return len(self.metadata['REF'])

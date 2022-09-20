@@ -20,6 +20,7 @@ partition_mode: .
 threads: .
 avg_seq_error: .
 rescale_qualities: .
+quality_offset: .
 include_vcf: .
 target_bed: .
 off_target_scalar: .

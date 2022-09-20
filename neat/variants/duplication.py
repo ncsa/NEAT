@@ -27,7 +27,7 @@ class Duplication(BaseVariant):
                  length: int,
                  position2: int,
                  genotype: np.ndarray = None,
-                 qual_score: int = None,
+                 qual_score: int | None = None,
                  is_input: bool = False,
                  **kwargs):
 

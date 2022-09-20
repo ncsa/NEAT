@@ -27,7 +27,7 @@ class Deletion(BaseVariant):
                  position1: int,
                  length: int,
                  genotype: np.ndarray = None,
-                 qual_score: int = None,
+                 qual_score: int | None = None,
                  is_input: bool = False,
                  **kwargs):
         self.position1 = position1
@@ -68,3 +68,6 @@ class Deletion(BaseVariant):
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.position1}, {self.length})'
+
+    def get_alt(self):
+        return ""

@@ -93,7 +93,7 @@ def main():
     INDEL_COUNT = {}
     # tabulate how much non-N reference sequence we've eaten through
     TOTAL_REFLEN = 0
-    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
+    # detect variants that occur in a significant percentage of the input samples (pos,ref,alternate,pop_fraction)
     COMMON_VARIANTS = []
     # tabulate how many unique donors we've encountered (this is useful for identifying common variants)
     TOTAL_DONORS = {}

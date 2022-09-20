@@ -2,7 +2,7 @@
 The following model is the default for the fragment length distribution.
 """
 
-default_fragment_mean = 29.614556677877477
-default_fragment_std = 300.1088688468827
-default_fragment_max = 407
-default_fragment_min = 191
+default_fragment_mean = 601.0
+default_fragment_std = 103.0
+default_fragment_max = 1626.0
+default_fragment_min = 3.0

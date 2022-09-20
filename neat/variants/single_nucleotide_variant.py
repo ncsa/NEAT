@@ -28,7 +28,7 @@ class SingleNucleotideVariant(BaseVariant):
                  position1: int,
                  alt: str or Seq = None,
                  genotype: np.ndarray = None,
-                 qual_score: int = None,
+                 qual_score: int | None = None,
                  is_input: bool = False,
                  **kwargs):
 

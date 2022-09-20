@@ -14,7 +14,6 @@ file. To do so, we have a few possible inputs the init function can accept. Inpu
 trigger quick-run mode, setting most of the parameters to defaults.
 """
 
-from types import SimpleNamespace
 import numpy as np
 import logging
 import yaml
@@ -24,8 +23,11 @@ try:
 except ImportError:
     from yaml import Loader, Dumper
 
+from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 from pathlib import Path
+from numpy.random import Generator
+from math import inf
 
 from ...common import validate_input_path
 
@@ -36,15 +38,28 @@ _LOG = logging.getLogger(__name__)
 class Options(SimpleNamespace):
     """
     class representing the options
+
+    Note that for debugging/testing runs, we allow output_path and config_file to be empty.
+    :param output_path: Path to the final output
+    :param config_file: Path to the configuration file
+    :param reference: Path to a reference for a test run
+    :param rng_seed: A seed to use for a test run (for reproducible tests)
     """
     def __init__(self,
-                 output_path: Path,
-                 config_file: Path):
+                 output_path: Path = None,
+                 config_file: Path = None,
+                 reference: Path = None,
+                 rng_seed: int = None
+                 ):
 
         SimpleNamespace.__init__(self)
 
+        self.test_run = False
+        if not output_path or not config_file:
+            self.test_run = True
+
         """
-        Options defitions for gen_reads. This metadata dict gives the type of variable (matching the python types)
+        Options definitions for gen_reads. This metadata dict gives the type of variable (matching the python types)
         the default value ('.' means no default), and checks. There are four fields: option type (corresponding to
         a python type), default (or None, if no default), criteria 1 and criteria 2. Any items without values 
         should use None as a placeholder.
@@ -57,17 +72,18 @@ class Options(SimpleNamespace):
 
         Criteria 2: For files, criteria 2 will not be checked, so set to None for consistency. For numbers, this
         should be the highest acceptable value (inclusive).
-        (type, default, criteria1 (low/'exists'), criteria2 (high/None))
+        (type, default, criteria1 (low/'exists'), criteria2 (high/None)
         """
+        # TODO maybe redo as a dataclass?
         self.defs = {}
         self.config_file = config_file
+        self.output = output_path
 
-        arbitrarily_large_number = 1e8
-        self.defs['reference'] = (str, None, 'exists', None)
+        self.defs['reference'] = (str, reference, 'exists', None)
         self.defs['partition_mode'] = (str, 'chrom', None, None)
-        self.defs['read_len'] = (int, 101, 10, arbitrarily_large_number)
-        self.defs['threads'] = (int, 1, 1, arbitrarily_large_number)
-        self.defs['coverage'] = (float, 10.0, 1, arbitrarily_large_number)
+        self.defs['read_len'] = (int, 151, 10, inf)
+        self.defs['threads'] = (int, 1, 1, inf)
+        self.defs['coverage'] = (int, 10, 1, inf)
         self.defs['error_model'] = (str, None, 'exists', None)
         self.defs['avg_seq_error'] = (float, None, 0, 0.3)
         self.defs['rescale_qualities'] = (bool, False, None, None)
@@ -80,7 +96,7 @@ class Options(SimpleNamespace):
         self.defs['mutation_model'] = (str, None, 'exists', None)
         self.defs['mutation_rate'] = (float, None, 0, 0.3)
         self.defs['mutation_bed'] = (str, None, 'exists', None)
-        self.defs['n_handling'] = (str, None, None, None)
+        self.defs['quality_offset'] = (str, 33, -1, inf)
 
         # Params for cancer (not implemented yet)
         self.defs['cancer'] = (bool, False, None, None)
@@ -90,8 +106,8 @@ class Options(SimpleNamespace):
         self.defs['gc_model'] = (str, None, 'exists', None)
         self.defs['paired_ended'] = (bool, False, None, None)
         self.defs['fragment_model'] = (str, None, 'exists', None)
-        self.defs['fragment_mean'] = (float, None, 1, arbitrarily_large_number)
-        self.defs['fragment_st_dev'] = (float, None, 1, arbitrarily_large_number)
+        self.defs['fragment_mean'] = (float, None, 1e-10, inf)
+        self.defs['fragment_st_dev'] = (float, None, 1e-10, inf)
         self.defs['produce_bam'] = (bool, False, None, None)
         self.defs['produce_vcf'] = (bool, False, None, None)
         self.defs['produce_fasta'] = (bool, False, None, None)
@@ -105,71 +121,78 @@ class Options(SimpleNamespace):
         self.defs['overwrite_output'] = (bool, False, None, None)
 
         # Create base variables, for update by the config
-        self.reference = None
-        self.partition_mode = 'chrom'
-        self.read_len = 101
-        self.threads = None
-        self.coverage = None
-        self.error_model = None
-        self.avg_seq_error = None
-        self.rescale_qualities = False
-        self.ploidy = 2
-        self.include_vcf = None
-        self.target_bed = None
-        self.discard_bed = None
-        self.off_target_scalar = 0.02
-        self.discard_offtarget = False
-        self.mutation_model = None
-        self.mutation_rate = None
-        self.mutation_bed = None
-        self.n_handling = None
+        self.reference: str | Path = reference
+        self.partition_mode: str = 'chrom'
+        self.read_len: int = 151
+        self.threads: int = 1
+        self.coverage: int = 10
+        self.error_model: str | None = None
+        self.avg_seq_error: float | None = None
+        self.rescale_qualities: bool = False
+        self.ploidy: int = 2
+        self.include_vcf: str | None = None
+        self.target_bed: str | None = None
+        self.discard_bed: str | None = None
+        self.off_target_scalar: float = 0.02
+        self.discard_offtarget: bool = False
+        self.mutation_model: str | None = None
+        self.mutation_rate: float | None = None
+        self.mutation_bed: str | None = None
+        self.quality_offset: int = 33
 
-        self.gc_model = None
-        self.paired_ended = False
-        self.fragment_model = None
-        self.fragment_mean = None
-        self.fragment_st_dev = None
-        self.produce_bam = False
-        self.produce_fasta = False
-        self.produce_vcf = False
-        self.produce_fastq = True
-        self.no_coverage_bias = False
+        self.gc_model: str | None = None
+        self.paired_ended: bool = False
+        self.fragment_model: str | None = None
+        self.fragment_mean: float | None = None
+        self.fragment_st_dev: float | None = None
+        self.produce_bam: bool = False
+        self.produce_fasta: bool = False
+        self.produce_vcf: bool = False
+        self.produce_fastq: bool = True
+        self.no_coverage_bias: bool = False
 
-        self.rng_seed = None
-        self.min_mutations = 1
-        self.fasta_per_ploid = False
-        self.overwrite_output = False
+        # These are primarily debug options.
+        self.min_mutations: int = 1
+        self.fasta_per_ploid: bool = False
+        self.overwrite_output: bool = False
+        self.rng_seed: int | None = None
+        self.rng: Generator | None = None
 
         # Cancer options (not yet implemented)
-        self.cancer = False
-        self.cancer_model = None
-        self.cancer_purity = 0.8
+        self.cancer: str | Path
+        self.cancer_model: bool
+        self.cancer_purity: float
 
-        # Read the config file
         self.args = {}
-        self.read()
-
-        # Anything remaining is set to default:
-        for key, (_, default, criteria1, criteria2) in self.defs.items():
-            if key not in list(self.args.keys()):
+        # Set up the dictionary
+        for key, (_, default, _, _) in self.defs.items():
+            if key not in self.args:
                 self.args[key] = default
 
-        # Some options checking to clean up the args dict
-        self.check_options()
+        # Read the config file
+        if not self.test_run:
+            self.read()
 
-        self.output = output_path
+        # Update items to config or default values
+        self.__dict__.update(self.args)
+
+        if self.test_run:
+            self.rng_seed = rng_seed
+        # Set the rng for the run
+        self.set_random_seed()
+
+        # Some options checking to clean up the args dict
+        if not self.test_run:
+            self.check_options()
+
+        # Options not set by the config
         self.temporary_dir = TemporaryDirectory()
         self.temp_dir_path = Path(self.temporary_dir.name)
+        # Set later after reference processing
+        self.reference_contigs = None
 
-        self.__dict__.update(self.args)
-
-        self.log_configuration()
-
-    def set_value(self, key, value):
-        if key in self.defs.keys():
-            self.check_and_log_error(key, value, self.defs[key][2], self.defs[key][3])
-        self.args[key] = value
-        self.__dict__.update(self.args)
+        if not self.test_run:
+            self.log_configuration()
 
     @staticmethod
     def check_and_log_error(keyname, value_to_check, lowval, highval):
@@ -182,9 +205,14 @@ class Options(SimpleNamespace):
             validate_input_path(value_to_check, keyname)
 
     def read(self):
+        """
+        This sets up the option attributes. It's not perfect, because it sort of kills
+        type hints. But I'm not sure how else to accomplish this.
+        """
+        # Skip trying to read the config for a test run
         config = yaml.load(open(self.config_file, 'r'), Loader=Loader)
         for key, value in config.items():
-            if key in list(self.defs.keys()):
+            if key in self.defs:
                 type_of_var, default, criteria1, criteria2 = self.defs[key]
                 # if it's already set to the default value, ignore.
                 if value == default or value == ".":
@@ -200,13 +228,12 @@ class Options(SimpleNamespace):
                 self.check_and_log_error(key, temp, criteria1, criteria2)
                 self.args[key] = temp
 
-    def check_options(self):
+    def set_random_seed(self):
         """
-        Some sanity checks and corrections to the options.
+        Sets up random number generator, which will be used for the run.
         """
-
-        # initialize random seed
-        if not self.args['rng_seed']:
+        # 0 is a valid entry, but it fails this check with just "not self.rng_seed", so we have to be explicit
+        if not self.rng_seed and not self.rng_seed == 0:
             """
             We want to allow for reproducibility in NEAT, so we'll need to generate a random number to set as the seed.
             I know this is statistically not as good, but Numpy made it more difficult to achieve a different way. 
@@ -214,39 +241,31 @@ class Options(SimpleNamespace):
             the simulation RNG.
             """
             seed_rng = np.random.default_rng()
-            self.set_value('rng_seed', seed_rng.integers(2**52, 2**53, dtype=int))
+            # I pulled this idea from the internet re 2^52 - 2^53. Supposed to more reliable for randomness
+            self.rng_seed = seed_rng.integers(2 ** 52, 2 ** 53, dtype=int)
 
         # Create the rng for this run
-        self.set_value('rng', np.random.default_rng(self.args['rng_seed']))
+        self.rng = np.random.default_rng(self.rng_seed)
 
-        if not self.args['produce_bam'] and not self.args['produce_vcf'] \
-                and not self.args['produce_fasta'] and not self.args['produce_fastq']:
+    def check_options(self):
+        """
+        Some sanity checks and corrections to the options.
+        """
+        if not (self.produce_bam or self.produce_vcf or self.produce_fasta or self.produce_fastq):
             raise ValueError('No files would be produced, as all file types are set to false')
 
         # This next section just checks all the paired ended stuff
         flagged = False
-        if self.args['paired_ended']:
-            if self.args['fragment_model']:
-                self.set_value('fragment_mean', None)
-                self.set_value('fragment_st_dev', None)
-            elif self.args['fragment_mean']:
-                if not self.args['fragment_st_dev']:
-                    flagged = True
-            else:
-                flagged = True
-        if flagged:
-            raise ValueError("For paired ended mode, you need to supply either a "
-                             "@fragment_model or both @fragment_mean and @fragment_st_dev")
-
-        self.set_value('n_handling', 'ignore')
-        if self.args['paired_ended']:
-            self.set_value('n_handling', 'random')
+        if self.paired_ended:
+            if self.fragment_model:
+                self.fragment_mean = None
+                self.fragment_st_dev = None
 
         # If discard_offtarget set to true and there is a targeted regions bed, set off_target_scalar to 0
         # If there is no targeted regions bed and discard_offtarget set to true, throw an error
-        if self.args['discard_offtarget'] and self.args['target_bed']:
-            self.set_value('off_target_scalar', 0.0)
-        elif self.args['discard_offtarget'] and not self.args['target_bed']:
+        if self.discard_offtarget and self.target_bed:
+            self.off_target_scalar = 0.0
+        elif self.discard_offtarget and not self.target_bed:
             _LOG.warning("@discard_offtarget set to true, but there is no target bed.")
 
     def log_configuration(self):
@@ -256,14 +275,25 @@ class Options(SimpleNamespace):
         """
         _LOG.info(f'Run Configuration...')
         _LOG.info(f'Input fasta: {self.reference}')
-        potential_filetypes = ['vcf', 'bam', 'fasta', 'fastq']
-        extensions = []
-        for suffix in potential_filetypes:
-            key = f'produce_{suffix}'
-            if self.args[key]:
-                extensions.append(suffix)
-        for item in extensions:
-            _LOG.info(f'Output files: {self.output}.{item}')
+        files_to_produce = f'Producing the following files:\n'
+        if self.produce_fastq:
+            if self.paired_ended:
+                files_to_produce += f'\t- {self.output}_r1.fastq.gz\n'
+                files_to_produce += f'\t- {self.output}_r2.fastq.gz\n'
+            else:
+                files_to_produce += f'\t- {self.output}.fastq.gz\n'
+        if self.produce_fasta:
+            if self.fasta_per_ploid:
+                files_to_produce += f'\t- {self.output}_ploid<X>.fasta.gz\n'
+            else:
+                files_to_produce += f'\t- {self.output}.fasta.gz\n'
+        if self.produce_bam:
+            files_to_produce += f'\t- {self.output}_golden.bam\n'
+        if self.produce_vcf:
+            files_to_produce += f'\t- {self.output}_golden.vcf.gz\n'
+
+        _LOG.info(files_to_produce)
+
         if self.threads == 1:
             _LOG.info(f"Single threading - 1 thread.")
         else:
@@ -302,7 +332,7 @@ class Options(SimpleNamespace):
         if self.mutation_model:
             _LOG.info(f'Using mutation model in file: {self.mutation_model}')
         if self.mutation_rate:
-            _LOG.info(f'Rescaling average mutation rate to: {self.mutation_rate}')
+            _LOG.info(f'Custom average mutation rate for the run: {self.mutation_rate}')
         if self.mutation_bed:
             _LOG.info(f'BED of mutation rates of different regions: {self.mutation_bed}')
         if self.gc_model:

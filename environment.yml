@@ -13,8 +13,8 @@ dependencies:
   - pyyaml
   - pip
   - scipy
+  - pytest
   - pip:
     - pysam
     - pybedtools
     - frozendict
-

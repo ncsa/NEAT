@@ -23,7 +23,7 @@ class Translocation(BaseVariant):
                  orientation: int,
                  alt: str or Seq,
                  genotype: np.ndarray = None,
-                 qual_score: int = None,
+                 qual_score: int | None = None,
                  is_input: bool = False,
                  **kwargs):
 

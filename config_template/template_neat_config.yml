@@ -45,9 +45,14 @@ error_model: .
 avg_seq_error: .
 
 # This scales the quality scores to match the desired average sequencing error rate
-# specified by @avg_seq_error.
+# specified by avg_seq_error.
 # type: boolean | required = no | default = false
 rescale_qualities: .
+
+# This is the factor to add to the quality scores to get the ascii text version of the
+# score. The default follows the sanger quality offset
+# type: int | required = no | default = 33
+quality_offset: .
 
 # Desired ploidy
 # type = int | required = no | default = 2
@@ -84,11 +89,11 @@ discard_bed: .
 
 # Absolute path to the mutation model pickle file. Omitting this value will cause
 # NEAT to use the default model, with some standard parameters, and generally uniform biases.
-# type: string | required = no | default: <NEAT_DIR>/neat/models/defaults/default_mutation_model.pickle.gz
+# type: string | required = no
 mutation_model: .
 
-# Average mutation rate per base pair. Overall average is 0.001.
-# This will rescale the rates determined by the model.
+# Average mutation rate per base pair. Overall average is 0.001, or model default
+# Use either this value to override the mutation rate for the default or input model.
 # type: float | required = no | must be between 0.0 and 0.3
 mutation_rate: .
 

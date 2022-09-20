@@ -37,7 +37,7 @@ def write_local_file(vcf_filename: str or Path,
     :param fasta_filename: The filename for the optional fasta file
     """
 
-    with open_output(vcf_filename, gzipped=True) as tmp:
+    with open_output(vcf_filename) as tmp:
         filtered_by_target = 0
         filtered_by_discard = 0
         n_added = 0
@@ -45,17 +45,18 @@ def write_local_file(vcf_filename: str or Path,
         local_fastas = LocalFasta(fasta_filename, reference, options)
         for loc in variant_data.variant_locations:
             for variant in variant_data[loc]:
-                if targeted_regions and not variant.is_input:
-                    in_target_region = is_in_region(loc, targeted_regions)
-                    random_num = options.rng.random()
-                    if in_target_region and random_num >= options.off_target_scalar:
+                if not variant.is_input:
+                    target_region = find_region(loc, targeted_regions)
+                    # For runs without a targeted bed, target_region[2] is 1, so the following will always fail
+                    if options.rng.random() >= target_region[2]:
                         _LOG.debug(f'Variant filtered out by target regions bed: {reference.id}: '
                                    f'{variant}')
                         filtered_by_target += 1
                         continue
-                if discarded_regions and not variant.is_input:
-                    in_discard_region = is_in_region(loc, discarded_regions)
-                    if in_discard_region:
+
+                    # Now we check the discard regions. All regions are set to a factor of 1 if there is not discard bed
+                    discard_region = find_region(loc, discarded_regions)
+                    if discard_region[2] == 0:
                         _LOG.debug(f'Variant filtered out by discard regions bed: {reference.id}: '
                                    f'{variant}')
                         filtered_by_discard += 1
@@ -151,16 +152,20 @@ class LocalFasta:
                 for j in range(0, len(self.mutated_references[i]), 80):
                     print(*self.mutated_references[i][j: j+80], sep="", file=out_fasta, end='\n')
 
-            out_fasta.close()
 
+def find_region(location: int, regions_dict: list[tuple[int, int, int | float]]) -> tuple | None:
+    """
+    This function finds the region that this variant is in.
 
-def is_in_region(location: int, regions_dict: list[tuple[int]]):
-    in_region = False
-    for coords in regions_dict:
+    :param location: The location of the variant
+    :param regions_dict: The dictionary of all regions of interest in tuples as (start, end, factor) where factor
+        gives information about retaining the region
+    :return: The region containing this location
+    """
+    for region in regions_dict:
         # Check that this location is valid.
         # Note that bed coordinates are half-open
-        if coords[0] <= location < coords[1]:
-            in_region = True
-            # You can stop looking when you find it
-            break
-    return in_region
+        if region[0] <= location < region[1]:
+            return region
+
+    return None

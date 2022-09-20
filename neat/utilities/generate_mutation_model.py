@@ -208,7 +208,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     indel_count = {}
     # tabulate how much non-N reference sequence we've eaten through
     total_reflen = 0
-    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
+    # detect variants that occur in a significant percentage of the input samples (pos,ref,alternate,pop_fraction)
     common_variants = []
     # identify regions that have significantly higher local mutation rates than the average
     high_mut_regions = []

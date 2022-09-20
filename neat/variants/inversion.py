@@ -23,7 +23,7 @@ class Inversion(BaseVariant):
                  length: int,
                  orientation: int,
                  genotype: np.ndarray = None,
-                 qual_score: int = None,
+                 qual_score: int | None = None,
                  is_input: bool = False,
                  **kwargs):
 

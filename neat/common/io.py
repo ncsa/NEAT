@@ -16,6 +16,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Callable, Iterator, TextIO
+from Bio import bgzf
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ def open_input(path: str | Path) -> Iterator[TextIO]:
 
 
 @contextlib.contextmanager
-def open_output(path: str | Path, gzipped: bool = False, mode: str = 'xt') -> Iterator[TextIO]:
+def open_output(path: str | Path, mode: str = 'wt') -> Iterator[TextIO]:
     """
     Opens a file for writing.
 
@@ -79,7 +80,6 @@ def open_output(path: str | Path, gzipped: bool = False, mode: str = 'xt') -> It
     automatically.
 
     :param path: The path to the output file.
-    :param gzipped: If true, forces gzipped mode
     :param mode: The mode with which to open the file.
     :return: The handle to the text file where data should be written to.
 
@@ -95,10 +95,11 @@ def open_output(path: str | Path, gzipped: bool = False, mode: str = 'xt') -> It
     output_dir = output_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     open_: Callable[..., TextIO]
-    if 'b' in mode or gzipped:
-        handle = gzip.open(output_path, mode=mode)
+    if '.gz' or '.bgz' in output_path.suffixes:
+        open_ = bgzf.open
     else:
-        handle = open(output_path, mode=mode, encoding='utf-8', newline="")
+        open_ = open
+    handle = open_(output_path, mode=mode)
 
     try:
         yield handle

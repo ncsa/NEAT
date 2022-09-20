@@ -92,3 +92,21 @@ class BaseVariant(abc.ABC):
         :return: A string representation of this variant
         """
         prefix = f'{self.__class__.__name__}'
+
+    def get_qual_score(self):
+        if self.qual_score:
+            return self.qual_score
+        else:
+            return self.metadata['QUAL']
+
+    def get_alt(self):
+        if self.alt:
+            return self.alt
+        else:
+            return self.metadata['ALT']
+
+    def get_0_location(self):
+        return int(self.position1)
+
+    def get_1_location(self):
+        return self.position1 + 1

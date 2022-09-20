@@ -14,7 +14,7 @@ class Insertion(BaseVariant):
     needing to duplicate any existing bases.
 
     :param position1: The location, on the reference, where the variant begins. Note that this follows the VCF
-        convention of the Ref being the same as the first base of the alt.
+        convention of the Ref being the same as the first base of the alternate.
     :param length: The number of bases to be inserted.
     :param alt: The ref + inserted sequence
     :param genotype: the list of ploids with a 1 indicating where this variant is found
@@ -28,7 +28,7 @@ class Insertion(BaseVariant):
                  length: int,
                  alt: str or Seq = None,
                  genotype: np.ndarray = None,
-                 qual_score: int = None,
+                 qual_score: int | None = None,
                  is_input: bool = False,
                  **kwargs):
 
