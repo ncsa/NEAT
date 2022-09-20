@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+Note that this section will be updated when tools become available for NEAT 4.0
 
 # compute_gc.py
 
