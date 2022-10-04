@@ -186,7 +186,7 @@ def read_simulator_runner(config: str, output: str):
 
         if records[i].upper() != records[i]:
 
-            raise ValueError(f"Attempting to use reference n-masked index (needs capitalization): {records}")
+            raise ValueError(f"Attempting to use reference soft-masked index (needs capitalization): {records}")
 
     _LOG.debug("Reference file indexed.")
     if _LOG.getEffectiveLevel() < 20:
