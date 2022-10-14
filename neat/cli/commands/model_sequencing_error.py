@@ -3,6 +3,7 @@ Command line interface for NEAT's sequencing error model creation function.
 """
 
 import argparse
+import numpy as np
 
 from ...model_sequencing_error import model_seq_err_runner
 from .base import BaseCommand
@@ -14,7 +15,7 @@ class Command(BaseCommand):
     Class that generates a model of the sequencing error, derived from real data
     """
     name = "model-seq-err"
-    description = "Generate sequencing error model from a FASTQ, BAM, or SAM file."
+    description = "Generate sequencing error model from a FASTQ, BAM, or SAM file_list."
 
     def add_arguments(self, parser: argparse.ArgumentParser):
         """
@@ -24,57 +25,59 @@ class Command(BaseCommand):
         """
         parser.add_argument('-i',
                             type=str,
-                            metavar="input_file",
+                            metavar="FILE",
                             dest="input_file",
+                            nargs='+',
                             required=True,
-                            help="fastq(.gz) or sam/bam file")
+                            help="fastq(.gz) or sam/bam file_list to process. You may enter more than one "
+                                 "(e.g., paired end fastq files), they will be processed in sequence "
+                                 "and the results averaged")
 
         parser.add_argument('-q',
                             type=int,
-                            metavar="quality_offset",
+                            metavar="OFFSET",
                             dest="quality_offset",
                             required=False,
                             default=33,
-                            help="quality score offset")
+                            help="quality score offset [33]")
 
         parser.add_argument('-Q',
                             type=int,
-                            metavar="quality_scores",
+                            metavar="QUAL_SCORE",
                             dest="quality_scores",
                             nargs='+',
                             required=False,
-                            default=[0, 12, 24, 36],
+                            default=[2, 11, 25, 37],
                             help="Quality score bins. Enter as a list for binned scores, "
-                                 "or enter a single maximum score for a full range")
+                                 "or enter a single maximum score for a full range. [2, 11, 24, 37]")
 
-        parser.add_argument('-n',
+        parser.add_argument('-m',
                             type=int,
-                            metavar="max_num",
+                            metavar="MAX",
                             dest="max_num",
                             required=False,
-                            default=-1,
+                            default=np.inf,
                             help="Max number of reads to process [all].")
 
-        parser.add_argument('-s',
-                            type=int,
-                            metavar="num_iterations",
-                            dest="num_iterations",
+        parser.add_argument('--pileup',
+                            type=str,
+                            metavar="FILE",
+                            dest="pileup_file",
                             required=False,
-                            default=1000000,
-                            help="Number of simulation iterations (higher number should improve accuracy).")
+                            help="Pileup statistics file from running samtools pileup. Not yet implemented.")
 
         parser.add_argument('--plot',
                             required=False,
                             action='store_true',
                             default=False,
-                            help="Output optional plots (filename based on input name)")
+                            help="Output optional plots (filename based on input name). Not yet implemented.")
 
         parser.add_argument('--overwrite',
                             required=False,
                             action='store_true',
                             default=False,
                             help="Overwrite previous output files. "
-                                 "Default is to throw an error if the file already exists.")
+                                 "Default is to throw an error if the file_list already exists.")
 
         output_group.add_to_parser(parser)
 
@@ -89,7 +92,7 @@ class Command(BaseCommand):
             arguments.quality_offset,
             arguments.quality_scores,
             arguments.max_num,
-            arguments.num_iterations,
+            arguments.pileup,
             arguments.plot,
             arguments.overwrite,
             arguments.output

@@ -487,8 +487,8 @@ def modify_target_coverage(included_regions: list, excluded_regions: list, cover
     Modifies the coverage vector by applying the list of regions. For this version, areas
     outside the regions have coverage adjusted by the off_target_percent
 
-    :param included_regions: A list of intervals to target, extracted from a bed file
-    :param excluded_regions: A list of regions to throw out, extracted from a bed file
+    :param included_regions: A list of intervals to target, extracted from a bed file_list
+    :param excluded_regions: A list of regions to throw out, extracted from a bed file_list
     :param coverage_vector: The target coverage vector, which will be modified
     :return: The updated target coverage vector.
     """
@@ -525,7 +525,7 @@ def generate_reads(reference: SeqRecord,
     :param contig_variants: An object containing all input and randomly generated variants to be included.
     :param temporary_directory: The directory where to store temporary files for the run
     :param targeted_regions: A list of regions to target for the run (at a rate defined in the options
-        file or 2% retained by default)
+        file_list or 2% retained by default)
     :param discarded_regions: A list of regions to discard for the run
     :param options: The options entered for this run by the user
     :param chrom: The chromosome this reference segment originates from
@@ -537,7 +537,7 @@ def generate_reads(reference: SeqRecord,
     chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq.bgz'
     chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq.bgz'
 
-    # set up a temporary 'sam' file for processing by generate_bam, if the option is set
+    # set up a temporary 'sam' file_list for processing by generate_bam, if the option is set
     tsam = temporary_directory / f'{chrom}.tsam.gz'
 
     _LOG.info(f'Sampling reads...')
@@ -613,7 +613,7 @@ def generate_reads(reference: SeqRecord,
                     # to get the first index of the first full array that matched, we need [0][0]
                     # we only have to do this once since reads[i] contains info on both reads.
                     # The idea here is to have the order established above, find where this fits in the order, and set
-                    # The read. This will allow us to find these reads when we write out the full file
+                    # The read. This will allow us to find these reads when we write out the full file_list
                     sam_read_order[(np.where(np.isin(sam_order[:, 1], reads[i])))[0][0]] = read_name
                     # TODO There may be a more efficient way to add mutations
                     read1.mutations = find_applicable_mutations(read1, contig_variants)

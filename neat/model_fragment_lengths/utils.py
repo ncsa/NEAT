@@ -16,10 +16,10 @@ __all__ = [
 
 def count_frags(file: str) -> list:
     """
-    Takes a sam or bam file input and creates a list of the number of reads that are paired,
+    Takes a sam or bam file_list input and creates a list of the number of reads that are paired,
     first in the pair, confidently mapped and whose pair is mapped to the same reference
-    :param file: A sam input file
-    :return: A list of the tlens from the bam/sam file
+    :param file: A sam input file_list
+    :return: A list of the tlens from the bam/sam file_list
     """
     count_list = []
 

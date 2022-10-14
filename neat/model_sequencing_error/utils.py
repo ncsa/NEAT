@@ -8,11 +8,16 @@ import argparse
 import sys
 import pickle
 import pathlib
+
+import numpy.random
 import pysam
 from functools import reduce
 
-
+from pathlib import Path
 from bisect import bisect_left
+from scipy.stats import mode
+
+from ..common import open_input, open_output
 
 __all__ = [
     "take_closest",
@@ -41,146 +46,124 @@ def take_closest(bins, quality):
         return before
 
 
-def parse_file(input_file, quality_scores, off_q, max_reads, n_samp):
-    _LOG.info("Hello World!")
-    # # Takes a gzip or sam file and returns the simulation's average error rate,
-    # print('reading ' + input_file + '...')
-    # is_aligned = False
-    # lines_to_read = 0
-    # try:
-    #     if input_file[-4:] == '.bam' or input_file[-4:] == '.sam':
-    #         print('detected aligned file....')
-    #         stats = pysam.idxstats(input_file).strip().split('\n')
-    #         lines_to_read = reduce(lambda x, y: x + y, [eval('+'.join(l.rstrip('\n').split('\t')[2:])) for l in stats])
-    #         f = pysam.AlignmentFile(input_file)
-    #         is_aligned = True
-    #     else:
-    #         print('detected fastq file....')
-    #         with pysam.FastxFile(input_file) as f:
-    #             for _ in f:
-    #                 lines_to_read += 1
-    #         f = pysam.FastxFile(input_file)
-    # except FileNotFoundError:
-    #     print("Check input file. Must be fastq, gzipped fastq, or bam/sam file.")
-    #     sys.exit(1)
-    #
-    # actual_readlen = 0
-    # current_line = 0
-    # quarters = lines_to_read // 4
-    #
-    # # A list of n dictionaries, n being the length of a sequence // Put outside this loop
-    # error_model = {
-    #     # a list of q scores
-    #     'quality_scores': quality_scores,
-    #     # number of bins * length of sequence data frame to hold the quality score probabilities
-    #     'quality_score_probabilities': [],
-    #     'quality_offset': off_q,
-    #     'avg_error': {},
-    #     'error_parameters': [
-    #         # sequencing substitution transition probabilities
-    #         [[0., 0.4918, 0.3377, 0.1705], [0.5238, 0., 0.2661, 0.2101], [0.3754, 0.2355, 0., 0.3890],
-    #          [0.2505, 0.2552, 0.4942, 0.]],
-    #         # if a sequencing error occurs, what are the odds it's an indel?
-    #         0.01,
-    #         # sequencing indel error length distribution
-    #         [0.999, 0.001],
-    #         [1, 2],
-    #         # Given an indel error occurs, what are the odds it's an insertion?
-    #         0.4,
-    #         # Given an insertion error occurs, what's the probability of it being an A, C, G, T?
-    #         [0.25, 0.25, 0.25, 0.25]
-    #     ]
-    # }
-    #
-    # if is_aligned:
-    #     g = f.fetch()
-    # else:
-    #     g = f
-    #
-    # # Used to get read length, the read length will = the fist read length.
-    # obtained_read_length = False
-    # temp_q_count = 0
-    #
-    # for read in g:
-    #     if is_aligned:
-    #         qualities_to_check = read.query_alignment_qualities
-    #     else:
-    #         qualities_to_check = read.get_quality_array()
-    #
-    #     # read length = the length of the first read
-    #     if actual_readlen == 0:
-    #         actual_readlen = len(qualities_to_check) - 1
-    #         print('assuming read length is uniform...')
-    #         print('detected read length (from first read found):', actual_readlen)
-    #
-    #     # check if read length is more than 0 and if we have the read length already**
-    #     if actual_readlen > 0 and not obtained_read_length:
-    #         temp_q_count = np.zeros((actual_readlen, len(quality_scores)))
-    #         error_model['quality_score_probabilities'] = np.zeros((actual_readlen, len(quality_scores)), dtype=float)
-    #         obtained_read_length = True
-    #
-    #     # sanity-check readlengths
-    #     if len(qualities_to_check) - 1 != actual_readlen:
-    #         print('skipping read with unexpected length...')
-    #         continue
-    #
-    #     for i in range(0, actual_readlen):
-    #         # The qualities of each base
-    #         q = qualities_to_check[i]
-    #         bin = take_closest(quality_scores, q)
-    #         bin_index = quality_scores.index(bin)
-    #         temp_q_count[i][bin_index] += 1
-    #
-    #     # loading
-    #     current_line += 1
-    #     if current_line % quarters == 0:
-    #         print(f'{(current_line / lines_to_read) * 100:.0f}%')
-    #     if 0 < max_reads <= current_line:
-    #         break
-    # f.close()
-    #
-    # # Probability calculator
-    # base_index = 0
-    # # for every dictionary(scores of a single base in the reads)
-    # for base in temp_q_count:
-    #     total = sum(base)
-    #     bin_index = 0
-    #     for score in base:
-    #         error_model['quality_score_probabilities'][base_index][bin_index] = score / total
-    #         bin_index += 1
-    #     base_index += 1
-    #
-    # # A Discrete distribution of the quality_score probabilities
-    # Discretes = []
-    # for base in error_model['quality_score_probabilities']:
-    #     Discretes.append(DiscreteDistribution(error_model['quality_scores'], base))
-    #
-    # # A counter for the Discrete distribution results run for n_samp times
-    # count_dict = {}
-    # for q in error_model['quality_scores']:
-    #     count_dict[q] = 0
-    # # example: {0: 0, 12: 0, 24: 0, 36: 0}
-    # lines_to_sample = len(range(1, n_samp + 1))
-    # # Divide the reads into 1/4s for the loading bar
-    # samp_quarters = lines_to_sample // 4
-    # for samp in range(1, n_samp + 1):
-    #     if samp % samp_quarters == 0:
-    #         # loading bar
-    #         print(f'{(samp / lines_to_sample) * 100:.0f}%')
-    #     for i in range(actual_readlen):
-    #         my_q = Discretes[i].sample()
-    #         my_q = take_closest(quality_scores, my_q)
-    #         count_dict[my_q] += 1
-    #
-    # print(count_dict)
-    #
-    # # Calculates the average error rate
-    # tot_bases = float(sum(count_dict.values()))
-    # avg_err = 0.
-    # for k in sorted(count_dict.keys()):
-    #     eVal = 10. ** (-k / 10.)
-    #     print(k, eVal, count_dict[k])
-    #     avg_err += eVal * (count_dict[k] / tot_bases)
-    # print('AVG ERROR RATE:', avg_err)
-    #
-    # return error_model
+def parse_file(input_file: Path, file_type: str, quality_scores: list, off_q: int, max_reads: int):
+    """
+    Parses an individual file for statistics
+
+    :param input_file: The input file to process
+    :param file_type: The file type (sam/bam or fastq, gzipped or not)
+    :param quality_scores: A list of potential quality scores
+    :param off_q: The offset for the quality score (usually 33) to convert to ASCII
+    :param max_reads: Max number of reads to process for this file
+    :return:
+    """
+
+    _LOG.info(f'reading {input_file}')
+    is_aligned = False
+
+    if file_type == "bam" or file_type == "sam":
+        f = pysam.AlignmentFile(input_file)
+        is_aligned = True
+    else:
+        f = pysam.FastxFile(str(input_file))
+
+    readlens = []
+    qualities = []
+
+    if is_aligned:
+        g = f.fetch()
+    else:
+        g = f
+
+    for read in g:
+        if is_aligned:
+            qualities_to_check = list(read.query_alignment_qualities)
+        else:
+            qualities_to_check = list(read.get_quality_array())
+
+        # Skip any empty quality arrays
+        if qualities_to_check:
+            readlens.append(len(qualities_to_check))
+            qualities.append(qualities_to_check)
+
+    f.close()
+    readlens = np.array(readlens)
+    qualities = np.array(qualities)
+
+    # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
+    readlen_mode = mode(readlens, axis=None, keepdims=False)
+    if readlen_mode.count < (0.5 * len(readlens)):
+        _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
+    if readlen_mode.count < 20:
+        raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
+
+    read_length = readlen_mode.mode
+
+    # In order to account for scarce data, we may try to set the minimum count at 1.
+    # For large datasets, this will have minimal impact, but it will ensure for small datasets
+    # that we don't end up with probabilities of scores being 0. To do this, just change np.zeros to np.ones
+    temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
+    qual_score_counter = {x: 0 for x in quality_scores}
+
+    total_records_to_read = min(len(readlens), max_reads)
+    quarters = total_records_to_read//4
+
+    rng = numpy.random.default_rng()
+
+    for i in range(total_records_to_read):
+        """
+        This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
+        """
+        qualities_to_check = qualities[i]
+        if len(qualities_to_check) != read_length:
+            continue
+
+        for j in range(read_length):
+            # The qualities of each read_position_scores
+            quality_bin = take_closest(quality_scores, qualities_to_check[j])
+            bin_index = quality_scores.index(quality_bin)
+            temp_q_count[j][bin_index] += 1
+            qual_score_counter[quality_bin] += 1
+
+        if i % quarters == 0:
+            _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
+
+    _LOG.info(f'reading data: 100%')
+
+    quality_score_probabilities = np.zeros((read_length, len(quality_scores)), dtype=float)
+
+    for i in range(read_length):
+        # TODO Add some interpolation for missing scores.
+        read_position_scores = temp_q_count[i]
+        total = sum(read_position_scores)
+        # If total is zero, we had no data at that position, for some reason. Assume a uniform chance of any score.
+        if total == 0:
+            # No reads at that position for the entire dataset, assume uniform probability
+            quality_score_probabilities[i] = np.full(
+                len(quality_scores), 1/len(quality_scores), dtype=float
+            )
+            continue
+        if total < 20:
+            # fill it out with random scores
+            num = 20 - total
+            # We'll make sure we have at least 1 'score' at each position, to give us interesting results
+            # with the simulation, while keeping the distribution roughly the same.
+            temp_read_pos = read_position_scores + 1
+            temp_probs = temp_read_pos/sum(temp_read_pos)
+            scores = rng.choice(quality_scores, size=num, p=temp_probs)
+            read_position_scores = np.concatenate((read_position_scores, scores))
+            total = sum(read_position_scores)
+
+        quality_score_probabilities[i] = read_position_scores/total
+
+    # Calculates the average error rate
+    tot_bases = float(sum(qual_score_counter.values()))
+    avg_err = 0
+    for k in sorted(qual_score_counter.keys()):
+        error_val = 10. ** (-k / 10.)
+        _LOG.info(f"q_score={k}, error_val={error_val:.2f}, count={qual_score_counter[k]}")
+        avg_err += error_val * (qual_score_counter[k] / tot_bases)
+    _LOG.info(f'Average error rate for dataset: {avg_err}')
+
+    # Generate the sequencing error model with default average error rate
+    return quality_score_probabilities, avg_err, read_length

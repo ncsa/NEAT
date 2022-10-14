@@ -28,12 +28,12 @@ def setup_logging(
     """
     Configure logging for the run
 
-    :param omit_log: Whether to write a log file
+    :param omit_log: Whether to write a log file_list
     :param directory: Directory to store the log. Default is the current working directory.
     :param filename: Name to give the log. Default is <timestamp>.neat.log in the current working directory
     :param severity: Severity of events that will be tracked. Defaults to "INFO."
     :param verbosity: Changes the amount of information in the log output.
-    :param silent_mode: Default is to output part of the logs to stdout in addition to writing the file
+    :param silent_mode: Default is to output part of the logs to stdout in addition to writing the file_list
                         Setting this flag will cause it to not print to stdout.
     """
 

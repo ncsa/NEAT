@@ -12,8 +12,9 @@ import logging
 
 from pathlib import Path
 
-from .utils import take_closest, parse_file
-from ..common import validate_output_path
+from .utils import parse_file
+from ..common import validate_output_path, validate_input_path
+from ..models import SequencingErrorModel
 
 __all__ = [
     "model_seq_err_runner"
@@ -23,11 +24,11 @@ _LOG = logging.getLogger(__name__)
 
 
 def model_seq_err_runner(
-        file: str | Path,
+        file_list: list,
         offset: int,
         qual_scores: list | int,
         max_reads: int,
-        num_iters: int,
+        pileup: str,
         plot: bool,
         overwrite: bool,
         output_prefix: str
@@ -35,40 +36,46 @@ def model_seq_err_runner(
     """
     Sets up and calls the sequencing error modeling core code.
 
-    :param file: This is the input file, which can be in fastq (gzipped or not), sam, or bam format.
+    :param file_list: This is the input file, which can be in fastq (gzipped or not), sam, or bam format.
     :param offset: This is the quality offset. Illumina machines use the sanger model qual score + 33 to
         derive the character for the quality array.
     :param qual_scores: These are the possible quality scores for the dataset. This can either be a list or a single
         integer.
     :param max_reads: The maximum number or reads to process. This can speed up the time taken to create the model,
         at the expense of accuracy.
-    :param num_iters: The number of simulation iterations to run. This is to model the probability.
+    :param pileup: If pileup file included, get stats from that
     :param plot: run optional plotting.
     :param overwrite: True to overwrite input, mainly a debugging option
     :param output_prefix: The name of the file to write the output.
     """
 
-    input_file = Path(file)
-    gzipped = False
+    input_files = []
+    for file in file_list:
+        input_files.append(Path(file))
     common_fastq_suffixes = ['.fq', '.fastq']
-    if ".bam" in input_file.suffixes:
-        filetype = 'bam'
-    elif any([x for x in input_file.suffixes if x in common_fastq_suffixes]):
+    filetype = None
+    suffixes = []
+    for file in input_files:
+        suffixes.extend(file.suffixes)
+    fastq_check = any([x for x in suffixes if x in common_fastq_suffixes])
+    bam_check = '.bam' in suffixes
+    sam_check = '.sam' in suffixes
+    if sam_check or bam_check:
+        # checking for mixing of file types.
+        if fastq_check:
+            raise ValueError("NEAT detected mixed file types for the input. Please use consistent file types.")
+        elif sam_check or bam_check:
+            filetype = 'bam'
+    elif fastq_check:
         filetype = "fastq"
-        if ".gz" in input_file.suffixes:
-            gzipped = True
-    elif '.sam' in input_file.suffixes:
-        filetype = 'sam'
     else:
-        raise ValueError("Unknown filetype. Please enter a fastq bam/sam file, with common "
-                         "suffixes [.sam, .bam, .fq(.gz) or .fastq(.gz)] (gzipping is optional).")
+        raise ValueError("Unrecognized file extension in input files. Please use .fq or .fastq for fastq files and"
+                         ".sam or .bam for sam/bam formatted files.")
 
-    _LOG.info(f'Input File: {str(input_file)}')
-    _LOG.info(f'Filetype: {filetype}')
-    _LOG.info(f'File is gzipped: {gzipped}')
+    _LOG.debug(f'Input Files: {", ".join([str(x) for x in input_files])}')
+    _LOG.debug(f'Filetype: {filetype}')
 
-    message = f"[NOT 33? You animal!] {offset}" if offset != 33 else "33"
-    _LOG.info(f"Quality offset: {message}")
+    _LOG.debug(f"Quality offset: {offset}")
 
     final_quality_scores: list
     if len(qual_scores) == 1:
@@ -76,66 +83,65 @@ def model_seq_err_runner(
     else:
         final_quality_scores = qual_scores
 
-    _LOG.info(f'Quality scores: {final_quality_scores}')
-    num_records_to_process = "all" if max_reads == -1 else str(max_reads)
-    _LOG.info(f'Maximum number of records to process: {num_records_to_process}')
-    _LOG.info(f'Number of simulation iterations to run: {num_iters}')
-    _LOG.info(f"Plot the data? {plot}")
-    _LOG.info(f'Overwrite existing data? {overwrite}')
+    _LOG.debug(f'Quality scores: {final_quality_scores}')
+    if max_reads == -1:
+        num_records_to_process = np.inf
+    else:
+        num_records_to_process = max_reads
+
+    _LOG.debug(f'Maximum number of records to process: {num_records_to_process}')
+
+    if pileup:
+        pileup = Path(pileup)
+        validate_input_path(pileup)
+
+    _LOG.debug(f'Pileup file: {pileup}')
+    _LOG.debug(f"Plot the data? {plot}")
+    _LOG.debug(f'Overwrite existing data? {overwrite}')
+
+    validate_output_path(output_prefix, is_file=False)
     output_file = Path(output_prefix).with_suffix(".p.gz")
     _LOG.info(f'Writing output to: {output_file}')
 
-    parse_file(input_file, final_quality_scores, offset, max_reads, num_iters)
+    probabilities = []
+    average_errors = []
+    overall_read_length = 0
+    for file in input_files:
+        file_qual_score_probs, file_avg_error, file_readlen = parse_file(file, filetype, final_quality_scores, offset, num_records_to_process)
+        probabilities.append(file_qual_score_probs)
+        average_errors.append(file_avg_error)
+        if not overall_read_length:
+            overall_read_length = file_readlen
+        elif file_readlen != overall_read_length:
+            _LOG.warning("The input files seem to have different read lengths. Using the shorter of the two")
+            overall_read_length = min(overall_read_length, file_readlen)
 
-    _LOG.info("All done, have a nice day!")
+    final_probs = np.zeros((overall_read_length, len(qual_scores)), dtype=float)
+    for i in range(overall_read_length):
+        probs_at_location = [x[i] for x in probabilities]
+        temp_probs = np.average(probs_at_location, axis=0)
+        # technically, temp_probs should sum to 1, but just in case
+        final_probs[i] = temp_probs/sum(temp_probs)
 
+    average_error = sum(average_errors)/len(average_errors)
+    _LOG.info(f"Found an average error of {average_error} across {len(input_files)} file(s).")
 
-    # (infile, outfile, off_q, q_scores, max_reads, n_samp) = (args.i, args.o, args.q, args.Q, args.n, args.s)
-    # # (infile2, pile_up) = (args.i2, args.p)
-    # infile2 = None
-    # pile_up = None
-    #
-    # plot_stuff = args.plot
-    #
-    # # q_scores = range(real_q)
-    # if infile2 is None:
-    #     (init_q, prob_q, avg_err) = parse_file(infile, q_scores, off_q, max_reads, n_samp)
-    # else:
-    #     (init_q, prob_q, avg_err1) = parse_file(infile, q_scores, off_q, max_reads, n_samp)
-    #     (init_q2, prob_q2, avg_err2) = parse_file(infile2, q_scores, off_q, max_reads, n_samp)
-    #     avg_err = (avg_err1 + avg_err2) / 2.
-    #
-    # # Embed some default sequencing error parameters
-    # # sequencing substitution transition probabilities
-    # sse_prob = [[0., 0.4918, 0.3377, 0.1705],
-    #             [0.5238, 0., 0.2661, 0.2101],
-    #             [0.3754, 0.2355, 0., 0.3890],
-    #             [0.2505, 0.2552, 0.4942, 0.]]
-    # # if a sequencing error occurs, what are the odds it's an indel?
-    # sie_rate = 0.01
-    # # sequencing indel error length distribution
-    # sie_prob = [0.999, 0.001]
-    # sie_val = [1, 2]
-    # # if a sequencing indel error occurs, what are the odds it's an insertion as opposed to a deletion?
-    # sie_ins_freq = 0.4
-    # # if a sequencing insertion error occurs, what's the probability of it being an A, C, G, T...
-    # sie_ins_nucl = [0.25, 0.25, 0.25, 0.25]
-    #
-    # # Otherwise we need to parse a pileup and compute statistics!
-    # if pile_up:
-    #     print('\nPileup parsing coming soon!\n')
-    #     exit(1)
-    # else:
-    #     print('Using default sequencing error parameters...')
-    #
-    # err_params = [sse_prob, sie_rate, sie_prob, sie_val, sie_ins_freq, sie_ins_nucl]
-    #
-    # # finally, let's save our output model
-    # outfile = pathlib.Path(outfile).with_suffix(".p")
-    # print('saving model...')
-    # if infile2 is None:
-    #     # pickle.dump({quality_scores:[], quality_scores_probabilities:[]})
-    #     pickle.dump([init_q, prob_q, q_scores, off_q, avg_err, err_params], open(outfile, 'wb'))
-    # else:
-    #     pickle.dump([init_q, prob_q, init_q2, prob_q2, q_scores, off_q, avg_err, err_params], open(outfile, 'wb'))
+    if plot:
+        _LOG.info("Plotting coming soon! Sorry!")
 
+    if pileup:
+        _LOG.info("Pileup features not yet available. Using default parameters")
+
+    # Generate the model
+    seq_err_model = SequencingErrorModel(
+        avg_seq_error=average_error,
+        read_length=overall_read_length,
+        quality_scores=np.array(qual_scores),
+        qual_score_probs=final_probs,
+    )
+    # finally, let's save our output model
+    _LOG.info(f'Saving model: {output_file}')
+
+    pickle.dump(seq_err_model, gzip.open(output_file))
+
+    _LOG.info("Modeling sequencing errors is complete, have a nice day.")

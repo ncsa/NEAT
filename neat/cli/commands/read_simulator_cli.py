@@ -16,7 +16,7 @@ class Command(BaseCommand):
 
     Optional outputs include a golden vcf showing all inserted true variants (i.e., not the simulated errors),
         a golden BAM showing a fast alignment against the region where the read came from,
-        a fasta file containing the inserted variants only (no errors).
+        a fasta file_list containing the inserted variants only (no errors).
     """
 
     name = "read-simulator-cli"

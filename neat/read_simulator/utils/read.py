@@ -234,7 +234,7 @@ class Read:
             produce_tsam: bool
     ):
         """
-        Writes the record to the temporary fastq file
+        Writes the record to the temporary fastq file_list
 
         :param err_model: The error model for the run
         :param fastq_handle: the path to the fastq model to write the read
