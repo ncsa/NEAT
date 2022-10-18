@@ -62,7 +62,6 @@ class Command(BaseCommand):
         parser.add_argument('--pileup',
                             type=str,
                             metavar="FILE",
-                            dest="pileup_file",
                             required=False,
                             help="Pileup statistics file from running samtools pileup. Not yet implemented.")
 

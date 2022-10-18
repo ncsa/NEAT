@@ -101,6 +101,7 @@ def model_seq_err_runner(
 
     validate_output_path(output_prefix, is_file=False)
     output_file = Path(output_prefix).with_suffix(".p.gz")
+    validate_output_path(output_file, overwrite=overwrite)
     _LOG.info(f'Writing output to: {output_file}')
 
     probabilities = []
@@ -142,6 +143,6 @@ def model_seq_err_runner(
     # finally, let's save our output model
     _LOG.info(f'Saving model: {output_file}')
 
-    pickle.dump(seq_err_model, gzip.open(output_file))
+    pickle.dump(seq_err_model, gzip.open(output_file, 'w'))
 
     _LOG.info("Modeling sequencing errors is complete, have a nice day.")

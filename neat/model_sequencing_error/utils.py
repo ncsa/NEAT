@@ -161,7 +161,7 @@ def parse_file(input_file: Path, file_type: str, quality_scores: list, off_q: in
     avg_err = 0
     for k in sorted(qual_score_counter.keys()):
         error_val = 10. ** (-k / 10.)
-        _LOG.info(f"q_score={k}, error_val={error_val:.2f}, count={qual_score_counter[k]}")
+        _LOG.info(f"q_score={k}, error value={error_val:e}, count={qual_score_counter[k]}")
         avg_err += error_val * (qual_score_counter[k] / tot_bases)
     _LOG.info(f'Average error rate for dataset: {avg_err}')
 
