@@ -402,6 +402,9 @@ def cull_read(position, coverage_vector, total_reads, rng):
     """
     # Pick a random read to toss and update coverage
     depth = coverage_vector[position]
+    if depth <= 1:
+        # If there aren't enough reads here to cull any, just skip it
+        return
     random_selection = rng.choice(range(depth))
     current_depth = 0
     # Hoping this will be faster because i don't cycle through every read every time
