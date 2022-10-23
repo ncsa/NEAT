@@ -14,7 +14,9 @@ dependencies:
   - pip
   - scipy
   - pytest
+  - bedtools
+  - htslib
+  - pybedtools
   - pip:
     - pysam
-    - pybedtools
     - frozendict
