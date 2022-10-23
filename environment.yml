@@ -5,7 +5,6 @@ channels:
   - defaults
 dependencies:
   - python=3.10.*
-  - poetry
   - biopython=1.79
   - pkginfo
   - matplotlib
@@ -20,3 +19,4 @@ dependencies:
   - pip:
     - pysam
     - frozendict
+    - poetry=1.2.*
