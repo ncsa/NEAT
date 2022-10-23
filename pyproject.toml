@@ -9,10 +9,13 @@ license = "BSD 3-Clause License"
 python = "^3.10"
 biopython = "1.79"
 matplotlib = "^3.5"
+pkginfo = "^1.8.3"
 numpy = "^1.23"
 PyYAML = "^6.0"
 pysam = "^0.19.1"
+scipy = "^1.9.1"
 pybedtools = "^0.9.0"
+frozendict = "^2.3.4"
 
 [tool.poetry.dev-dependencies]
 poetry = "^1.1.13"

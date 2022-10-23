@@ -4,20 +4,12 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
-import argparse
-import sys
-import pickle
-import pathlib
 
-import numpy.random
 import pysam
-from functools import reduce
 
 from pathlib import Path
 from bisect import bisect_left
 from scipy.stats import mode
-
-from ..common import open_input, open_output
 
 __all__ = [
     "take_closest",
@@ -108,7 +100,7 @@ def parse_file(input_file: Path, file_type: str, quality_scores: list, off_q: in
     total_records_to_read = min(len(readlens), max_reads)
     quarters = total_records_to_read//4
 
-    rng = numpy.random.default_rng()
+    rng = np.random.default_rng()
 
     for i in range(total_records_to_read):
         """
