@@ -637,7 +637,7 @@ class FragmentLengthModel:
                            read_length: int,
                            coverage: int) -> list:
         """
-        Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set.
+        Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set
 
         :param total_length: Length of the reference segment we are covering.
         :param read_length: average length of the reads

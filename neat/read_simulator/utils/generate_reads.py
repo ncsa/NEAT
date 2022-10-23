@@ -1,6 +1,7 @@
 import logging
 import time
 import numpy as np
+from tqdm import tqdm
 
 from math import ceil, floor
 from pathlib import Path
@@ -62,7 +63,6 @@ def create_windows(sequence: SeqRecord, size: int, overlap: int):
 def cover_dataset(
         span_length: int,
         target_vector: np.ndarray,
-        window_size: int,
         options: Options,
         read_length_model: FragmentLengthModel,
         fragment_model: FragmentLengthModel | None,
@@ -73,17 +73,14 @@ def cover_dataset(
 
     :param span_length: The total length the cover needs to span
     :param target_vector: The vector of coverage targets by position
-    :param window_size: The size of the window used for gc-bias
     :param options: The options for the run
     :param read_length_model: The model used to generate random read lengths
     :param fragment_model: The fragment model used for to generate random fragment lengths
-    :return:
     """
 
     # Variables to track reads and current coverage
     temp_reads = []
     coverage = [0] * span_length
-    read_cover = {x: [] for x in range(span_length)}
 
     read_pool = read_length_model.generate_fragments(span_length, options.read_len, options.coverage)
 
@@ -99,9 +96,13 @@ def cover_dataset(
 
     _LOG.debug("Covering dataset")
 
-    target = options.rng.choice([ceil(max(target_vector)), floor(max(target_vector))])
+    target = ceil(max(target_vector))
+    count_per_layer = 0
+    total_num_layers = 0
+    # for each position, the set of reads covering that position.
     while i <= target:
-        _LOG.debug(f"Covering layer {i+1} of {target}")
+        layer_count = 0
+        _LOG.debug(f"Covering layer {i+1} of {target + 1}")
         # In order to make the dataset look random, but still achieve proper coverage, we're going to have some loops
         # Space the reads randomly, and some loops create very regular reads. Outside this, we'll shuffle the reads
         # to give them a random appearance.
@@ -114,159 +115,210 @@ def cover_dataset(
         j = -options.rng.choice(range(padding))
         previous_percent = 0
         k = 0  # independent tracking
-        while -padding <= j < span_length:
-            k += 1
-            # Simple progress tracker
-            current_percent = (j * 100) // span_length
-            if current_percent > previous_percent:
-                print(f'{current_percent}%', end='\r')
-                previous_percent = current_percent
-            # The structure for these reads will be (left_start, left_end, right_start, right_end) where start and end
-            # are ints with start > end. Reads can overlap, so right_start < left_end is possible, but the reads cannot
-            # extend past each other, so right_start < left_start and left_end > right_end are not possible.
-            if options.paired_ended:
-                left_read_length, right_read_length = options.rng.choice(read_pool, size=2, replace=False)
-                fragment_length = options.rng.choice(fragment_pool)
-            else:
-                left_read_length = options.rng.choice(read_pool)
-                right_read_length = 0
-                fragment_length = left_read_length
+        with tqdm(total=100) as pbar:
+            while -padding <= j < span_length:
+                k += 1
+                # Simple progress tracker
+                current_percent = (j * 100) // span_length
+                if current_percent > previous_percent:
+                    pbar.update()
+                    previous_percent = current_percent
+                # The structure for these reads will be (left_start, left_end, right_start, right_end) where start and
+                # end are ints with start > end. Reads can overlap, so right_start < left_end is possible, but the reads
+                # cannot extend past each other, so right_start < left_start and left_end > right_end are not possible.
+                if options.paired_ended:
+                    left_read_length, right_read_length = options.rng.choice(read_pool, size=2, replace=False)
+                    fragment_length = options.rng.choice(fragment_pool)
+                else:
+                    left_read_length = options.rng.choice(read_pool)
+                    right_read_length = 0
+                    fragment_length = left_read_length
 
-            if fragment_length < max(left_read_length, right_read_length):
-                # Outlier, skip
-                j += fragment_length//2 + (random_mode * options.rng.poisson(1))
-                continue
-
-            # Booleans telling us how to deal with the various exceptions below.
-            skip_left = False
-            skip_right = False
-
-            # This trims the left read to the region of interest
-            left_start = max(j, 0)
-            left_end = min(span_length, j + left_read_length)
-
-            # Make right read, if paired ended, else set it equal to the default
-            if options.paired_ended:
-                # The uncorrected left_start is j
-                # The uncorrected left_end is j + left_read_length
-                # The candidate end points of the paired right read, uncorrected
-                uncorrected_right_end = j + fragment_length
-                uncorrected_right_start = uncorrected_right_end - right_read_length
-
-                # this trims the raw right read, so that right_start >= left_start and left_end <= right_end
-                # this keeps us from getting unrealistic paired ended reads
-                right_start = max(uncorrected_right_start, left_start)
-                right_end = min(uncorrected_right_end, left_end)
-
-                # Both reads are off the map, so we throw this out:
-                if right_end <= 0:
+                if fragment_length < max(left_read_length, right_read_length):
+                    # Outlier, skip
                     j += fragment_length//2 + (random_mode * options.rng.poisson(1))
                     continue
 
-            else:
-                skip_right = True
-                right_start = 0
-                right_end = 0
+                # Booleans telling us how to deal with the various exceptions below.
+                skip_left = False
+                skip_right = False
 
-            # Cases that might make us want to skip these reads:
-            # Case 1: Left read end completely out of the area of consideration, unusable
-            if left_end <= 0:
-                # right read is usable if it's not off the map and has at least half a read
-                # length of usable bases
-                if right_start < span_length and \
-                        (right_end - right_start > right_read_length/2):
-                    # skip the left read, keep the right read, indicating an unpaired right read
-                    skip_left = True
-                # else, skip both
+                # This trims the left read to the region of interest
+                left_start = max(j, 0)
+                left_end = min(span_length, j + left_read_length)
+
+                # Make right read, if paired ended, else set it equal to the default
+                if options.paired_ended:
+                    # The uncorrected left_start is j
+                    # The uncorrected left_end is j + left_read_length
+                    # The candidate end points of the paired right read, uncorrected
+                    uncorrected_right_end = j + fragment_length
+                    uncorrected_right_start = uncorrected_right_end - right_read_length
+
+                    # this trims the raw right read, so that right_start >= left_start and left_end <= right_end
+                    # this keeps us from getting unrealistic paired ended reads
+                    right_start = max(uncorrected_right_start, left_start)
+                    right_end = min(uncorrected_right_end, left_end)
+
+                    # Both reads are off the map, so we throw this out:
+                    if right_end <= 0:
+                        j += fragment_length//2 + (random_mode * options.rng.poisson(1))
+                        continue
+
                 else:
-                    skip_left = skip_right = True
-
-            # Case 2: Truncated left read, unusable
-            if left_end - left_start < left_read_length/2:
-                # right read is usable if it's not off the map and has at least half a read
-                # length of usable bases
-                if right_start < span_length and \
-                        (right_end - right_start >= right_read_length/2):
-                    # skip the left read, keep the right read, indicating an unpaired right read
-                    skip_left = True
-                # else, skip both
-                else:
-                    skip_left = skip_right = True
-
-            # Case 3: Right read starts after the end of the span, unusable
-            # Note: In single ended mode the next two cases are irrelevant, but it shouldn't cost much time to run them
-            if right_start >= span_length:
-                # left read is usable if it's not off the map and has at least half a
-                # read length of usable bases
-                if left_start < span_length and \
-                        (left_end - left_start > left_read_length/2):
-                    # Set the right read to (0, 0), indicating an unpaired left read
                     skip_right = True
-                # else, skip both
+                    right_start = 0
+                    right_end = 0
+
+                # Cases that might make us want to skip these reads:
+                # Case 1: Left read end completely out of the area of consideration, unusable
+                if left_end <= 0:
+                    # right read is usable if it's not off the map and has at least half a read
+                    # length of usable bases
+                    if right_start < span_length and \
+                            (right_end - right_start > right_read_length/2):
+                        # skip the left read, keep the right read, indicating an unpaired right read
+                        skip_left = True
+                    # else, skip both
+                    else:
+                        skip_left = skip_right = True
+
+                # Case 2: Truncated left read, unusable
+                if left_end - left_start < left_read_length/2:
+                    # right read is usable if it's not off the map and has at least half a read
+                    # length of usable bases
+                    if right_start < span_length and \
+                            (right_end - right_start >= right_read_length/2):
+                        # skip the left read, keep the right read, indicating an unpaired right read
+                        skip_left = True
+                    # else, skip both
+                    else:
+                        skip_left = skip_right = True
+
+                # Case 3: Right read starts after the end of the span, unusable
+                # Note: In single ended mode the next two cases are irrelevant, but it shouldn't cost
+                #   much time to run them
+                if right_start >= span_length:
+                    # left read is usable if it's not off the map and has at least half a
+                    # read length of usable bases
+                    if left_start < span_length and \
+                            (left_end - left_start > left_read_length/2):
+                        # Set the right read to (0, 0), indicating an unpaired left read
+                        skip_right = True
+                    # else, skip both
+                    else:
+                        skip_left = skip_right = True
+
+                # Case 4: Truncated right read, unusable
+                if right_end - right_start < right_read_length/2:
+                    # left read is usable if it's not off the map and has at least half a
+                    # read length of usable bases
+                    if left_start < span_length and \
+                            (left_end - left_start > left_read_length/2):
+                        # Set the right read to (0, 0), indicating an unpaired left read
+                        skip_right = True
+                    # else, skip both
+                    else:
+                        skip_left = skip_right = True
+
+                if skip_left and skip_right:
+                    # If neither read is usable, we'll just move to the next
+                    j += fragment_length//2 + (random_mode * options.rng.poisson(1))
+                    continue
+
+                if not skip_left:
+                    temp_left_read = parse_coverage(
+                        left_start,
+                        left_end,
+                        left_read_length,
+                        coverage,
+                        target_vector
+                    )
                 else:
-                    skip_left = skip_right = True
+                    temp_left_read = (0, 0)
 
-            # Case 4: Truncated right read, unusable
-            if right_end - right_start < right_read_length/2:
-                # left read is usable if it's not off the map and has at least half a
-                # read length of usable bases
-                if left_start < span_length and \
-                        (left_end - left_start > left_read_length/2):
-                    # Set the right read to (0, 0), indicating an unpaired left read
-                    skip_right = True
-                # else, skip both
+                if not skip_right:
+                    temp_right_read = parse_coverage(
+                        right_start,
+                        right_end,
+                        right_read_length,
+                        coverage,
+                        target_vector,
+                    )
                 else:
-                    skip_left = skip_right = True
+                    temp_right_read = (0, 0)
 
-            if skip_left and skip_right:
-                # If neither read is usable, we'll just move to the next
-                j += fragment_length//2 + (random_mode * options.rng.poisson(1))
-                continue
+                read_to_add = temp_left_read + temp_right_read
+                temp_reads.append(read_to_add)
+                layer_count += 1
+                j += left_read_length + (random_mode * options.rng.poisson(1))
 
-            if not skip_left:
-                temp_left_read = parse_coverage(
-                    left_start,
-                    left_end,
-                    left_read_length,
-                    coverage,
-                    target_vector
-                )
-            else:
-                temp_left_read = (0, 0)
+                if k > span_length:
+                    delta = span_length - k
+                    if delta % 100 == 0:
+                        _LOG.debug(f"K is getting large: {k} v {span_length}")
 
-            if not skip_right:
-                temp_right_read = parse_coverage(
-                    right_start,
-                    right_end,
-                    right_read_length,
-                    coverage,
-                    target_vector,
-                )
-            else:
-                temp_right_read = (0, 0)
+            pbar.update()
 
-            temp_reads.append(temp_left_read + temp_right_read)
-            j += left_read_length + (random_mode * options.rng.poisson(1))
-
-            if k > span_length:
-                delta = span_length - k
-                if delta % 100 == 0:
-                    _LOG.debug(f"K is getting large: {k} v {span_length}")
-
+        _LOG.debug(f"Layer {i+1} complete")
+        count_per_layer += layer_count
+        total_num_layers += 1
         i += run_one_more(coverage, i, target, options.coverage)
 
+    average_reads_per_layer = count_per_layer/total_num_layers
     _LOG.debug("Culling reads to final set.")
-    final_reads = culling_procedure(
-        temp_reads,
-        span_length,
-        coverage,
-        read_cover,
-        target_vector,
-        window_size,
-        options.rng
+    final_reads = final_subsetting(
+        candidate_reads=temp_reads,
+        coverage=coverage,
+        target_vector=target_vector,
+        layer_count=average_reads_per_layer,
+        rng=options.rng
     )
 
     return final_reads
+
+
+def final_subsetting(
+        candidate_reads: list,
+        coverage: list,
+        target_vector: np.ndarray,
+        layer_count: float,
+        rng: Generator
+) -> list:
+    """
+    The final subsetting for reads. We basically just calculate if we need to subset, then how many final reads we
+    should have and we draw them randomly without replacement until we have enough.
+
+    :param candidate_reads: The list of reads in the following format: (left_start, left_end, right_start, right_end)
+    :param coverage: The calculated coverage vector for the left_reads + right_reads dataset
+    :param target_vector: The target coverage values, by location
+    :param layer_count: The average count, per layer, of the number of reads.
+    :param rng: The random number generator for the run
+    :return: Two lists, left and right reads, culled to proper coverage depth.
+    """
+
+    target_med = np.median(target_vector)
+    target_std = np.std(target_vector)
+
+    current_med = np.median(coverage)
+
+    #  First check if any culling is necessary
+    if current_med <= target_med + target_std:
+        _LOG.debug("Culled 0 reads")
+        return candidate_reads
+
+    reads_to_cull = (current_med - target_med) * layer_count
+    estimated_final_read_count = len(candidate_reads) - reads_to_cull
+    random_buffer = rng.normal()
+    final_read_count = ceil(estimated_final_read_count + random_buffer)
+
+    if len(candidate_reads) <= final_read_count:
+        _LOG.debug("Culled 0 reads")
+        return candidate_reads
+    ret_set = rng.choice(candidate_reads, size=final_read_count, replace=False)
+    reads_culled = len(candidate_reads) - len(ret_set)
+    _LOG.debug(f"Culled {reads_culled} reads, leaving {len(ret_set)} reads")
+    return ret_set
 
 
 def calculate_coverage(coverage_section: list, target_vector: np.ndarray) -> (list, int):
@@ -322,116 +374,6 @@ def parse_coverage(
         return 0, 0
 
 
-def culling_procedure(
-        candidate_reads: list,
-        span_length: int,
-        coverage: list,
-        cover_dict: dict,
-        target_vector: np.ndarray,
-        window_size: int,
-        rng: Generator
-) -> list:
-    """
-    The culling procedure for reads. It is based on the median values (median as opposed to mean to
-    allow for datasets with lots of zeros) of the coverage and target vectors. Basically, we want to
-    throw away reads until we get to the right median value. We start by trying to throw out reads
-    where the coverage is too high. If that doesn't work, we throw them out randomly one by one until the
-    median is in acceptable parameters.
-
-    :param candidate_reads: The list of reads in the following format: (left_start, left_end, right_start, right_end)
-    :param span_length: The total length spanned by this cover
-    :param coverage: The calculated coverage vector for the left_reads + right_reads dataset
-    :param cover_dict: a dictionary of the cover at each location
-    :param target_vector: The target coverage values, by location
-    :param window_size: The size of the window used to compute GC bias
-    :param rng: The random number generator for the run
-    :return: Two lists, left and right reads, culled to proper coverage depth.
-    """
-
-    reads_culled = 0
-    target_med = np.median(target_vector)
-    target_std = np.std(target_vector)
-
-    #  First check if any culling is necessary
-    if np.median(coverage) <= target_med + target_std:
-        _LOG.debug(f"Culled {reads_culled} reads")
-        return candidate_reads
-
-    for i in range(0, span_length, window_size):
-        window_target = target_vector[i: i+window_size]
-        window_target_median = np.median(window_target)
-
-        window_coverage = coverage[i: i+window_size]
-        window_coverage_median = np.median(window_coverage)
-
-        # Trying to identify areas of high coverage we can trim from
-        while window_coverage_median > window_target_median + (2 * target_std):
-            reads_culled += 1
-            # toss a read from the coverage window
-            position_to_cull = rng.choice(range(i, i+window_size))
-            cull_read(position_to_cull, coverage, candidate_reads, rng)
-            # Recalculate median for the window
-            window_coverage_median = np.median(coverage[i: i+window_size])
-            # Test to make sure this doesn't completely mess up our calculations
-            # (needed for paired-end in particular)
-            if np.median(coverage) <= target_med:
-                break
-
-    # If we didn't find enough areas of too high coverage to bring our total under an acceptable parameter,
-    # we'll throw out a couple random reads
-    if np.median(coverage) > target_med + (2 * target_std):
-        # We'll pare slightly more than we need to
-        while np.median(coverage) > target_med + (2 * target_std) and len(candidate_reads) > 0:
-            reads_culled += 1
-            # Pick a random read to toss and update coverage
-            cull_read(candidate_reads, coverage, candidate_reads, rng)
-
-    _LOG.debug(f"Culled {reads_culled} reads")
-    return candidate_reads
-
-
-def cull_read(position, coverage_vector, total_reads, rng):
-    """
-    This function picks a read to toss and updates coverage.
-
-    :param position: A position we want to thin out
-    :param coverage_vector: The current coverage vector for the area
-    :param total_reads: The entire reads dataset, from which to remove the culled read
-    :param rng: The random number generator for the run
-    :return: None. Updates total_reads in place
-    """
-    # Pick a random read to toss and update coverage
-    depth = coverage_vector[position]
-    if depth <= 1:
-        # If there aren't enough reads here to cull any, just skip it
-        return
-    random_selection = rng.choice(range(depth))
-    current_depth = 0
-    # Hoping this will be faster because i don't cycle through every read every time
-    read_to_cull = (0, 0, 0, 0)
-    for i in range(len(total_reads)):
-        found = False
-        if total_reads[i][0] <= position < total_reads[i][1]:
-            current_depth += 1
-            found = True
-        elif total_reads[i][2] <= position < total_reads[i][3]:
-            current_depth += 1
-            found = True
-        if current_depth == random_selection and found:
-            read_to_cull = total_reads[i]
-            break
-
-    if not any(read_to_cull):
-        read_to_cull = tuple(rng.choice(total_reads))
-
-    for k in range(read_to_cull[0], read_to_cull[1]):
-        coverage_vector[k] -= 1
-    for m in range(read_to_cull[2], read_to_cull[3]):
-        coverage_vector[m] -= 1
-    # toss the read
-    total_reads.remove(read_to_cull)
-
-
 def run_one_more(coverage, index, max_runs, coverage_target):
     """
     This checks if our index as at the max (i.e., we are on the last loop). If we are and we haven't hit our median
@@ -445,6 +387,7 @@ def run_one_more(coverage, index, max_runs, coverage_target):
     """
     if index == max_runs:
         if np.median(coverage) < coverage_target + 0.5:
+            _LOG.debug("Repeating last loop to fill out coverage")
             return -1
 
     return 1
@@ -556,14 +499,20 @@ def generate_reads(reference: SeqRecord,
     reads = cover_dataset(
         len(reference),
         target_coverage_vector,
-        gc_bias.window_size,
         options,
         readlen_model,
         fraglen_model,
     )
 
-    paired_reads = sorted([x for x in reads if any(x[0:2]) and any(x[2:4])])
-    singletons = sorted([x for x in reads if x not in paired_reads and any(x)])
+    # Reads that are paired
+    paired_reads = np.asarray([x for x in reads if any(x[0:2]) and any(x[2:4])])
+    paired_reads = np.sort(paired_reads, axis=0)
+
+    # singletons
+    singletons = np.asarray([x for x in reads if x not in paired_reads and any(x)])
+    singletons = np.sort(singletons, axis=0)
+
+    _LOG.debug(f"Paired percentage = {len(paired_reads)/(len(paired_reads) + len(singletons))}")
 
     # I'm worried about sorting the sam later, so trying to take care of that now
     sam_order = np.concatenate((paired_reads, singletons))
