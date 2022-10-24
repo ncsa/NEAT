@@ -155,8 +155,8 @@ class Read:
         """
         for error in self.errors:
             # Replace the entire ref sequence with the entire alt sequence
-            mutated_sequence = \
-                mutated_sequence[:error.location] + error.alt + mutated_sequence[error.location+len(error.ref):]
+            mutated_sequence = mutated_sequence[:error.location] + error.alt + \
+                               mutated_sequence[error.location+len(error.ref):]
             # update quality score for error
             self.update_quality_array(error.alt, error.location, "error", err_model)
 

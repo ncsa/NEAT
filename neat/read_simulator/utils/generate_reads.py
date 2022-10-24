@@ -116,7 +116,7 @@ def cover_dataset(
         previous_percent = 0
         k = 0  # independent tracking
         with tqdm(total=100) as pbar:
-            while -padding <= j < span_length:
+            while j < span_length:
                 k += 1
                 # Simple progress tracker
                 current_percent = (j * 100) // span_length
@@ -158,7 +158,7 @@ def cover_dataset(
                     # this trims the raw right read, so that right_start >= left_start and left_end <= right_end
                     # this keeps us from getting unrealistic paired ended reads
                     right_start = max(uncorrected_right_start, left_start)
-                    right_end = min(uncorrected_right_end, left_end)
+                    right_end = min(max(uncorrected_right_end, left_end), span_length)
 
                     # Both reads are off the map, so we throw this out:
                     if right_end <= 0:
@@ -302,21 +302,23 @@ def final_subsetting(
 
     current_med = np.median(coverage)
 
+    filtered_candidates = [x for x in candidate_reads if any(x)]
+
     #  First check if any culling is necessary
     if current_med <= target_med + target_std:
         _LOG.debug("Culled 0 reads")
-        return candidate_reads
+        return filtered_candidates
 
     reads_to_cull = (current_med - target_med) * layer_count
-    estimated_final_read_count = len(candidate_reads) - reads_to_cull
+    estimated_final_read_count = len(filtered_candidates) - reads_to_cull
     random_buffer = rng.normal()
     final_read_count = ceil(estimated_final_read_count + random_buffer)
 
-    if len(candidate_reads) <= final_read_count:
+    if len(filtered_candidates) <= final_read_count:
         _LOG.debug("Culled 0 reads")
-        return candidate_reads
-    ret_set = rng.choice(candidate_reads, size=final_read_count, replace=False)
-    reads_culled = len(candidate_reads) - len(ret_set)
+        return filtered_candidates
+    ret_set = rng.choice(filtered_candidates, size=final_read_count, replace=False)
+    reads_culled = len(filtered_candidates) - len(ret_set)
     _LOG.debug(f"Culled {reads_culled} reads, leaving {len(ret_set)} reads")
     return ret_set
 
@@ -447,6 +449,19 @@ def modify_target_coverage(included_regions: list, excluded_regions: list, cover
     return coverage_vector
 
 
+def merge_sort(my_array: np.ndarray):
+    """
+    This sorts the reads in reverse position, merging as it goes, in order to get the proper order
+
+    :param my_array: the array to be sorted.
+    :return: the sorted array
+    """
+    ret_array = my_array[my_array[:, 3].argsort()]
+    ret_array = ret_array[ret_array[:, 2].argsort(kind='mergesort')]
+    ret_array = ret_array[ret_array[:, 1].argsort(kind='mergesort')]
+    ret_array = ret_array[ret_array[:, 0].argsort(kind='mergesort')]
+    return ret_array
+
 def generate_reads(reference: SeqRecord,
                    error_model: SequencingErrorModel,
                    gc_bias: GcModel,
@@ -480,8 +495,8 @@ def generate_reads(reference: SeqRecord,
     :return: A tuple of the filenames for the temp files created
     """
     # Set up files for use. May not need r2, but it's there if we do.
-    chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq.bgz'
-    chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq.bgz'
+    chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq.gz'
+    chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq.gz'
 
     # set up a temporary 'sam' file for processing by generate_bam, if the option is set
     tsam = temporary_directory / f'{chrom}.tsam.gz'
@@ -505,20 +520,19 @@ def generate_reads(reference: SeqRecord,
     )
 
     # Reads that are paired
-    paired_reads = np.asarray([x for x in reads if any(x[0:2]) and any(x[2:4])])
-    paired_reads = np.sort(paired_reads, axis=0)
+    paired_reads = np.asarray([tuple(x) for x in reads if any(x[0:2]) and any(x[2:4])])
+    paired_reads = merge_sort(paired_reads)
 
     # singletons
-    singletons = np.asarray([x for x in reads if x not in paired_reads and any(x)])
-    singletons = np.sort(singletons, axis=0)
+    singletons = np.asarray([tuple(x) for x in reads if x not in paired_reads and any(x)])
+    singletons = merge_sort(singletons)
 
-    _LOG.debug(f"Paired percentage = {len(paired_reads)/(len(paired_reads) + len(singletons))}")
+    ordered_final_reads = np.concatenate((paired_reads, singletons))
+
+    _LOG.debug(f"Paired percentage = {len(paired_reads)/len(ordered_final_reads)}")
 
     # I'm worried about sorting the sam later, so trying to take care of that now
-    sam_order = np.concatenate((paired_reads, singletons))
-    sam_read_order = [""] * len(sam_order)
-
-    previous_percent = 0
+    sam_read_order = []
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     with (
@@ -527,36 +541,32 @@ def generate_reads(reference: SeqRecord,
         open_output(tsam) as temp_sam
     ):
 
-        for i in np.arange(len(reads)):
-            # Simple progress tracker
-            current_percent = (i * 100) // len(reads)
-            if current_percent > previous_percent:
-                print(f'{current_percent}%', end='\r')
-                previous_percent = current_percent
-
+        for i in tqdm(np.arange(len(ordered_final_reads))):
             # Added some padding after, in case there are deletions
-            segments = [reference[reads[i][0]: reads[i][1] + 50].seq, reference[reads[i][2]: reads[i][3] + 50].seq]
+            segments = [reference[ordered_final_reads[i][0]: ordered_final_reads[i][1] + 50].seq,
+                        reference[ordered_final_reads[i][2]: ordered_final_reads[i][3] + 50].seq]
             # Check for N concentration
             # Make sure the segments will come out to at around 80% valid bases
             # So as not to mess up the calculations, we will skip the padding we added above.
             if not is_too_many_n(segments[0][:-50] + segments[1][:-50]):
                 read_name = f'{base_name}-{str(i)}'
                 # reads[i] = (left_start, left_end, right_start, right_end)
-                if any(reads[i][0:2]):
+                if any(ordered_final_reads[i][0:2]):
                     segment = segments[0]
                     segment = replace_n(segment, options.rng)
 
-                    if any(reads[i][2:4]):
+                    if any(ordered_final_reads[i][2:4]):
                         is_paired = True
+                        read_name += "/1"
                     else:
                         is_paired = False
 
                     read1 = Read(name=read_name,
-                                 raw_read=reads[i],
+                                 raw_read=ordered_final_reads[i],
                                  reference_segment=segment,
                                  reference_id=reference.id,
-                                 position=reads[i][0] + ref_start,
-                                 end_point=reads[i][1] + ref_start,
+                                 position=ordered_final_reads[i][0] + ref_start,
+                                 end_point=ordered_final_reads[i][1] + ref_start,
                                  quality_offset=options.quality_offset,
                                  is_paired=is_paired
                                  )
@@ -566,27 +576,28 @@ def generate_reads(reference: SeqRecord,
                     # we only have to do this once since reads[i] contains info on both reads.
                     # The idea here is to have the order established above, find where this fits in the order, and set
                     # The read. This will allow us to find these reads when we write out the full file
-                    sam_read_order[(np.where(np.isin(sam_order[:, 1], reads[i])))[0][0]] = read_name
+                    sam_read_order.append(read_name)
                     # TODO There may be a more efficient way to add mutations
                     read1.mutations = find_applicable_mutations(read1, contig_variants)
 
                     read1.write_record(error_model, fq1, temp_sam, options.produce_fastq, options.produce_bam)
 
-                if any(reads[i][2:4]):
+                if any(ordered_final_reads[i][2:4]):
                     segment = segments[1]
                     segment = replace_n(segment, options.rng)
 
-                    if any(reads[i][0:2]):
+                    if any(ordered_final_reads[i][0:2]):
                         is_paired = True
+                        read_name += "/2"
                     else:
                         is_paired = False
 
                     read2 = Read(name=read_name,
-                                 raw_read=reads[i],
+                                 raw_read=ordered_final_reads[i],
                                  reference_segment=segment,
                                  reference_id=reference.id,
-                                 position=reads[i][2] + ref_start,
-                                 end_point=reads[i][3] + ref_start,
+                                 position=ordered_final_reads[i][2] + ref_start,
+                                 end_point=ordered_final_reads[i][3] + ref_start,
                                  quality_offset=options.quality_offset,
                                  is_reverse=True,
                                  is_paired=is_paired
@@ -595,8 +606,6 @@ def generate_reads(reference: SeqRecord,
                     # TODO There may be a more efficient way to add mutations
                     read2.mutations = find_applicable_mutations(read2, contig_variants)
                     read2.write_record(error_model, fq2, temp_sam, options.produce_fastq, options.produce_bam)
-
-    print("100%")
 
     _LOG.info(f"Finished sampling reads in {time.time() - start} seconds")
     return chrom_fastq_r1, chrom_fastq_r2, tsam, sam_read_order
