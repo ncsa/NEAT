@@ -4,6 +4,7 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
+import matplotlib.pyplot as plt
 
 import pysam
 
@@ -159,3 +160,77 @@ def parse_file(input_file: Path, file_type: str, quality_scores: list, off_q: in
 
     # Generate the sequencing error model with default average error rate
     return quality_score_probabilities, avg_err, read_length
+
+
+def plot_stuff(init_q, real_q, q_range, prob_q, actual_readlen, plot_path):
+    """
+    Return the factorial of n, an exact integer >= 0.
+
+    >>> plot_stuff(init_q=30, real_q==30, q_range=0, prob_q=0.5, actual_readlen=150, plot_path=output)
+    'neat/model_sequencing_error/output.svg'
+
+    """
+
+    plt.rcParams.update({'font.size': 14, 'font.weight': 'bold', 'lines.linewidth': 3})
+
+    plt.figure(1)
+    Z = np.array(init_q).T
+    X, Y = np.meshgrid(range(0, len(Z[0]) + 1), range(0, len(Z) + 1))
+    plt.pcolormesh(X, Y, Z, vmin=0., vmax=0.25)
+    plt.axis([0, len(Z[0]), 0, len(Z)])
+    plt.yticks(range(0, len(Z), 10), range(0, len(Z), 10))
+    plt.xticks(range(0, len(Z[0]), 10), range(0, len(Z[0]), 10))
+    plt.xlabel('Read Position')
+    plt.ylabel('Quality Score')
+    plt.title('Q-Score Prior Probabilities')
+    plt.colorbar()
+
+    plt.show()
+
+    v_min_log = [-4, 0]
+    min_val = 10 ** v_min_log[0]
+    q_labels = [str(n) for n in range(q_range[0], q_range[1] + 1) if n % 5 == 0]
+    print(q_labels)
+    q_ticks_x = [int(n) + 0.5 for n in q_labels]
+    q_ticks_y = [(real_q - int(n)) - 0.5 for n in q_labels]
+
+    for p in range(1, actual_readlen, 10):
+        current_data = np.array(prob_q[p])
+        for i in range(len(current_data)):
+            for j in range(len(current_data[i])):
+                current_data[i][j] = max(min_val, current_data[i][j])
+
+        # matrix indices:		pcolormesh plotting:	plot labels and axes:
+        #
+        #      y				   ^					   ^
+        #	   -->				 x |					 y |
+        #  x |					    -->					    -->
+        #    v 					    y					    x
+        #
+        # to plot a MxN matrix 'Z' with rowNames and colNames we need to:
+        #
+        # pcolormesh(X,Y,Z[::-1,:])		# invert x-axis
+        # # swap x/y axis parameters and labels, remember x is still inverted:
+        # xlim([yMin,yMax])
+        # ylim([M-xMax,M-xMin])
+        # xticks()
+        #
+
+        plt.figure(p + 1)
+        z = np.log10(current_data)
+        x, y = np.meshgrid(range(0, len(Z[0]) + 1), range(0, len(Z) + 1))
+        plt.pcolormesh(x, y, z[::-1, :], vmin=v_min_log[0], vmax=v_min_log[1], cmap='jet')
+        plt.xlim([q_range[0], q_range[1] + 1])
+        plt.ylim([real_q - q_range[1] - 1, real_q - q_range[0]])
+        plt.yticks(q_ticks_y, q_labels)
+        plt.xticks(q_ticks_x, q_labels)
+        plt.xlabel('\n' + r'$Q_{i+1}$')
+        plt.ylabel(r'$Q_i$')
+        plt.title('Q-Score Transition Frequencies [Read Pos:' + str(p) + ']')
+        cb = plt.colorbar()
+        cb.set_ticks([-4, -3, -2, -1, 0])
+        cb.set_ticklabels([r'$10^{-4}$', r'$10^{-3}$', r'$10^{-2}$', r'$10^{-1}$', r'$10^{0}$'])
+
+    # plt.tight_layout()
+    plt.show()
+    plt.savefig(f'neat/model_sequencing_error/{plot_path}', format='svg')
