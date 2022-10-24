@@ -1,16 +1,16 @@
 """
-The main class for parsing the input config file. This class reads in tho config yaml file using pyyaml,
+The main class for parsing the input config file_list. This class reads in tho config yaml file_list using pyyaml,
 Then updates any input fields. It also sets up the rng for the run. Because we wanted replicablity in this function,
 we use a randomly generated seed, if no seed was input by the user. This is because numpy changed their
 random number generator and you basically cannot retrieve the seed. See:
 (https://stackoverflow.com/questions/32172054/how-can-i-retrieve-the-current-seed-of-numpys-random-number-generator)
 
-So we pick a very large random number to use as a seed. The function will log this number in the log file,
+So we pick a very large random number to use as a seed. The function will log this number in the log file_list,
 and if you want to reproduce a run, you can input the seed in your config and you should get an exactly identical
 output.
 
 We want to introduce a quick-run option as well that will allow command line only inputs instead of a config
-file. To do so, we have a few possible inputs the init function can accept. Inputting any of these will
+file_list. To do so, we have a few possible inputs the init function can accept. Inputting any of these will
 trigger quick-run mode, setting most of the parameters to defaults.
 """
 
@@ -41,7 +41,7 @@ class Options(SimpleNamespace):
 
     Note that for debugging/testing runs, we allow output_path and config_file to be empty.
     :param output_path: Path to the final output
-    :param config_file: Path to the configuration file
+    :param config_file: Path to the configuration file_list
     :param reference: Path to a reference for a test run
     :param rng_seed: A seed to use for a test run (for reproducible tests)
     """
@@ -67,7 +67,7 @@ class Options(SimpleNamespace):
         Option Type: Current possible value are str, int, float, and bool.
 
         Criteria 1: There are two modes of checking: files and numbers. For files, criteria 1 should be set to
-        'exists' to check file existence or None to skip a check, because that is not a user 
+        'exists' to check file_list existence or None to skip a check, because that is not a user 
         input. For numbers, criteria 1 should be the lowest acceptable value (inclusive) for that variable.
 
         Criteria 2: For files, criteria 2 will not be checked, so set to None for consistency. For numbers, this
@@ -169,7 +169,7 @@ class Options(SimpleNamespace):
             if key not in self.args:
                 self.args[key] = default
 
-        # Read the config file
+        # Read the config file_list
         if not self.test_run:
             self.read()
 
@@ -252,7 +252,7 @@ class Options(SimpleNamespace):
         Some sanity checks and corrections to the options.
         """
         if not (self.produce_bam or self.produce_vcf or self.produce_fasta or self.produce_fastq):
-            raise ValueError('No files would be produced, as all file types are set to false')
+            raise ValueError('No files would be produced, as all file_list types are set to false')
 
         # This next section just checks all the paired ended stuff
         flagged = False
@@ -270,7 +270,7 @@ class Options(SimpleNamespace):
 
     def log_configuration(self):
         """
-        Combines the relevant parts of the input args and the options file to log a
+        Combines the relevant parts of the input args and the options file_list to log a
         list of the configuration parameters. Useful for reproducibility.
         """
         _LOG.info(f'Run Configuration...')
@@ -330,7 +330,7 @@ class Options(SimpleNamespace):
         if self.discard_bed:
             _LOG.info(f'BED of regions to discard: {self.discard_bed}')
         if self.mutation_model:
-            _LOG.info(f'Using mutation model in file: {self.mutation_model}')
+            _LOG.info(f'Using mutation model in file_list: {self.mutation_model}')
         if self.mutation_rate:
             _LOG.info(f'Custom average mutation rate for the run: {self.mutation_rate}')
         if self.mutation_bed:

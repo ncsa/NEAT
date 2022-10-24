@@ -7,7 +7,7 @@
 
 vcf_compare_OLD.py
 
-- compare vcf file produced by workflow to golden vcf produced by simulator
+- compare vcf file_list produced by workflow to golden vcf produced by simulator
 
 Written by:		Zach Stephens
 Date:			January 20, 2015
@@ -146,7 +146,7 @@ def gzip_shutil(source_filepath, dest_filepath, block_size=65536):
 
 ## DEBUG NOTE: decompress golden_vcf, if necessary
 if '.gz' in golden_vcf:
-    print("decompressing .gz input file {}".format(golden_vcf))
+    print("decompressing .gz input file_list {}".format(golden_vcf))
     golden_vcf_path = Path(golden_vcf)
     outpath = golden_vcf_path.parent
     outfile = golden_vcf_path.stem
@@ -154,13 +154,13 @@ if '.gz' in golden_vcf:
     # print(outpath_file)
     gunzip_shutil(golden_vcf, outpath_file)
     golden_vcf = outpath_file
-    print("Success: Input file decompressed to {}".format(golden_vcf))
+    print("Success: Input file_list decompressed to {}".format(golden_vcf))
 else:
     workflow_vcf_path = False
 
 ## DEBUG NOTE: decompress workflow_vcf, if necessary
 if '.gz' in workflow_vcf:
-    print("decompressing .gz input file {}".format(workflow_vcf))
+    print("decompressing .gz input file_list {}".format(workflow_vcf))
     workflow_vcf_path = Path(workflow_vcf)
     outpath = workflow_vcf_path.parent
     outfile = workflow_vcf_path.stem
@@ -168,7 +168,7 @@ if '.gz' in workflow_vcf:
     # print(outpath_file)
     gunzip_shutil(workflow_vcf, outpath_file)
     workflow_vcf = outpath_file
-    print("Success: Input file decompressed to {}.".format(workflow_vcf))
+    print("Success: Input file_list decompressed to {}.".format(workflow_vcf))
 else:
     workflow_vcf_path = False
 
@@ -267,7 +267,7 @@ def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
     v_qual = {}
     v_targ_len = {}
     n_below_min_r_len = 0
-    line_unique = 0  # number of lines in vcf file containing unique variant
+    line_unique = 0  # number of lines in vcf file_list containing unique variant
     hash_coll = 0  # number of times we saw a hash collision ("per line" so non-unique alternate alleles don't get counted multiple times)
     var_filtered = 0  # number of variants excluded due to filters (e.g. hom-refs, qual)
     var_merged = 0  # number of variants we merged into another due to having the same position specified
@@ -767,20 +767,20 @@ def main():
             print(f"SUCCESS: deleting duplicate, unzipped vcf ({str(FP_vcf_path.name)})")
             FP_vcf_path.unlink()
     ## NOTE: Do not uncomment if running multiple comparisions
-    #        with the same golden file
+    #        with the same golden file_list
     # if '.gz' in str(golden_vcf_path):
     #     outfile = golden_vcf_path.stem
     #     outpath = golden_vcf_path.parent / outfile
-    #     print("deleting duplicate file created {}".format(str(outfile)))
+    #     print("deleting duplicate file_list created {}".format(str(outfile)))
     #     outpath.unlink()
     
     ##
-    ## DEBUG NOTE: If file was uncompressed, delete duplicate file 
+    ## DEBUG NOTE: If file_list was uncompressed, delete duplicate file_list
     ## 
     if workflow_vcf_path and '.gz' in str(workflow_vcf_path):
         outfile = workflow_vcf_path.stem
         outpath = workflow_vcf_path.parent / outfile
-        print(f"SUCCESS: deleting duplicate, unzipped vcf file ({str(outfile)})")
+        print(f"SUCCESS: deleting duplicate, unzipped vcf file_list ({str(outfile)})")
         outpath.unlink() 
     #
     #	plot some FN stuff
@@ -819,7 +819,7 @@ def main():
         mpl.savefig(ouf)
     
     ##
-    ##  Write results to a csv file
+    ##  Write results to a csv file_list
     ##
     results_dict = {}
     results_dict['TotalGoldenVariants'] = zt_v

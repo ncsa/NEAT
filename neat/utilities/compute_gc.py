@@ -4,7 +4,7 @@
 #   compute_gc.py
 #   Compute GC and coverage model for gen_reads_runner.py
 #
-#   Takes output file from bedtools genomecov to generate GC/coverage model
+#   Takes output file_list from bedtools genomecov to generate GC/coverage model
 #
 #   Usage: bedtools genomecov -d -ibam input.bam -g reference.fa > genomeCov.dat
 #          python compute_gc.py -r reference.fa -i genomeCov.dat -w [sliding window length] -o output_name
@@ -25,24 +25,24 @@ import pybedtools
 
 def process_fasta(file: str) -> dict:
     """
-    Takes a fasta file, converts it into a dictionary of upper case sequences. Does some basic error checking,
-    like the file is readable and the reference dictionary is not empty
-    :param file: path to a fasta file
+    Takes a fasta file_list, converts it into a dictionary of upper case sequences. Does some basic error checking,
+    like the file_list is readable and the reference dictionary is not empty
+    :param file: path to a fasta file_list
     :return: dictionary form of the sequences indexed by chromosome
     """
     ref_dict = {}
 
     try:
-        # reads in fasta file, converts sequence to upper case
+        # reads in fasta file_list, converts sequence to upper case
         ref_dict = {rec.id: rec.seq.upper() for rec in SeqIO.parse(file, "fasta")}
     except UnicodeDecodeError:
-        # if the file isn't readable, this exception should catch it
-        print("Input file incorrect: -r should specify the reference fasta")
+        # if the file_list isn't readable, this exception should catch it
+        print("Input file_list incorrect: -r should specify the reference fasta")
         exit(1)
 
     if not ref_dict:
-        # if the file was readable by SeqIO but wasn't a fasta file, this should catch it
-        print("Input file incorrect: -r should specify the reference fasta")
+        # if the file_list was readable by SeqIO but wasn't a fasta file_list, this should catch it
+        print("Input file_list incorrect: -r should specify the reference fasta")
         exit(1)
 
     return ref_dict
@@ -50,16 +50,16 @@ def process_fasta(file: str) -> dict:
 
 def process_genomecov(file: str, ref_dict: dict, window: int) -> dict:
     """
-    Takes a genomecov file and converts it into a dictionary made up of 'window' sized sections 
+    Takes a genomecov file_list and converts it into a dictionary made up of 'window' sized sections
     that record the number of GCs and the coverage measure for each section.
-    :param file: path to a genomecov file
+    :param file: path to a genomecov file_list
     :param ref_dict: dictionary created from using the process_fasta function
     :param window: Length of each section of base pairs to count in the reference dictionary
-    :return: dictionary form of genomecov file based on window size and ref_dict data
+    :return: dictionary form of genomecov file_list based on window size and ref_dict data
     """
     gc_bins = {n: [] for n in range(window + 1)}
 
-    # variables needed to parse coverage file
+    # variables needed to parse coverage file_list
     current_line = 0
     current_ref = None
     current_cov = 0
@@ -119,8 +119,8 @@ def main():
     """
     Reads in arguments and processes the inputs to a GC count for the sequence.
     Parameters:
-        -i is the genome coverage input file (genomecov)
-        -r is the reference file (fasta)
+        -i is the genome coverage input file_list (genomecov)
+        -r is the reference file_list (fasta)
         -o is the prefix for the output
         -w is the sliding window length. The default is 50, but you can declare any reasonable integer
     :return: None
@@ -141,7 +141,7 @@ def main():
     allrefs = process_fasta(ref_file)
 
     tt = time.time()
-    print('Reading genome coverage file...')
+    print('Reading genome coverage file_list...')
     gc_bins = process_genomecov(in_gcb, allrefs, window_size)
 
     print("Calculating average coverage...")

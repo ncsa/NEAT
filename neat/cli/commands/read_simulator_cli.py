@@ -16,11 +16,11 @@ class Command(BaseCommand):
 
     Optional outputs include a golden vcf showing all inserted true variants (i.e., not the simulated errors),
         a golden BAM showing a fast alignment against the region where the read came from,
-        a fasta file containing the inserted variants only (no errors).
+        a fasta file_list containing the inserted variants only (no errors).
     """
 
-    name = "read_simulator_cli"
-    description = "Simulate NGS reads dataset (See README for complete description of the config input)."
+    name = "read-simulator-cli"
+    description = "Simulate NGS reads dataset using command line inputs (which get turned into a config)."
 
     def add_arguments(self, parser: argparse.ArgumentParser):
         """
@@ -29,8 +29,8 @@ class Command(BaseCommand):
         :param parser: The parser to add arguments to.
         """
 
-
-        output_group.add_to_parser(parser)
+        pass
+        # output_group.add_to_parser(parser)
 
     def execute(self, arguments: argparse.Namespace):
         """
@@ -39,4 +39,5 @@ class Command(BaseCommand):
         :param arguments: The namespace with arguments and their values.
         """
 
-        read_simulator_runner(arguments.config, arguments.output)
+        pass
+        # read_simulator_runner(arguments.config, arguments.output)
