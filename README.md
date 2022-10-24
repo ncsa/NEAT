@@ -1,11 +1,11 @@
-# The NEAT Project v3.2
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.2. Neat has now been updated with Python 3, and is moving toward PEP8 standards. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+# The NEAT Project v3.3
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 3.3. Neat has now been updated with Python 3. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes, but the gist is that we're moving development to version 4, which is now in beta under releases, if you'd like to check it out.
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
 NEAT's gen_reads.py is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
 
-This is an in-progress v3.2 of the software. For a stable release of the previous repo, please see: [genReads1](https://github.com/zstephens/genReads1) (or check out our v2.0 tag)
+This is an in-progress v3.3 of the software. For a stable release of the previous repo, please see: [genReads1](https://github.com/zstephens/genReads1) (or check out our v2.0 tag)
 
 To cite this work, please use:
 
