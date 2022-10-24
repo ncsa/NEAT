@@ -171,7 +171,9 @@ class Read:
         :param err_model: The error_model for the run, used for the quality score and for the rng
         :return: mutated sequence, with mutations applied
         """
-        segment_start = int(self.raw_read[0])
+
+        # Start at the right position based on if this is the forward or reverse read.
+        segment_start = int(self.raw_read[2]) if self.is_reverse else int(self.raw_read[0])
 
         for location in self.mutations:
             # There may be more than one variant to apply, because of polyploidism.
