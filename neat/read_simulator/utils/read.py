@@ -229,7 +229,8 @@ class Read:
         return 1
 
     def write_record(
-            self, err_model: SequencingErrorModel,
+            self,
+            err_model: SequencingErrorModel,
             fastq_handle: TextIO,
             tsam_handle: TextIO,
             produce_fastq: bool,
@@ -264,24 +265,25 @@ class Read:
             self.end_point = len(self.reference_segment) - temp_position
 
         read_quality_score = "".join([chr(x + self.quality_offset) for x in self.quality_array])
+        mapping_quality = err_model.rng.poisson(70)
 
         if produce_tsam:
             qname = self.name
             flag = self.calculate_flags()
             rname = self.reference_id
             pos = self.position + 1
-            mapq = "".join(self.quality_array)
-            fake_cigar = self.reference_segment
+            mapq = str(mapping_quality)
+            fake_cigar = f'{self.length}M'  # placeholder for a calculation we'll do in a later step
             mrnm = "="
             mpos = self.raw_read[2]
             isize = self.raw_read[2] - self.raw_read[1]
-            seq = read_sequence
+            alt_sequence = read_sequence
             qual = read_quality_score
-            tag = ""
-            vtype = ""
-            value = ""
+            ref_sequence = self.reference_segment
 
-            tsam_handle.write('Hello world\n')
+            tsam_handle.write(f'{qname}\t{str(flag)}\t{rname}\t{str(pos)}\t{mapq}\t'
+                              f'{ref_sequence}\t{mrnm}\t{mpos}\t{isize}\t'
+                              f'{alt_sequence}\t{qual}\n')
 
         if produce_fastq:
             fastq_handle.write(f'@{self.name}\n')
