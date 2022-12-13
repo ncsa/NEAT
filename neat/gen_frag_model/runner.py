@@ -75,7 +75,7 @@ def filter_lengths(datalist: list, min_reads: int) -> list:
     return output_list
 
 
-def compute_fraglen_runner(file: str | Path, filter_minreads: int, output: str | Path):
+def compute_fraglen_runner(file: str | Path, filter_minreads: int, output: str | Path, overwrite: bool = False):
     """
     Main function takes 2 arguments:
 
@@ -83,13 +83,14 @@ def compute_fraglen_runner(file: str | Path, filter_minreads: int, output: str |
     :param filter_minreads: minimum number of reads needed to count a fragment length.
                             If 0, then filtering will be skipped
     :param output: the string prefix of the output
+    :param overwrite: If true, any existing file found will be overwritten.
     """
     _LOG.info("Generating fragment length model")
 
     input_file = file
     output_prefix = output
     output = Path(output_prefix + '.pickle.gz')
-    validate_output_path(output)
+    validate_output_path(output, True, overwrite)
 
     all_tlens = count_frags(input_file)
     if not all_tlens:

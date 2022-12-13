@@ -2,7 +2,7 @@
 
 __all__ = ['setup_logging']
 
-import io
+import time
 import os
 import sys
 import logging
@@ -18,19 +18,21 @@ LOG_DETAIL = {
 
 
 def setup_logging(
+        omit_log: bool,
+        directory: str,
         filename: str,
-        severity: str = "INFO",
-        verbosity: str = "MEDIUM",
-        directory: str = os.getcwd(),
-        silent_mode: bool = False
-):
+        severity: str,
+        verbosity: str,
+        silent_mode: bool = False):
+
     """
     Configure logging for the run
 
+    :param omit_log: Whether to write a log file
+    :param directory: Directory to store the log. Default is the current working directory.
     :param filename: Name to give the log. Default is <timestamp>.neat.log in the current working directory
     :param severity: Severity of events that will be tracked. Defaults to "INFO."
     :param verbosity: Changes the amount of information in the log output.
-    :param directory: Directory to store the log. Default is the current working directory.
     :param silent_mode: Default is to output part of the logs to stdout in addition to writing the file
                         Setting this flag will cause it to not print to stdout.
     """
@@ -40,19 +42,18 @@ def setup_logging(
         "format": LOG_DETAIL.get(verbosity.upper(), LOG_DETAIL['MEDIUM'])
     }
 
-    if silent_mode:
-        text_trap = io.StringIO()
-        sys.stdout = text_trap
-
     log_file = Path(f'{directory}/{filename}')
 
-    print(f'working directory = {directory}')
-    print(f'log file name = {log_file}')
+    kwargs['handlers'] = []
+
+    if not silent_mode:
+        kwargs['handlers'].append(logging.StreamHandler(sys.stdout))
+
+    if not omit_log:
+        kwargs['handlers'].append(logging.FileHandler(log_file))
 
     level = getattr(logging, severity.upper(), logging.INFO)
     kwargs['level'] = level
-
-    kwargs['handlers'] = [logging.FileHandler(log_file)]
 
     logging.basicConfig(**kwargs)
 

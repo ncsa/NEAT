@@ -32,7 +32,7 @@ class Read:
                  reference: SeqRecord,
                  position: int,
                  end_point: int,
-                 quality_array: np.ndarray[int, ...] = None,
+                 quality_array: np.ndarray = None,
                  mutations: list = None,
                  errors: list = None,
                  is_reverse: bool = False):

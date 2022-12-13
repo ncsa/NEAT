@@ -42,6 +42,12 @@ class Cli:
             prog="neat", description="Run NEAT components"
         )
         self.parser.add_argument(
+            "--no-log",
+            default=False,
+            action='store_true',
+            help="Set to turn off log file creation."
+        )
+        self.parser.add_argument(
             "--log-dir",
             type=str,
             default=os.getcwd(),
@@ -50,8 +56,8 @@ class Cli:
         self.parser.add_argument(
             "--log-name",
             type=str,
-            default=f"{datetime.timestamp(datetime.now())}.neat.log",
-            help="Name of the log to write the files (default is NEAT.log)"
+            default=f"{time.time()}_NEAT.log",
+            help="Name of the log file to produce, if producing."
         )
         self.parser.add_argument(
             "--log-level",
@@ -108,6 +114,7 @@ def main(parser: argparse.ArgumentParser, arguments: list[str]) -> int:
         return 2
 
     setup_logging(
+        omit_log=args.no_log,
         severity=args.log_level,
         verbosity=args.log_detail,
         directory=args.log_dir,

@@ -1,32 +1,40 @@
 """
-Classes for the models, along with helper functions, used in this simulation.
+Classes for the mutation models used for each variant type to be included,
+along with helper functions, used in this simulation. Every Variant type in variants > variant_types
+must have a corresponding model in order to be fully implemented.
 """
 
-import numpy as np
 import re
 import logging
+import abc
 
 from bisect import bisect_left
+import numpy as np
 from numpy.random import Generator
-from numpy.random import default_rng
 from Bio.Seq import Seq
 
-from ..common import ALL_TRI
+from neat import variants
+
+from ..common import TRI_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
+from .default_mutation_model import *
+from .default_sequencing_error_model import *
+from .default_gc_bias_model import *
+from .default_fraglen_model import *
 
 __all__ = [
     "MutationModel",
     "SequencingErrorModel",
     "GcModel",
     "FragmentLengthModel",
-    "Insertion",
-    "Deletion",
-    "Substitution"
+    "InsertionModel",
+    "DeletionModel",
+    "SnvModel"
 ]
 
 _LOG = logging.getLogger(__name__)
 
 
-def take_closest(my_list: np.ndarray[int, ...], my_number: float):
+def take_closest(my_list: np.ndarray, my_number: float):
     """
     Helper function that assumes my_list is sorted. Returns closest value to my_number.
     This is necessary because most quality scores are binned these days.
@@ -46,20 +54,16 @@ def take_closest(my_list: np.ndarray[int, ...], my_number: float):
         return before
 
 
-class VariantTypes:
-    """
-    Class representing the possible mutation types modeled in NEAT. Currently, there are 3, with plans to add more.
-    Each subclass will have associated methods to sample the statistics of interest for that type of mutation.
+class VariantModel(abc.ABC):
+    _type = ...
+    _description = ...
 
-    :param name: name of the mutation type
-    :param name: brief description of mutation type
-    """
-    def __init__(self, name: str, description: str):
-        self.name = name,
-        self.description = description
+    @abc.abstractmethod
+    def __init__(self):
+        ...
 
 
-class Insertion(VariantTypes):
+class InsertionModel(VariantModel):
     """
     An insertion type mutation, which is usually when the DNA replication process slips and
     repeats a region of the chromosome, but can be random or happen by other means.
@@ -67,18 +71,17 @@ class Insertion(VariantTypes):
     Also includes a summary of the dataset, and a method to use an rng to fetch
     an insertion length or list of insertion lengths
 
-    :param insert_lengths: Potential lengths of inserts
-    :param ins_len_weights: Weights of the list above
+    :param insert_len_model: keys are possible lengths of inserts, values are weights of each
     :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
                 we'll need the rng to perform certain methods.
     """
+    _type = Insertion
+    _description = "An insertion of N nucleotides into a chromosome."
+
     def __init__(self,
-                 insert_lengths: np.ndarray[int],
-                 ins_len_weights: np.ndarray[float],
+                 insert_len_model: dict[int: float],
                  rng: Generator = None):
-        super().__init__("Insertion", "An insertion of N nucleotides into a chromosome.")
-        self.insert_lengths = insert_lengths
-        self.ins_len_weights = ins_len_weights
+        self.insert_len_model = insert_len_model
         self.rng = rng
 
     def get_insertion_length(self, size: int = 1) -> int | list[int]:
@@ -89,26 +92,27 @@ class Insertion(VariantTypes):
                      Greater than 1 returns a list of ints.
         :return: int or list of ints.
         """
-        return self.rng.choice(a=self.insert_lengths, p=self.ins_len_weights, size=size, shuffle=False)
+        return self.rng.choice(a=list(self.insert_len_model),
+                               p=[*self.insert_len_model.values()],
+                               size=size, shuffle=False)
 
 
-class Deletion(VariantTypes):
+class DeletionModel(VariantModel):
     """
     This type is a deletion of some length. This is when a nucleotide or series of
     nucleotides is simply omitted during DNA replication.
 
-    :param deletion_lengths: Potential lengths of deletions
-    :param del_len_weights: Weights of the list above
+    :param deletion_len_model: keys are possible lengths of deletion, values are probabilities of those values
     :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
             we'll need the rng to perform certain methods.
     """
+    _type = Deletion
+    _description = "A deletion of N bases"
+
     def __init__(self,
-                 deletion_lengths: np.ndarray[int],
-                 del_len_weights: np.ndarray[float],
+                 deletion_len_model: dict[int: float],
                  rng: Generator = None):
-        super().__init__("Deletion", "A deletion of N bases")
-        self.deletion_lengths = deletion_lengths
-        self.del_len_weights = del_len_weights
+        self.deletion_len_model = deletion_len_model
         self.rng = rng
 
     def get_deletion_length(self, size: int = 1) -> int | list[int]:
@@ -119,10 +123,18 @@ class Deletion(VariantTypes):
                      Greater than 1 returns a list of ints.
         :return: int or list of ints.
         """
-        return self.rng.choice(a=self.deletion_lengths, p=self.del_len_weights, size=size, shuffle=False)
+        if size == 1:
+            # Using size = anything results in an array return, so we simplify when size = 1 to get an int return
+            return self.rng.choice(a=[*self.deletion_len_model],
+                                   p=[*self.deletion_len_model.values()],
+                                   shuffle=False)
+
+        return self.rng.choice(a=[*self.deletion_len_model],
+                               p=[*self.deletion_len_model.values()],
+                               size=size, shuffle=False)
 
 
-class Substitution(VariantTypes):
+class SnvModel(VariantModel):
     """
     This type is a substitution of a single base in a DNA strand, also called a single nucleotide variant (SNV)
     or single nucleotide polymorphism (SNP). This is when a nucleotide or series of
@@ -140,71 +152,68 @@ class Substitution(VariantTypes):
     :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
             we'll need the rng to perform certain methods.
     """
+    _type = SingleNucleotideVariant
+    _description = "Substitution"
+
     def __init__(self,
-                 trinuc_trans_matrices: np.ndarray[float] = None,
-                 trinuc_trans_bias: dict = None,
+                 trinuc_trans_matrices: np.ndarray = None,
+                 trinuc_trans_bias: np.ndarray = None,
                  rng: Generator = None):
 
-        super().__init__("Substitution", "A substitution of a single base")
         self.trinuc_trans_matrices = trinuc_trans_matrices
         self.trinuc_trans_bias = trinuc_trans_bias
         self.no_bias = False
-        if not self.trinuc_trans_matrices and not trinuc_trans_bias:
+        if not np.any(self.trinuc_trans_matrices) and not trinuc_trans_bias:
             self.no_bias = True
         self.trinuc_bias_map = None
         self.rng = rng
 
-    def map_trinuc_bias(self,
-                        name: str,
-                        sequence: Seq,
-                        ngaps: list[dict]) -> np.array:
+        # Some local variables for modeling
+        self.local_trinuc_bias: np.array = None
+        self.local_sequence: Seq or None = None
+
+    def map_local_trinuc_bias(self,
+                              sequence: Seq,
+                              ngaps: np.ndarray):
         """
         Create a map of a given input sequence, showing the most likely places within the sequence
-        for a substitution to occur. This model assumes the input consists of only one of the four
-        allowed nucleotides.
+        for a substitution to occur. N regions are set to 0, so no SNV will happen in those locations.
 
-        :param name: name of the sequence
         :param sequence: A sequence of bases to create a bias model for.
         :param ngaps: A list of dictionaries, each describing an ngap.
         :return: A list of the bias factors by position.
         """
-        # start by assuming no bias. Each of the 64 valid trinucleotide combinations mutate with equal frequency.
-        default_bias = 1/64
-        # Create a map initially assuming uniform mutation.
-        return_map = np.full(shape=len(sequence), fill_value=default_bias)
-        # If there are ngaps we'll set the bias rate to zero
-        for gap in ngaps:
-            if gap['chrom'] == name:
-                return_map[gap['start']: gap['end']] = 0.0
+        # If the sequence is unchanged, we don't want to process again.
+        if not self.local_sequence == sequence:
 
-        # If the model was setup with no bias, return just the default map.
-        if self.no_bias:
-            return return_map
+            # start by assuming no bias. Each of the 64 valid trinucleotide combinations mutate with equal frequency.
+            self.local_trinuc_bias = np.ones(len(sequence), dtype=float)
 
-        # Update the map bias at the central position for that trinuc
-        for trinuc in ALL_TRI:
-            for match in re.finditer(trinuc, str(sequence)):
-                return_map[match.start() + 1] = self.trinuc_trans_bias[trinuc]
+            # If there are ngaps we'll set the bias rate to zero in those areas
+            self.local_trinuc_bias[np.where(ngaps == 0)] = 0.0
 
-        return return_map
+            # If the model was set up with no bias, then we skip the biasing part
+            if not self.no_bias:
+                # Update the map bias at the central position for that trinuc
+                for trinuc in ALL_TRI:
+                    for match in re.finditer(trinuc, str(sequence)):
+                        self.local_trinuc_bias[match.start() + 1] = self.trinuc_trans_bias[TRI_IND[trinuc]]
 
-    def sample_trinucs(self,
-                       trinuc_map: list) -> int:
+            # Now we normalize the bias
+            self.local_trinuc_bias = self.local_trinuc_bias / sum(self.local_trinuc_bias)
+            self.local_sequence = sequence
+
+    def sample_trinucs(self) -> int:
         """
         Thus functon takes a trinuc map (as generated by map_trinuc_bias) or part of a trinuc
         map and determines a random location within that map, weighted by the bias (if any)
 
-        :param trinuc_map: A map of the trinucleotide bias for the region of interest
         :return: the index of the chosen position
         """
-        if self.no_bias:
-            # choice by default assumes a uniform distribution
-            return int(self.rng.choice(a=np.arange(len(trinuc_map))))
-        else:
-            return int(self.rng.choice(a=np.arange(len(trinuc_map)), p=trinuc_map))
+        return int(self.rng.choice(a=np.arange(len(self.local_trinuc_bias)), p=self.local_trinuc_bias))
 
 
-class MutationModel(Substitution, Deletion, Insertion):
+class MutationModel(SnvModel, InsertionModel, DeletionModel):
     """
     A mutation model. Stores various characteristics of the mutation module used in NEAT.
     Because this class in instantiating specific mutation types, kwargs will need to be employed to
@@ -213,58 +222,66 @@ class MutationModel(Substitution, Deletion, Insertion):
     :param avg_mut_rate: average mutation rate for the modeled data set
     :param homozygous_freq: How frequently reads are homozygous (hard coded as 0.010)
                             (note, we need to investigate the equivalent with polyploid organisms)
-    :param insertion_chance: Probability of mutaton being an insertion.
-    :param deletion_chance: Probability of a mutation being a deletion.
-    :param substitution_chance: Probability of a mutation being a substitution
+    :param variant_probs: A list of probabilities for the possible variant types. Note that SNV chance must
+        always equal 1 - sum(all other variant probs), or a RunTime error will result. If the length of this list
+        doesn't match the length of the list of possible variant types, a RunTime error will result.
+        The current list is: (Probability of mutation being an insertion,
+                              Probability of a mutation being a deletion,
+                              Probability of the mutation being a single nucleotide variant)
     :param is_cancer: Whether the model is for cancer
     :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
-            we'll need the rng to perform certain methods.
+            we'll need the rng to perform certain methods. Must be set for runs.
+    :param trinuc_trans_matrices: The transition matrices for the trinuc
+        patterns.
+    :param trinuc_trans_bias: The bias for each possible trinucleotide, as measured in the
+        input dataset.
+    :param insert_len_model: The model for the insertion length
+    :param deletion_len_model: The model for teh deletion length
     """
+
     def __init__(self,
-                 avg_mut_rate: float,
-                 homozygous_freq: float,
-                 insertion_chance: float,
-                 deletion_chance: float,
-                 substitution_chance: float,
-                 trinuc_trans_matrices: np.ndarray[float],
-                 trinuc_trans_bias: dict,
-                 insertion_lengths: np.ndarray[int],
-                 insertion_weights: np.ndarray[float],
-                 deletion_lengths: np.ndarray[int],
-                 deletion_weights: np.ndarray[float],
+                 avg_mut_rate: float = default_avg_mut_rate,
+                 homozygous_freq: float = default_homozygous_freq,
+                 variant_probs: dict[variants: float] = default_variant_probs,
+                 transition_matrix: np.ndarray = default_mutation_sub_matrix,
                  is_cancer: bool = False,
-                 rng: Generator = None):
+                 rng: Generator = None,
+                 # Any new parameters needed for new models should go below
+                 trinuc_trans_matrices: np.ndarray = default_trinuc_trans_matrices,
+                 trinuc_trans_bias: np.ndarray = default_trinuc_trans_bias,
+                 insert_len_model: dict[int: float] = default_insertion_len_model,
+                 deletion_len_model: dict[int: float] = default_deletion_len_model):
 
         # Any new mutation types will need to be instantiated in the mutation model here
+        SnvModel.__init__(self,
+                          trinuc_trans_matrices=trinuc_trans_matrices,
+                          trinuc_trans_bias=trinuc_trans_bias)
+        InsertionModel.__init__(self, insert_len_model=insert_len_model)
+        DeletionModel.__init__(self, deletion_len_model=deletion_len_model)
 
-        Substitution.__init__(trinuc_trans_matrices, trinuc_trans_bias)
-        Insertion.__init__(insertion_lengths, insertion_weights)
-        Deletion.__init__(deletion_lengths, deletion_weights)
-
-        # We'll insert more mutation types as we go
         self.avg_mut_rate = avg_mut_rate
         self.homozygous_freq = homozygous_freq
 
-        # Check to make sure the input for frequencies is valid
-        if not np.isclose(insertion_chance + deletion_chance + substitution_chance, 1.0):
-            raise ValueError("Chances for each type of mutation must add up to 1.0")
+        if not np.isclose(sum(variant_probs.values()), 1):
+            raise ValueError("Probabilities do not add up to 1.")
 
-        self.insertion_chance = insertion_chance
-        self.deletion_chance = deletion_chance
-        self.substitution_chance = substitution_chance
-
+        self.variant_probs = variant_probs
+        self.transition_matrix = transition_matrix
         self.is_cancer = is_cancer
         self.rng = rng
+        self.all_dels = []
+        self.all_ins = []
 
-    def get_mutation_type(self) -> VariantTypes:
+    def get_mutation_type(self) -> variants:
         """
         Picks one of the mutation types at random using a weighted list from the model.
-        Note that the order of mutation types is Insertion, Deletion, Substitution.
+        Note that the order of mutation types is Insertion, Deletion, SNV. To update the model selection if any
+        new variant types are added, you'll need to import the type and add it to the return of this method
 
-        :return: One of the defined mutation classes.
+        :return: One of the defined variant type classes.
         """
-        return self.rng.choice(a=repr(MutationModel.__mro__),
-                               p=(self.insertion_chance, self.deletion_chance, self.substitution_chance))
+        return self.rng.choice(a=[*self.variant_probs],
+                               p=[*self.variant_probs.values()])
 
     def is_homozygous(self) -> bool:
         """
@@ -274,8 +291,61 @@ class MutationModel(Substitution, Deletion, Insertion):
         """
         return True if self.rng.random() <= self.homozygous_freq else False
 
+    """
+    Each new variant will need a generation method here).
+    """
+    def generate_snv(self, trinucleotide: Seq, reference_location: int) -> SingleNucleotideVariant:
+        """
+        This takes a location on the sequence and a location within the reference and returns a new SNV
 
-class SequencingErrorModel(Substitution, Deletion, Insertion):
+        :param trinucleotide: The trinuc of interest for this variant
+        :param reference_location: The same position, relative to the reference,
+            used to retrieve the current reference base.
+        :return: A randomly generated variant
+        """
+        # First determine which matrix to use
+        transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[:2]]]
+        # then determine the trans probs based on the middle nucleotide
+        transition_probs = transition_matrix[NUC_IND[trinucleotide[1]]]
+        # Now pick a random alt, weighted by the probabilities
+        alt = self.rng.choice(ALLOWED_NUCL, p=transition_probs)
+        temp_snv = SingleNucleotideVariant(reference_location, alt=alt)
+        self.all_ins.append(temp_snv)
+        return temp_snv
+
+    def generate_insertion(self, location: int, ref: Seq) -> Insertion:
+        """
+        This method generates an insertion object, based on the insertion model
+
+        :param location: The location of the variant, relative to the reference
+        :param ref: The reference for which to generate the variant
+        :return:
+        """
+        # Note that insertion length model is based on the number of bases inserted. We add 1 to the length
+        # to get the length of the VCF version of the variant.
+        length = self.get_insertion_length() + 1
+        insertion = ''.join(self.rng.choice(ALLOWED_NUCL, size=length))
+        alt = ref + insertion
+        return Insertion(location, length, alt)
+
+    def generate_deletion(self, location) -> Deletion:
+        """
+        Takes a location and returns a deletion object
+
+        :param location:
+        :return:
+        """
+        # Note that the deletion length model is based on the number of bases deleted,
+        # so we add 1 to account for the common base between ref and alt.
+        length = self.get_deletion_length() + 1
+        # Plus one so we make sure to grab the first base too
+        # Note: if we happen to go past the end of the sequence, it will just be shorter.
+        temp_del = Deletion(location, length)
+        self.all_dels.append(temp_del)
+        return temp_del
+
+
+class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     """
     This is a SequencingErrorModel class, based on the old SequencingError. This covers both errors and quality
     scores, since they are intimately related. There are three types of
@@ -293,51 +363,36 @@ class SequencingErrorModel(Substitution, Deletion, Insertion):
                              tells you the probability of getting each quality score at that position along the read.
     :param rescale_qualities: If set to true, NEAT will attempt to rescale the qualities based on the input error
                               model, rather than using the qualities derived from the real data.
-    :param insertion_probability: The chance an error is an insertion.
-    :param deletion_probability: The chance an error is a deletion.
-    :param substitution_probability: The chance an error is a substitution.
-    :param indel_lengths: Similar to mutation model, but simpler because errors tend not to be complicated. One
-                          list covers both insertions and deletions.
-    :param indel_probs: Similar to mutation model, but simpler because errors tend not to be complicated. One
-                        list covers both insertions and deletions.
+    :param variant_probs: Probability dict for each valid variant type
+    :param indel_len_model: Similar to mutation model, but simpler because errors tend not to be complicated. One dict
+        covers both insertions and deletions.
     :param is_uniform: Some machines use uniform quality scores. This makes simulation a little easier.
     :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
-            we'll need the rng to perform certain methods.
+        we'll need the rng to perform certain methods.
     """
+
     def __init__(self,
-                 avg_seq_error: float,
-                 read_length: int,
-                 transition_matrix: np.ndarray[float, ...],
-                 quality_scores: np.ndarray[int, ...],
-                 qual_score_probs: np.ndarray[np.ndarray[float, ...], ...],
-                 rescale_qualities: bool,
-                 insertion_probability: float = 0.99,
-                 deletion_probability: float = 0.004,
-                 substitution_probability: float = 0.006,
-                 indel_lengths: np.ndarray[int, ...] = np.array([1, 2]),
-                 indel_probs: np.ndarray[float, ...] = np.array([0.999, 0.001]),
+                 avg_seq_error: float = default_avg_seq_error,
+                 read_length: int = default_read_length,
+                 transition_matrix: np.ndarray = default_error_transition_matrix,
+                 quality_scores: np.ndarray = default_quality_scores,
+                 qual_score_probs: np.ndarray = default_qual_score_probs,
+                 variant_probs: dict[variants: float] = default_error_variant_probs,
+                 indel_len_model: dict[int: float] = default_indel_len_model,
+                 insertion_model: np.ndarray = default_insertion_model,
+                 rescale_qualities: bool = False,
                  is_uniform: bool = False,
                  rng: Generator = None):
 
-        if not np.isclose(insertion_probability + deletion_probability + substitution_probability, 1.0):
-            raise ValueError("The values of insertion/deletion/substitution probabilities for the sequencing error "
-                             "must add up to 1")
+        SnvModel.__init__(self)
+        InsertionModel.__init__(self, indel_len_model)
+        DeletionModel.__init__(self, indel_len_model)
 
-        super(Substitution).__init__()
-        super(Insertion).__init__(indel_lengths, indel_probs)
-        super(Deletion).__init__(indel_lengths, indel_probs)
+        self.variant_probs = variant_probs
 
-        self.mutation_types = (Insertion, Deletion, Substitution)
         self.average_error = avg_seq_error
         self.read_length = read_length
         self.transition_matrix = transition_matrix
-
-        # Probability that if there is an error, it is an insertion
-        self.insertion_probability = insertion_probability
-        # Probability that if there is an error, it is a deletion
-        self.deletion_probability = deletion_probability
-        # probability that if there is an error, it is a substitution
-        self.substitution_probability = substitution_probability
 
         self.quality_scores = quality_scores
         # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
@@ -346,6 +401,7 @@ class SequencingErrorModel(Substitution, Deletion, Insertion):
         self.quality_score_probability_matrix = qual_score_probs
         self.rescale_qualities = rescale_qualities
         self.is_uniform = is_uniform
+        self.insertion_model = insertion_model
         self.uniform_quality_score = None
         if self.is_uniform:
             converted_avg_err = take_closest(self.quality_scores,
@@ -355,7 +411,7 @@ class SequencingErrorModel(Substitution, Deletion, Insertion):
         self.rng = rng
 
     def get_sequencing_errors(self,
-                              quality_scores: np.ndarray[int, ...]):
+                              quality_scores: np.ndarray):
         """
         Inserts errors of type substitution, insertion, or deletion into read_data, and assigns a quality score
         based on the container model.
@@ -421,7 +477,7 @@ class SequencingErrorModel(Substitution, Deletion, Insertion):
         #                                       current_nucleotide, new_nucleotide))
         #             del_blacklist.extend(list(range(index + 1, index + indel_len + 1)))
         #
-        #         previous_indel = index
+        #         previous_indel = indexsubstitution_probability
         #
         # # Remove blacklisted errors
         # for i in range(len(introduced_errors) - 1, -1, -1):
@@ -439,7 +495,7 @@ class SequencingErrorModel(Substitution, Deletion, Insertion):
             return np.array([max([0, input_read_length * n // self.read_length]) for n in range(self.read_length)])
 
     def get_quality_scores(self,
-                           input_read_length: int) -> np.ndarray[int, ...]:
+                           input_read_length: int) -> np.ndarray:
         """
         Takes a read_length and rng and returns an array of quality scores
 
@@ -453,7 +509,7 @@ class SequencingErrorModel(Substitution, Deletion, Insertion):
             temp_qual_array = []
             for i in range(input_read_length):
                 score = self.rng.choice(a=self.quality_scores,
-                                   p=self.quality_score_probability_matrix[quality_index_map[i]])
+                                        p=self.quality_score_probability_matrix[quality_index_map[i]])
                 temp_qual_array.append(score)
 
         if self.rescale_qualities:
@@ -483,14 +539,15 @@ class GcModel:
     :param window_size: the size of the sliding window used to measure GC content.
     :param gc_bias: The coverage bias at each GC-count for the window size
     """
+
     def __init__(self,
-                 window_size: int,
-                 gc_bias: np.ndarray[float, ...]):
+                 window_size: int = default_window_size,
+                 gc_bias: np.ndarray = default_gc_bias):
         # assign the model attributes.
         self.window_size = window_size
         self.gc_bias = gc_bias
 
-    def create_coverage_bias_vector(self, sequence: Seq) -> np.ndarray[float, ...]:
+    def create_coverage_bias_vector(self, sequence: Seq) -> np.ndarray:
         """
         Generates a vector of coverage bias per position, based on the GC concentration of the input sequence.
         :param sequence: A sequence to check coverage for and generate the vector.
@@ -513,18 +570,21 @@ class FragmentLengthModel:
     :param fragment_max: the largest fragment observed in the data
     :param fragment_min: the smallest fragment observed in data
     """
+
     def __init__(self,
-                 fragment_mean: float,
-                 fragment_std: float,
-                 fragment_max: int,
-                 fragment_min: int):
+                 fragment_mean: float = default_fragment_mean,
+                 fragment_std: float = default_fragment_std,
+                 fragment_max: int = default_fragment_max,
+                 fragment_min: int = default_fragment_min,
+                 rng: Generator = None):
         self.fragment_mean = fragment_mean
         self.fragment_st_dev = fragment_std
         self.fragment_max = fragment_max
         self.fragment_min = fragment_min
+        self.rng = rng
 
     def generate_fragments(self,
-                           count: int) -> np.ndarray[int, ...]:
+                           count: int) -> np.array:
         """
         Generates count number of fragments based on the mean and standard deviation.
 

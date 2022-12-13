@@ -15,19 +15,18 @@ _LOG = logging.getLogger(__name__)
 
 def parse_bed(input_bed: str,
               chromosomes: list,
-              mut_rate_present: bool) -> dict:
+              mut_rate_present: bool) -> dict[list[tuple[int, int, ...]]]:
     """
     Will parse a bed file, returning a dataframe of chromosomes that are found in the reference,
     and the corresponding positions. Some beds may have mutation in the fourth column. If specified
-    then we will also import the mutation data as a column in the dataframe. These dataframes will be
-    indexed on the chromosome by row, so 1 row per chromosome.
+    then we will also import the mutation data.
 
     :param input_bed: A bed file containing the regions of interest
     :param chromosomes: A list of chromosomes to check
     :param mut_rate_present: A true or false if this bed has mut rate regions included.
     :return: a dictionary of chromosomes: [(pos1, pos2, mutation_rate), etc...]
     """
-    ret_dict = {x: {'regions': [], 'rates': []} for x in chromosomes}
+    ret_dict = {x: [] for x in chromosomes}
     in_bed_only = []
 
     if input_bed:
@@ -89,8 +88,7 @@ def parse_bed(input_bed: str,
                         if mut_rate > 0.3:
                             _LOG.warning("Found a mutation rate > 0.3. This is unusual.")
 
-                        ret_dict[my_chr]['regions'].append((int(pos1), int(pos2)))
-                        ret_dict[my_chr]['rates'].append(mut_rate)
+                        ret_dict[my_chr].append((int(pos1), int(pos2), mut_rate))
                     else:
                         ret_dict[my_chr].append((int(pos1), int(pos2)))
 

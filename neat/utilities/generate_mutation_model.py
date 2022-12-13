@@ -555,7 +555,7 @@ if __name__ == '__main__':
                         help="Reference file for organism in fasta format")
     parser.add_argument('mutations', type=str, metavar='mutation.vcf',
                         help="Mutation file for organism in VCF format")
-    parser.add_argument('out', type=str, metavar='output_prefix',
+    #parser.add_argument('out', type=str, metavar='output_prefix',
                         help="Name of output file (final model will append \'.pickle.gz\')")
     parser.add_argument('-b', '--bed', type=str, help="Bed file with regions to use in the model")
     parser.add_argument('--outcounts', type=str, help="Path to trinucleotide counts file for reference. Note, this"
@@ -569,12 +569,13 @@ if __name__ == '__main__':
     parser.add_argument('--skip-common', action='store_true',
                         help="Includes a list of common variants, "
                              "if you want to visualize common variants with plot_mut_model.py.")
-    args = parser.parse_args()
+    #args = parser.parse_args()
 
     reference = args.reference
     vcf = args.mutations
     out_pickle = args.out
     skip_common = args.skip_common
+
 
     # Set bed to None by default. This is important for the main function.
     bed = None

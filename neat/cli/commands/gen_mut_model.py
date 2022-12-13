@@ -13,7 +13,7 @@ class Command(BaseCommand):
     """
     Class that generates a model of the mutation distribution, derived from real data
     """
-    name = "gen_mut_model"
+    name = "gen-mut-model"
     description = "Generate mutation model from a pickle or BED file and user input."
 
     def add_arguments(self, parser: argparse.ArgumentParser):
@@ -24,9 +24,9 @@ class Command(BaseCommand):
         """
         # PROG = 'gen_mut_model.py'
         # parser = argparse.ArgumentParser(prog=PROG)
-        parser.add_argument('reference', type=str, metavar='reference.fa', required=True,
+        parser.add_argument('reference', type=str, metavar='reference.fa',
                             help="Reference file for organism in fasta format")
-        parser.add_argument('mutations', type=str, metavar='mutation.vcf', required=True,
+        parser.add_argument('mutations', type=str, metavar='mutation.vcf',
                             help="Mutation file for organism in VCF format")
         
         
@@ -52,3 +52,6 @@ class Command(BaseCommand):
         """
         compute_mut_runner(arguments.reference, arguments.mutations, arguments.bed, arguments.outcounts, arguments.show_trinuc, 
                             arguments.save_trinuc, arguments.human_sample, arguments.skip_common, arguments.output)
+#add overwrite
+#25X small vcf, human sample
+#unit test ex. on main dir (test models)

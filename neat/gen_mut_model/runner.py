@@ -19,9 +19,10 @@ from Bio import SeqIO
 from pathlib import Path
 import logging
 
-from ..models import MutationModel, Substitution, Deletion, Insertion
-from .constants import REF_WHITELIST, VALID_NUCL, VALID_TRINUC, VCF_DEFAULT_POP_FREQ
+from ..models import MutationModel
+from .constants import REF_WHITELIST, VALID_NUCL, VALID_TRINUC, VCF_DEFAULT_POP_FREQ, DEF_HOMOZYGOUS_FRQ, DEF_MUT_SUB_MATRIX
 from ..common import validate_output_path
+from ..common import io
 
 __all__ = [
     "compute_mut_runner"
@@ -35,19 +36,15 @@ def read_fasta(fasta_file):
 
 #In common, a way to validate path/open file
 def extract_header(vcf_file):
-    if vcf_file.suffix == '.gz':
-        f = gzip.open(vcf_file, 'r')
-    else:
-        f = open(vcf_file, 'r')
-
     ret = []
-    for line in f:
-        if line.startswith('##'):
-            ret.append(line.strip())
-        elif line.startswith('#CHROM'):
-            temp = line.strip().strip("#").split('\t')
-            ret.append(temp)
-            break
+    with io.open_input(vcf_file) as f:
+        for line in f:
+            if line.startswith('##'):
+                ret.append(line.strip())
+            elif line.startswith('#CHROM'):
+                temp = line.strip().strip("#").split('\t')
+                ret.append(temp)
+                break
 
     if not ret:
         print(f'{PROG} - No header found: invalid VCF file.')
@@ -116,10 +113,11 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_index, bed:
     variants = genfromtxt(vcf_file, comments="#", delimiter="\t", skip_header=header_count, names=column_names, usecols=(0,1,3,4,7))
 
     # print(variants)
-    variant_chrom = variants['CHROM'].unique()
+    ####variant_chrom = variants['CHROM'].unique()
     # print("Variant_chrom " + str(variant_chrom))
     # matching_chroms = []
 
+#######misnamed?
     for ref_name in reference_index.keys():
         if ref_name in variant_chroms:
             matching_chroms.append(ref_name)
@@ -148,6 +146,7 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
     :param delta: the value to compare list items to
     :return: a clustered list of values
     """
+
     out_list = [[list_to_cluster[0]]]
     previous_value = list_to_cluster[0]
     current_index = 0
@@ -229,7 +228,7 @@ def find_caf(candidate_field: str) -> float:
 
 
 def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, show_trinuc: bool, save_trinuc: bool,
-         outfile, bed: str, human_sample: bool, skip_common:bool):
+         output, bed: str, human_sample: bool, skip_common:bool):
     """
     This function generates the mutation model suitable for use in gen_reads. At the moment it must be run as a
     separate utility.
@@ -242,9 +241,9 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
     # overall SNP transition probabilities
     snp_transition_count = {}
     # total count of insertions, indexed by length
-    insert_count = 0
+    insert_count = {}
     # total count of insertions, indexed by length
-    delete_count = 0
+    delete_count = {}
     # tabulate how much non-N reference sequence we've eaten through
     total_reflen = 0
     # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
@@ -280,11 +279,11 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
 
     # Starting position of the actual reference, since vcf is 1-based.
     # matching_variants['chr_start'] = matching_variants['POS'] - 1
-
+############################
     # matching_variants[]
     trinuc_ref_count, bed_track_length = count_trinucleotides(reference_index, bed, outcounts_file,
                                                               matching_chromosomes, save_trinuc)
-
+############################
     print(f'{PROG} - Creating mutational model...')
     total_reflen = 0
     for contig in matching_chromosomes:
@@ -311,127 +310,67 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
         # Sequential Variants Processing ##
         # new code start
         for variant in range(len(variant_to_process)):
+            # ref > Alt then it's a deletion, if the ref < alt, it's an insertion
             if len(variant_to_process[variant][3]) != len(variant_to_process[variant][2]):
-                insert_variants.append(variant_to_process[variant][False])
-                delete_variants.append((variant_to_process[variant][False]))
+                if len(variant_to_process[variant][3]) < len(variant_to_process[variant][2]):
+                    delete_variants.append((variant_to_process[variant]))
+                else:
+                    insert_variants.append(variant_to_process[variant])
             if (len(variant_to_process[variant][2]) == 1) & (len(variant_to_process[variant][3]) == 1):
                 snp_variants.append(variant_to_process[variant])
-        # new code end
-
-        # Process the variant table
-        # indel_variants = variants_to_process[variants_to_process['ALT'].apply(len) !=
-        #                                      variants_to_process['REF'].apply(len)]
-        #
-        # snp_variants = variants_to_process[(variants_to_process['REF'].apply(len) == 1) &
-        #                                    (variants_to_process['ALT'].apply(len) == 1)]
-
-        # new code start
+        
+        
         if len(snp_variants) != 0:
             for i in range(len(snp_variants)):
                 analyze = str(ref_sequence[int(snp_variants[i][1]) - 1: int(snp_variants[i][1]) + 2])
+                #analyze is a trinuc from the refrence
                 if analyze not in VALID_TRINUC:
                     continue
                 if snp_variants[i][2] == analyze[1]:
                     t_ref = analyze
+                    #t_alt changes the middle nuc to the ALT
                     t_alt = analyze[0] + snp_variants[i][3] + analyze[2]
                     if t_alt not in VALID_TRINUC:
                         continue
+
                     key = (t_ref, t_alt)
                     if key not in trinuc_transition_count:
                         trinuc_transition_count[key] = 0
                     trinuc_transition_count[key] += 1
                     snp_count += 1
 
+                    # tracks transition probability
                     key2 = (str(snp_variants[i][3]), str(snp_variants[i][4]))
                     if key2 not in snp_transition_count:
                         snp_transition_count[key2] = 0
                     snp_transition_count[key2] += 1
                     my_pop_freq = find_caf(str(snp_variants[i][4]))
-                    vcf_common.append((snp_variants[i][1], snp_variants[i][2], snp_variants[i][2], snp_variants[i][3], my_pop_freq))
-
+                    vcf_common.append((snp_variants[i][0], snp_variants[i][1], snp_variants[i][2], snp_variants[i][3], my_pop_freq))
+                    #vcf_common.append((snp_variants[i][1], snp_variants[i][2], snp_variants[i][2], snp_variants[i][3], my_pop_freq))
                 else:
                     print(f'{PROG} - Error: ref allele in variant call does not match reference.\n')
                     sys.exit(1)
-        # new code end
-
-        # if not snp_variants.empty:
-        #     # only consider positions where ref allele in vcf matches the nucleotide in our reference
-        #     for index, row in snp_variants.iterrows():
-        #         # -2 for POS because the coordinates in a vcf are 1-based,
-        #         # and we want the nucleotide just before the REF base
-        #         trinuc_to_analyze = str(ref_sequence[row['chr_start'] - 1: row['chr_start'] + 2])
-        #         if trinuc_to_analyze not in VALID_TRINUC:
-        #             continue
-        #         if row.REF == trinuc_to_analyze[1]:
-        #             trinuc_ref = trinuc_to_analyze
-        #             trinuc_alt = trinuc_to_analyze[0] + snp_variants.loc[index, 'ALT'] + trinuc_to_analyze[2]
-        #             if trinuc_alt not in VALID_TRINUC:
-        #                 continue
-        #
-        #             key = (trinuc_ref, trinuc_alt)
-        #             if key not in trinuc_transition_count:
-        #                 trinuc_transition_count[key] = 0
-        #             trinuc_transition_count[key] += 1
-        #             snp_count += 1
-        #
-        #             key2 = (str(row.REF), str(row.ALT))
-        #             if key2 not in snp_transition_count:
-        #                 snp_transition_count[key2] = 0
-        #             snp_transition_count[key2] += 1
-        #
-        #             my_pop_freq = find_caf(row['INFO'])
-        #             vcf_common.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
-
-        # if len(snp) != 0:
-        #     for i in range(len(snp)):
-        #         analyze = str(ref_sequence[int(snp[i][1]) - 1: int(snp[i][1]) + 2])
-        #         if analyze not in VALID_TRINUC:
-        #             continue
-        #         if snp[i][2] == analyze[1]:
-        #             t_ref = analyze
-        #             t_alt = analyze[0] + snp[i][3] + analyze[2]
-        #             if t_alt not in VALID_TRINUC:
-        #                 continue
-        #             k1 = (t_ref, t_alt)
-        #             if k1 not in trinuc_transition_count:
-        #                 trinuc_transition_count[k1] = 0
-        #             trinuc_transition_count[k1] += 1
-        #             snp_count += 1
-        #
-        #             k2 = (str(snp[i][2]), str(snp[i][3]))
-        #             if k2 not in snp_transition_count:
-        #                 snp_transition_count[k2] = 0
-        #             snp_transition_count[k2] += 1
-        #
-        #             my_pop = find_caf(str(snp[i][4]))
-        #             vcf_c.append((int(snp[i][1]), snp[i][2], snp[i][2], snp[i][3], my_pop))
-        #
-        #         else:
-        #             print(f'{PROG} - Error: ref allele in variant call does not match reference.\n')
-        #             sys.exit(1)
 
 
-        # now let's look for indels...
-        # if not indel_variants.empty:
-        #     for index, row in indel_variants.iterrows():
-        #         if len(row['REF']) != len(row['ALT']):
-        #             indel_len = len(row['REF']) - len(row['ALT'])
-        #             if indel_len not in indel_count:
-        #                 indel_count[indel_len] = 0
-        #             indel_count[indel_len] += 1
-        #
-        #             my_pop_freq = find_caf(row['INFO'])
-        #             vcf_common.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
 
-        # # new code start
-        if len(indel_variants) != 0:
-            for i in range(len(indel_variants)):
-                if len(indel_variants[i][2]) != len(indel_variants[i][3]):
-                    indel_len = len(indel_variants[i][2]) - len(indel_variants[i][3])
-                    if indel_len not in indel_count:
-                        indel_count[indel_len] = 0
-                    indel_count[indel_len] += 1
-        # new code end
+        if len(delete_variants) != 0:
+            for i in range(len(delete_variants)):
+                del_len = len(delete_variants[i][3]) - len(delete_variants[i][2])
+                if del_len not in delete_count:
+                    delete_count[del_len] = 0
+                delete_count[del_len] += 1
+                my_pop_freq = find_caf(delete_variants[i][4])
+                vcf_common.append((delete_variants[i][0], delete_variants[i][1], delete_variants[i][2], delete_variants[i][3], my_pop_freq)) 
+    ####doube refrence used again???
+ 
+        if len(insert_variants) != 0:
+            for i in range(len(insert_variants)):
+                insert_len = len(insert_variants[i][3]) - len(insert_variants[i][2])
+                if insert_len not in insert_count:
+                    insert_count[insert_len] = 0
+                insert_count[del_len] += 1
+                my_pop_freq = find_caf(insert_variants[i][4])
+                vcf_common.append((insert_variants[i][0], insert_variants[i][1], insert_variants[i][2], insert_variants[i][3], my_pop_freq)) 
 
         # if we didn't find anything, skip ahead along to the next reference sequence
         if not len(vcf_common):
@@ -452,7 +391,8 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
         percentile_clust = 97
         scaler = 1000
         # identify regions with disproportionately more variants in them
-        variant_pos = sorted([n[0] for n in vcf_common.keys()])
+        variant_pos = sorted([n[1] for n in vcf_common.keys()])
+        #n0 -> n1
         clustered_pos = cluster_list(variant_pos, dist_thresh)
         by_len = [(len(clustered_pos[i]), min(clustered_pos[i]), max(clustered_pos[i]), i) for i in
                   range(len(clustered_pos))]
@@ -479,7 +419,7 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
                 del high_mut_regions[i]
 
     # if for some reason we didn't find any valid input variants, exit gracefully...
-    total_var = snp_count + sum(indel_count.values())
+    total_var = snp_count + sum(insert_count.values()) + sum(delete_count.values())
     if total_var == 0:
         print(f'{PROG} - Error: No valid variants were found, model could not be created. '
               f'Check that names are compatible.')
@@ -515,8 +455,10 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
 
     # compute average snp and indel frequencies
     snp_freq = snp_count / float(total_var)
-    avg_indel_freq = 1. - snp_freq
-    indel_freq = {k: (indel_count[k] / float(total_var)) / avg_indel_freq for k in indel_count.keys()}
+    in_freq = sum(insert_count.values()) / float(total_var)
+    del_freq = sum(delete_count.values()) / float(total_var)
+    # avg_indel_freq = 1. - snp_freq
+    # indel_freq = {k: (indel_count[k] / float(total_var)) / avg_indel_freq for k in indel_count.keys()}
 
     if bed:
         avg_mut_rate = total_var / bed_track_length
@@ -547,47 +489,64 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
         for k in sorted(trinuc_trans_probs.keys()):
             print('p(' + k[0] + ' --> ' + k[1] + ' | ' + k[0] + ' mutates) =', trinuc_trans_probs[k])
 
-        for k in sorted(indel_freq.keys()):
-            if k > 0:
-                print('p(ins length = ' + str(abs(k)) + ' | indel occurs) =', indel_freq[k])
-            else:
-                print('p(del length = ' + str(abs(k)) + ' | indel occurs) =', indel_freq[k])
+        for k in sorted(in_freq.keys()):
+            print('p(ins length = ' + str(abs(k)) + ' | insertion occurs) =', in_freq[k])
+
+        for k in sorted(del_freq.keys()):
+            print('p(del length = ' + str(abs(k)) + ' | deletion occurs) =', del_freq[k])
 
         for k in sorted(snp_trans_freq.keys()):
             print('p(' + k[0] + ' --> ' + k[1] + ' | SNP occurs) =', snp_trans_freq[k])
 
     print(f'p(snp)   = {snp_freq}')
-    print(f'p(indel) = {avg_indel_freq}')
+    print(f'p(insertion) = {in_freq}')
+    print(f'p(deletion) = {del_freq}')
     print(f'overall average mut rate: {avg_mut_rate}')
     print(f'total variants processed: {total_var}')
 
     # save variables to file
-    if skip_common:
-        out = {'AVG_MUT_RATE': avg_mut_rate,
-               'SNP_FREQ': snp_freq,
-               'SNP_TRANS_FREQ': snp_trans_freq,
-               'INDEL_FREQ': indel_freq,
-               'TRINUC_MUT_PROB': trinuc_mut_prob,
-               'TRINUC_TRANS_PROBS': trinuc_trans_probs}
-    else:
-        out = {'AVG_MUT_RATE': avg_mut_rate,
-               'SNP_FREQ': snp_freq,
-               'SNP_TRANS_FREQ': snp_trans_freq,
-               'INDEL_FREQ': indel_freq,
-               'TRINUC_MUT_PROB': trinuc_mut_prob,
-               'TRINUC_TRANS_PROBS': trinuc_trans_probs,
-               'COMMON_VARIANTS': common_variants,
-               'HIGH_MUT_REGIONS': high_mut_regions}
+    # if skip_common:
+    #     out = {'AVG_MUT_RATE': avg_mut_rate,
+    #            'SNP_FREQ': snp_freq,
+    #            'SNP_TRANS_FREQ': snp_trans_freq,
+    #            'INDEL_FREQ': indel_freq,
+    #            'TRINUC_MUT_PROB': trinuc_mut_prob,
+    #            'TRINUC_TRANS_PROBS': trinuc_trans_probs}
+    # else:
+    #     out = {'AVG_MUT_RATE': avg_mut_rate,
+    #            'SNP_FREQ': snp_freq,
+    #            'SNP_TRANS_FREQ': snp_trans_freq,
+    #            'INDEL_FREQ': indel_freq,
+    #            'TRINUC_MUT_PROB': trinuc_mut_prob,
+    #            'TRINUC_TRANS_PROBS': trinuc_trans_probs,
+    #            'COMMON_VARIANTS': common_variants,
+    #            'HIGH_MUT_REGIONS': high_mut_regions}
 
-    # Trying protocol = 4 to maintain backward compatability.
-    pickle.dump(out, gzip.open(out_file, "w"), protocol=4)
+    # # Trying protocol = 4 to maintain backward compatability.
+    # pickle.dump(out, gzip.open(out_file, "w"), protocol=4)
 
+
+    # SNPs = SnvModel(trinuc_trans_matrices=trinuc_trans_probs, trinuc_trans_bias=snp_trans_freq)
+    # Insertions = InsertionModel(insert_len_model=in_freq.keys())
+    # Deletion = DeletionModel(deletion_len_model=del_freq.keys())
+
+    mut_model = MutationModel()
+    mut_model.avg_mut_rate = avg_mut_rate
+    mut_model.homozygous_freq = DEF_HOMOZYGOUS_FRQ
+    mut_model.variant_probs = {'SNPs': snp_freq, 'Insertions': in_freq, 'Deletions': del_freq}
+    mut_model.transition_matrix = DEF_MUT_SUB_MATRIX
+    mut_model.trinuc_trans_matrices = trinuc_trans_probs
+    mut_model.trinuc_trans_bias = snp_trans_freq
+    mut_model.insert_len_model = insert_count
+    mut_model.deletion_len_model = delete_count
+
+    print('\nSaving model...')
+    with gzip.open(output, 'w+') as outfile:
+        pickle.dump(mut_model, outfile)
 
 def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | Path, outcounts: str | Path, 
-                        show_trinuc: bool, save_trinuc:bool, human_sample, skip_common):
+                        show_trinuc: bool, save_trinuc:bool, human_sample, skip_common, output):
     """
-    Main function: 7 arguments /8? with output?
-
     :param reference: (REQ)
     :param mutations: (REQ)
     :param bed: (OPT) 
@@ -596,25 +555,30 @@ def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | 
     :param save_trinuc: (OPT) 
     :param human_sample: (OPT) 
     :param skip_common: (OPT) 
+    :param output
     """
 
-    if not reference.is_file():
-        print(f'{PROG} - Input reference is not a file: {reference}')
-        sys.exit(1)
+    # if not os.path.isfile(reference):
+    #     print(f'{PROG} - Input reference is not a file: {reference}')
+    #     sys.exit(1)
+    io.validate_input_path(reference)
 
-    if not mutations.is_file():
-        print(f'{PROG} - Input VCF is not a file: {mutations}')
-        sys.exit(1)
+    # if not os.path.isfile(mutations):
+    #     print(f'{PROG} - Input VCF is not a file: {mutations}')
+    #     sys.exit(1)
+    io.validate_input_path(mutations)
 
     if bed:
-        if not bed.is_file():
-            print(f'{PROG} - Input BED is not a file: {bed}')
-            sys.exit(1)
+    #     if not os.path.isfile(bed):
+    #         print(f'{PROG} - Input BED is not a file: {bed}')
+    #         sys.exit(1)
+        io.validate_input_path(bed)
 
     if outcounts:
-        if not outcounts.is_file():
-            print(f'{PROG} - Trinucleotide counts file {str(outcounts)} does not exist.')
-            sys.exit(1)
+    #     if not os.path.isfile(outcounts):
+    #         print(f'{PROG} - Trinucleotide counts file {str(outcounts)} does not exist.')
+    #         sys.exit(1)
+        io.validate_input_path(outcounts)
 
     print('Processing reference...')
     reference_index = read_fasta(reference)
@@ -622,7 +586,7 @@ def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | 
     vcf_header = extract_header(mutations)
     vcf_columns = vcf_header[-1]
 
-    vcf_to_process = mutations
+    vcf_to_process = pathlib.Path(mutations)
 
     if bed:
         vcf_columns = ['bed_chr', 'bed_pos1', 'bed_pos2'] + vcf_columns
@@ -635,18 +599,19 @@ def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | 
         vcf_to_process = pathlib.Path(bed_file.intersect(mutations, wb=True).moveto('temp.vcf').fn)
         print(f'{PROG} - Created temp vcf for processing.')
 
-    outfile = pathlib.Path(f'{out_pickle}.pickle.gz').resolve()
+    output_prefix = output
+    output = Path(output_prefix + '.pickle.gz')
+    validate_output_path(output, True)
+    #Overwrite?
 
-    if not outfile.parent.is_dir():
-        print(f'{PROG} - Unknown parent directory for output: {outfile.resolve().parent}')
-        sys.exit(1)
 
-    outcounts_file = pathlib.Path(f'{out_pickle}.counts.gz').resolve()
+    outcounts_file = pathlib.Path(f'{output}.counts.gz').resolve()
+    ##
 
-    runner(reference_index, vcf_to_process, vcf_columns, outcounts_file, show_trinuc, save_trinuc, outfile,
+    runner(reference_index, vcf_to_process, vcf_columns, outcounts_file, show_trinuc, save_trinuc, output,
          bed, human_sample, skip_common)
 
     if os.path.exists('temp.vcf'): 
         os.remove('temp.vcf')
 
-    print(f'{PROG} complete! Use {outfile} as input into gen_reads_runner.py.')
+    print(f'{PROG} complete! Use {output} as input into gen_reads_runner.py.')
