@@ -9,6 +9,7 @@ import logging
 import abc
 
 from bisect import bisect_left
+import numpy as np
 from numpy.random import Generator
 from Bio.Seq import Seq
 from Bio import SeqRecord
@@ -80,7 +81,7 @@ class InsertionModel(VariantModel):
     _description = "An insertion of N nucleotides into a chromosome."
 
     def __init__(self,
-                 insert_len_model: dict[int: float, ...],
+                 insert_len_model: dict[int: float],
                  rng: Generator = None):
         self.insert_len_model = insert_len_model
         self.rng = rng
@@ -111,12 +112,13 @@ class DeletionModel(VariantModel):
     _description = "A deletion of N bases"
 
     def __init__(self,
-                 deletion_len_model: dict[int: float, ...],
+                 deletion_len_model: dict[int: float],
                  rng: Generator = None):
         self.deletion_len_model = deletion_len_model
         self.rng = rng
 
     def get_deletion_length(self, size: int = None) -> int | list[int, ...]:
+
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 
@@ -237,7 +239,7 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
     def __init__(self,
                  avg_mut_rate: float = default_avg_mut_rate,
                  homozygous_freq: float = default_homozygous_freq,
-                 variant_probs: dict[variants: float, ...] = default_variant_probs,
+                 variant_probs: dict[variants: float] = default_variant_probs,
                  transition_matrix: np.ndarray = default_mutation_sub_matrix,
                  is_cancer: bool = False,
                  rng: Generator = None,
