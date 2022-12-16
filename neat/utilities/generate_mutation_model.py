@@ -35,7 +35,7 @@ def extract_header(vcf_file):
             break
 
     if not ret:
-        print(f'{PROG} - No header found: invalid VCF file.')
+        print(f'{PROG} - No header found: invalid VCF file_list.')
         sys.exit(1)
 
     return ret
@@ -136,7 +136,7 @@ def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chrom
 
     if input_bed:
         print(f"{PROG} - since you're using a bed input, we have to count trinucs in bed region even if "
-              f"you already have a trinuc count file for the reference...")
+              f"you already have a trinuc count file_list for the reference...")
         if pathlib.Path(input_bed).suffix == ".gz":
             f = gzip.open(input_bed, 'r')
         else:
@@ -155,7 +155,7 @@ def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chrom
                         trinuc_ref_count[trinuc] = 0
                     trinuc_ref_count[trinuc] += 1
         if save_trinuc_file:
-            print(f'{PROG} - Warning: since we are using bed input, no trinuc file will be saved.')
+            print(f'{PROG} - Warning: since we are using bed input, no trinuc file_list will be saved.')
 
     # Solution to attribute error (needs to be checked)
     # TODO remove ref_name from this dict
@@ -168,14 +168,14 @@ def count_trinucleotides(reference_idx, input_bed, trinuc_counts, matching_chrom
                 trinuc_ref_count[trinuc] += sub_seq.count_overlap(trinuc)
         if save_trinuc_file:
             with gzip.open(trinuc_counts, 'w') as countfile:
-                print(f'{PROG} - Saving trinuc counts to file...')
+                print(f'{PROG} - Saving trinuc counts to file_list...')
                 countfile.write(json.dumps(trinuc_ref_count))
 
     else:
-        print(f'{PROG} - Found counts file, {trinuc_counts}, using that.')
+        print(f'{PROG} - Found counts file_list, {trinuc_counts}, using that.')
         trinuc_ref_count = json.load(gzip.open(trinuc_counts))
         if save_trinuc_file:
-            print(f'{PROG} - Warning: existing trinucelotide file will not be changed or overwritten.')
+            print(f'{PROG} - Warning: existing trinucelotide file_list will not be changed or overwritten.')
 
     return trinuc_ref_count, track_len
 
@@ -230,7 +230,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     # TODO - we don't actually use the ignore list anywhere
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
-    print(f'{PROG} - Processing VCF file...')
+    print(f'{PROG} - Processing VCF file_list...')
     matching_variants, matching_chromosomes = read_and_filter_variants(vcf_file, columns, reference_idx,
                                                                                    input_bed)
 
@@ -258,7 +258,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
         # Running total of how many non-N bases there are in the reference
         total_reflen += len(reference_idx[contig].seq) - reference_idx[contig].seq.count('N')
 
-        # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
+        # list to be used for counting variants that occur multiple times in file_list (i.e. in multiple samples)
         vcf_common = []
         vcf_c = []
         variant_to_process = []
@@ -526,7 +526,7 @@ def main(reference_idx, vcf_file, columns: list, trinuc_count_file, display_coun
     print(f'overall average mut rate: {avg_mut_rate}')
     print(f'total variants processed: {total_var}')
 
-    # save variables to file
+    # save variables to file_list
     if skip_common_variants:
         out = {'AVG_MUT_RATE': avg_mut_rate,
                'SNP_FREQ': snp_freq,
@@ -552,17 +552,17 @@ if __name__ == '__main__':
     PROG = 'generate_mutation_model.py'
     parser = argparse.ArgumentParser(prog=PROG)
     parser.add_argument('reference', type=str, metavar='reference.fa',
-                        help="Reference file for organism in fasta format")
+                        help="Reference file_list for organism in fasta format")
     parser.add_argument('mutations', type=str, metavar='mutation.vcf',
-                        help="Mutation file for organism in VCF format")
+                        help="Mutation file_list for organism in VCF format")
     parser.add_argument('out', type=str, metavar='output_prefix',
-                        help="Name of output file (final model will append \'.pickle.gz\')")
-    parser.add_argument('-b', '--bed', type=str, help="Bed file with regions to use in the model")
-    parser.add_argument('--outcounts', type=str, help="Path to trinucleotide counts file for reference. Note, this"
-                                                      "file will not be used if a bed file is also used.")
+                        help="Name of output file_list (final model will append \'.pickle.gz\')")
+    parser.add_argument('-b', '--bed', type=str, help="Bed file_list with regions to use in the model")
+    parser.add_argument('--outcounts', type=str, help="Path to trinucleotide counts file_list for reference. Note, this"
+                                                      "file_list will not be used if a bed file_list is also used.")
     parser.add_argument('--show-trinuc', action='store_true', help='Shows trinucleotide counts, for reference')
     parser.add_argument('--save-trinuc', action='store_true',
-                        help='Saves trinucleotide counts to a file called <out>.counts')
+                        help='Saves trinucleotide counts to a file_list called <out>.counts')
     parser.add_argument('--human-sample', action='store_true',
                         help='Only use numbered chroms, X, Y, and MT. '
                              'Omit this flag to include all chroms in reference.')
@@ -585,7 +585,7 @@ if __name__ == '__main__':
     if args.outcounts:
         outcounts = pathlib.Path(args.outcounts)
         if not outcounts.is_file():
-            print(f'{PROG} - Trinucleotide counts file {str(outcounts)} does not exist.')
+            print(f'{PROG} - Trinucleotide counts file_list {str(outcounts)} does not exist.')
             sys.exit(1)
 
     show_trinuc = args.show_trinuc
@@ -593,16 +593,16 @@ if __name__ == '__main__':
     is_human = args.human_sample
 
     if not pathlib.Path(reference).is_file():
-        print(f'{PROG} - Input reference is not a file: {reference}')
+        print(f'{PROG} - Input reference is not a file_list: {reference}')
         sys.exit(1)
 
     if not pathlib.Path(vcf).is_file():
-        print(f'{PROG} - Input VCF is not a file: {vcf}')
+        print(f'{PROG} - Input VCF is not a file_list: {vcf}')
         sys.exit(1)
 
     if bed:
         if not pathlib.Path(bed).is_file():
-            print(f'{PROG} - Input BED is not a file: {bed}')
+            print(f'{PROG} - Input BED is not a file_list: {bed}')
             sys.exit(1)
 
     print('Processing reference...')

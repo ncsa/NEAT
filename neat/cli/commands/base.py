@@ -49,7 +49,7 @@ class Option(BaseOption):
 
     def add_to_group(self, group: argparse._ArgumentGroup):
         """
-        Add the opiton to an argument group.
+        Add the option to an argument group.
 
         :param group: The group to add the option to
         """
