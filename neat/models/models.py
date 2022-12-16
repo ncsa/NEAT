@@ -9,6 +9,7 @@ import logging
 import abc
 
 from bisect import bisect_left
+
 import numpy as np
 from numpy.random import Generator
 from Bio.Seq import Seq
@@ -81,7 +82,7 @@ class InsertionModel(VariantModel):
     _description = "An insertion of N nucleotides into a chromosome."
 
     def __init__(self,
-                 insert_len_model: dict[int: float],
+                 insert_len_model: dict[int: float, ...],
                  rng: Generator = None):
         self.insert_len_model = insert_len_model
         self.rng = rng
@@ -112,13 +113,12 @@ class DeletionModel(VariantModel):
     _description = "A deletion of N bases"
 
     def __init__(self,
-                 deletion_len_model: dict[int: float],
+                 deletion_len_model: dict[int: float, ...],
                  rng: Generator = None):
         self.deletion_len_model = deletion_len_model
         self.rng = rng
 
     def get_deletion_length(self, size: int = None) -> int | list[int, ...]:
-
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 
@@ -239,7 +239,7 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
     def __init__(self,
                  avg_mut_rate: float = default_avg_mut_rate,
                  homozygous_freq: float = default_homozygous_freq,
-                 variant_probs: dict[variants: float] = default_variant_probs,
+                 variant_probs: dict[variants: float, ...] = default_variant_probs,
                  transition_matrix: np.ndarray = default_mutation_sub_matrix,
                  is_cancer: bool = False,
                  rng: Generator = None,
@@ -395,7 +395,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
         self.quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in self.quality_scores}
         self.read_length = read_length
-        self.quality_score_probability_matrix = qual_score_probs
+        self.quality_score_probabilities = qual_score_probs
         self.rescale_qualities = rescale_qualities
         self.is_uniform = is_uniform
         self.insertion_model = insertion_model
@@ -515,13 +515,10 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             temp_qual_array = []
             for i in range(input_read_length):
                 score = self.rng.choice(a=self.quality_scores,
-                                        p=self.quality_score_probability_matrix[quality_index_map[i]])
+                                        p=self.quality_score_probabilities[quality_index_map[i]])
                 temp_qual_array.append(score)
 
         if self.rescale_qualities:
-            _LOG.warning(f'Quality scores no longer exactly representative of input error probability. '
-                         f'Error model scaled to match desired rate...\n'
-                         f'Note that this may not have much effect on binned rates.')
             # Note that rescaling won't have much effect on binned quality scores.
             # First we rescale the quality score literals then convert back to phred score (with the 0.5
             # causing borderline cases to take the next highest number).
@@ -639,7 +636,7 @@ class FragmentLengthModel:
                            read_length: int,
                            coverage: int) -> list:
         """
-        Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set.
+        Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set
 
         :param total_length: Length of the reference segment we are covering.
         :param read_length: average length of the reads

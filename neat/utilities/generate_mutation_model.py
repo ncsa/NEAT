@@ -9,10 +9,11 @@ import pickle
 import sys
 
 import numpy as np
+import pandas as pd
 import pybedtools
 from Bio import SeqIO
 
-from NEAT.common import HUMAN_WHITELIST, ALL_TRI, ALLOWED_NUCL
+from neat.common import HUMAN_WHITELIST, ALL_TRI, ALLOWED_NUCL
 
 
 def read_fasta(fasta_file):
@@ -569,13 +570,13 @@ if __name__ == '__main__':
     parser.add_argument('--skip-common', action='store_true',
                         help="Includes a list of common variants, "
                              "if you want to visualize common variants with plot_mut_model.py.")
-    #args = parser.parse_args()
+
+    args = parser.parse_args()
 
     reference = args.reference
     vcf = args.mutations
     out_pickle = args.out
     skip_common = args.skip_common
-
 
     # Set bed to None by default. This is important for the main function.
     bed = None
@@ -599,6 +600,7 @@ if __name__ == '__main__':
 
     if not pathlib.Path(vcf).is_file():
         print(f'{PROG} - Input VCF is not a file: {vcf}')
+
         sys.exit(1)
 
     if bed:

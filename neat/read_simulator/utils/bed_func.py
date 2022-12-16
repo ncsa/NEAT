@@ -204,6 +204,7 @@ def fill_out_bed_dict(ref_dict: _IndexedSeqFileDict,
         # bed in question was the targeted bed and since the above condition was false, there was no targeted bed
         # supplied, so we want full coverage on all contigs.
         # This is to prevent the coverage from being 2% of the target when no targeted bed file was included.
+
         elif type(region_dict[contig]) == bool:
             ret_dict[contig] = [(0, max_value, 1)]
 

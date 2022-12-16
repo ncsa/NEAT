@@ -61,7 +61,7 @@ def generate_variants(reference: SeqRecord,
                       options: Options,
                       max_qual_score: int):
     """
-    This function will generate variants to add to the dataset, by writing them to the input tepm vcf file.
+    This function will generate variants to add to the dataset, by writing them to the input temp vcf file.
 
     TODO: need to add cancer logic to this section
 

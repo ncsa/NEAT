@@ -16,7 +16,11 @@ class Command(BaseCommand):
 
     Optional outputs include a golden vcf showing all inserted true variants (i.e., not the simulated errors),
         a golden BAM showing a fast alignment against the region where the read came from,
+<<<<<<< HEAD
         a fasta file containing the inserted variants only (no errors).
+=======
+        a fasta file_list containing the inserted variants only (no errors).
+>>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
     """
 
     name = "read-simulator"
@@ -33,7 +37,11 @@ class Command(BaseCommand):
             metavar="config",
             type=str,
             required=False,
+<<<<<<< HEAD
             help="Path (including filename) to the configuration file for this run."
+=======
+            help="Path (including filename) to the configuration file_list for this run."
+>>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
         )
 
         output_group.add_to_parser(parser)

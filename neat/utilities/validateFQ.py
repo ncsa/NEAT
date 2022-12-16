@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #
-#	A quickie tool for validating the correctness of a FASTQ file
+#	A quickie tool for validating the correctness of a FASTQ file_list
 #
 #	python validateFQ.py read1.fq [read2.fq]
 #
