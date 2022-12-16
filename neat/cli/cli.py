@@ -45,31 +45,19 @@ class Cli:
             "--no-log",
             default=False,
             action='store_true',
-<<<<<<< HEAD
             help="Set to turn off log file creation."
-=======
-            help="Set to turn off log file_list creation."
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
         )
         self.parser.add_argument(
             "--log-dir",
             type=str,
             default=os.getcwd(),
-<<<<<<< HEAD
             help="directory where to write the log file (default is working directory)"
-=======
-            help="directory where to write the log file_list (default is working directory)"
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
         )
         self.parser.add_argument(
             "--log-name",
             type=str,
             default=f"{time.time()}_NEAT.log",
-<<<<<<< HEAD
             help="Name of the log file to produce, if producing."
-=======
-            help="Name of the log file_list to produce, if producing."
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
         )
         self.parser.add_argument(
             "--log-level",

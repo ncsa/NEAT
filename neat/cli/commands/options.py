@@ -12,10 +12,6 @@ output_group.add_argument(
     "--output",
     dest="output",
     type=str,
-<<<<<<< HEAD
     help="Path (including filename prefix) to the output file",
-=======
-    help="Path (including filename prefix) to the output file_list",
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
     default=None
 )

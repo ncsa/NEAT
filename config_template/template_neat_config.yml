@@ -7,11 +7,7 @@
 ## not modify this template, but instead make a copy in your working directory. Done this
 ## way, you can run without even needing to declare -c.
 
-<<<<<<< HEAD
 # Absolute path to input reference fasta file
-=======
-# Absolute path to input reference fasta file_list
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # type = string | required: yes
 reference: REQUIRED
 
@@ -142,11 +138,7 @@ gc_model: .
 # type: boolean | required = no | default = false
 paired_ended: .
 
-<<<<<<< HEAD
 # Absolute path to a pickle file containing the fragment length model output
-=======
-# Absolute path to a pickle file_list containing the fragment length model output
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # from runner.py.
 # type: string | required = no | default: <NEAT_DIR>/neat/models/defaults/default_fraglen_model.pickle.gz
 fragment_model: .
@@ -164,29 +156,17 @@ fragment_mean: .
 # type: float | required: no (unless paired-ended)
 fragment_st_dev: .
 
-<<<<<<< HEAD
 # Whether to produce the golden bam file. This file will contain the reads
-=======
-# Whether to produce the golden bam file_list. This file_list will contain the reads
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # aligned with the exact region of the genome
 # type: boolean | required = no | default = false
 produce_bam: .
 
-<<<<<<< HEAD
 # Whether to produce a vcf file containing all the mutation errors added
-=======
-# Whether to produce a vcf file_list containing all the mutation errors added
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # by NEAT.
 # type: boolean | required = no | default = false
 produce_vcf: .
 
-<<<<<<< HEAD
 # Whether to output the mutated fasta. This will output a fasta file with mutations
-=======
-# Whether to output the mutated fasta. This will output a fasta file_list with mutations
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # inserted. It does not include sequencing errors or read information. Useful for
 # multigenerational mutations.
 # type: boolean | required = no | default = false
