@@ -36,11 +36,7 @@ threads: .
 # type = float | required: no | default = 10.0
 coverage: .
 
-<<<<<<< HEAD
 # Absolute path to file with sequencing error model
-=======
-# Absolute path to file_list with sequencing error model
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # type = string | required: no | default: <NEAT_DIR>/neat/models/defaults/default_error_model.pickle.gz
 error_model: .
 
@@ -62,21 +58,13 @@ quality_offset: .
 # type = int | required = no | default = 2
 ploidy: .
 
-<<<<<<< HEAD
 # Absolute path to vcf file containing variants that will always be included, regardless
-=======
-# Absolute path to vcf file_list containing variants that will always be included, regardless
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # of genotype and filter. You can pre-filter your vcf for these fields before inputting it
 # if this is not the desired behavior.
 # type: string | required = no
 input_variants: .
 
-<<<<<<< HEAD
 # Absolute path to bed file containing reference regions that the simulation
-=======
-# Absolute path to bed file_list containing reference regions that the simulation
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # should target.
 # type = string | required = no
 target_bed: .
@@ -94,20 +82,12 @@ off_target_scalar: .
 # type: boolean | required = no | default = false
 discard_offtarget: .
 
-<<<<<<< HEAD
 # Absolute path to bed file containing reference regions that the simulation
-=======
-# Absolute path to bed file_list containing reference regions that the simulation
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # should discard.
 # type = string | required = no
 discard_bed: .
 
-<<<<<<< HEAD
 # Absolute path to the mutation model pickle file. Omitting this value will cause
-=======
-# Absolute path to the mutation model pickle file_list. Omitting this value will cause
->>>>>>> 5d3b24e267938502bbd68617dafca289f2135e02
 # NEAT to use the default model, with some standard parameters, and generally uniform biases.
 # type: string | required = no
 mutation_model: .
