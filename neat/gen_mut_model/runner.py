@@ -2,8 +2,6 @@
 Creates a mutation model
 """
 
-import argparse
-import gzip
 import json
 import os.path
 import pathlib
@@ -21,214 +19,18 @@ import logging
 
 from ..models import MutationModel
 from .constants import REF_WHITELIST, VALID_NUCL, VALID_TRINUC, VCF_DEFAULT_POP_FREQ, DEF_HOMOZYGOUS_FRQ, DEF_MUT_SUB_MATRIX
-from ..common import validate_output_path
-from ..common import io
+from ..common import validate_output_path, validate_input_path, open_input, open_output
+from .utils import read_fasta, extract_header, read_and_filter_variants, cluster_list, count_trinucleotides, find_caf
 
 __all__ = [
     "compute_mut_runner"
 ]
 
 _LOG = logging.getLogger(__name__)
-PROG = 'gen_mut_model.py'
-
-def read_fasta(fasta_file):
-    return SeqIO.index(fasta_file, 'fasta')
-
-#In common, a way to validate path/open file
-def extract_header(vcf_file):
-    ret = []
-    with io.open_input(vcf_file) as f:
-        for line in f:
-            if line.startswith('##'):
-                ret.append(line.strip())
-            elif line.startswith('#CHROM'):
-                temp = line.strip().strip("#").split('\t')
-                ret.append(temp)
-                break
-
-    if not ret:
-        print(f'{PROG} - No header found: invalid VCF file.')
-        sys.exit(1)
-
-    return ret
-
-def read_and_filter_variants(vcf_file, column_names: list, reference_index, bed: str):
-    """
-    finds all the matching chromosomes between ref and vcf(mutation file)
-    """
-    
-    variant_chroms = []
-    matching_chroms = []
-
-    final_data = []
-
-    header_count = 0
-
-    with open(vcf_file, mode='r') as vcf:
-        for line in vcf:
-            if line.split('\t')[0][0] != '#':
-                # print("Printing line "+str(line))
-                columns = [x for x in line.split('\t') if line.split('\t')[0][0] != '#']
-                # print(columns)
-
-                """
-                columns[0]: CHROM
-                columns[1]: POS
-                columns[2]: ID
-                columns[3]: REF
-                columns[4]: ALT
-                columns[4]: QUAL
-                columns[6]: FILTER
-                columns[7]: INFO
-                """
-
-                #Make a set of chroms present in the vcf file
-                variant_chroms.append(columns[0])
-                variant_chroms = list(set(variant_chroms))
-
-                #if a chromosome is present in the refrence and the vcf file -> add it to matching_chrom list. Then make it into a set
-                for ref_name in reference_index.keys():
-                    if ref_name in variant_chroms:
-                        matching_chroms.append(ref_name)
-                    matching_chroms = list(set(variant_chroms))
-
-                #If CHROM is present in matching_chroms AND "," is not presnt in ALT AND REF is a single character AND ALT is a single character
-                #add to final_data: CHROM, POS-1, REF, ALT, INFO
-                if columns[0] in matching_chroms and ',' not in columns[4] and len(columns[3]) == 1 and len(
-                        columns[4]) == 1:
-                    final_data.append([columns[0], str(int(columns[1]) - 1), columns[3], columns[4], columns[7]])
-            else:
-                header_count+=1
-
-        print("Variant chroms: " + str(variant_chroms))
-        print("Matching chroms: " + str(matching_chroms))
-        # print("Final Data : " + str(final_data))
-    ##### ^why not print that?
-    #TODO refactor to remove pandas dependency
-    # variants = pd.read_csv(vcf_file, comment="#", sep="\t", header=None,
-    #                        names=column_names,
-    #                        usecols=['CHROM', 'POS', 'REF', 'ALT', 'INFO'],
-    #                        dtype={'CHROM': str, 'POS': int, 'REF': str, 'ALT': str, 'INFO': str})
-
-    variants = genfromtxt(vcf_file, comments="#", delimiter="\t", skip_header=header_count, names=column_names, usecols=(0,1,3,4,7))
-
-    # print(variants)
-    ####variant_chrom = variants['CHROM'].unique()
-    # print("Variant_chrom " + str(variant_chrom))
-    # matching_chroms = []
-
-#######misnamed?
-    for ref_name in reference_index.keys():
-        if ref_name in variant_chroms:
-            matching_chroms.append(ref_name)
-    print("Matching chroms: " + str(matching_chroms))
-
-    # ret = variants[variants['CHROM'].isin(matching_chroms)]
-    # # print("Printing ret: ")
-    # print(ret)
-
-    # We'll go ahead and filter out multiple alts, and variants where both REF and ALT are
-    # more than one base. This was done to make the trinucelotide context counts make more sense.
-
-    # multi_alts = ret[ret['ALT'].str.contains(',')].index
-    # ret = ret.drop(multi_alts)
-    #
-    # complex_vars = ret[(ret['REF'].apply(len) > 1) &
-    #                    (ret['ALT'].apply(len) > 1)].index
-    # ret = ret.drop(complex_vars)
-
-    return final_data, matching_chroms
-
-def cluster_list(list_to_cluster: list, delta: float) -> list:
-    """
-    Clusters a sorted list
-    :param list_to_cluster: a sorted list
-    :param delta: the value to compare list items to
-    :return: a clustered list of values
-    """
-
-    out_list = [[list_to_cluster[0]]]
-    previous_value = list_to_cluster[0]
-    current_index = 0
-    for item in list_to_cluster[1:]:
-        if int(item) - int(previous_value) <= delta:
-            out_list[current_index].append(item)
-        else:
-            current_index += 1
-            out_list.append([])
-            out_list[current_index].append(item)
-        previous_value = item
-    return out_list
-
-
-def count_trinucleotides(reference_index, bed, trinuc_counts, matching_chroms: list, save_trinuc_file: bool):
-    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
-    trinuc_ref_count = {}
-
-    # Count Trinucleotides in reference, based on bed or not
-    # print(f'{PROG} - Counting trinucleotides in reference...')
-    # Count the total number of bases spanned
-    track_len = 0
-
-    if bed:
-        print(f"{PROG} - since you're using a bed input, we have to count trinucs in bed region even if "
-              f"you already have a trinuc count file for the reference...")
-        if pathlib.Path(bed).suffix == ".gz":
-            f = gzip.open(bed, 'r')
-        else:
-            f = open(bed, 'r')
-        for line in f:
-            if line.startswith('#'):
-                continue
-            record = line.strip().split('\t')
-            track_len += int(record[2]) - int(record[1]) + 1
-            if record[0] in reference_index.keys():
-                for i in range(int(record[1]), int(record[2]) - 1):
-                    trinuc = reference_index[record[0]][i:i + 3].seq
-                    if trinuc not in VALID_TRINUC:
-                        continue
-                    if trinuc not in trinuc_ref_count:
-                        trinuc_ref_count[trinuc] = 0
-                    trinuc_ref_count[trinuc] += 1
-        if save_trinuc_file:
-            print(f'{PROG} - Warning: since we are using bed input, no trinuc file will be saved.')
-
-    # Solution to attribute error (needs to be checked)
-    # TODO remove ref_name from this dict
-    elif not trinuc_counts.is_file():
-        for ref_name in matching_chroms:
-            sub_seq = reference_index[ref_name].seq
-            for trinuc in VALID_TRINUC:
-                if trinuc not in trinuc_ref_count:
-                    trinuc_ref_count[trinuc] = 0
-                trinuc_ref_count[trinuc] += sub_seq.count_overlap(trinuc)
-        if save_trinuc_file:
-            with gzip.open(trinuc_counts, 'w') as countfile:
-                print(f'{PROG} - Saving trinuc counts to file...')
-                countfile.write(json.dumps(trinuc_ref_count))
-
-    else:
-        print(f'{PROG} - Found counts file, {trinuc_counts}, using that.')
-        trinuc_ref_count = json.load(gzip.open(trinuc_counts))
-        if save_trinuc_file:
-            print(f'{PROG} - Warning: existing trinucelotide file will not be changed or overwritten.')
-
-    return trinuc_ref_count, track_len
-
-
-def find_caf(candidate_field: str) -> float:
-    # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
-    vcf_default_pop_freq = 0.00001
-    info_split = [a.split('=') for a in candidate_field.split(';')]
-    for item in info_split:
-        if item[0].upper() == 'CAF':
-            if ',' in item[1]:
-                return float(item[1].split(',')[1])
-    return vcf_default_pop_freq
 
 
 def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, show_trinuc: bool, save_trinuc: bool,
-         output, bed: str, human_sample: bool, skip_common:bool):
+           output, bed: str, human_sample: bool, skip_common: bool):
     """
     This function generates the mutation model suitable for use in gen_reads. At the moment it must be run as a
     separate utility.
@@ -257,34 +59,29 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
     if human_sample:
         for key in reference_index:
             if key.startswith('chr'):
-                key_to_check = int(key_to_check[3:])
-            if key_to_check not in REF_WHITELIST:
-                ignore.append(key)
-#### ignore only for human sample?
+                key_to_check = int(key[3:])
+                if key_to_check not in REF_WHITELIST:
+                    ignore.append(key)
 
     if len(ignore) == len(reference_index):
-        print(f"{PROG} - No valid contigs detected. If using whitelist, all contigs may have been filtered out.")
+        _LOG.info("No valid contigs detected. If using whitelist, all contigs may have been filtered out.")
         sys.exit(1)
-##### TODO - we don't actually use the ignore list anywhere
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
-    print(f'{PROG} - Processing VCF file...')
-    matching_variants, matching_chromosomes = read_and_filter_variants(vcf_to_process, vcf_columns, reference_index,
-                                                                                   bed)
+    _LOG.info('Processing VCF file...')
+    matching_variants, matching_chromosomes = read_and_filter_variants(
+        vcf_to_process, vcf_columns, reference_index, bed
+    )
 
     if len(matching_variants) == 0:
-        print(f"{PROG} - Found no chromosomes in common between VCF, Fasta, and/or BED. "
-              f'Check that files use the same naming convention for chromosomes.')
+        _LOG.info('Found no chromosomes in common between VCF, Fasta, and/or BED. '
+                  'Check that files use the same naming convention for chromosomes.')
         sys.exit(1)
 
-    # Starting position of the actual reference, since vcf is 1-based.
-    # matching_variants['chr_start'] = matching_variants['POS'] - 1
-############################
-    # matching_variants[]
     trinuc_ref_count, bed_track_length = count_trinucleotides(reference_index, bed, outcounts_file,
                                                               matching_chromosomes, save_trinuc)
 ############################
-    print(f'{PROG} - Creating mutational model...')
+    _LOG.info('Creating mutational model...')
     total_reflen = 0
     for contig in matching_chromosomes:
         # Running total of how many non-N bases there are in the reference
@@ -348,10 +145,8 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
                     vcf_common.append((snp_variants[i][0], snp_variants[i][1], snp_variants[i][2], snp_variants[i][3], my_pop_freq))
                     #vcf_common.append((snp_variants[i][1], snp_variants[i][2], snp_variants[i][2], snp_variants[i][3], my_pop_freq))
                 else:
-                    print(f'{PROG} - Error: ref allele in variant call does not match reference.\n')
+                    _LOG.error('Ref allele in variant call does not match reference.\n')
                     sys.exit(1)
-
-
 
         if len(delete_variants) != 0:
             for i in range(len(delete_variants)):
@@ -374,7 +169,7 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
 
         # if we didn't find anything, skip ahead along to the next reference sequence
         if not len(vcf_common):
-            print(f'{PROG} - Found no variants for this reference {contig}.')
+            _LOG.info(f'Found no variants for this reference {contig}.')
             continue
 
         # identify common mutations
@@ -421,8 +216,8 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
     # if for some reason we didn't find any valid input variants, exit gracefully...
     total_var = snp_count + sum(insert_count.values()) + sum(delete_count.values())
     if total_var == 0:
-        print(f'{PROG} - Error: No valid variants were found, model could not be created. '
-              f'Check that names are compatible.')
+        _LOG.error('Error: No valid variants were found, model could not be created. '
+                   'Check that names are compatible.')
         sys.exit(1)
 
     # COMPUTE PROBABILITIES
@@ -477,8 +272,8 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
                 trinuc_trans_probs[(trinuc, trinuc2)] = 0.
                 print_trinuc_warning = True
     if print_trinuc_warning:
-        print(f'{PROG} - Warning: Some trinucleotides transitions were not encountered in the input dataset, '
-              f'probabilities of 0.0 have been assigned to these events.')
+        _LOG.warning('Warning: Some trinucleotides transitions were not encountered in the input dataset, '
+                     'probabilities of 0.0 have been assigned to these events.')
 
     #	print some stuff
 
@@ -541,11 +336,13 @@ def runner(reference_index, vcf_to_process, vcf_columns: list, outcounts_file, s
     mut_model.deletion_len_model = delete_count
 
     print('\nSaving model...')
-    with gzip.open(output, 'w+') as outfile:
+    with open_output(output, 'w+') as outfile:
         pickle.dump(mut_model, outfile)
 
-def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | Path, outcounts: str | Path, 
-                        show_trinuc: bool, save_trinuc:bool, human_sample, skip_common, output):
+
+def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | Path, outcounts: str | Path,
+                       show_trinuc: bool, save_trinuc:bool, human_sample: bool, skip_common: bool, output: str | Path,
+                       overwrite_output: bool):
     """
     :param reference: (REQ)
     :param mutations: (REQ)
@@ -555,30 +352,31 @@ def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | 
     :param save_trinuc: (OPT) 
     :param human_sample: (OPT) 
     :param skip_common: (OPT) 
-    :param output
+    :param output:
+    :param overwrite_output: True to overwrite output
     """
 
     # if not os.path.isfile(reference):
     #     print(f'{PROG} - Input reference is not a file: {reference}')
     #     sys.exit(1)
-    io.validate_input_path(reference)
+    validate_input_path(reference)
 
     # if not os.path.isfile(mutations):
     #     print(f'{PROG} - Input VCF is not a file: {mutations}')
     #     sys.exit(1)
-    io.validate_input_path(mutations)
+    validate_input_path(mutations)
 
     if bed:
     #     if not os.path.isfile(bed):
     #         print(f'{PROG} - Input BED is not a file: {bed}')
     #         sys.exit(1)
-        io.validate_input_path(bed)
+        validate_input_path(bed)
 
     if outcounts:
     #     if not os.path.isfile(outcounts):
     #         print(f'{PROG} - Trinucleotide counts file {str(outcounts)} does not exist.')
     #         sys.exit(1)
-        io.validate_input_path(outcounts)
+        validate_input_path(outcounts)
 
     print('Processing reference...')
     reference_index = read_fasta(reference)
@@ -594,16 +392,14 @@ def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | 
         # used bedtools to intersect the bed and vcf. This will require further processing.
         # The fn at the end extracts the filename, which is what the function expects.
         # Also converts to pathlib path.
-        print(f'{PROG} - Intersecting bed and vcf.')
+        _LOG.info('Intersecting bed and vcf.')
         # TODO rewrite to remove pybedtools dependency
         vcf_to_process = pathlib.Path(bed_file.intersect(mutations, wb=True).moveto('temp.vcf').fn)
-        print(f'{PROG} - Created temp vcf for processing.')
+        _LOG.info('Created temp vcf for processing.')
 
     output_prefix = output
     output = Path(output_prefix + '.pickle.gz')
-    validate_output_path(output, True)
-    #Overwrite?
-
+    validate_output_path(output, overwrite=overwrite_output)
 
     outcounts_file = pathlib.Path(f'{output}.counts.gz').resolve()
     ##
@@ -614,4 +410,4 @@ def compute_mut_runner(reference: str | Path, mutations: str | Path, bed: str | 
     if os.path.exists('temp.vcf'): 
         os.remove('temp.vcf')
 
-    print(f'{PROG} complete! Use {output} as input into gen_reads_runner.py.')
+    _LOG.info(f'Complete! Use {output} as input into gen_reads_runner.py.')

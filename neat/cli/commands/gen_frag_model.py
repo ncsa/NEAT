@@ -40,11 +40,11 @@ class Command(BaseCommand):
                                  "For a larger dataset, try 100 and adjust from there.")
 
         parser.add_argument('--overwrite',
-                            type=bool,
-                            metavar="overwrite_output",
+                            action='store_true',
                             required=False,
                             default=False,
                             help="Set this flag to overwrite existing output.")
+
         output_group.add_to_parser(parser)
 
     def execute(self, arguments: argparse.Namespace):
