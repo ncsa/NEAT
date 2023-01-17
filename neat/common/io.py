@@ -95,7 +95,8 @@ def open_output(path: str | Path, mode: str = 'wt') -> Iterator[TextIO]:
     output_dir = output_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     open_: Callable[..., TextIO]
-    if '.gz' or '.bgz' in output_path.suffixes:
+    # This is a set intersection to see if the file has gz or bgz in name. This list can be expanded as needed.
+    if {'.gz', '.bgz'} & set(output_path.suffixes):
         open_ = bgzf.open
     else:
         open_ = open
