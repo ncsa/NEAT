@@ -7,7 +7,7 @@
 ## not modify this template, but instead make a copy in your working directory. Done this
 ## way, you can run without even needing to declare -c.
 
-# Absolute path to input reference fasta file_list
+# Absolute path to input reference fasta file
 # type = string | required: yes
 reference: REQUIRED
 
@@ -36,7 +36,7 @@ threads: .
 # type = float | required: no | default = 10.0
 coverage: .
 
-# Absolute path to file_list with sequencing error model
+# Absolute path to file with sequencing error model
 # type = string | required: no | default: <NEAT_DIR>/neat/models/defaults/default_error_model.pickle.gz
 error_model: .
 
@@ -58,13 +58,13 @@ quality_offset: .
 # type = int | required = no | default = 2
 ploidy: .
 
-# Absolute path to vcf file_list containing variants that will always be included, regardless
+# Absolute path to vcf file containing variants that will always be included, regardless
 # of genotype and filter. You can pre-filter your vcf for these fields before inputting it
 # if this is not the desired behavior.
 # type: string | required = no
 input_variants: .
 
-# Absolute path to bed file_list containing reference regions that the simulation
+# Absolute path to bed file containing reference regions that the simulation
 # should target.
 # type = string | required = no
 target_bed: .
@@ -82,12 +82,12 @@ off_target_scalar: .
 # type: boolean | required = no | default = false
 discard_offtarget: .
 
-# Absolute path to bed file_list containing reference regions that the simulation
+# Absolute path to bed file containing reference regions that the simulation
 # should discard.
 # type = string | required = no
 discard_bed: .
 
-# Absolute path to the mutation model pickle file_list. Omitting this value will cause
+# Absolute path to the mutation model pickle file. Omitting this value will cause
 # NEAT to use the default model, with some standard parameters, and generally uniform biases.
 # type: string | required = no
 mutation_model: .
@@ -97,7 +97,7 @@ mutation_model: .
 # type: float | required = no | must be between 0.0 and 0.3
 mutation_rate: .
 
-# Absolute path to a bed file_list with mutation rates by region.
+# Absolute path to a bed file with mutation rates by region.
 # Rates must be in the fourth column and be of the form "mut_rate=x.xx"
 # Rates must be between 0.00 and 0.03
 # type: string | required = no
@@ -114,7 +114,7 @@ gc_model: .
 # type: boolean | required = no | default = false
 paired_ended: .
 
-# Absolute path to a pickle file_list containing the fragment length model output
+# Absolute path to a pickle file containing the fragment length model output
 # from runner.py.
 # type: string | required = no | default: <NEAT_DIR>/neat/models/defaults/default_fraglen_model.pickle.gz
 fragment_model: .
@@ -132,17 +132,17 @@ fragment_mean: .
 # type: float | required: no (unless paired-ended)
 fragment_st_dev: .
 
-# Whether to produce the golden bam file_list. This file_list will contain the reads
+# Whether to produce the golden bam file. This file will contain the reads
 # aligned with the exact region of the genome
 # type: boolean | required = no | default = false
 produce_bam: .
 
-# Whether to produce a vcf file_list containing all the mutation errors added
+# Whether to produce a vcf file containing all the mutation errors added
 # by NEAT.
 # type: boolean | required = no | default = false
 produce_vcf: .
 
-# Whether to output the mutated fasta. This will output a fasta file_list with mutations
+# Whether to output the mutated fasta. This will output a fasta file with mutations
 # inserted. It does not include sequencing errors or read information. Useful for
 # multigenerational mutations.
 # type: boolean | required = no | default = false

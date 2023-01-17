@@ -121,25 +121,25 @@ def read_simulator_runner(config: str, output: str):
     """
     Run the generate_reads function, which generates simulated mutations in a dataset and corresponding files.
 
-    :param config: This is a configuration file_list. Keys start with @ symbol. Everything else is ignored.
+    :param config: This is a configuration file. Keys start with @ symbol. Everything else is ignored.
     :param output: This is the prefix for the output.
 
     Raises
     ------
     FileNotFoundError
-        If the given target or query file_list does not exist (or permissions
+        If the given target or query file does not exist (or permissions
         prevent testing existence).
     RuntimeError
-        If given target or query file_list exists but is empty.
+        If given target or query file exists but is empty.
     ValueError
         If neither prefix nor output path was provided.
     FileExistsError
-        If the output file_list already exists.
+        If the output file already exists.
     """
     _LOG.debug(f'config = {config}')
     _LOG.debug(f'output = {output}')
 
-    _LOG.info(f'Using configuration file_list {config}')
+    _LOG.info(f'Using configuration file {config}')
     config = Path(config).resolve()
     validate_input_path(config)
 
@@ -151,7 +151,7 @@ def read_simulator_runner(config: str, output: str):
         _LOG.info('Creating output dir')
         output.parent.mkdir(parents=True, exist_ok=True)
 
-    # Read options file_list
+    # Read options file
     options = Options(output, config)
 
     # Validate output
@@ -179,7 +179,7 @@ def read_simulator_runner(config: str, output: str):
     _LOG.info(f'Reading {options.reference}.')
 
     reference_index = SeqIO.index(str(options.reference), 'fasta')
-    _LOG.debug("Reference file_list indexed.")
+    _LOG.debug("Reference file indexed.")
     if _LOG.getEffectiveLevel() < 20:
         count = 0
         for contig in reference_index:
@@ -208,7 +208,7 @@ def read_simulator_runner(config: str, output: str):
                                            reference_index,
                                            options)
 
-        _LOG.debug("Finished reading input vcf file_list")
+        _LOG.debug("Finished reading input vcf file")
 
     # Note that parse_beds will return None for any empty or non-input files
     bed_files = (options.target_bed, options.discard_bed, options.mutation_bed)
@@ -310,7 +310,7 @@ def read_simulator_runner(config: str, output: str):
         _LOG.info(f'Outputting temp vcf for {contig} for later use')
         if options.produce_fasta:
             _LOG.info(f'Outputting temp fasta for {contig} for later use')
-        # This function produces the variant file_list and the fasta file_list, if requested
+        # This function produces the variant file and the fasta file, if requested
         # TODO pickle dump the ContigVariants object instead. Combine them into one fasta/vcf
         #     at the end.
         write_local_file(local_variant_file,
@@ -346,18 +346,18 @@ def read_simulator_runner(config: str, output: str):
         output_file_writer.merge_temp_vcfs(vcf_files)
 
     if options.produce_fasta:
-        _LOG.info(f"Outputting fasta file_list(s): {', '.join([str(x) for x in output_file_writer.fasta_fns]).strip(', ')}")
+        _LOG.info(f"Outputting fasta file(s): {', '.join([str(x) for x in output_file_writer.fasta_fns]).strip(', ')}")
         output_file_writer.merge_temp_fastas(fasta_files)
 
     sam_rename: dict = {}
     if options.produce_fastq or options.produce_bam:
-        _LOG.info(f"Outputting fastq file_list(s): {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
+        _LOG.info(f"Outputting fastq file(s): {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
         sam_rename = output_file_writer.merge_temp_fastqs_and_sort_bams(
             fastq_files, options.produce_fastq, temporary_sam_order, options.rng
         )
 
     if options.produce_bam:
-        _LOG.info(f"Outputting golden bam file_list: {str(output_file_writer.bam_fn)}")
+        _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")
         output_file_writer.combine_tsam_into_bam(
             temporary_sam_files, sam_rename, temporary_sam_order
         )

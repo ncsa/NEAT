@@ -267,7 +267,7 @@ def parse_vcf(vcf_filename, ref_name, targ_regions_FL, out_file, out_bool):
     v_qual = {}
     v_targ_len = {}
     n_below_min_r_len = 0
-    line_unique = 0  # number of lines in vcf file_list containing unique variant
+    line_unique = 0  # number of lines in vcf file containing unique variant
     hash_coll = 0  # number of times we saw a hash collision ("per line" so non-unique alternate alleles don't get counted multiple times)
     var_filtered = 0  # number of variants excluded due to filters (e.g. hom-refs, qual)
     var_merged = 0  # number of variants we merged into another due to having the same position specified

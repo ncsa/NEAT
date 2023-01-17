@@ -3,7 +3,7 @@ import logging
 from Bio.Seq import Seq
 
 from ...models import MutationModel
-from ...common import ALLOWED_NUCL, TRI_IND
+from ...common import ALLOWED_NUCL, TRINUC_IND
 
 _LOG = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def map_chromosome(sequence: Seq, mut_model: MutationModel):
         if any([j for j in trinuc if j not in ALLOWED_NUCL]):
             # leave the probability at 0
             continue
-        trinuc_models[i] = mut_model.trinuc_trans_bias[TRI_IND[trinuc]]
+        trinuc_models[i] = mut_model.trinuc_mutation_bias[TRINUC_IND[trinuc]]
 
     return trinuc_models
 
