@@ -6,6 +6,7 @@ import json
 import os.path
 import pathlib
 import pickle
+import math
 import sys
 
 import numpy as np
@@ -17,23 +18,24 @@ from Bio import SeqIO
 from pathlib import Path
 import logging
 
-from .constants import VALID_TRINUC
-from ..common import open_input, open_output
+from ..common import open_input, open_output, ALL_TRINUCS, ALLOWED_NUCL, ALL_CONTEXTS, DINUC_IND, NUC_IND, TRINUC_IND
+from .constants import VCF_DEFAULT_POP_FREQ
 
 __all__ = [
-    'read_fasta', 'extract_header', 'read_and_filter_variants',
-    'cluster_list', 'count_trinucleotides', 'find_caf'
+    'extract_header', 'read_and_filter_variants', 'convert_trinuc_transition_matrix',
+    'cluster_list', 'count_trinucleotides', 'find_caf', 'convert_snp_transition_matrix',
+    'convert_trinuc_mutation_dict', 'check_homozygous'
 ]
 
 _LOG = logging.getLogger(__name__)
 
 
-def read_fasta(fasta_file):
-    return SeqIO.index(fasta_file, 'fasta')
-
-
-# In common, a way to validate path/open file
 def extract_header(vcf_file):
+    """
+    This function extracts the header lines into a list from an input VCF file
+    :param Path vcf_file: A valid vcf file path
+    :return list: A list of header lines
+    """
     ret = []
     with open_input(vcf_file) as f:
         for line in f:
@@ -51,25 +53,26 @@ def extract_header(vcf_file):
     return ret
 
 
-def read_and_filter_variants(vcf_file, column_names: list, reference_index, bed: str):
+def read_and_filter_variants(vcf_file, reference_index, ignore):
     """
-    finds all the matching chromosomes between ref and vcf(mutation file)
-    """
+    Finds all the matching chromosomes between ref and vcf(mutation file)
 
+    :param Path vcf_file: Full path to input vcf
+    :param dict reference_index: SeqIO dictionary of the index
+    :param list ignore: list of contigs to ignore
+    :return list, list: list of matching variants and a list of matching chromosomes
+    """
     variant_chroms = []
     matching_chroms = []
 
     final_data = []
 
-    header_count = 0
-
-    # TODO Read in the bed file. We'll need a list of chromosomes found in the bed, and a list of regions.b
-    #  During this filtering check, any variant must be included in the reference AND
-    #  be within a region of the bed file.
     with open_input(vcf_file) as vcf:
         for line in vcf:
-            if line.split('\t')[0][0] != '#':
-                columns = [x for x in line.split('\t') if line.split('\t')[0][0] != '#']
+            if line.startswith("#"):
+                continue
+            else:
+                columns = line.strip().split('\t')
 
                 """
                 columns[0]: CHROM
@@ -84,12 +87,14 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_index, bed:
 
                 # Add chromosome to variant chroms if it isn't already
                 chrom = columns[0]
+                if chrom in ignore:
+                    continue
                 if chrom not in variant_chroms:
                     variant_chroms.append(chrom)
 
                 # if a chromosome is present in the reference and the vcf file -> add it to matching_chrom list.
                 if chrom not in matching_chroms:
-                    if chrom in reference_index.keys():
+                    if chrom in reference_index:
                         matching_chroms.append(chrom)
 
                 # If CHROM is present in matching_chroms, then the variant is a candidate
@@ -101,42 +106,61 @@ def read_and_filter_variants(vcf_file, column_names: list, reference_index, bed:
                         variant_alt = columns[4]
                     variant_ref = columns[3]
 
+                    # If this variant has invalid characters, we'll skip it as too complex
+                    if any([char for char in variant_ref if char not in ALLOWED_NUCL]) or \
+                            any([char for char in variant_alt if char not in ALLOWED_NUCL]):
+                        continue
+
+                    # initialize flags
                     add_variant = False
+                    type_flag = "SNP"
+
                     # SNP
                     if len(variant_ref) == 1 and len(variant_alt) == 1:
                         add_variant = True
                     # deletion
                     elif len(variant_ref) > 1 and len(variant_alt) == 1:
                         add_variant = True
+                        type_flag = "DEL"
                     # insertion
                     elif len(variant_ref) == 1 and len(variant_alt) > 1:
                         add_variant = True
-                    # Note that Other variants are ommitted
+                        type_flag = "INS"
+                    # Other variant types are skipped
+
+                    """
+                    Structure:
+                    final_data[i][0]: Chromosome (CHROM) column
+                    final_data[i][1]: Reference-relative position (0-based)
+                    final_data[i][2]: Variant REF column
+                    final_data[i][3]: Variant ALT column
+                    final_data[i][4]: variant type flag ("SNP", "INS", "DEL")
+                    final_data[i][5]: Variant INFO field
+                    """
                     if add_variant:
-                        final_data.append([chrom, str(int(columns[1]) - 1), variant_ref, variant_alt, columns[7]])
+                        final_data.append(
+                            [chrom, str(int(columns[1]) - 1), variant_ref, variant_alt, type_flag, columns[7]]
+                        )
 
-            else:
-                header_count += 1
-
-        print(f"Variant chroms not in ref: {list(set(reference_index.keys()) - set(variant_chroms))}")
+        print(f"Variant chroms not in ref: {list(set(reference_index) - set(variant_chroms))}")
         print(f"Matching chroms: {matching_chroms}")
 
     return final_data, matching_chroms
 
 
-def cluster_list(list_to_cluster: list, delta: float) -> list:
+def cluster_list(list_to_cluster, delta):
     """
     Clusters a sorted list
-    :param list_to_cluster: a sorted list
-    :param delta: the value to compare list items to
-    :return: a clustered list of values
+    :param list list_to_cluster: a sorted list
+    :param float delta: the value to compare list items to
+    :return list: a clustered list of values
     """
 
     out_list = [[list_to_cluster[0]]]
     previous_value = list_to_cluster[0]
     current_index = 0
     for item in list_to_cluster[1:]:
-        if int(item) - int(previous_value) <= delta:
+        if item - previous_value <= delta:
             out_list[current_index].append(item)
         else:
             current_index += 1
@@ -146,66 +170,187 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
     return out_list
 
 
-def count_trinucleotides(reference_index, bed, trinuc_counts, matching_chroms: list, save_trinuc_file: bool):
-    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
+def count_trinucleotides(reference_index,
+                         bed,
+                         trinuc_counts,
+                         matching_chroms):
+    """
+    Counts the frequency of the various trinucleotide combinations in the dataset
+
+    :param dict reference_index: The index of the fasta, from SeqIO
+    :param Path bed: Full path to bed file, if using
+    :param Path trinuc_counts: Full path to existing trinculeotide counts file, if input, or the output path
+    :param list matching_chroms: List of matching chromosomes
+    :return dict, int: A dictionary of trinculeotides and counts, the number of bases spanned
+    """
+    # Data format: TRINUC: COUNT (e.g., "AAA": 12), where COUNT is the number of times trinuc was observed
+    # in the reference sequences.
     trinuc_ref_count = {}
 
-    # Count Trinucleotides in reference, based on bed or not
-    # print(f'{PROG} - Counting trinucleotides in reference...')
     # Count the total number of bases spanned
     track_len = 0
 
+    trinuc_counts_exists = False
+    save_trinuc_file = False
+    if trinuc_counts:
+        if trinuc_counts.is_file():
+            trinuc_counts_exists = True
+        save_trinuc_file = True
+
     if bed:
-        _LOG.info("since you're using a bed input, we have to count trinucs in bed region even if "
-                  "you already have a trinuc count file for the reference...")
+        _LOG.info("Counting trinucleotide combinations in bed regions")
+        if trinuc_counts_exists:
+            _LOG.warning("Ignoring trinucleotide counts file, to restrict counts to bed regions")
+        if save_trinuc_file:
+            _LOG.warning("Using bed input, no trinuc counts file will be saved.")
         with open_input(bed) as f:
             for line in f:
                 if line.startswith('#'):
                     continue
                 record = line.strip().split('\t')
                 track_len += int(record[2]) - int(record[1]) + 1
-                if record[0] in reference_index.keys():
+                if record[0] in reference_index:
                     for i in range(int(record[1]), int(record[2]) - 1):
                         trinuc = reference_index[record[0]][i:i + 3].seq
-                        if trinuc not in VALID_TRINUC:
-                            continue
-                        if trinuc not in trinuc_ref_count:
-                            trinuc_ref_count[trinuc] = 0
-                        trinuc_ref_count[trinuc] += 1
-        if save_trinuc_file:
-            _LOG.warning("Since we are using bed input, no trinuc file will be saved.")
+                        trinuc_ref_count = count_trinuc(trinuc, trinuc_ref_count)
 
     # Solution to attribute error (needs to be checked)
     # TODO remove ref_name from this dict
-    elif not trinuc_counts.is_file():
+    elif not trinuc_counts_exists:
+        _LOG.info("Counting trinucleotide combinations in reference.")
         for ref_name in matching_chroms:
-            sub_seq = reference_index[ref_name].seq
-            for trinuc in VALID_TRINUC:
-                if trinuc not in trinuc_ref_count:
-                    trinuc_ref_count[trinuc] = 0
-                trinuc_ref_count[trinuc] += sub_seq.count_overlap(trinuc)
+            contig_seq = reference_index[ref_name].seq
+            for i in range(len(contig_seq)):
+                trinuc = contig_seq[i: i+3]
+                trinuc_ref_count = count_trinuc(trinuc, trinuc_ref_count)
+
         if save_trinuc_file:
             with open_output(trinuc_counts, 'w') as countfile:
                 _LOG.info('Saving trinuc counts to file...')
+                # Convert all values to writable formats
+                trinuc_ref_count = {str(x): int(y) for x, y in trinuc_ref_count.items()}
                 countfile.write(json.dumps(trinuc_ref_count))
 
     else:
-        _LOG.info(f'Found counts file, {trinuc_counts}, using that.')
+        _LOG.info(f'Loading file: {trinuc_counts}.')
         with open_input(trinuc_counts) as counts:
             trinuc_ref_count = json.load(counts)
         if save_trinuc_file:
-            _LOG.warning('Existing trinucelotide file will not be changed or overwritten.')
+            _LOG.warning('Existing trinucelotide file will not be changed.')
 
     return trinuc_ref_count, track_len
 
 
-def find_caf(candidate_field: str) -> float:
-    # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
-    vcf_default_pop_freq = 0.00001
+def count_trinuc(trinuc_seq, ref_count_dict):
+    """
+    Helper function that adds trinuc to dict, if it's valid, and counts it.
+    :param Sequence trinuc_seq: Three letter sequence
+    :param dict ref_count_dict:
+    :return dict: the updated ref_count_dict
+    """
+    if trinuc_seq not in ALL_TRINUCS:
+        return ref_count_dict
+    if trinuc_seq not in ref_count_dict:
+        ref_count_dict[trinuc_seq] = 0
+    ref_count_dict[trinuc_seq] += 1
+    return ref_count_dict
+
+
+def find_caf(candidate_field):
+    """
+    Finds the CAF field, if present in INFO, otherwise returns the default
+    :param str candidate_field: The vcf info to parse
+    :return float: The given allele frequency
+    """
+
     info_split = [a.split('=') for a in candidate_field.split(';')]
     for item in info_split:
         if item[0].upper() == 'CAF':
             if ',' in item[1]:
                 return float(item[1].split(',')[1])
-    return vcf_default_pop_freq
+    return VCF_DEFAULT_POP_FREQ
 
+
+def check_homozygous(info_field):
+    """
+    Checks info field for genotype to try to detect if this sample is homozygous
+
+    :param str info_field: The info field of an input variant
+    :return int: 1 if homozygous, 0 otherwise
+    """
+    fields = info_field.strip().split(':')
+    genotype = None
+    for item in fields:
+        if len(item.split('/')) == 1:
+            if len(item.split('|')) == 1:
+                continue
+            else:
+                genotype = [int(x) for x in item.split('|')]
+                break
+        else:
+            genotype = [int(x) for x in item.split('/')]
+            break
+
+    if genotype:
+        gt = genotype[0]
+        for allele in genotype[1:]:
+            if allele != gt:
+                return 0
+        return 1
+
+    return 0
+
+
+def convert_trinuc_transition_matrix(trans_probs):
+    """
+    Convert the calculated transitions into a transition matrix for the mutation model.
+    Each matrix is the probability of one
+
+    :param dict trans_probs: A dictionary of trinuc1 -> trinuc2 probabilities
+    :return np.ndarray: The transition matrix for each trinucleotide, indexed by our common scheme.
+    """
+
+    ret_matrix = np.zeros((16, 4, 4))
+    for key, value in trans_probs.items():
+        # Construct the context to fill out, and fetch the index
+        context = DINUC_IND[key[0][0] + "_" + key[0][2]]
+        # Get indexes of the ref and alt
+        mutation_ref = NUC_IND[key[0][1]]
+        mutation_alt = NUC_IND[key[1][1]]
+        if ret_matrix[context][mutation_ref][mutation_alt] == 0.0:
+            ret_matrix[context][mutation_ref][mutation_alt] = value
+        else:
+            _LOG.error("Repeat Trinuc detected.")
+            _LOG.debug(f'Error on {ALL_CONTEXTS[context]}: '
+                       f'{ALLOWED_NUCL[mutation_ref]} -> {ALLOWED_NUCL[mutation_alt]}')
+            raise ValueError
+
+    return ret_matrix
+
+
+def convert_snp_transition_matrix(snp_matrix):
+    """
+    Converts the dict form, used for display, to the final indexed form optimized for speed.
+
+    :param dict snp_matrix: A dictionary of snp transition probabilities
+    :return np.ndarray: Indexed by our common indexing scheme
+    """
+    ret_matrix = np.zeros((4,4))
+    for key, value in snp_matrix.items():
+        ret_matrix[NUC_IND[key[0]]][NUC_IND[key[1]]] = value
+
+    return ret_matrix
+
+
+def convert_trinuc_mutation_dict(trinuc_mut_dict):
+    """
+    Converts the dict form, used for display, to the final indexed form optimized for speed.
+
+    :param dict trinuc_mut_dict: A dictionary of trinuc mutation probabilities
+    :return np.ndarray: Indexed by our common indexing scheme
+    """
+    ret_array = np.zeros(64)
+    for trinuc in ALL_TRINUCS:
+        ret_array[TRINUC_IND[trinuc]] = trinuc_mut_dict[trinuc]
+
+    return ret_array

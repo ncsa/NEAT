@@ -17,7 +17,7 @@ from Bio import SeqRecord
 
 from neat import variants
 
-from ..common import TRI_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
+from ..common import TRINUC_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
 from .default_gc_bias_model import *
@@ -144,7 +144,7 @@ class SnvModel(VariantModel):
 
     :param trinuc_trans_matrices: 3D array of matrices representing the transition probabilities of each trinucleotide combination,
                                   where each matrix represents the probability of a particular
-    :param trinuc_trans_bias: The bias of each of the 64 possible trinucleotide combinations,
+    :param trinuc_mutation_bias: The bias of each of the 64 possible trinucleotide combinations,
                               as derived from input data. Our base assumption will be no bias
     :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
             we'll need the rng to perform certain methods.
@@ -154,13 +154,13 @@ class SnvModel(VariantModel):
 
     def __init__(self,
                  trinuc_trans_matrices: np.ndarray = None,
-                 trinuc_trans_bias: np.ndarray = None,
+                 trinuc_mutation_bias: np.ndarray = None,
                  rng: Generator = None):
 
         self.trinuc_trans_matrices = trinuc_trans_matrices
-        self.trinuc_trans_bias = trinuc_trans_bias
+        self.trinuc_mutation_bias = trinuc_mutation_bias
         self.no_bias = False
-        if not np.any(self.trinuc_trans_matrices) and not trinuc_trans_bias:
+        if not np.any(self.trinuc_trans_matrices) and not trinuc_mutation_bias:
             self.no_bias = True
         self.trinuc_bias_map = None
         self.rng = rng
@@ -192,9 +192,9 @@ class SnvModel(VariantModel):
             # If the model was set up with no bias, then we skip the biasing part
             if not self.no_bias:
                 # Update the map bias at the central position for that trinuc
-                for trinuc in ALL_TRI:
+                for trinuc in ALL_TRINUCS:
                     for match in re.finditer(trinuc, str(sequence)):
-                        self.local_trinuc_bias[match.start() + 1] = self.trinuc_trans_bias[TRI_IND[trinuc]]
+                        self.local_trinuc_bias[match.start() + 1] = self.trinuc_mutation_bias[TRINUC_IND[trinuc]]
 
             # Now we normalize the bias
             self.local_trinuc_bias = self.local_trinuc_bias / sum(self.local_trinuc_bias)
@@ -230,7 +230,7 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
             we'll need the rng to perform certain methods. Must be set for runs.
     :param trinuc_trans_matrices: The transition matrices for the trinuc
         patterns.
-    :param trinuc_trans_bias: The bias for each possible trinucleotide, as measured in the
+    :param trinuc_mut_bias: The bias for each possible trinucleotide, as measured in the
         input dataset.
     :param insert_len_model: The model for the insertion length
     :param deletion_len_model: The model for teh deletion length
@@ -245,14 +245,14 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
                  rng: Generator = None,
                  # Any new parameters needed for new models should go below
                  trinuc_trans_matrices: np.ndarray = default_trinuc_trans_matrices,
-                 trinuc_trans_bias: np.ndarray = default_trinuc_trans_bias,
+                 trinuc_mut_bias: np.ndarray = default_trinuc_mut_bias,
                  insert_len_model: dict[int: float] = default_insertion_len_model,
                  deletion_len_model: dict[int: float] = default_deletion_len_model):
 
         # Any new mutation types will need to be instantiated in the mutation model here
         SnvModel.__init__(self,
                           trinuc_trans_matrices=trinuc_trans_matrices,
-                          trinuc_trans_bias=trinuc_trans_bias)
+                          trinuc_mutation_bias=trinuc_mut_bias)
         InsertionModel.__init__(self, insert_len_model=insert_len_model)
         DeletionModel.__init__(self, deletion_len_model=deletion_len_model)
 
