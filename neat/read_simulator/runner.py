@@ -178,8 +178,9 @@ def read_simulator_runner(config: str, output: str):
     """
     _LOG.info(f'Reading {options.reference}.')
 
-    reference_index = SeqIO.index(str(options.reference), 'fasta')
+    reference_index = SeqIO.index(str(options.reference), "fasta")
     _LOG.debug("Reference file indexed.")
+
     if _LOG.getEffectiveLevel() < 20:
         count = 0
         for contig in reference_index:
@@ -361,3 +362,4 @@ def read_simulator_runner(config: str, output: str):
         output_file_writer.combine_tsam_into_bam(
             temporary_sam_files, sam_rename, temporary_sam_order
         )
+        output_file_writer.sam_to_sorted_bam()

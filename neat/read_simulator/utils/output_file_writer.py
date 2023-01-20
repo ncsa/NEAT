@@ -16,10 +16,14 @@ import numpy as np
 
 from Bio import bgzf
 from Bio import SeqIO
+from Bio.Seq import Seq, MutableSeq
+from Bio import pairwise2
+from Bio.pairwise2 import align, format_alignment
+from typing import Iterator, TextIO
 from pathlib import Path
 from numpy.random import Generator
 
-from ...common import validate_output_path, open_output, open_input
+from ...common import validate_output_path, open_output, open_input, ALLOWED_NUCL
 from .read import Read
 from .options import Options
 from .neat_cigar import CigarString
@@ -150,7 +154,7 @@ class OutputFileWriter:
             files_to_write.append(self.fastq_fns)
         if self.write_bam:
             self.bam_fn = options.output.parent / f'{options.output.stem}_golden.bam'
-            self.sam_fn = self.temporary_dir / f'{options.output.stem}_temp.sam'
+            self.sam_fn = self.temporary_dir / f'{options.output.stem}.sam'
             self.bam_keys = list(bam_header.keys())
             files_to_write.append(self.sam_fn)
             files_to_write.append(self.bam_fn)
@@ -300,9 +304,68 @@ class OutputFileWriter:
         return tsam_remap
 
     def combine_tsam_into_bam(self, temp_files: list, renaming_dictionary: dict, sam_order: list):
-        _LOG.info("Bam creation coming soon!")
-        pass
+        """
+        This section is for producing a CIGAR string using a temp sam file(sam file with
+        original sequence instead of a cigar string)
 
+        :param temp_files: The list of temp sams to combine
+        :param renaming_dictionary: the dicitonary to use to name the files
+        :param sam_order: the order the final sam file should be in, before sorting
+        """
+        _LOG.info("Writing out sam file")
+        with open_output(self.sam_fn, mode='a') as sam_out:
+            for file in temp_files:
+                with open_input(file) as tsam:
+                    for line in tsam:
+                        template_seq = Seq(line.split('\t')[5])
+                        mut_seq = Seq(line.split('\t')[9])
+
+                        # These parameters were set to minimize breaks in the mutated sequence and find the best
+                        # alignment from there.
+                        test = pairwise2.align.localmd(
+                            template_seq, mut_seq, match=3, mismatch=2, openA=-3, openB=-2, extendA=-.5, extendB=-.1,
+                            penalize_extend_when_opening=True
+                        )
+                        alignment = format_alignment(*test[0], full_sequences=True).split()
+                        aligned_template_seq = alignment[0]
+                        aligned_mut_seq = alignment[-2]
+                        cig_count = 0
+                        curr_char = ''
+                        cig_string = ''
+                        # Find first match
+                        start = min([aligned_mut_seq.find(x) for x in ALLOWED_NUCL])
+                        for char in range(start, start+len(mut_seq)):
+                            if aligned_template_seq[char] == '-':  # insertion
+                                if curr_char == 'I':  # more insertions
+                                    cig_count = cig_count + 1
+                                else:  # new insertion
+                                    cig_string = cig_string + str(cig_count) + curr_char
+                                    curr_char = 'I'
+                                    cig_count = 1
+                            elif aligned_mut_seq[char] == '-':  # deletion
+                                if curr_char == 'D':  # more deletions
+                                    cig_count = cig_count + 1
+                                else:  # new deletion
+                                    cig_string = cig_string + str(cig_count) + curr_char
+                                    curr_char = 'D'
+                                    cig_count = 1
+                            else:  # match
+                                if curr_char == 'M':  # more matches
+                                    cig_count = cig_count + 1
+                                else:  # new match
+                                    # If there is anything before this, add it to the string and increment,
+                                    # else, just increment
+                                    if not cig_count == 0:
+                                        cig_string = cig_string + str(cig_count) + curr_char
+                                    curr_char = 'M'
+                                    cig_count = 1
+                        cig_string = cig_string + str(cig_count) + curr_char
+                        # Use renaming dict and sam_order here
+                        sam_out.write(line.replace(str(template_seq), cig_string, 1))
+
+    def sam_to_sorted_bam(self):
+        _LOG.info("Converting sam to sorted bam")
+        self.sam_fn.rename(self.bam_fn)
 
     def write_sam_record(self, chromosome_index, read_name, pos_0, cigar, seq, qual, output_sam_flag, rnext="=",
                          mate_pos=None, aln_map_quality: int = 70):

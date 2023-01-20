@@ -159,7 +159,7 @@ def generate_variants(reference: SeqRecord,
         # 1 mutation to add and if we set this to 0, it might spin all day before it finds a suitable location.
         variants_to_add_in_slice = max(int((slice_distance/len(reference)) * how_many_mutations), 1)
 
-        subsequence = reference[mutation_slice[0]: mutation_slice[1]].seq
+        subsequence = reference[mutation_slice[0]: mutation_slice[1]].seq.upper()
         # In the case where the end points are equal or the segment is too small, just skip
         if len(subsequence) <= 10:
             continue
@@ -204,7 +204,7 @@ def generate_variants(reference: SeqRecord,
                 location = position + mutation_slice[0]  # location relative to reference
                 if location == 0:
                     continue
-                trinuc = reference[location: location+3].seq
+                trinuc = reference[location: location+3].seq.upper()
                 temp_variant = mutation_model.generate_snv(trinuc, location)
 
             else:

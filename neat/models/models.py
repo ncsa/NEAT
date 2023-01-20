@@ -473,7 +473,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # else dedicated to SNVs.
             else:
                 snv_reference = reference_segment[index]
-                nuc_index = ALLOWED_NUCL.index(snv_reference)
+                nuc_index = NUC_IND[snv_reference]
                 # take the zero index because this returns a list of length 1.
                 snv_alt = self.rng.choice(ALLOWED_NUCL, p=self.transition_matrix[nuc_index])
                 introduced_errors.append(
