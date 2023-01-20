@@ -23,12 +23,11 @@ _LOG = logging.getLogger(__name__)
 def compute_fraglen_runner(file: str | Path, filter_minreads: int, output: str | Path, overwrite: bool = False):
     """
     Main function takes 2 arguments:
-
-    :param file: a path to a sam or bam file_list input.
+    :param file: a path to a sam or bam file_list input
     :param filter_minreads: minimum number of reads needed to count a fragment length.
                             If 0, then filtering will be skipped
     :param output: the string prefix of the output
-    :param overwrite: If true, any existing file_list found will be overwritten.
+    :param overwrite: If true, any existing file_list found will be overwritten
     """
     _LOG.info("Generating fragment length model")
 

@@ -3,7 +3,7 @@ The following model is the default for cancer mutation in humans.
 """
 
 from .default_mutation_model import default_mutation_sub_matrix, default_trinuc_trans_matrices, \
-    default_trinuc_trans_bias, default_deletion_len_model
+    default_trinuc_mut_bias, default_deletion_len_model
 from ..variants import Insertion, Deletion, SingleNucleotideVariant
 
 # The following CANCER default model parameters are here, for tweaking and revision.

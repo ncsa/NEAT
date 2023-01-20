@@ -1,8 +1,8 @@
 import logging
 import time
 import numpy as np
-from tqdm import tqdm
 
+from tqdm import tqdm
 from math import ceil, floor
 from pathlib import Path
 from Bio import SeqRecord
@@ -437,8 +437,8 @@ def modify_target_coverage(included_regions: list, excluded_regions: list, cover
     Modifies the coverage vector by applying the list of regions. For this version, areas
     outside the regions have coverage adjusted by the off_target_percent
 
-    :param included_regions: A list of intervals to target, extracted from a bed file_list
-    :param excluded_regions: A list of regions to throw out, extracted from a bed file_list
+    :param included_regions: A list of intervals to target, extracted from a bed file
+    :param excluded_regions: A list of regions to throw out, extracted from a bed file
     :param coverage_vector: The target coverage vector, which will be modified
     :return: The updated target coverage vector.
     """
@@ -464,6 +464,7 @@ def merge_sort(my_array: np.ndarray):
     ret_array = ret_array[ret_array[:, 0].argsort(kind='mergesort')]
     return ret_array
 
+
 def generate_reads(reference: SeqRecord,
                    error_model: SequencingErrorModel,
                    gc_bias: GcModel,
@@ -488,7 +489,7 @@ def generate_reads(reference: SeqRecord,
     :param contig_variants: An object containing all input and randomly generated variants to be included.
     :param temporary_directory: The directory where to store temporary files for the run
     :param targeted_regions: A list of regions to target for the run (at a rate defined in the options
-        file_list or 2% retained by default)
+        file or 2% retained by default)
     :param discarded_regions: A list of regions to discard for the run
     :param options: The options entered for this run by the user
     :param chrom: The chromosome this reference segment originates from
@@ -497,10 +498,11 @@ def generate_reads(reference: SeqRecord,
     :return: A tuple of the filenames for the temp files created
     """
     # Set up files for use. May not need r2, but it's there if we do.
-    chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq.gz'
-    chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq.gz'
+    chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq.bgz'
+    chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq.bgz'
 
-    # set up a temporary 'sam' file_list for processing by generate_bam, if the option is set
+    # set up a temporary 'sam' file for processing by generate_bam, if the option is set
+
     tsam = temporary_directory / f'{chrom}.tsam.gz'
 
     _LOG.info(f'Sampling reads...')
@@ -608,6 +610,8 @@ def generate_reads(reference: SeqRecord,
                     # TODO There may be a more efficient way to add mutations
                     read2.mutations = find_applicable_mutations(read2, contig_variants)
                     read2.write_record(error_model, fq2, temp_sam, options.produce_fastq, options.produce_bam)
+
+    print("100%")
 
     _LOG.info(f"Finished sampling reads in {time.time() - start} seconds")
     return chrom_fastq_r1, chrom_fastq_r2, tsam, sam_read_order
