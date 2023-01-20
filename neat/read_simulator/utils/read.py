@@ -155,8 +155,8 @@ class Read:
         """
         for error in self.errors:
             # Replace the entire ref sequence with the entire alt sequence
-            mutated_sequence = mutated_sequence[:error.location] + error.alt + \
-                               mutated_sequence[error.location+len(error.ref):]
+            mutated_sequence = \
+                mutated_sequence[:error.location] + error.alt + mutated_sequence[error.location+len(error.ref):]
             # update quality score for error
             self.update_quality_array(error.alt, error.location, "error", err_model)
 
@@ -171,7 +171,6 @@ class Read:
         :param err_model: The error_model for the run, used for the quality score and for the rng
         :return: mutated sequence, with mutations applied
         """
-
         # Start at the right position based on if this is the forward or reverse read.
         segment_start = int(self.raw_read[2]) if self.is_reverse else int(self.raw_read[0])
 
@@ -237,7 +236,7 @@ class Read:
             produce_tsam: bool
     ):
         """
-        Writes the record to the temporary fastq file_list
+        Writes the record to the temporary fastq file
 
         :param err_model: The error model for the run
         :param fastq_handle: the path to the fastq model to write the read

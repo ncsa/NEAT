@@ -1,5 +1,5 @@
 """
-Helper functions for VCF files. The primary purpose is to retrieve the data from an input vcf file_list,
+Helper functions for VCF files. The primary purpose is to retrieve the data from an input vcf file,
 to ensure that those variants get inserted into the reads.
 """
 
@@ -56,7 +56,7 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
             - genotype_tumor: Genotype data for the second (tumor) sample (optional)
 
     :param input_dict: Dicitonary of contig variants objects holding data for each contig
-    :param vcf_path: Path to input vcf file_list
+    :param vcf_path: Path to input vcf file
     :param ploidy: number of copies of each chromosome in the dataset.
     :param homozygous_frequency: Chance of an allele appearing on more than one ploid
     :param reference: The reference index object for this run.

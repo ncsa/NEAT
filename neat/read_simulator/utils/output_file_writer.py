@@ -38,7 +38,7 @@ CIGAR_PACKED = {'M': 0, 'I': 1, 'D': 2, 'N': 3, 'S': 4, 'H': 5, 'P': 6, '=': 7, 
 SEQ_PACKED = {'=': 0, 'A': 1, 'C': 2, 'M': 3, 'G': 4, 'R': 5, 'S': 6, 'V': 7,
               'T': 8, 'W': 9, 'Y': 10, 'H': 11, 'K': 12, 'D': 13, 'B': 14, 'N': 15}
 # TODO figure out an optimum batch size or get rid of this idea
-BUFFER_BATCH_SIZE = 8000  # write out to file_list after this many reads
+BUFFER_BATCH_SIZE = 8000  # write out to file after this many reads
 
 
 def reg2bin(beg: int, end: int):
@@ -123,7 +123,7 @@ class OutputFileWriter:
 
         self.bam_header = bam_header
 
-        # Set the file_list names
+        # Set the file names
         self.fasta_fns = None
 
         self.fastq_fns = None
@@ -197,7 +197,7 @@ class OutputFileWriter:
                 vcf_file.write(f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n')
 
         if self.write_bam:
-            # Write the temp sam file_list
+            # Write the temp sam file
             with open_output(self.sam_fn, mode=mode) as s:
                 s.write('@HD\tVN:1.5\tSO:coordinate\n')
                 for key in self.bam_keys:
@@ -217,7 +217,7 @@ class OutputFileWriter:
 
     def merge_temp_fastas(self, temporary_files: list):
         """
-        Takes a list of temporary fasta files and puts them into a final file_list
+        Takes a list of temporary fasta files and puts them into a final file
 
         :param temporary_files: A list of temporary fastas to combine
         """
@@ -233,13 +233,13 @@ class OutputFileWriter:
         """
         Takes a list of fastqs and combines them into a final output. This is the most complicated one, because we need
         to randomize the fastq to make it more realistic. If we are not producing a fastq, we still need to perform
-        this step to get the final names of the reads for the sam file_list. In that case, it should go quickly since there
+        this step to get the final names of the reads for the sam file. In that case, it should go quickly since there
         will be no IO time.
 
         :param fastq_files: The temporary fastq files to combine in the the final output, or to set the order for the
             final bam
         :param produce_fastq: Whether to actually write the fastq files
-        :param sam_file_order: The order of the sam file_list records
+        :param sam_file_order: The order of the sam file records
         :param rand_num_gen: the random number generator for the run
         """
         fastq_indexes = []
@@ -279,9 +279,9 @@ class OutputFileWriter:
                 tsam_remap[current_key] = current_name
                 if produce_fastq:
                     # This gives us the first index of the 'row' in the keys table where this read is located,
-                    #  giving us the list index of the file_list index where I can find this read
+                    #  giving us the list index of the file index where I can find this read
                     current_index = [read1_keys.index(x) for x in read1_keys if current_key in x][0]
-                    # This is the index of the read1 file_list, at the current key, which should be the read we want
+                    # This is the index of the read1 file, at the current key, which should be the read we want
                     read1 = fastq_indexes[current_index][0][current_key]
                     read1.id = f'{current_name}/1'
                     SeqIO.write(read1, fq1, 'fastq')
@@ -398,11 +398,11 @@ class OutputFileWriter:
         the simulation, we'll do a post-hoc effort and determine the bam that way. It will be less perfect,
         but will be much faster, and the ways it will differ from reality will not matter to the alignment.
 
-        So we need to write the bam stuff from the fastq to a temporary file_list. That either needs to be handled here
+        So we need to write the bam stuff from the fastq to a temporary file. That either needs to be handled here
         or in the main code.
         """
         if self.bam_first_write:
-            # First time we open the file_list, let's write it. This is due to a limitation in bgzf where it cannot append
+            # First time we open the file, let's write it. This is due to a limitation in bgzf where it cannot append
             # items like you can with open.
             self.bam_first_write = False
             self.bam_file = bgzf.BgzfWriter(self.bam_fn, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
