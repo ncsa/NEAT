@@ -66,10 +66,10 @@ def map_chromosome(sequence: Seq, mut_model: MutationModel):
     """
     # Set up the model dictionary
     trinuc_models = [0.0] * len(sequence)
-    # Start at +1 so we get a trinucleotide to start, and end one shy for the same reason
+    # Start at +1, so we get a trinucleotide to start, and end one shy for the same reason
     for i in range(1, len(sequence) - 1):
-        trinuc = sequence[i-1: i + 2].seq
-        # Let's double check to make sure we didn't pick up a stray N
+        trinuc = sequence[i-1: i + 2].seq.upper()
+        # Let's double-check to make sure we didn't pick up a stray N
         if any([j for j in trinuc if j not in ALLOWED_NUCL]):
             # leave the probability at 0
             continue

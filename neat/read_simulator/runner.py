@@ -179,15 +179,6 @@ def read_simulator_runner(config: str, output: str):
     _LOG.info(f'Reading {options.reference}.')
 
     reference_index = SeqIO.index(str(options.reference), "fasta")
-
-    records = list(SeqIO.parse(str(options.reference), "fasta"))
-
-    for i in records:
-
-        if records[i].upper() != records[i]:
-
-            raise ValueError(f"Attempting to use reference soft-masked index (needs capitalization): {records}")
-
     _LOG.debug("Reference file indexed.")
 
     if _LOG.getEffectiveLevel() < 20:

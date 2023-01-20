@@ -8,7 +8,7 @@ Constants needed for analysis
 """
 # allowed nucleotides sets not only the allowed letters, but their order for sampling purposes.
 ALLOWED_NUCL = ['A', 'C', 'G', 'T']
-NUC_IND = frozendict({'A': 0, 'C': 1, 'G': 2, 'T': 3})
+NUC_IND = frozendict({'A': 0, 'C': 1, 'G': 2, 'T': 3, 'a': 0, 'c': 1, 'g': 2, 't': 3})
 
 MAX_ATTEMPTS = 100  # max attempts to insert a mutation into a valid position
 MAX_MUTFRAC = 0.3  # the maximum percentage of a window that can contain mutations

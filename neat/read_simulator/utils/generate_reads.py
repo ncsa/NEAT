@@ -35,7 +35,7 @@ def is_too_many_n(segment):
     """
     if not segment:
         return True
-    n = segment.count('N')
+    n = segment.upper().count('N')
     return n / len(segment) >= 0.2
 
 
@@ -421,11 +421,13 @@ def replace_n(segment: Seq, rng: Generator) -> Seq:
     :return: The modified sequence object
     """
     modified_segment = ""
-    for base in segment:
-        if base not in ALLOWED_NUCL:
-            modified_segment += rng.choice(ALLOWED_NUCL)
-        else:
+    # This takes care of soft masking
+    segment_no_mask = segment.upper()
+    for base in segment_no_mask:
+        if base in ALLOWED_NUCL:
             modified_segment += base
+        else:
+            modified_segment += rng.choice(ALLOWED_NUCL)
 
     return Seq(modified_segment)
 
@@ -507,7 +509,7 @@ def generate_reads(reference: SeqRecord,
     base_name = f'{Path(options.output).name}-{chrom}'
     target_coverage_vector = np.full(shape=len(reference), fill_value=options.coverage)
     if not options.no_coverage_bias:
-        target_coverage_vector = gc_bias.create_coverage_bias_vector(reference.seq)
+        target_coverage_vector = gc_bias.create_coverage_bias_vector(reference.seq.upper())
 
     target_coverage_vector = modify_target_coverage(targeted_regions, discarded_regions, target_coverage_vector)
 
@@ -543,8 +545,8 @@ def generate_reads(reference: SeqRecord,
 
         for i in tqdm(np.arange(len(ordered_final_reads))):
             # Added some padding after, in case there are deletions
-            segments = [reference[ordered_final_reads[i][0]: ordered_final_reads[i][1] + 50].seq,
-                        reference[ordered_final_reads[i][2]: ordered_final_reads[i][3] + 50].seq]
+            segments = [reference[ordered_final_reads[i][0]: ordered_final_reads[i][1] + 50].seq.upper(),
+                        reference[ordered_final_reads[i][2]: ordered_final_reads[i][3] + 50].seq.upper()]
             # Check for N concentration
             # Make sure the segments will come out to at around 80% valid bases
             # So as not to mess up the calculations, we will skip the padding we added above.
