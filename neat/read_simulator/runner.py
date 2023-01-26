@@ -268,9 +268,9 @@ def read_simulator_runner(config: str, output: str):
     vcf_files = []
     fasta_files = []
     fastq_files = []
-    temporary_sam_files = []
-    temporary_sam_order = []
-    bam_files = []
+
+    sam_reads_files = []
+
     print_fasta_tell = False
 
     for contig in breaks:
@@ -296,6 +296,10 @@ def read_simulator_runner(config: str, output: str):
             local_fasta_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.fasta'
 
         _LOG.debug(f'local vcf filename = {local_variant_file}')
+
+        local_bam_pickle_file = None
+        if options.produce_bam:
+            local_bam_pickle_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.p.gz'
 
         if threadidx == 1:
             # init_progress_info()
@@ -325,8 +329,9 @@ def read_simulator_runner(config: str, output: str):
         fasta_files.append(local_fasta_file)
 
         if options.produce_fastq or options.produce_bam:
-            read1_fastq, read2_fastq, temporary_sam, sam_sorted_order = \
+            read1_fastq, read2_fastq = \
                 generate_reads(local_reference,
+                               local_bam_pickle_file,
                                seq_error_model,
                                gc_bias_model,
                                fraglen_model,
@@ -339,8 +344,8 @@ def read_simulator_runner(config: str, output: str):
                                contig)
 
             fastq_files.append((read1_fastq, read2_fastq))
-            temporary_sam_files.append(temporary_sam)
-            temporary_sam_order.append(sam_sorted_order)
+            if options.produce_bam:
+                sam_reads_files.append(local_bam_pickle_file)
 
     if options.produce_vcf:
         _LOG.info(f"Outputting golden vcf: {str(output_file_writer.vcf_fn)}")
@@ -350,16 +355,12 @@ def read_simulator_runner(config: str, output: str):
         _LOG.info(f"Outputting fasta file(s): {', '.join([str(x) for x in output_file_writer.fasta_fns]).strip(', ')}")
         output_file_writer.merge_temp_fastas(fasta_files)
 
-    sam_rename: dict = {}
-    if options.produce_fastq or options.produce_bam:
+    if options.produce_fastq:
         _LOG.info(f"Outputting fastq file(s): {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
-        sam_rename = output_file_writer.merge_temp_fastqs_and_sort_bams(
-            fastq_files, options.produce_fastq, temporary_sam_order, options.rng
-        )
+        output_file_writer.merge_temp_fastqs(fastq_files, options.rng)
 
     if options.produce_bam:
         _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")
-        output_file_writer.combine_tsam_into_bam(
-            temporary_sam_files, sam_rename, temporary_sam_order
-        )
-        output_file_writer.sam_to_sorted_bam()
+        contig_list = list(reference_index)
+        contigs_by_index = {contig_list[n]: n for n in range(len(contig_list))}
+        output_file_writer.output_bam_file(sam_reads_files, contigs_by_index)

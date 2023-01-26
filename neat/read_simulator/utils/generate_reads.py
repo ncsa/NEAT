@@ -1,5 +1,6 @@
 import logging
 import time
+import pickle
 import numpy as np
 
 from tqdm import tqdm
@@ -466,6 +467,7 @@ def merge_sort(my_array: np.ndarray):
 
 
 def generate_reads(reference: SeqRecord,
+                   reads_pickle: str,
                    error_model: SequencingErrorModel,
                    gc_bias: GcModel,
                    fraglen_model: FragmentLengthModel,
@@ -482,6 +484,7 @@ def generate_reads(reference: SeqRecord,
     This will generate reads given a set of parameters for the run. The reads will output in a fastq.
 
     :param reference: The reference segment that reads will be drawn from.
+    :param reads_pickle: The file to put the reads generated into, for bam creation.
     :param error_model: The error model for this run
     :param gc_bias: The GC-Bias model for this run
     :param fraglen_model: The fragment length model for this run
@@ -531,87 +534,104 @@ def generate_reads(reference: SeqRecord,
     singletons = np.asarray([tuple(x) for x in reads if x not in paired_reads and any(x)])
     singletons = merge_sort(singletons)
 
-    ordered_final_reads = np.concatenate((paired_reads, singletons))
+    sam_read_order = np.concatenate((paired_reads, singletons))
 
-    _LOG.debug(f"Paired percentage = {len(paired_reads)/len(ordered_final_reads)}")
+    final_sam_dict = {}
 
-    # I'm worried about sorting the sam later, so trying to take care of that now
-    sam_read_order = []
+    _LOG.debug(f"Paired percentage = {len(paired_reads)/len(sam_read_order)}")
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     with (
         open_output(chrom_fastq_r1) as fq1,
-        open_output(chrom_fastq_r2) as fq2,
-        open_output(tsam) as temp_sam
+        open_output(chrom_fastq_r2) as fq2
     ):
 
-        for i in tqdm(np.arange(len(ordered_final_reads))):
+        for i in tqdm(np.arange(len(reads))):
             # Added some padding after, in case there are deletions
-            segments = [reference[ordered_final_reads[i][0]: ordered_final_reads[i][1] + 50].seq.upper(),
-                        reference[ordered_final_reads[i][2]: ordered_final_reads[i][3] + 50].seq.upper()]
+            segments = [reference[reads[i][0]: reads[i][1] + 50].seq.upper(),
+                        reference[reads[i][2]: reads[i][3] + 50].seq.upper()]
             # Check for N concentration
             # Make sure the segments will come out to at around 80% valid bases
             # So as not to mess up the calculations, we will skip the padding we added above.
             if not is_too_many_n(segments[0][:-50] + segments[1][:-50]):
                 read_name = f'{base_name}-{str(i)}'
+
+                if options.produce_bam:
+                    # This index gives the position of the read for the final bam file
+                    # [0][0] gives us the first index where this occurs (which should be the only one)
+                    final_order_read_index = np.where(sam_read_order == reads[i])[0][0]
+                    if final_order_read_index not in final_sam_dict:
+                        final_sam_dict[final_order_read_index] = []
+
                 # reads[i] = (left_start, left_end, right_start, right_end)
-                if any(ordered_final_reads[i][0:2]):
+                # If there is a read one:
+                if any(reads[i][0:2]):
                     segment = segments[0]
                     segment = replace_n(segment, options.rng)
 
-                    if any(ordered_final_reads[i][2:4]):
+                    if any(reads[i][2:4]):
                         is_paired = True
-                        read_name += "/1"
                     else:
                         is_paired = False
 
-                    read1 = Read(name=read_name,
-                                 raw_read=ordered_final_reads[i],
+                    read1 = Read(name=read_name + "/1",
+                                 raw_read=reads[i],
                                  reference_segment=segment,
                                  reference_id=reference.id,
-                                 position=ordered_final_reads[i][0] + ref_start,
-                                 end_point=ordered_final_reads[i][1] + ref_start,
+                                 position=reads[i][0] + ref_start,
+                                 end_point=reads[i][1] + ref_start,
                                  quality_offset=options.quality_offset,
                                  is_paired=is_paired
                                  )
 
-                    # The zero, zero slice of the np.where command is because this array is a 2d numpy array, so
-                    # to get the first index of the first full array that matched, we need [0][0]
-                    # we only have to do this once since reads[i] contains info on both reads.
-                    # The idea here is to have the order established above, find where this fits in the order, and set
-                    # The read. This will allow us to find these reads when we write out the full file
-                    sam_read_order.append(read_name)
-                    # TODO There may be a more efficient way to add mutations
                     read1.mutations = find_applicable_mutations(read1, contig_variants)
 
-                    read1.write_record(error_model, fq1, temp_sam, options.produce_fastq, options.produce_bam)
+                    read1.finalize_read_and_write(error_model, fq1, options.produce_fastq)
 
-                if any(ordered_final_reads[i][2:4]):
+                    if options.produce_bam:
+                        # Save this for later
+                        final_sam_dict[final_order_read_index].append(read1)
+
+                elif options.produce_bam:
+                    # If there's no read1, append a 0 placeholder
+                    final_sam_dict[final_order_read_index].append(0)
+
+                if any(reads[i][2:4]):
                     segment = segments[1]
                     segment = replace_n(segment, options.rng)
 
-                    if any(ordered_final_reads[i][0:2]):
+                    if any(reads[i][0:2]):
                         is_paired = True
-                        read_name += "/2"
                     else:
                         is_paired = False
 
-                    read2 = Read(name=read_name,
-                                 raw_read=ordered_final_reads[i],
+                    read2 = Read(name=read_name + "/2",
+                                 raw_read=reads[i],
                                  reference_segment=segment,
                                  reference_id=reference.id,
-                                 position=ordered_final_reads[i][2] + ref_start,
-                                 end_point=ordered_final_reads[i][3] + ref_start,
+                                 position=reads[i][2] + ref_start,
+                                 end_point=reads[i][3] + ref_start,
                                  quality_offset=options.quality_offset,
                                  is_reverse=True,
                                  is_paired=is_paired
                                  )
 
-                    # TODO There may be a more efficient way to add mutations
                     read2.mutations = find_applicable_mutations(read2, contig_variants)
-                    read2.write_record(error_model, fq2, temp_sam, options.produce_fastq, options.produce_bam)
+                    read2.finalize_read_and_write(error_model, fq2, options.produce_fastq)
+
+                    if options.produce_bam:
+                        # Save this for later
+                        final_sam_dict[final_order_read_index].append(read2)
+
+                elif options.produce_bam:
+                    # If there's no read2, append a 0 placeholder
+                    final_sam_dict[final_order_read_index].append(0)
 
     print("100%")
 
+    if options.produce_bam:
+        with open_output(reads_pickle) as reads:
+            pickle.dump(final_sam_dict, reads)
+
     _LOG.info(f"Finished sampling reads in {time.time() - start} seconds")
-    return chrom_fastq_r1, chrom_fastq_r2, tsam, sam_read_order
+    return chrom_fastq_r1, chrom_fastq_r2

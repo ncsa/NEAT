@@ -301,7 +301,7 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         :return: A randomly generated variant
         """
         # First determine which matrix to use
-        transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[:2]]]
+        transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[0] + "_" + trinucleotide[2]]]
         # then determine the trans probs based on the middle nucleotide
         transition_probs = transition_matrix[NUC_IND[trinucleotide[1]]]
         # Now pick a random alternate, weighted by the probabilities
@@ -321,8 +321,8 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         # Note that insertion length model is based on the number of bases inserted. We add 1 to the length
         # to get the length of the VCF version of the variant.
         length = self.get_insertion_length() + 1
-        insertion = ''.join(self.rng.choice(ALLOWED_NUCL, size=length))
-        alt = ref + insertion
+        insertion_string = ''.join(self.rng.choice(ALLOWED_NUCL, size=length))
+        alt = ref + insertion_string
         return Insertion(location, length, alt)
 
     def generate_deletion(self, location) -> Deletion:
