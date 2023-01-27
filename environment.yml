@@ -20,4 +20,4 @@ dependencies:
   - pip:
     - pysam
     - frozendict
-    - poetry>=1.2.*
+    - poetry>=1.3.*

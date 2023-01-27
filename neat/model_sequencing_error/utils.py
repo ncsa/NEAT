@@ -21,7 +21,7 @@ _LOG = logging.getLogger(__name__)
 
 def take_closest(bins, quality):
     """
-    Assumes bins is sorted. Returns closest value to quality.
+    Assumes bins is sorted. Returns the closest value to quality.
 
     If two numbers are equally close, return the smallest number.
     """

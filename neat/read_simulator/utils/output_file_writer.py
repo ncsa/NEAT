@@ -65,41 +65,6 @@ def reg2bin(beg: int, end: int):
     return 0
 
 
-# takes list of strings, returns numerical flag
-def sam_flag(string_list: list) -> int:
-    out_val = 0
-    strings_to_check = []
-    for val in string_list:
-        if val not in strings_to_check:
-            strings_to_check.append(val)
-    for n in string_list:
-        if n == 'paired':
-            out_val += 1
-        elif n == 'proper':
-            out_val += 2
-        elif n == 'unmapped':
-            out_val += 4
-        elif n == 'mate_unmapped':
-            out_val += 8
-        elif n == 'reverse':
-            out_val += 16
-        elif n == 'mate_reverse':
-            out_val += 32
-        elif n == 'first':
-            out_val += 64
-        elif n == 'second':
-            out_val += 128
-        elif n == 'not_primary':
-            out_val += 256
-        elif n == 'low_quality':
-            out_val += 512
-        elif n == 'duplicate':
-            out_val += 1024
-        elif n == 'supplementary':
-            out_val += 2048
-    return out_val
-
-
 class OutputFileWriter:
     """
     This class sets up the output files and has methods for writing out records
@@ -152,7 +117,7 @@ class OutputFileWriter:
             files_to_write.append(self.fastq_fns)
         if self.write_bam:
             self.bam_fn = options.output.parent / f'{options.output.stem}_golden.bam'
-            self.bam_keys = list(bam_header.keys())
+            self.bam_keys = list(bam_header)
             files_to_write.append(self.bam_fn)
         if self.write_vcf:
             self.vcf_fn = options.output.parent / f'{options.output.stem}_golden.vcf.gz'
@@ -385,30 +350,13 @@ class OutputFileWriter:
 
         block_size = 32 + len(read.name) + 1 + len(encoded_cig) + len(encoded_seq) + len(read.read_quality_score)
 
-        """
-        Not sure what the point of the following lines are
-        # self.bam_file.write(pack('<i',block_size))
-        # self.bam_file.write(pack('<i',refID))
-        # self.bam_file.write(pack('<i',pos_0))
-        # self.bam_file.write(pack('<I',(my_bin<<16) + (my_map_quality<<8) + len(readName)+1))
-        # self.bam_file.write(pack('<I',(samFlag<<16) + cig_ops))
-        # self.bam_file.write(pack('<i',seq_len))
-        # self.bam_file.write(pack('<i',next_ref_id))
-        # self.bam_file.write(pack('<i',next_pos))
-        # self.bam_file.write(pack('<i',my_tlen))
-        # self.bam_file.write(readName+'\0')
-        # self.bam_file.write(encoded_cig)
-        # self.bam_file.write(encoded_seq)
-        # self.bam_file.write(encoded_qual)
-        """
-
-        # a horribly compressed line, I'm sorry.
-        # (ref_index, position, data)
         bam_handle.write((pack('<i', block_size) +
                           pack('<i', contig_id) +
                           pack('<i', read.position + 1) +
-                          pack('<I', (read_bin << 16) +
-                               (read.mapping_quality << 8) + len(read.name) + 1) +
+                          pack('<I', (read_bin << 16)
+                               + (read.mapping_quality << 8)
+                               + len(read.name)
+                               + 1) +
                           pack('<I', (flag << 16) + cig_ops) +
                           pack('<i', seq_len) +
                           pack('<i', next_ref_id) +
@@ -418,24 +366,3 @@ class OutputFileWriter:
                           encoded_cig +
                           encoded_seq +
                           encoded_qual.encode('utf-8')))
-
-    def sort_and_convert_sam_file(self):
-        """
-        Convert sam to bam
-        """
-        samout_fn = self.bam_fn.parent / (self.bam_fn.stem + "_fromsam" + self.bam_fn.suffix)
-        if self.debug:
-            shutil.copyfile(self.sam_fn, '/home/joshfactorial/Documents/neat_outputs/test.sam')
-        pysam.sort("-o", str(samout_fn), str(self.sam_fn))
-        self.sam_temp_dir.cleanup()
-
-    def sort_bam(self):
-        if self.bam_file:
-            self.bam_file.close()
-        output = self.temporary_dir / 'sorted.bam'
-        pysam.sort("-o", str(output), str(self.bam_fn))
-        shutil.copyfile(output, self.bam_fn)
-
-    def close_bam_file(self):
-        if self.bam_file:
-            self.bam_file.close()
