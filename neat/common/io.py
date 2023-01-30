@@ -108,7 +108,7 @@ def open_output(path: str | Path, mode: str = 'wt') -> Iterator[TextIO]:
         handle.close()
 
 
-def validate_input_path(path: str | Path, key: str = None):
+def validate_input_path(path: str | Path):
     """
     Determine if the input path is valid.
 
@@ -116,7 +116,6 @@ def validate_input_path(path: str | Path, key: str = None):
     not valid one of the exceptions described later is raised.
 
     :param path: Path to validate
-    :param key: The associated key for the path
 
     Raises
     ------
@@ -129,8 +128,7 @@ def validate_input_path(path: str | Path, key: str = None):
     """
     path = Path(path)
     mssg = ''
-    if key:
-        mssg += f'Invalid value for {key}. '
+
     if not path.is_file():
         mssg += f"Path '{path}' does not exist or not a file"
         raise FileNotFoundError(mssg)

@@ -27,11 +27,18 @@ class Command(BaseCommand):
                             type=str,
                             metavar="FILE",
                             dest="input_file",
-                            nargs='+',
                             required=True,
-                            help="fastq(.gz) or sam/bam file_list to process. You may enter more than one "
-                                 "(e.g., paired end fastq files), they will be processed in sequence "
-                                 "and the results averaged")
+                            help="fastq(.gz) to process. Entering 1 fastqs will set the modeler to "
+                                 "single-ended mode. Use -i2 for paired ended models."
+                                 "To use a sam/bam input first convert to fastq using an external tool, "
+                                 "such as samtools.")
+
+        parser.add_argument('-i2',
+                            type=str,
+                            metavar="FILE2",
+                            dest="input_file2",
+                            help="fastq(.gz) file_list to process. Entering a value for -i2 will set the modeler to "
+                                 "paired-ended mode, modeling each strand separately.")
 
         parser.add_argument('-q',
                             type=int,
@@ -49,7 +56,8 @@ class Command(BaseCommand):
                             required=False,
                             default=[2, 11, 25, 37],
                             help="Quality score bins. Enter as a list for binned scores, "
-                                 "or enter a single maximum score for a full range. [2, 11, 24, 37]")
+                                 "or enter a single maximum score for a full range (i.e., entering 42 will give error"
+                                 "scores from 1-42. The default is binned quality scores: [2, 11, 24, 37]")
 
         parser.add_argument('-m',
                             type=int,
@@ -59,17 +67,17 @@ class Command(BaseCommand):
                             default=np.inf,
                             help="Max number of reads to process [all].")
 
-        parser.add_argument('--pileup',
-                            type=str,
-                            metavar="FILE",
-                            required=False,
-                            help="Pileup statistics file from running samtools pileup. Not yet implemented.")
-
-        parser.add_argument('--plot',
-                            required=False,
-                            action='store_true',
-                            default=False,
-                            help="Output optional plots (filename based on input name). Not yet implemented.")
+        # parser.add_argument('--pileup',
+        #                     type=str,
+        #                     metavar="FILE",
+        #                     required=False,
+        #                     help="Pileup statistics file from running samtools mpileup. Not yet implemented.")
+        #
+        # parser.add_argument('--plot',
+        #                     required=False,
+        #                     action='store_true',
+        #                     default=False,
+        #                     help="Output optional plots (filename based on input name). Not yet implemented.")
 
         parser.add_argument('--overwrite',
                             required=False,
@@ -88,11 +96,12 @@ class Command(BaseCommand):
         """
         model_seq_err_runner(
             arguments.input_file,
+            arguments.input_file2,
             arguments.quality_offset,
             arguments.quality_scores,
             arguments.max_num,
-            arguments.pileup,
-            arguments.plot,
+            # arguments.pileup,
+            # arguments.plot,
             arguments.overwrite,
             arguments.output
         )

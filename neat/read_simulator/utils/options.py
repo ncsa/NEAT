@@ -202,7 +202,7 @@ class Options(SimpleNamespace):
             if not (lowval <= value_to_check <= highval):
                 raise ValueError(f'@{keyname} must be between {lowval} and {highval}.')
         elif lowval == "exists" and value_to_check:
-            validate_input_path(value_to_check, keyname)
+            validate_input_path(value_to_check)
 
     def read(self):
         """

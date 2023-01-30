@@ -5,7 +5,7 @@ Utilities to generate the sequencing error model
 import logging
 import numpy as np
 
-import pysam
+from Bio import SeqIO
 
 from pathlib import Path
 from bisect import bisect_left
@@ -38,49 +38,34 @@ def take_closest(bins, quality):
         return before
 
 
-def parse_file(input_file: Path, file_type: str, quality_scores: list, off_q: int, max_reads: int):
+def parse_file(input_file: str, quality_scores: list, max_reads: int):
     """
     Parses an individual file for statistics
 
     :param input_file: The input file to process
-    :param file_type: The file type (sam/bam or fastq, gzipped or not)
     :param quality_scores: A list of potential quality scores
-    :param off_q: The offset for the quality score (usually 33) to convert to ASCII
     :param max_reads: Max number of reads to process for this file
     :return:
     """
 
     _LOG.info(f'reading {input_file}')
-    is_aligned = False
 
-    if file_type == "bam" or file_type == "sam":
-        f = pysam.AlignmentFile(input_file)
-        is_aligned = True
-    else:
-        f = pysam.FastxFile(str(input_file))
+    fastq_index = SeqIO.index(input_file, 'fastq')
+    read_names = list(fastq_index)
 
     readlens = []
-    qualities = []
 
-    if is_aligned:
-        g = f.fetch()
-    else:
-        g = f
+    counter = 0
+    for read_name in fastq_index:
+        read = fastq_index[read_name]
+        if read.letter_annotations['phred_quality']:
+            readlens.append(len(read))
+            counter += 1
+            if counter > 1000:
+                # takes too long and uses too much memory to read all of them, so let's just get a sample.
+                break
 
-    for read in g:
-        if is_aligned:
-            qualities_to_check = list(read.query_alignment_qualities)
-        else:
-            qualities_to_check = list(read.get_quality_array())
-
-        # Skip any empty quality arrays
-        if qualities_to_check:
-            readlens.append(len(qualities_to_check))
-            qualities.append(qualities_to_check)
-
-    f.close()
     readlens = np.array(readlens)
-    qualities = np.array(qualities)
 
     # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
     readlen_mode = mode(readlens, axis=None, keepdims=False)
@@ -91,23 +76,34 @@ def parse_file(input_file: Path, file_type: str, quality_scores: list, off_q: in
 
     read_length = readlen_mode.mode
 
+    _LOG.debug(f'Read len of {read_length}, with {readlen_mode.count} out of {len(fastq_index)}')
+
     # In order to account for scarce data, we may try to set the minimum count at 1.
     # For large datasets, this will have minimal impact, but it will ensure for small datasets
     # that we don't end up with probabilities of scores being 0. To do this, just change np.zeros to np.ones
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
 
-    total_records_to_read = min(len(readlens), max_reads)
+    total_records_to_read = min(len(fastq_index), max_reads)
     quarters = total_records_to_read//4
 
     rng = np.random.default_rng()
 
-    for i in range(total_records_to_read):
+    i = 0
+    wrong_len = 0
+    while i < total_records_to_read:
         """
         This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
         """
-        qualities_to_check = qualities[i]
+        # Get the ith key.
+        read = fastq_index[read_names[i]]
+        qualities_to_check = read.letter_annotations['phred_quality']
+        i += 1
         if len(qualities_to_check) != read_length:
+            total_records_to_read += 1
+            wrong_len += 1
+            if wrong_len % 100 == 0:
+                _LOG.debug(f'So far have detected {wrong_len} reads not matching the mode.')
             continue
 
         for j in range(read_length):
