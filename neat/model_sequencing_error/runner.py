@@ -15,6 +15,7 @@ from pathlib import Path
 from .utils import parse_file
 from ..common import validate_output_path, validate_input_path
 from ..models import SequencingErrorModel
+from ..variants import Insertion, Deletion, SingleNucleotideVariant
 
 __all__ = [
     "model_seq_err_runner"
@@ -104,7 +105,10 @@ def model_seq_err_runner(
     read_parameters = []
     average_errors = []
     read_length = 0
+    file_num = 0
     for file in input_files:
+        file_num += 1
+        _LOG.info(f'Reading file {file_num} of {len(input_files)}')
         parameters_by_position, file_avg_error, file_readlen = parse_file(file,
                                                                           final_quality_scores,
                                                                           num_records_to_process)
@@ -115,6 +119,8 @@ def model_seq_err_runner(
         elif file_readlen != read_length:
             _LOG.warning("Read lengths inconsistent between reads. Using the smaller value for the model")
             read_length = min(file_readlen, read_length)
+
+        _LOG.info(f'Finished reading file {file_num}')
 
     read_parameters = np.asarray(read_parameters)
     average_error = np.average(average_errors)
@@ -128,13 +134,32 @@ def model_seq_err_runner(
     #     _LOG.info("Pileup features not yet available. Using default parameters")
 
     # Generate and save the model
+
+    # Default values from the original NEAT
+    # TODO incorporate these into the calculations
+    error_transition_matrix = np.array(
+        [[0.0, 0.4918, 0.3377, 0.1705],
+         [0.5238, 0.0, 0.2661, 0.2101],
+         [0.3755, 0.2355, 0.0, 0.389],
+         [0.2505, 0.2552, 0.4943, 0.0]]
+    )
+
+    error_variant_probs = {Insertion: 0.004, Deletion: 0.006, SingleNucleotideVariant: 0.99}
+    indel_len_model = {1: 0.999, 2: 0.001}
+    insertion_model = np.array([0.25, 0.25, 0.25, 0.25])
+
     _LOG.info(f'Saving model: {output_file}')
     with gzip.open(output_file, 'w') as out_model:
         seq_err_model = SequencingErrorModel(
             avg_seq_error=average_error,
             read_length=read_length,
+            transition_matrix=error_transition_matrix,
             quality_scores=np.array(final_quality_scores),
             qual_score_probs=read_parameters[0],
+            variant_probs=error_variant_probs,
+            indel_len_model=indel_len_model,
+            insertion_model=insertion_model
+
         )
         pickle.dump(seq_err_model, out_model)
 
@@ -142,8 +167,12 @@ def model_seq_err_runner(
             seq_err_model_r2 = SequencingErrorModel(
                 avg_seq_error=average_error,
                 read_length=read_length,
+                transition_matrix=error_transition_matrix,
                 quality_scores=np.array(final_quality_scores),
-                qual_score_probs=read_parameters[1]
+                qual_score_probs=read_parameters[1],
+                variant_probs=error_variant_probs,
+                indel_len_model=indel_len_model,
+                insertion_model=insertion_model
             )
             pickle.dump(seq_err_model_r2, out_model)
 

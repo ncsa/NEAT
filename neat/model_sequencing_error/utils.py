@@ -59,7 +59,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     :return:
     """
 
-    _LOG.info(f'reading {input_file}')
+    _LOG.info(f'file name: {input_file}')
 
     fastq_index = SeqIO.index(input_file, 'fastq')
     read_names = list(fastq_index)
@@ -87,7 +87,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     read_length = int(readlen_mode.mode)
 
-    _LOG.debug(f'Read len of {read_length}, over {counter} samples')
+    _LOG.debug(f'Read len of {read_length} over {counter} samples')
 
     total_records_to_read = min(len(fastq_index), max_reads)
     temp_q_count = []
@@ -124,6 +124,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     _LOG.info(f'reading data: 100%')
     _LOG.debug(f'{wrong_len} total reads had a length other than {read_length}')
 
+    _LOG.info(f'Building quality-score model for file')
     avg_std_by_pos = []
     q_count_by_pos = np.asarray(temp_q_count).transpose()
     for i in range(read_length):
@@ -132,6 +133,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
         avg_std_by_pos.append((average_q, st_d_q))
 
     # Calculates the average error rate
+    _LOG.info('Calculating the average error rate for file')
     tot_bases = len(temp_q_count[0]) * len(fastq_index)
     avg_err = 0
     for score in quality_scores:

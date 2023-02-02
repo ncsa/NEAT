@@ -22,7 +22,12 @@ default_quality_scores = np.array([2, 11, 25, 37])
 
 # This puts a high probability toward getting a maximum quality score. The current values
 # should be considered temporary. We're working on final values.
-default_qual_score_probs = np.array()
+default_qual_score_probs = np.array([
+    np.full(151, 0.00001),
+    np.full(151, 0.001),
+    np.full(151, 0.23),
+    np.full(151, 0.76899)
+]).T
 
 default_error_variant_probs = {Insertion: 0.004, Deletion: 0.006, SingleNucleotideVariant: 0.99}
 default_indel_len_model = {1: 0.999, 2: 0.001}
