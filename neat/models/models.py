@@ -354,12 +354,10 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     :param read_length: The read length derived from real data.
     :param transition_matrix: 2x2 matrix that gives the probability of each base transitioning to another.
     :param quality_scores: numpy array of ints of the PHRED quality scores possible from the sequencing machine
-    :param qual_score_probs: A numpy array of arrays of floats. Each inner array has a length equal to the length
-                             of the quality scores list. The number of arrays is equal to the number of positions
-                             of reads in the dataset. The default model uses an array of length 101. Each row
-                             tells you the probability of getting each quality score at that position along the read.
+    :param qual_score_probs: At each position along the read_length, this gives the mean and standard deviation of
+        quality scores read from the dataset used to construct the model.
     :param rescale_qualities: If set to true, NEAT will attempt to rescale the qualities based on the input error
-                              model, rather than using the qualities derived from the real data.
+        model, rather than using the qualities derived from the real data.
     :param variant_probs: Probability dict for each valid variant type
     :param indel_len_model: Similar to mutation model, but simpler because errors tend not to be complicated. The
         three possible variant types for errors are Insertion, Deletion, and SNV
