@@ -89,6 +89,8 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     _LOG.info(f'file name: {input_file}')
 
     fastq_index = SeqIO.index(input_file, 'fastq')
+    number_records = len(fastq_index)
+    read_names = list(fastq_index)
 
     readlens = []
 
@@ -98,8 +100,8 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
         if read.letter_annotations['phred_quality']:
             readlens.append(len(read))
             counter += 1
-            if counter >= 1000:
-                # takes too long and uses too much memory to read all of them, so let's just get a sample.
+            if counter >= number_records//100:
+                # takes too long and uses too much memory to read all of them, so let's just get a 1% sample.
                 break
 
     readlens = np.array(readlens)
@@ -115,21 +117,24 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     _LOG.debug(f'Read len of {read_length} over {counter} samples')
 
-    filtered_records = filter_reads(fastq_index, read_length)
-
-    total_records_to_read = min(len(filtered_records), max_reads)
+    total_records_to_read = min(len(fastq_index), max_reads)
     temp_q_count = []
     qual_score_counter = {x: 0 for x in quality_scores}
     quarters = total_records_to_read//4
 
     i = 0
+    records_skipped = 0
     while i < total_records_to_read:
         """
         This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
         """
         # Get the ith key.
-        read = fastq_index[filtered_records[i]]
+        read = fastq_index[read_names[i]]
         qualities_to_check = read.letter_annotations['phred_quality']
+
+        if len(qualities_to_check) != read_length:
+            records_skipped += 1
+            continue
 
         quality_bin_list = bin_scores(quality_scores, qualities_to_check)
         for score in quality_bin_list:
@@ -142,10 +147,11 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
             _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
+    _LOG.debug(f'Skipped {records_skipped}/{number_records} records ({1-(records_skipped/number_records):.0%}% passed)')
 
     _LOG.info(f'Building quality-score model for file')
     avg_std_by_pos = []
-    q_count_by_pos = np.asarray(temp_q_count).transpose()
+    q_count_by_pos = np.asarray(temp_q_count).T
     for i in range(read_length):
         average_q = np.average(q_count_by_pos[i])
         st_d_q = np.std(q_count_by_pos[i])
