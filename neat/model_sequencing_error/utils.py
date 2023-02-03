@@ -49,6 +49,33 @@ def bin_scores(bins, quality_array):
     return ret_list
 
 
+def filter_reads(my_reads, length):
+    """
+    Filters a list of reads down to speed up processing
+
+    :param my_reads: The fastq index of reads which we will filter
+    :param length: The length that we will use as the filter parameter
+    """
+    records_to_return = []
+
+    records_skipped = 0
+    for record in my_reads:
+        qual_score_len = len(my_reads[record].letter_annotations['phred_quality'])
+        if qual_score_len < length:
+            records_skipped += 1
+            continue
+        elif qual_score_len == length:
+            records_to_return.append(record)
+        else:
+            # We could try truncating these down. Or we could skip them. Not sure which is better.
+            records_skipped += 1
+            continue
+
+    _LOG.info(f'{records_skipped} out of {len(my_reads)} were skipped for having a weird read length')
+
+    return records_to_return
+
+
 def parse_file(input_file: str, quality_scores: list, max_reads: int):
     """
     Parses an individual file for statistics
@@ -62,7 +89,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     _LOG.info(f'file name: {input_file}')
 
     fastq_index = SeqIO.index(input_file, 'fastq')
-    read_names = list(fastq_index)
 
     readlens = []
 
@@ -89,27 +115,21 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     _LOG.debug(f'Read len of {read_length} over {counter} samples')
 
-    total_records_to_read = min(len(fastq_index), max_reads)
+    filtered_records = filter_reads(fastq_index, read_length)
+
+    total_records_to_read = min(len(filtered_records), max_reads)
     temp_q_count = []
     qual_score_counter = {x: 0 for x in quality_scores}
     quarters = total_records_to_read//4
 
     i = 0
-    wrong_len = 0
     while i < total_records_to_read:
         """
         This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
         """
         # Get the ith key.
-        read = fastq_index[read_names[i]]
+        read = fastq_index[filtered_records[i]]
         qualities_to_check = read.letter_annotations['phred_quality']
-        if len(qualities_to_check) != read_length:
-            total_records_to_read += 1
-            i += 1
-            wrong_len += 1
-            if wrong_len % 100 == 0:
-                _LOG.debug(f'So far have detected {wrong_len} reads not matching the mode.')
-            continue
 
         quality_bin_list = bin_scores(quality_scores, qualities_to_check)
         for score in quality_bin_list:
@@ -122,7 +142,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
             _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
-    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length}')
 
     _LOG.info(f'Building quality-score model for file')
     avg_std_by_pos = []
