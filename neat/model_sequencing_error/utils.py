@@ -4,6 +4,7 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
+from tqdm import tqdm
 
 from Bio import SeqIO
 
@@ -122,9 +123,9 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     qual_score_counter = {x: 0 for x in quality_scores}
     quarters = total_records_to_read//4
 
-    i = 0
+    _LOG.info("Processing reads...")
     records_skipped = 0
-    while i < total_records_to_read:
+    for i in tqdm(np.arange(total_records_to_read)):
         """
         This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
         """
