@@ -150,30 +150,33 @@ def model_seq_err_runner(
 
     _LOG.info(f'Saving model: {output_file}')
     with gzip.open(output_file, 'w') as out_model:
-        seq_err_model = SequencingErrorModel(
-            avg_seq_error=average_error,
-            read_length=read_length,
-            transition_matrix=error_transition_matrix,
-            quality_scores=np.array(final_quality_scores),
-            qual_score_probs=read_parameters[0],
-            variant_probs=error_variant_probs,
-            indel_len_model=indel_len_model,
-            insertion_model=insertion_model
-
-        )
-        pickle.dump(seq_err_model, out_model)
-
-        if len(input_files) == 2:
-            seq_err_model_r2 = SequencingErrorModel(
+        pickle.dump(
+            SequencingErrorModel(
                 avg_seq_error=average_error,
                 read_length=read_length,
                 transition_matrix=error_transition_matrix,
                 quality_scores=np.array(final_quality_scores),
-                qual_score_probs=read_parameters[1],
+                qual_score_probs=read_parameters[0],
                 variant_probs=error_variant_probs,
                 indel_len_model=indel_len_model,
                 insertion_model=insertion_model
+            ),
+            out_model
+        )
+
+        if len(input_files) == 2:
+            pickle.dump(
+                SequencingErrorModel(
+                    avg_seq_error=average_error,
+                    read_length=read_length,
+                    transition_matrix=error_transition_matrix,
+                    quality_scores=np.array(final_quality_scores),
+                    qual_score_probs=read_parameters[1],
+                    variant_probs=error_variant_probs,
+                    indel_len_model=indel_len_model,
+                    insertion_model=insertion_model
+                ),
+                out_model
             )
-            pickle.dump(seq_err_model_r2, out_model)
 
     _LOG.info("Modeling sequencing errors is complete, have a nice day.")
