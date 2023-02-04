@@ -20,6 +20,8 @@ __all__ = [
 
 _LOG = logging.getLogger(__name__)
 
+DATA_BINS = {}
+
 
 def bin_scores(bins, quality_array):
     """
@@ -34,17 +36,24 @@ def bin_scores(bins, quality_array):
     ret_list = []
 
     for score in quality_array:
+        if score in DATA_BINS:
+            ret_list.append(DATA_BINS[score])
+            continue
         pos = bisect_left(bins, score)
         if pos == 0:
+            DATA_BINS[score] = bins[0]
             ret_list.append(bins[0])
         elif pos == len(bins):
+            DATA_BINS[score] = bins[-1]
             ret_list.append(bins[-1])
         else:
             before = bins[pos - 1]
             after = bins[pos]
             if after - score < score - before:
+                DATA_BINS[score] = after
                 ret_list.append(after)
             else:
+                DATA_BINS[score] = before
                 ret_list.append(before)
 
     return ret_list
