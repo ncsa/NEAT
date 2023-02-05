@@ -44,7 +44,7 @@ def model_seq_err_runner(
         derive the character for the quality array.
     :param qual_scores: These are the possible quality scores for the dataset. This can either be a list or a single
         integer.
-    :param max_reads: The maximum number or reads to process. This can speed up the time taken to create the model,
+    :param max_reads: The maximum number of reads to process. This can speed up the time taken to create the model,
         at the expense of accuracy.
     :param pileup: If pileup file included, get stats from that
     :param plot: run optional plotting.
