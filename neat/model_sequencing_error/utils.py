@@ -59,33 +59,6 @@ def bin_scores(bins, quality_array):
     return ret_list
 
 
-def filter_reads(my_reads, length):
-    """
-    Filters a list of reads down to speed up processing
-
-    :param my_reads: The fastq index of reads which we will filter
-    :param length: The length that we will use as the filter parameter
-    """
-    records_to_return = []
-
-    records_skipped = 0
-    for record in my_reads:
-        qual_score_len = len(my_reads[record].letter_annotations['phred_quality'])
-        if qual_score_len < length:
-            records_skipped += 1
-            continue
-        elif qual_score_len == length:
-            records_to_return.append(record)
-        else:
-            # We could try truncating these down. Or we could skip them. Not sure which is better.
-            records_skipped += 1
-            continue
-
-    _LOG.info(f'{records_skipped} out of {len(my_reads)} were skipped for having a weird read length')
-
-    return records_to_return
-
-
 def parse_file(input_file: str, quality_scores: list, max_reads: int):
     """
     Parses an individual file for statistics
@@ -97,6 +70,8 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     """
 
     _LOG.info(f'file name: {input_file}')
+
+    rng = np.default_rng()
 
     fastq_index = SeqIO.index(input_file, 'fastq')
     number_records = len(fastq_index)
@@ -128,13 +103,22 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     _LOG.debug(f'Read len of {read_length} over {counter} samples')
 
     total_records_to_read = min(len(fastq_index), max_reads)
+
+    if total_records_to_read > 10e7:
+        _LOG.warning("Very large dataset. At this time, reading this entire dataset is not feasible. "
+                     "We will sample a random subset.")
+        total_records_to_read = 10e7
+        rng.shuffle(read_names)
+
+    _LOG.info(f'Reading {total_records_to_read} records out of {len(fastq_index)}')
+
     temp_q_count = []
     qual_score_counter = {x: 0 for x in quality_scores}
     quarters = total_records_to_read//4
 
     _LOG.info("Processing reads...")
     records_skipped = 0
-    for i in tqdm(np.arange(total_records_to_read)):
+    for i in range(total_records_to_read):
         """
         This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
         """
