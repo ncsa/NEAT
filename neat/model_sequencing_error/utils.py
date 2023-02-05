@@ -71,7 +71,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     _LOG.info(f'file name: {input_file}')
 
-    rng = np.default_rng()
+    rng = np.random.default_rng()
 
     fastq_index = SeqIO.index(input_file, 'fastq')
     number_records = len(fastq_index)
