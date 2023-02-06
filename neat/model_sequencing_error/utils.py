@@ -126,6 +126,11 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
         read = fastq_index[read_names[i]]
         qualities_to_check = read.letter_annotations['phred_quality']
 
+        if i % quarters == 0:
+            _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
+
+        i += 1
+
         if len(qualities_to_check) != read_length:
             records_skipped += 1
             continue
@@ -134,11 +139,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
         for score in quality_bin_list:
             qual_score_counter[score] += 1
         temp_q_count.append(quality_bin_list)
-
-        i += 1
-
-        if i % quarters == 0:
-            _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
     _LOG.debug(f'Skipped {records_skipped}/{number_records} records ({1-(records_skipped/number_records):.0%} passed)')
