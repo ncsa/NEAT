@@ -107,7 +107,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     if total_records_to_read > 10e7:
         _LOG.warning("Very large dataset. At this time, reading this entire dataset is not feasible. "
                      "We will sample a random subset.")
-        total_records_to_read = 10e7
+        total_records_to_read = int(10e7)
         rng.shuffle(read_names)
 
     _LOG.info(f'Reading {total_records_to_read} records out of {len(fastq_index)}')
