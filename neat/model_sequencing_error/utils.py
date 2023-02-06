@@ -71,6 +71,9 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     _LOG.info(f'file name: {input_file}')
 
+    # SeqIO seems to be having trouble with larger fastq files. I may try just
+    # gzip open and read the file. Requires a bit more conversion. Need to convert string to
+    # list of scores
     fastq_index = SeqIO.index(input_file, 'fastq')
     number_records = len(fastq_index)
     read_names = list(fastq_index)
@@ -102,10 +105,10 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     total_records_to_read = min(len(fastq_index), max_reads)
 
-    if total_records_to_read > 10e7:
-        _LOG.warning("Very large dataset. At this time, reading this entire dataset is not feasible. "
-                     "We will read a sample of the dataset.")
-        total_records_to_read = int(10e7)
+    # if total_records_to_read > 10e7:
+    #     _LOG.warning("Very large dataset. At this time, reading this entire dataset is not feasible. "
+    #                  "We will read a sample of the dataset.")
+    #     total_records_to_read = int(10e7)
 
     _LOG.info(f'Reading {total_records_to_read} records out of {len(fastq_index)}')
 
