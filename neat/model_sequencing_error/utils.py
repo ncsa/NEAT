@@ -71,8 +71,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     _LOG.info(f'file name: {input_file}')
 
-    rng = np.random.default_rng()
-
     fastq_index = SeqIO.index(input_file, 'fastq')
     number_records = len(fastq_index)
     read_names = list(fastq_index)
@@ -106,9 +104,8 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     if total_records_to_read > 10e7:
         _LOG.warning("Very large dataset. At this time, reading this entire dataset is not feasible. "
-                     "We will sample a random subset.")
+                     "We will read a sample of the dataset.")
         total_records_to_read = int(10e7)
-        rng.shuffle(read_names)
 
     _LOG.info(f'Reading {total_records_to_read} records out of {len(fastq_index)}')
 
@@ -141,7 +138,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
             _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
-    _LOG.debug(f'Skipped {records_skipped}/{number_records} records ({1-(records_skipped/number_records):.0%}% passed)')
+    _LOG.debug(f'Skipped {records_skipped}/{number_records} records ({1-(records_skipped/number_records):.0%} passed)')
 
     _LOG.info(f'Building quality-score model for file')
     avg_std_by_pos = []
