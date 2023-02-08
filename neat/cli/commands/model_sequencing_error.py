@@ -57,7 +57,9 @@ class Command(BaseCommand):
                             default=[2, 11, 25, 37],
                             help="Quality score bins. Enter as a list for binned scores, "
                                  "or enter a single maximum score for a full range (i.e., entering 42 will give error"
-                                 "scores from 1-42. The default is binned quality scores: [2, 11, 24, 37]")
+                                 "scores from 1-42). The default is binned quality scores: [2, 11, 24, 37]. Note that"
+                                 "using quality score bins on an unbinned fastq will result in a binned model, at the"
+                                 "cost of some inaccuracy.")
 
         parser.add_argument('-m',
                             type=int,

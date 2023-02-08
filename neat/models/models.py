@@ -22,6 +22,7 @@ from .default_mutation_model import *
 from .default_sequencing_error_model import *
 from .default_gc_bias_model import *
 from .default_fraglen_model import *
+from .utils import bin_scores
 
 __all__ = [
     "MutationModel",
@@ -35,26 +36,6 @@ __all__ = [
 ]
 
 _LOG = logging.getLogger(__name__)
-
-
-def take_closest(my_list: np.ndarray, my_number: float):
-    """
-    Helper function that assumes my_list is sorted. Returns closest value to my_number.
-    This is necessary because most quality scores are binned these days.
-
-    If two numbers are equally close, return the smaller number.
-    """
-    pos = bisect_left(my_list, my_number)
-    if pos == 0:
-        return my_list[0]
-    if pos == len(my_list):
-        return my_list[-1]
-    before = my_list[pos - 1]
-    after = my_list[pos]
-    if after - my_number < my_number - before:
-        return after
-    else:
-        return before
 
 
 class VariantModel(abc.ABC):
@@ -401,9 +382,10 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         self.insertion_model = insertion_model
         self.uniform_quality_score = None
         if self.is_uniform:
-            converted_avg_err = take_closest(self.quality_scores,
-                                             int(-10. * np.log10(self.average_error)))
-            # Set score to the lower of the max of the quality scores and the bin closest to the input avg error.
+            # bin scores returns a list, so we need the first (only) element of the list
+            converted_avg_err = bin_scores(self.quality_scores,
+                                           [int(-10. * np.log10(self.average_error))])[0]
+            # Set score to the lowest of the max of the quality scores and the bin closest to the input avg error.
             self.uniform_quality_score = min([max(self.quality_scores), converted_avg_err])
         self.rng = rng
 
@@ -514,8 +496,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             quality_index_map = self.quality_index_remap(input_read_length)
             temp_qual_array = []
             for i in range(input_read_length):
-                score = self.rng.choice(a=self.quality_scores,
-                                        p=self.quality_score_probabilities[quality_index_map[i]])
+                score = bin_scores(self.quality_scores,
+                                   self.rng.normal(self.quality_score_probabilities[i][0],
+                                                   scale=self.quality_score_probabilities[i][1]))
                 temp_qual_array.append(score)
 
         if self.rescale_qualities:
@@ -526,7 +509,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                                                           self.quality_score_error_rate[n]) + 0.5)])
                               for n in temp_qual_array]
             # Now rebin the quality scores.
-            temp_qual_array = np.array([take_closest(self.quality_scores, n) for n in rescaled_quals])
+            temp_qual_array = np.array(bin_scores(self.quality_scores, [n for n in rescaled_quals]))
 
         return temp_qual_array[:input_read_length]
 
