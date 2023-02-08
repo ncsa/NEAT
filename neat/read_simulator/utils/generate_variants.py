@@ -205,6 +205,8 @@ def generate_variants(reference: SeqRecord,
                 if location == 0:
                     continue
                 trinuc = reference[location: location+3].seq.upper()
+                if "N" in trinuc:
+                    continue
                 temp_variant = mutation_model.generate_snv(trinuc, location)
 
             else:

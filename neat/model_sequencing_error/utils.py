@@ -4,68 +4,29 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
-from tqdm import tqdm
+import gzip
 
 from Bio import SeqIO
 
-from pathlib import Path
-import pickle
-from bisect import bisect_left
 from scipy.stats import mode
+from ..models import bin_scores
+from ..common import open_input
 
 __all__ = [
-    "bin_scores",
     "parse_file"
 ]
 
 _LOG = logging.getLogger(__name__)
 
-DATA_BINS = {}
 
-
-def bin_scores(bins, quality_array):
-    """
-    Assumes bins list is sorted. Returns the closest value to quality.
-
-    If two numbers are equally close, return the smallest number. Note that in the case of quality scores
-    not being binned, the "bin" will end up just being the quality score.
-
-    :bins list: the possible values of the quality scores for the simulation
-    :quality_array list: the quality array from data which we will bin.
-    """
-    ret_list = []
-
-    for score in quality_array:
-        if score in DATA_BINS:
-            ret_list.append(DATA_BINS[score])
-            continue
-        pos = bisect_left(bins, score)
-        if pos == 0:
-            DATA_BINS[score] = bins[0]
-            ret_list.append(bins[0])
-        elif pos == len(bins):
-            DATA_BINS[score] = bins[-1]
-            ret_list.append(bins[-1])
-        else:
-            before = bins[pos - 1]
-            after = bins[pos]
-            if after - score < score - before:
-                DATA_BINS[score] = after
-                ret_list.append(after)
-            else:
-                DATA_BINS[score] = before
-                ret_list.append(before)
-
-    return ret_list
-
-
-def parse_file(input_file: str, quality_scores: list, max_reads: int):
+def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int):
     """
     Parses an individual file for statistics
 
     :param input_file: The input file to process
     :param quality_scores: A list of potential quality scores
     :param max_reads: Max number of reads to process for this file
+    :param qual_offset: The offset for the quality scores when converting to str
     :return:
     """
 
@@ -74,21 +35,27 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
     # SeqIO seems to be having trouble with larger fastq files. I may try just
     # gzip open and read the file. Requires a bit more conversion. Need to convert string to
     # list of scores
-    fastq_index = SeqIO.index(input_file, 'fastq')
-    number_records = len(fastq_index)
-    read_names = list(fastq_index)
+    # fastq_index = SeqIO.index(input_file, 'fastq')
+    with open_input(input_file) as fastq_in:
+        number_records = 0
+        read_names = []
+        readlens = []
+        qualities_to_check = []
+        keep_running = True
 
-    readlens = []
-
-    counter = 0
-    for read_name in fastq_index:
-        read = fastq_index[read_name]
-        if read.letter_annotations['phred_quality']:
-            readlens.append(len(read))
-            counter += 1
-            if counter >= number_records//100:
-                # takes too long and uses too much memory to read all of them, so let's just get a 1% sample.
-                break
+        while keep_running:
+            line1 = fastq_in.readline().strip()
+            line2 = fastq_in.readline().strip()
+            line3 = fastq_in.readline().strip()
+            line4 = fastq_in.readline().strip()
+            if not all([line1, line2, line3, line4]):
+                keep_running = False
+            else:
+                number_records += 1
+                read_names.append(line1.split(' ')[0].lstrip('@'))
+                qual_score = line4.strip()
+                qualities_to_check.append(qual_score)
+                readlens.append(len(qual_score))
 
     readlens = np.array(readlens)
 
@@ -101,16 +68,16 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     read_length = int(readlen_mode.mode)
 
-    _LOG.debug(f'Read len of {read_length} over {counter} samples')
+    _LOG.debug(f'Read len of {read_length} over {number_records} samples')
 
-    total_records_to_read = min(len(fastq_index), max_reads)
+    total_records_to_read = min(len(readlens), max_reads)
 
     # if total_records_to_read > 10e7:
     #     _LOG.warning("Very large dataset. At this time, reading this entire dataset is not feasible. "
     #                  "We will read a sample of the dataset.")
     #     total_records_to_read = int(10e7)
 
-    _LOG.info(f'Reading {total_records_to_read} records out of {len(fastq_index)}')
+    _LOG.info(f'Reading {total_records_to_read} records out of {len(readlens)}')
 
     temp_q_count = []
     qual_score_counter = {x: 0 for x in quality_scores}
@@ -122,20 +89,18 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
         """
         This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
         """
-        # Get the ith key.
-        read = fastq_index[read_names[i]]
-        qualities_to_check = read.letter_annotations['phred_quality']
+        qual_score = qualities_to_check[i]
 
-        if i % quarters == 0:
+        if i % quarters == 0 and i != 0:
             _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
 
         i += 1
 
-        if len(qualities_to_check) != read_length:
+        if len(qual_score) != read_length:
             records_skipped += 1
             continue
 
-        quality_bin_list = bin_scores(quality_scores, qualities_to_check)
+        quality_bin_list = bin_scores(quality_scores, qual_score, qual_offset)
         for score in quality_bin_list:
             qual_score_counter[score] += 1
         temp_q_count.append(quality_bin_list)
@@ -153,7 +118,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     # Calculates the average error rate
     _LOG.info('Calculating the average error rate for file')
-    tot_bases = len(temp_q_count[0]) * len(fastq_index)
+    tot_bases = len(temp_q_count[0]) * len(readlens)
     avg_err = 0
     for score in quality_scores:
         error_val = 10. ** (-score / 10.)

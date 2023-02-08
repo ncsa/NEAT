@@ -111,7 +111,8 @@ def model_seq_err_runner(
         _LOG.info(f'Reading file {file_num} of {len(input_files)}')
         parameters_by_position, file_avg_error, file_readlen = parse_file(file,
                                                                           final_quality_scores,
-                                                                          num_records_to_process)
+                                                                          num_records_to_process,
+                                                                          offset)
         read_parameters.append(parameters_by_position)
         average_errors.append(file_avg_error)
         if not read_length:
