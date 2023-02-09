@@ -100,25 +100,31 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
             records_skipped += 1
             continue
 
-        quality_bin_list = bin_scores(quality_scores, qual_score, qual_offset)
-        for score in quality_bin_list:
+        bin_generator = bin_scores(quality_scores, qual_score, qual_offset)
+        quality_bin_list = []
+        for score in bin_generator:
             qual_score_counter[score] += 1
+            quality_bin_list.append(score)
         temp_q_count.append(quality_bin_list)
+
+    del quality_bin_list
 
     _LOG.info(f'reading data: 100%')
     _LOG.debug(f'Skipped {records_skipped}/{number_records} records ({1-(records_skipped/number_records):.0%} passed)')
 
     _LOG.info(f'Building quality-score model for file')
     avg_std_by_pos = []
-    q_count_by_pos = np.asarray(temp_q_count).T
-    for i in range(read_length):
-        average_q = np.average(q_count_by_pos[i])
-        st_d_q = np.std(q_count_by_pos[i])
+    for array in temp_q_count:
+        average_q = np.average(array)
+        st_d_q = np.std(array)
         avg_std_by_pos.append((average_q, st_d_q))
+
+    del temp_q_count
 
     # Calculates the average error rate
     _LOG.info('Calculating the average error rate for file')
-    tot_bases = len(temp_q_count[0]) * len(readlens)
+    # Total read length times how many readlens we found should tell us how many bases we processed
+    tot_bases = read_length * len(readlens)
     avg_err = 0
     for score in quality_scores:
         error_val = 10. ** (-score / 10.)
