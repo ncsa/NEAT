@@ -114,6 +114,8 @@ def model_seq_err_runner(
                                                                           num_records_to_process,
                                                                           offset)
         read_parameters.append(parameters_by_position)
+        # Trying to manage memory better
+        del parameters_by_position
         average_errors.append(file_avg_error)
         if not read_length:
             read_length = file_readlen
