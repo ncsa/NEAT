@@ -114,15 +114,12 @@ def model_seq_err_runner(
                                                                           num_records_to_process,
                                                                           offset)
         read_parameters.append(parameters_by_position)
-        # Trying to manage memory better
-        del parameters_by_position
         average_errors.append(file_avg_error)
         if not read_length:
             read_length = file_readlen
         elif file_readlen != read_length:
             _LOG.warning("Read lengths inconsistent between reads. Using the smaller value for the model")
             read_length = min(file_readlen, read_length)
-
         _LOG.info(f'Finished reading file {file_num}')
 
     read_parameters = np.asarray(read_parameters)
@@ -153,33 +150,21 @@ def model_seq_err_runner(
 
     _LOG.info(f'Saving model: {output_file}')
     with gzip.open(output_file, 'w') as out_model:
-        pickle.dump(
-            SequencingErrorModel(
+        seq_err_model = SequencingErrorModel(
+            avg_seq_error=average_error,
+            read_length=read_length,
+            quality_scores=np.array(final_quality_scores),
+            qual_score_probs=read_parameters[0],
+        )
+        pickle.dump(seq_err_model, out_model)
+
+        if len(input_files) == 2:
+            seq_err_model_r2 = SequencingErrorModel(
                 avg_seq_error=average_error,
                 read_length=read_length,
                 transition_matrix=error_transition_matrix,
                 quality_scores=np.array(final_quality_scores),
-                qual_score_probs=read_parameters[0],
-                variant_probs=error_variant_probs,
-                indel_len_model=indel_len_model,
-                insertion_model=insertion_model
-            ),
-            out_model
-        )
-
-        if len(input_files) == 2:
-            pickle.dump(
-                SequencingErrorModel(
-                    avg_seq_error=average_error,
-                    read_length=read_length,
-                    transition_matrix=error_transition_matrix,
-                    quality_scores=np.array(final_quality_scores),
-                    qual_score_probs=read_parameters[1],
-                    variant_probs=error_variant_probs,
-                    indel_len_model=indel_len_model,
-                    insertion_model=insertion_model
-                ),
-                out_model
+                qual_score_probs=read_parameters[1]
             )
 
     _LOG.info("Modeling sequencing errors is complete, have a nice day.")
