@@ -86,16 +86,24 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
     # takes too long and uses too much memory to read all of them, so let's just get a sample.
     with open_input(input_file) as fq_in:
         i = 0
+        # Count the first 1000 lines
         while i < 1000:
             i += 1
             for _ in (0, 1, 2):
                 fq_in.readline()
             line = fq_in.readline().strip()
             readlens.append(len(line))
+        # simply counting records every four lines after this.
         while True:
             i += 1
             for _ in (0, 1, 2, 3):
-                fq_in.readline()
+                end_of_file = False
+                line = fq_in.readline()
+                if not line:
+                    end_of_file = True
+                    break
+            if end_of_file:
+                break
 
     total_records = i
     readlens = np.array(readlens)
