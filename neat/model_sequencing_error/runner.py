@@ -148,7 +148,6 @@ def model_seq_err_runner(
             seq_err_model_r2 = SequencingErrorModel(
                 avg_seq_error=average_error,
                 read_length=read_length,
-                transition_matrix=error_transition_matrix,
                 quality_scores=np.array(final_quality_scores),
                 qual_score_probs=read_parameters[1]
             )

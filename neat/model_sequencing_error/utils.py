@@ -100,9 +100,9 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 
     # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
     readlen_mode = mode(readlens, axis=None, keepdims=False)
-    if int(readlen_mode.count) < (0.5 * len(readlens)):
+    if readlen_mode.count < (0.5 * len(readlens)):
         _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
-    if int(readlen_mode.count) < 20:
+    if readlen_mode.count < 20:
         raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
 
     read_length = int(readlen_mode.mode)
@@ -110,6 +110,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
     _LOG.debug(f'Read len of {read_length}, over {counter} samples')
 
     total_records_to_read = min(len(fastq_index), max_reads)
+    _LOG.info(f"Reading {total_records_to_read} records...")
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
     quarters = total_records_to_read//4
@@ -117,16 +118,19 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
     i = 0
     wrong_len = 0
 
-    # SeqIO eats up way too much memory for larger fastqs so we're trying to read the file in line by line here
+    # SeqIO eats up way too much memory for larger fastqs, so we're trying to read the file in line by line here
     with open_input(input_file) as fq_in:
         while i < total_records_to_read:
 
             # We throw away 3 lines and read the 4th, because that's fastq format
+            end_of_file = False
             for _ in (0, 1, 2):
-                try:
-                    fq_in.readline()
-                except:
+                line = fq_in.readline()
+                if not line:
+                    end_of_file = True
                     break
+            if end_of_file:
+                break
             line = fq_in.readline()
 
             """
@@ -137,8 +141,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
             if len(qualities_to_check) != read_length:
                 total_records_to_read += 1
                 wrong_len += 1
-                if wrong_len % 100 == 0:
-                    _LOG.debug(f'So far have detected {wrong_len} reads not matching the mode.')
                 continue
 
             i += 1
@@ -154,7 +156,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
                 _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
-    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length}')
+    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length} ({wrong_len/read_length:.0f}%)')
 
     avg_std_by_pos = []
     q_count_by_pos = np.asarray(temp_q_count)
