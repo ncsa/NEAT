@@ -166,7 +166,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
         avg_std_by_pos.append((average_q, st_d_q))
 
     # Calculates the average error rate
-    tot_bases = len(temp_q_count[0]) * len(fastq_index)
+    tot_bases = len(temp_q_count) * len(fastq_index)
     avg_err = 0
     for score in quality_scores:
         error_val = 10. ** (-score / 10.)

@@ -134,20 +134,6 @@ def model_seq_err_runner(
     #     _LOG.info("Pileup features not yet available. Using default parameters")
 
     # Generate and save the model
-
-    # Default values from the original NEAT
-    # TODO incorporate these into the calculations
-    error_transition_matrix = np.array(
-        [[0.0, 0.4918, 0.3377, 0.1705],
-         [0.5238, 0.0, 0.2661, 0.2101],
-         [0.3755, 0.2355, 0.0, 0.389],
-         [0.2505, 0.2552, 0.4943, 0.0]]
-    )
-
-    error_variant_probs = {Insertion: 0.004, Deletion: 0.006, SingleNucleotideVariant: 0.99}
-    indel_len_model = {1: 0.999, 2: 0.001}
-    insertion_model = np.array([0.25, 0.25, 0.25, 0.25])
-
     _LOG.info(f'Saving model: {output_file}')
     with gzip.open(output_file, 'w') as out_model:
         seq_err_model = SequencingErrorModel(
@@ -166,5 +152,6 @@ def model_seq_err_runner(
                 quality_scores=np.array(final_quality_scores),
                 qual_score_probs=read_parameters[1]
             )
+            pickle.dump(seq_err_model_r2, out_model)
 
     _LOG.info("Modeling sequencing errors is complete, have a nice day.")
