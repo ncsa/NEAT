@@ -68,7 +68,7 @@ def expand_counts(count_array: list, scores: list):
     return np.array(ret_list)
 
 
-def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int):
+def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int, readlen: int):
     """
     Parses an individual file for statistics
 
@@ -76,64 +76,55 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
     :param quality_scores: A list of potential quality scores
     :param max_reads: Max number of reads to process for this file
     :param qual_offset: The offset score for this fastq file. We assume the Illumina default of 33.
+    :param readlen: The read length for these datasets. If 0, then we will determine it.
     :return:
     """
 
     _LOG.info(f'reading {input_file}')
 
-    readlens = []
+    if not readlen:
+        readlens = []
 
-    # takes too long and uses too much memory to read all of them, so let's just get a sample.
-    with open_input(input_file) as fq_in:
-        i = 0
-        # Count the first 1000 lines
-        while i < 1000:
-            i += 1
-            for _ in (0, 1, 2):
-                fq_in.readline()
-            line = fq_in.readline().strip()
-            readlens.append(len(line))
-        # simply counting records every four lines after this.
-        while True:
-            i += 1
-            for _ in (0, 1, 2, 3):
-                end_of_file = False
-                line = fq_in.readline()
-                if not line:
-                    end_of_file = True
-                    break
-            if end_of_file:
-                break
+        # takes too long and uses too much memory to read all of them, so let's just get a sample.
+        with open_input(input_file) as fq_in:
+            i = 0
+            # Count the first 1000 lines
+            while i < 1000:
+                i += 1
+                for _ in (0, 1, 2):
+                    fq_in.readline()
+                line = fq_in.readline().strip()
+                readlens.append(len(line))
 
-    total_records = i
-    readlens = np.array(readlens)
+        readlens = np.array(readlens)
 
-    # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
-    readlen_mode = mode(readlens, axis=None, keepdims=False)
-    if readlen_mode.count < (0.5 * len(readlens)):
-        _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
-    if readlen_mode.count < 20:
-        raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
+        # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
+        readlen_mode = mode(readlens, axis=None, keepdims=False)
+        if readlen_mode.count < (0.5 * len(readlens)):
+            _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
+        if readlen_mode.count < 20:
+            raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
 
-    read_length = int(readlen_mode.mode)
+        read_length = int(readlen_mode.mode)
+
+    else:
+        read_length = readlen
 
     _LOG.debug(f'Read len of {read_length}, over {1000} samples')
 
-    total_records_to_read = min(total_records, max_reads)
-    _LOG.info(f"Reading {total_records_to_read} records...")
+    _LOG.info(f"Reading {max_reads} records...")
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
-    quarters = total_records_to_read//4
+    quarters = max_reads//4
 
-    i = 0
+    records_read = 0
     wrong_len = 0
-
+    end_of_file = False
     # SeqIO eats up way too much memory for larger fastqs, so we're trying to read the file in line by line here
     with open_input(input_file) as fq_in:
-        while i < total_records_to_read:
+        while records_read < max_reads:
 
             # We throw away 3 lines and read the 4th, because that's fastq format
-            end_of_file = False
             for _ in (0, 1, 2):
                 line = fq_in.readline()
                 if not line:
@@ -149,11 +140,10 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
             qualities_to_check = convert_quality_string(line.strip(), qual_offset)
 
             if len(qualities_to_check) != read_length:
-                total_records_to_read += 1
                 wrong_len += 1
                 continue
 
-            i += 1
+            records_read += 1
 
             for j in range(read_length):
                 # The qualities of each read_position_scores
@@ -162,11 +152,13 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
                 temp_q_count[j][bin_index] += 1
                 qual_score_counter[quality_bin] += 1
 
-            if i % quarters == 0:
-                _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
+            if records_read % quarters == 0:
+                _LOG.info(f'reading data: {(records_read / max_reads) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
-    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length} ({wrong_len/read_length:.0f}%)')
+    if end_of_file:
+        _LOG.info(f'{records_read} records read before end of file.')
+    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length} ({wrong_len/max_reads:.0f}%)')
 
     avg_std_by_pos = []
     q_count_by_pos = np.asarray(temp_q_count)
@@ -178,7 +170,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
         avg_std_by_pos.append((average_q, st_d_q))
 
     # Calculates the average error rate
-    tot_bases = read_length * total_records_to_read
+    tot_bases = read_length * records_read
     avg_err = 0
     for score in quality_scores:
         error_val = 10. ** (-score / 10.)

@@ -109,17 +109,15 @@ def model_seq_err_runner(
     for file in input_files:
         file_num += 1
         _LOG.info(f'Reading file {file_num} of {len(input_files)}')
-        parameters_by_position, file_avg_error, file_readlen = parse_file(file,
-                                                                          final_quality_scores,
-                                                                          num_records_to_process,
-                                                                          offset)
+        parameters_by_position, file_avg_error, read_length = parse_file(file,
+                                                                         final_quality_scores,
+                                                                         num_records_to_process,
+                                                                         offset,
+                                                                         read_length)
+
         read_parameters.append(parameters_by_position)
         average_errors.append(file_avg_error)
-        if not read_length:
-            read_length = file_readlen
-        elif file_readlen != read_length:
-            _LOG.warning("Read lengths inconsistent between reads. Using the smaller value for the model")
-            read_length = min(file_readlen, read_length)
+
         _LOG.info(f'Finished reading file {file_num}')
 
     read_parameters = np.asarray(read_parameters)
