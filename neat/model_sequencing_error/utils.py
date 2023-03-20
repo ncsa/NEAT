@@ -5,7 +5,6 @@ Utilities to generate the sequencing error model
 import logging
 import numpy as np
 
-from Bio import SeqIO
 from bisect import bisect_left
 from scipy.stats import mode
 from ..common import open_input
@@ -82,20 +81,23 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 
     _LOG.info(f'reading {input_file}')
 
-    fastq_index = SeqIO.index(input_file, 'fastq')
-
     readlens = []
 
-    counter = 0
-    for read_name in fastq_index:
-        read = fastq_index[read_name]
-        if read.letter_annotations['phred_quality']:
-            readlens.append(len(read))
-            counter += 1
-            if counter >= 1000:
-                # takes too long and uses too much memory to read all of them, so let's just get a sample.
-                break
+    # takes too long and uses too much memory to read all of them, so let's just get a sample.
+    with open_input(input_file) as fq_in:
+        i = 0
+        while i < 1000:
+            i += 1
+            for _ in (0, 1, 2):
+                fq_in.readline()
+            line = fq_in.readline().strip()
+            readlens.append(len(line))
+        while True:
+            i += 1
+            for _ in (0, 1, 2, 3):
+                fq_in.readline()
 
+    total_records = i
     readlens = np.array(readlens)
 
     # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
@@ -107,9 +109,9 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 
     read_length = int(readlen_mode.mode)
 
-    _LOG.debug(f'Read len of {read_length}, over {counter} samples')
+    _LOG.debug(f'Read len of {read_length}, over {1000} samples')
 
-    total_records_to_read = min(len(fastq_index), max_reads)
+    total_records_to_read = min(total_records, max_reads)
     _LOG.info(f"Reading {total_records_to_read} records...")
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
@@ -168,7 +170,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
         avg_std_by_pos.append((average_q, st_d_q))
 
     # Calculates the average error rate
-    tot_bases = len(temp_q_count) * len(fastq_index)
+    tot_bases = read_length * total_records_to_read
     avg_err = 0
     for score in quality_scores:
         error_val = 10. ** (-score / 10.)
