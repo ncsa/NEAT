@@ -4,12 +4,16 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
+import collections
 
 from Bio import SeqIO
 
 from pathlib import Path
+from itertools import islice
+
 from bisect import bisect_left
 from scipy.stats import mode
+from ..common import open_input
 
 __all__ = [
     "take_closest",
@@ -38,20 +42,34 @@ def take_closest(bins, quality):
         return before
 
 
-def parse_file(input_file: str, quality_scores: list, max_reads: int):
+def convert_quality_string(qual_str: str, offset: int):
+    """
+    Converts a plain quality string to a list of numerical equivalents
+
+    :param qual_str: The string to convert
+    :param offset: the quality offset for conversion for this fastq
+    """
+    ret_list = []
+    for i in range(len(qual_str)):
+        ret_list.append(ord(qual_str[i]) - offset)
+
+    return ret_list
+
+
+def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int):
     """
     Parses an individual file for statistics
 
     :param input_file: The input file to process
     :param quality_scores: A list of potential quality scores
     :param max_reads: Max number of reads to process for this file
+    :param qual_offset: The offset score for this fastq file. We assume the Illumina default of 33.
     :return:
     """
 
     _LOG.info(f'reading {input_file}')
 
     fastq_index = SeqIO.index(input_file, 'fastq')
-    read_names = list(fastq_index)
 
     readlens = []
 
@@ -91,30 +109,41 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int):
 
     i = 0
     wrong_len = 0
-    while i < total_records_to_read:
-        """
-        This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
-        """
-        # Get the ith key.
-        read = fastq_index[read_names[i]]
-        qualities_to_check = read.letter_annotations['phred_quality']
-        i += 1
-        if len(qualities_to_check) != read_length:
-            total_records_to_read += 1
-            wrong_len += 1
-            if wrong_len % 100 == 0:
-                _LOG.debug(f'So far have detected {wrong_len} reads not matching the mode.')
-            continue
+    # SeqIO eats up way too much memory for larger fastqs so we're trying to read the file in line by line here
+    with open_input(input_file) as fq_in:
+        while i < total_records_to_read:
 
-        for j in range(read_length):
-            # The qualities of each read_position_scores
-            quality_bin = take_closest(quality_scores, qualities_to_check[j])
-            bin_index = quality_scores.index(quality_bin)
-            temp_q_count[j][bin_index] += 1
-            qual_score_counter[quality_bin] += 1
+            # We throw away 3 lines and read the 4th, because that's fastq format
+            for _ in (0, 1, 2):
+                try:
+                    fq_in.readline()
+                except:
+                    break
+            line = fq_in.readline()
 
-        if i % quarters == 0:
-            _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
+            """
+            This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
+            """
+            qualities_to_check = convert_quality_string(line.strip(), qual_offset)
+
+            if len(qualities_to_check) != read_length:
+                total_records_to_read += 1
+                wrong_len += 1
+                if wrong_len % 100 == 0:
+                    _LOG.debug(f'So far have detected {wrong_len} reads not matching the mode.')
+                continue
+
+            i += 1
+
+            for j in range(read_length):
+                # The qualities of each read_position_scores
+                quality_bin = take_closest(quality_scores, qualities_to_check[j])
+                bin_index = quality_scores.index(quality_bin)
+                temp_q_count[j][bin_index] += 1
+                qual_score_counter[quality_bin] += 1
+
+            if i % quarters == 0:
+                _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
 

@@ -107,7 +107,8 @@ def model_seq_err_runner(
     for file in input_files:
         file_qual_score_probs, file_avg_error, file_readlen = parse_file(file,
                                                                          final_quality_scores,
-                                                                         num_records_to_process)
+                                                                         num_records_to_process,
+                                                                         offset)
         probabilities.append(file_qual_score_probs)
         average_errors.append(file_avg_error)
         if not read_length:
