@@ -45,7 +45,10 @@ def convert_quality_string(qual_str: str, offset: int):
     """
     ret_list = []
     for i in range(len(qual_str)):
-        ret_list.append(ord(qual_str[i]) - offset)
+        try:
+            ret_list.append(ord(qual_str[i]) - offset)
+        except ValueError:
+            raise ValueError("improperly formatted fastq file")
 
     return ret_list
 
@@ -125,14 +128,13 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
         while records_read < max_reads:
 
             # We throw away 3 lines and read the 4th, because that's fastq format
-            for _ in (0, 1, 2):
+            for _ in (0, 1, 2, 3):
                 line = fq_in.readline()
                 if not line:
                     end_of_file = True
                     break
             if end_of_file:
                 break
-            line = fq_in.readline()
 
             """
             This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
