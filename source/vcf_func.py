@@ -16,12 +16,12 @@ def parse_line(vcf_line, col_dict, col_samp):
     alternate_allele = vcf_line[col_dict['ALT']]
     # enough columns?
     if len(vcf_line) != len(col_dict):
-        return None
+        return None, 'vcf_line'
     # exclude homs / filtered?
     if not include_homs and alternate_allele == '.' or alternate_allele == '' or alternate_allele == reference_allele:
-        return None
+        return None, 'missing_allele'
     if not include_fail and vcf_line[col_dict['FILTER']] != 'PASS' and vcf_line[col_dict['FILTER']] != '.':
-        return None
+        return None, 'filter'
 
     #	default vals
     alt_alleles = [alternate_allele]
@@ -83,6 +83,13 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
     col_dict = {}
     col_samp = []
     n_skipped = 0
+    vcf_line = 0
+    missing_allele = 0
+    filtered = 0
+    unknown = 0
+    no_gt_field = 0
+    genotype_zero = 0
+    pos_zero = 0
     n_skipped_because_hash = 0
     all_vars = {}  # [ref][pos]
     samp_names = []
@@ -103,8 +110,16 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                 exit(1)
             splt = line.strip().split('\t')
             pl_out = parse_line(splt, col_dict, col_samp)
-            if pl_out is None:
+            if len(pl_out) == 2:
                 n_skipped += 1
+                if pl_out[1] == 'vcf_line':
+                    vcf_line += 1
+                elif pl_out[1] == 'missing_allele':
+                    missing_allele += 1
+                elif pl_out[1] == 'filter':
+                    filtered += 1
+                else:
+                    unknown += 1
             else:
                 (aa, af, gt) = pl_out
 
@@ -129,6 +144,7 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                     else:
                         # skip because no GT field was found
                         n_skipped += 1
+                        no_gt_field += 1
                         continue
                 non_reference = False
                 for gt_val in gt_eval:
@@ -138,6 +154,7 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                 if not non_reference:
                     # skip if no genotype actually contains this variant
                     n_skipped += 1
+                    genotype_zero += 1
                     continue
 
                 gt_eval = "/".join([str(x) for x in gt_eval])
@@ -148,6 +165,7 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                 # skip if position is <= 0
                 if pos <= 0:
                     n_skipped += 1
+                    pos_zero += 1
                     continue
 
                 # hash variants to avoid inserting duplicates (there are some messy VCFs out there...)
@@ -195,7 +213,13 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
             vars_out[r][i] = tuple(vars_out[r][i])
 
     print('found', sum([len(n) for n in all_vars.values()]), 'valid variants in input vcf.')
-    print(' *', n_skipped, 'variants skipped: (qual filtered / ref genotypes / invalid syntax)')
-    print(' *', n_skipped_because_hash, 'variants skipped due to multiple variants found per position')
+    print(f' * {n_skipped + n_skipped_because_hash}variants skipped:')
+    print(f' \t* {vcf_line} variants had malformed vcf lines')
+    print(f' \t* {missing_allele} variants had a missing allele or ref == alt')
+    print(f' \t* {filtered} variants filtered by FILTER column')
+    print(f' \t* {no_gt_field} variants lacked a genotype field')
+    print(f' \t* {genotype_zero} variants had no associated allele')
+    print(f' \t* {pos_zero} variants had an invalid position')
+    print(f' \t*', n_skipped_because_hash, 'variants skipped due to multiple variants found per position')
     print('--------------------------------')
     return samp_names, vars_out
