@@ -31,7 +31,7 @@ jobs:
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: test gen_reads
-        run: python gen_reads.py -R 101 -o test -r data/H1N1.fasta 
+        run: python gen_reads_runner.py -R 101 -o test -r data/H1N1.fasta
       
   job-valBAM:
     runs-on: ubuntu-latest
@@ -69,36 +69,7 @@ jobs:
 #            cd ${{ github.workspace }}/utilities
 #            python compute_gc.py -i ../data/small.genomecov -r ../data/ecoli.fa -o gcop
 #        - run: echo "🍏 This job's status is ${{ job.status }}."
-  
-  job-gen_mut:
-    runs-on: ubuntu-latest
-    steps:
-       - name: Check out repository code
-         uses: actions/checkout@v2
-       - name: Execute gen_mut_model.py
-         run: |
-           pip install numpy
-           pip install biopython
-           pip install pandas
-           cd ${{ github.workspace }}/utilities
-           python gen_mut_model.py -r ../data/H1N1.fa -m ../data/H1N1.vcf -o testgmm
-       - run: echo "🍏 This job's status is ${{ job.status }}."
-       
-  job-genSeq:
-    runs-on: ubuntu-latest
-    steps:
-       - name: Check out repository code
-         uses: actions/checkout@v2
-       - name: Execute genSeqErrorModel.py
-         run: |
-           pip install numpy
-           pip install biopython
-           pip install pandas
-           pip install matplotlib
-           pip install pysam
-           cd ${{ github.workspace }}/utilities
-           python genSeqErrorModel.py -i ../data/baby.fastq -o genseop2
-       - run: echo "🍏 This job's status is ${{ job.status }}."
+
       
 
       
