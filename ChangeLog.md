@@ -1,6 +1,14 @@
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
+# NEAT v4.0
+- Rewritten the models. Models generated on old versions of NEAT will have to be redone, due to the restructuring of the codebase. These new models should be smaller and more efficient. We have replicated the previous default models in the new style. There is no straightforward way to convert between these, unfortuantely.
+- More flexibility. NEAT should be able to handle a wider variety of ploidies, read lengths, and chromosome sizes.
+- Binned quality scores. NEAT now assumes binned quality scores.
+- File output flexibility. NEAT now can generate each file type independently. Producing a VCF no longer requires NEAT to save all the caluclations of formulating a BAM, which should make the process more efficient.
+- Speedups and improvements
+- Across the board improvements to code documentation and style
+
 # NEAT v4.0 - beta
 - Rewritten codebase to be modular and pip installable, using the poetry package
 - Working on optimizing code and implementing final features
