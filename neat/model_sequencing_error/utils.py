@@ -4,8 +4,12 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 from bisect import bisect_left
+
+import pandas as pd
 from scipy.stats import mode
 from ..common import open_input
 
@@ -118,6 +122,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
     _LOG.info(f"Reading {max_reads} records...")
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
+    # shape_curves = []
     quarters = max_reads//4
 
     records_read = 0
@@ -145,6 +150,9 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
                 wrong_len += 1
                 continue
 
+            # TODO Adding this section to account for quality score "shape" in a fastq
+            # shape_curves.append(qualities_to_check)
+
             records_read += 1
 
             for j in range(read_length):
@@ -170,6 +178,16 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
         average_q = np.average(expanded_counts)
         st_d_q = np.std(expanded_counts)
         avg_std_by_pos.append((average_q, st_d_q))
+
+    # TODO In progress, working on ensuring the error model produces the right shape
+    # shape_curves = pd.DataFrame(shape_curves)
+    # columns = list(range(1, 11)) + list(range(15, len(shape_curves[0]), 5))
+    # shape_curves_plot = shape_curves.iloc[columns]
+    # averages = []
+    # for name, value in shape_curves_plot.items():
+    #     averages.append(np.average(value))
+    # sns.boxplot(data=shape_curves_plot, fliersize=0)
+    # plt.show()
 
     # Calculates the average error rate
     tot_bases = read_length * records_read
