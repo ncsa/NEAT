@@ -25,40 +25,39 @@ _LOG = logging.getLogger(__name__)
 
 
 def model_seq_err_runner(
-        file1: str,
-        file2: str,
+        files: list,
         offset: int,
         qual_scores: list | int,
         max_reads: int,
-        # pileup: str,
-        # plot: bool,
         overwrite: bool,
-        output_prefix: str
+        output_prefix: str,
+        pileup: str = None,
+        plot: bool = False,
 ):
     """
     Sets up and calls the sequencing error modeling core code.
 
-    :param file1: This is the input file, which can be in fastq (bgzipped or not) format.
-    :param file2: This is a second input file, for paired ended reads, which can be in fastq (bgzipped or not) format.
+    :param files: This is the input file or pair of input files, which can be in fastq (bgzipped or not) format.
     :param offset: This is the quality offset. Illumina machines use the sanger model qual score + 33 to
         derive the character for the quality array.
     :param qual_scores: These are the possible quality scores for the dataset. This can either be a list or a single
         integer.
     :param max_reads: The maximum number of reads to process. This can speed up the time taken to create the model,
         at the expense of accuracy.
-    :param pileup: If pileup file included, get stats from that
-    :param plot: run optional plotting.
     :param overwrite: True to overwrite input, mainly a debugging option
     :param output_prefix: The name of the file to write the output.
+    :param pileup: If pileup file included, get stats from that
+    :param plot: run optional plotting.
     """
 
-    validate_input_path(file1)
-    input_files = [file1]
-    if file2:
-        validate_input_path(file2)
-        input_files.append(file2)
+    if len(files) > 2:
+        _LOG.info(f'Only processing first two input files')
+        files = files[:2]
 
-    _LOG.debug(f'Input Files: {", ".join([str(x) for x in input_files])}')
+    for file in files:
+        validate_input_path(file)
+
+    _LOG.debug(f'Input Files: {", ".join([str(x) for x in files])}')
 
     _LOG.debug(f"Quality offset: {offset}")
 
@@ -66,7 +65,7 @@ def model_seq_err_runner(
     if len(qual_scores) == 1:
         final_quality_scores = list(range(1, qual_scores[0] + 1))
     else:
-        final_quality_scores = qual_scores
+        final_quality_scores = sorted(qual_scores)
 
     _LOG.debug(f'Quality scores: {final_quality_scores}')
     if max_reads == -1:
@@ -74,14 +73,15 @@ def model_seq_err_runner(
     else:
         num_records_to_process = max_reads
 
-    _LOG.debug(f'Maximum number of records to process: {num_records_to_process}')
+    _LOG.debug(f'Maximum number of records to process: '
+               f'{"all" if num_records_to_process == np.inf else num_records_to_process}')
 
-    # if pileup:
-    #     pileup = Path(pileup)
-    #     validate_input_path(pileup)
-    #
-    # _LOG.debug(f'Pileup file: {pileup}')
-    # _LOG.debug(f"Plot the data? {plot}")
+    if pileup:
+        pileup = Path(pileup)
+        validate_input_path(pileup)
+
+    _LOG.debug(f'Pileup file: {pileup}')
+    _LOG.debug(f"Plot the data? {plot}")
     _LOG.debug(f'Overwrite existing data? {overwrite}')
 
     validate_output_path(output_prefix, is_file=False)
@@ -106,35 +106,30 @@ def model_seq_err_runner(
     average_errors = []
     read_length = 0
     file_num = 0
-    for file in input_files:
+    for file in files:
         file_num += 1
-        _LOG.info(f'Reading file {file_num} of {len(input_files)}')
-        parameters_by_position, file_avg_error, file_readlen = parse_file(file,
-                                                                          final_quality_scores,
-                                                                          num_records_to_process,
-                                                                          offset)
+        _LOG.info(f'Reading file {file_num} of {len(files)}')
+        parameters_by_position, file_avg_error, read_length = parse_file(file,
+                                                                         final_quality_scores,
+                                                                         num_records_to_process,
+                                                                         offset,
+                                                                         read_length)
+
         read_parameters.append(parameters_by_position)
-        # Trying to manage memory better
-        del parameters_by_position
         average_errors.append(file_avg_error)
-        if not read_length:
-            read_length = file_readlen
-        elif file_readlen != read_length:
-            _LOG.warning("Read lengths inconsistent between reads. Using the smaller value for the model")
-            read_length = min(file_readlen, read_length)
 
         _LOG.info(f'Finished reading file {file_num}')
 
     read_parameters = np.asarray(read_parameters)
     average_error = np.average(average_errors)
 
-    _LOG.info(f"Found an average error of {average_error} across {len(input_files)} file(s).")
+    _LOG.info(f"Found an average error of {average_error} across {len(files)} file(s).")
 
-    # if plot:
-    #     _LOG.info("Plotting coming soon! Sorry!")
-    #
-    # if pileup:
-    #     _LOG.info("Pileup features not yet available. Using default parameters")
+    if plot:
+        _LOG.info("Plotting coming soon! Sorry!")
+
+    if pileup:
+        _LOG.info("Pileup features not yet available. Using default parameters")
 
     # Generate and save the model
 
@@ -152,34 +147,28 @@ def model_seq_err_runner(
     insertion_model = np.array([0.25, 0.25, 0.25, 0.25])
 
     _LOG.info(f'Saving model: {output_file}')
-    with gzip.open(output_file, 'w') as out_model:
-        pickle.dump(
-            SequencingErrorModel(
-                avg_seq_error=average_error,
-                read_length=read_length,
-                transition_matrix=error_transition_matrix,
-                quality_scores=np.array(final_quality_scores),
-                qual_score_probs=read_parameters[0],
-                variant_probs=error_variant_probs,
-                indel_len_model=indel_len_model,
-                insertion_model=insertion_model
-            ),
-            out_model
-        )
 
-        if len(input_files) == 2:
-            pickle.dump(
-                SequencingErrorModel(
-                    avg_seq_error=average_error,
-                    read_length=read_length,
-                    transition_matrix=error_transition_matrix,
-                    quality_scores=np.array(final_quality_scores),
-                    qual_score_probs=read_parameters[1],
-                    variant_probs=error_variant_probs,
-                    indel_len_model=indel_len_model,
-                    insertion_model=insertion_model
-                ),
-                out_model
-            )
+    # First model, always produced
+    seq_err_model = SequencingErrorModel(
+        avg_seq_error=average_error,
+        read_length=read_length,
+        quality_scores=np.array(final_quality_scores),
+        qual_score_probs=read_parameters[0],
+    )
+
+    if len(files) == 1:
+        with gzip.open(output_file, 'w') as out_model:
+            pickle.dump([seq_err_model, None], out_model)
+
+    else:
+        # Second model if a second input was given
+        seq_err_model_r2 = SequencingErrorModel(
+            avg_seq_error=average_error,
+            read_length=read_length,
+            quality_scores=np.array(final_quality_scores),
+            qual_score_probs=read_parameters[1]
+        )
+        with gzip.open(output_file, 'w') as out_model:
+            pickle.dump([seq_err_model, seq_err_model_r2], out_model)
 
     _LOG.info("Modeling sequencing errors is complete, have a nice day.")

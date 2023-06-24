@@ -1,6 +1,7 @@
 """
 Utilities for the sequencing error model
 """
+import numpy as np
 
 from bisect import bisect_left
 
@@ -12,7 +13,7 @@ __all__ = [
 DATA_BINS = {}
 
 
-def bin_scores(bins: list, quality_array: list | str, qual_offset: int):
+def bin_scores(bins: list | np.ndarray, quality_array: list | np.ndarray | str, qual_offset: int = None):
     """
     Assumes bins list is sorted. Returns the closest value to quality.
 
@@ -21,7 +22,7 @@ def bin_scores(bins: list, quality_array: list | str, qual_offset: int):
 
     :param bins: the possible values of the quality scores for the simulation
     :param quality_array: the quality array from data which we will bin.
-    :param qual_offset: the
+    :param qual_offset: the quality offset for these quality scores. Only needed if input is a str.
     """
     # Convert to array, if string
     if type(quality_array) == str:

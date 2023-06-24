@@ -9,7 +9,7 @@ dependencies:
   - pkginfo
   - matplotlib
   - numpy
-  - tqdm
+  - seaborn
   - pyyaml
   - pip
   - scipy

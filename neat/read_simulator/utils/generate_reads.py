@@ -3,7 +3,6 @@ import time
 import pickle
 import numpy as np
 
-from tqdm import tqdm
 from math import ceil, floor
 from pathlib import Path
 from Bio import SeqRecord
@@ -116,151 +115,149 @@ def cover_dataset(
         j = -options.rng.choice(range(padding))
         previous_percent = 0
         k = 0  # independent tracking
-        with tqdm(total=100) as pbar:
-            while j < span_length:
-                k += 1
-                # Simple progress tracker
-                current_percent = (j * 100) // span_length
-                if current_percent > previous_percent:
-                    pbar.update()
-                    previous_percent = current_percent
-                # The structure for these reads will be (left_start, left_end, right_start, right_end) where start and
-                # end are ints with start > end. Reads can overlap, so right_start < left_end is possible, but the reads
-                # cannot extend past each other, so right_start < left_start and left_end > right_end are not possible.
-                if options.paired_ended:
-                    left_read_length, right_read_length = options.rng.choice(read_pool, size=2, replace=False)
-                    fragment_length = options.rng.choice(fragment_pool)
-                else:
-                    left_read_length = options.rng.choice(read_pool)
-                    right_read_length = 0
-                    fragment_length = left_read_length
+        while j < span_length:
+            k += 1
+            # Simple progress tracker
+            current_percent = (j * 100) // span_length
+            if current_percent > previous_percent:
+                previous_percent = current_percent
+                print(f'{current_percent:.2%}', end='')
+            # The structure for these reads will be (left_start, left_end, right_start, right_end) where start and
+            # end are ints with start > end. Reads can overlap, so right_start < left_end is possible, but the reads
+            # cannot extend past each other, so right_start < left_start and left_end > right_end are not possible.
+            if options.paired_ended:
+                left_read_length, right_read_length = options.rng.choice(read_pool, size=2, replace=False)
+                fragment_length = options.rng.choice(fragment_pool)
+            else:
+                left_read_length = options.rng.choice(read_pool)
+                right_read_length = 0
+                fragment_length = left_read_length
 
-                if fragment_length < max(left_read_length, right_read_length):
-                    # Outlier, skip
+            if fragment_length < max(left_read_length, right_read_length):
+                # Outlier, skip
+                j += fragment_length//2 + (random_mode * options.rng.poisson(1))
+                continue
+
+            # Booleans telling us how to deal with the various exceptions below.
+            skip_left = False
+            skip_right = False
+
+            # This trims the left read to the region of interest
+            left_start = max(j, 0)
+            left_end = min(span_length, j + left_read_length)
+
+            # Make right read, if paired ended, else set it equal to the default
+            if options.paired_ended:
+                # The uncorrected left_start is j
+                # The uncorrected left_end is j + left_read_length
+                # The candidate end points of the paired right read, uncorrected
+                uncorrected_right_end = j + fragment_length
+                uncorrected_right_start = uncorrected_right_end - right_read_length
+
+                # this trims the raw right read, so that right_start >= left_start and left_end <= right_end
+                # this keeps us from getting unrealistic paired ended reads
+                right_start = max(uncorrected_right_start, left_start)
+                right_end = min(max(uncorrected_right_end, left_end), span_length)
+
+                # Both reads are off the map, so we throw this out:
+                if right_end <= 0:
                     j += fragment_length//2 + (random_mode * options.rng.poisson(1))
                     continue
 
-                # Booleans telling us how to deal with the various exceptions below.
-                skip_left = False
-                skip_right = False
+            else:
+                skip_right = True
+                right_start = 0
+                right_end = 0
 
-                # This trims the left read to the region of interest
-                left_start = max(j, 0)
-                left_end = min(span_length, j + left_read_length)
-
-                # Make right read, if paired ended, else set it equal to the default
-                if options.paired_ended:
-                    # The uncorrected left_start is j
-                    # The uncorrected left_end is j + left_read_length
-                    # The candidate end points of the paired right read, uncorrected
-                    uncorrected_right_end = j + fragment_length
-                    uncorrected_right_start = uncorrected_right_end - right_read_length
-
-                    # this trims the raw right read, so that right_start >= left_start and left_end <= right_end
-                    # this keeps us from getting unrealistic paired ended reads
-                    right_start = max(uncorrected_right_start, left_start)
-                    right_end = min(max(uncorrected_right_end, left_end), span_length)
-
-                    # Both reads are off the map, so we throw this out:
-                    if right_end <= 0:
-                        j += fragment_length//2 + (random_mode * options.rng.poisson(1))
-                        continue
-
+            # Cases that might make us want to skip these reads:
+            # Case 1: Left read end completely out of the area of consideration, unusable
+            if left_end <= 0:
+                # right read is usable if it's not off the map and has at least half a read
+                # length of usable bases
+                if right_start < span_length and \
+                        (right_end - right_start > right_read_length/2):
+                    # skip the left read, keep the right read, indicating an unpaired right read
+                    skip_left = True
+                # else, skip both
                 else:
+                    skip_left = skip_right = True
+
+            # Case 2: Truncated left read, unusable
+            if left_end - left_start < left_read_length/2:
+                # right read is usable if it's not off the map and has at least half a read
+                # length of usable bases
+                if right_start < span_length and \
+                        (right_end - right_start >= right_read_length/2):
+                    # skip the left read, keep the right read, indicating an unpaired right read
+                    skip_left = True
+                # else, skip both
+                else:
+                    skip_left = skip_right = True
+
+            # Case 3: Right read starts after the end of the span, unusable
+            # Note: In single ended mode the next two cases are irrelevant, but it shouldn't cost
+            #   much time to run them
+            if right_start >= span_length:
+                # left read is usable if it's not off the map and has at least half a
+                # read length of usable bases
+                if left_start < span_length and \
+                        (left_end - left_start > left_read_length/2):
+                    # Set the right read to (0, 0), indicating an unpaired left read
                     skip_right = True
-                    right_start = 0
-                    right_end = 0
-
-                # Cases that might make us want to skip these reads:
-                # Case 1: Left read end completely out of the area of consideration, unusable
-                if left_end <= 0:
-                    # right read is usable if it's not off the map and has at least half a read
-                    # length of usable bases
-                    if right_start < span_length and \
-                            (right_end - right_start > right_read_length/2):
-                        # skip the left read, keep the right read, indicating an unpaired right read
-                        skip_left = True
-                    # else, skip both
-                    else:
-                        skip_left = skip_right = True
-
-                # Case 2: Truncated left read, unusable
-                if left_end - left_start < left_read_length/2:
-                    # right read is usable if it's not off the map and has at least half a read
-                    # length of usable bases
-                    if right_start < span_length and \
-                            (right_end - right_start >= right_read_length/2):
-                        # skip the left read, keep the right read, indicating an unpaired right read
-                        skip_left = True
-                    # else, skip both
-                    else:
-                        skip_left = skip_right = True
-
-                # Case 3: Right read starts after the end of the span, unusable
-                # Note: In single ended mode the next two cases are irrelevant, but it shouldn't cost
-                #   much time to run them
-                if right_start >= span_length:
-                    # left read is usable if it's not off the map and has at least half a
-                    # read length of usable bases
-                    if left_start < span_length and \
-                            (left_end - left_start > left_read_length/2):
-                        # Set the right read to (0, 0), indicating an unpaired left read
-                        skip_right = True
-                    # else, skip both
-                    else:
-                        skip_left = skip_right = True
-
-                # Case 4: Truncated right read, unusable
-                if right_end - right_start < right_read_length/2:
-                    # left read is usable if it's not off the map and has at least half a
-                    # read length of usable bases
-                    if left_start < span_length and \
-                            (left_end - left_start > left_read_length/2):
-                        # Set the right read to (0, 0), indicating an unpaired left read
-                        skip_right = True
-                    # else, skip both
-                    else:
-                        skip_left = skip_right = True
-
-                if skip_left and skip_right:
-                    # If neither read is usable, we'll just move to the next
-                    j += fragment_length//2 + (random_mode * options.rng.poisson(1))
-                    continue
-
-                if not skip_left:
-                    temp_left_read = parse_coverage(
-                        left_start,
-                        left_end,
-                        left_read_length,
-                        coverage,
-                        target_vector
-                    )
+                # else, skip both
                 else:
-                    temp_left_read = (0, 0)
+                    skip_left = skip_right = True
 
-                if not skip_right:
-                    temp_right_read = parse_coverage(
-                        right_start,
-                        right_end,
-                        right_read_length,
-                        coverage,
-                        target_vector,
-                    )
+            # Case 4: Truncated right read, unusable
+            if right_end - right_start < right_read_length/2:
+                # left read is usable if it's not off the map and has at least half a
+                # read length of usable bases
+                if left_start < span_length and \
+                        (left_end - left_start > left_read_length/2):
+                    # Set the right read to (0, 0), indicating an unpaired left read
+                    skip_right = True
+                # else, skip both
                 else:
-                    temp_right_read = (0, 0)
+                    skip_left = skip_right = True
 
-                read_to_add = temp_left_read + temp_right_read
-                temp_reads.append(read_to_add)
-                layer_count += 1
-                j += left_read_length + (random_mode * options.rng.poisson(1))
+            if skip_left and skip_right:
+                # If neither read is usable, we'll just move to the next
+                j += fragment_length//2 + (random_mode * options.rng.poisson(1))
+                continue
 
-                if k > span_length:
-                    delta = span_length - k
-                    if delta % 100 == 0:
-                        _LOG.debug(f"K is getting large: {k} v {span_length}")
+            if not skip_left:
+                temp_left_read = parse_coverage(
+                    left_start,
+                    left_end,
+                    left_read_length,
+                    coverage,
+                    target_vector
+                )
+            else:
+                temp_left_read = (0, 0)
 
-            pbar.update()
+            if not skip_right:
+                temp_right_read = parse_coverage(
+                    right_start,
+                    right_end,
+                    right_read_length,
+                    coverage,
+                    target_vector,
+                )
+            else:
+                temp_right_read = (0, 0)
 
+            read_to_add = temp_left_read + temp_right_read
+            temp_reads.append(read_to_add)
+            layer_count += 1
+            j += left_read_length + (random_mode * options.rng.poisson(1))
+
+            if k > span_length:
+                delta = span_length - k
+                if delta % 100 == 0:
+                    _LOG.debug(f"K is getting large: {k} v {span_length}")
+
+        print("100%")
         _LOG.debug(f"Layer {i+1} complete")
         count_per_layer += layer_count
         total_num_layers += 1
@@ -468,7 +465,8 @@ def merge_sort(my_array: np.ndarray):
 
 def generate_reads(reference: SeqRecord,
                    reads_pickle: str,
-                   error_model: SequencingErrorModel,
+                   error_model_1: SequencingErrorModel,
+                   error_model_2: SequencingErrorModel | None,
                    gc_bias: GcModel,
                    fraglen_model: FragmentLengthModel,
                    readlen_model: FragmentLengthModel,
@@ -485,7 +483,8 @@ def generate_reads(reference: SeqRecord,
 
     :param reference: The reference segment that reads will be drawn from.
     :param reads_pickle: The file to put the reads generated into, for bam creation.
-    :param error_model: The error model for this run
+    :param error_model_1: The error model for this run, the forward strand
+    :param error_model_2: The error model for this run, reverse strand
     :param gc_bias: The GC-Bias model for this run
     :param fraglen_model: The fragment length model for this run
     :param readlen_model: The read length model for this run
@@ -546,7 +545,8 @@ def generate_reads(reference: SeqRecord,
         open_output(chrom_fastq_r2) as fq2
     ):
 
-        for i in tqdm(np.arange(len(reads))):
+        for i in range(len(reads)):
+            print(f'{i/len(reads):.2%}')
             # Added some padding after, in case there are deletions
             segments = [reference[reads[i][0]: reads[i][1] + 50].seq.upper(),
                         reference[reads[i][2]: reads[i][3] + 50].seq.upper()]
@@ -586,7 +586,7 @@ def generate_reads(reference: SeqRecord,
 
                     read1.mutations = find_applicable_mutations(read1, contig_variants)
 
-                    read1.finalize_read_and_write(error_model, fq1, options.produce_fastq)
+                    read1.finalize_read_and_write(error_model_1, fq1, options.produce_fastq)
 
                     if options.produce_bam:
                         # Save this for later
@@ -617,7 +617,7 @@ def generate_reads(reference: SeqRecord,
                                  )
 
                     read2.mutations = find_applicable_mutations(read2, contig_variants)
-                    read2.finalize_read_and_write(error_model, fq2, options.produce_fastq)
+                    read2.finalize_read_and_write(error_model_2, fq2, options.produce_fastq)
 
                     if options.produce_bam:
                         # Save this for later

@@ -4,12 +4,14 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
-import gzip
+# TODO implement plotting
+# import seaborn as sns
+import matplotlib.pyplot as plt
 
-from Bio import SeqIO
+from bisect import bisect_left
 
+import pandas as pd
 from scipy.stats import mode
-from ..models import bin_scores
 from ..common import open_input
 
 __all__ = [
@@ -19,112 +21,176 @@ __all__ = [
 _LOG = logging.getLogger(__name__)
 
 
-def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int):
+def take_closest(bins, quality):
+    """
+    Assumes bins is sorted. Returns the closest value to quality.
+
+    If two numbers are equally close, return the smallest number.
+    """
+    pos = bisect_left(bins, quality)
+    if pos == 0:
+        return bins[0]
+    if pos == len(bins):
+        return bins[-1]
+    before = bins[pos - 1]
+    after = bins[pos]
+    if after - quality < quality - before:
+        return after
+    else:
+        return before
+
+
+def convert_quality_string(qual_str: str, offset: int):
+    """
+    Converts a plain quality string to a list of numerical equivalents
+
+    :param qual_str: The string to convert
+    :param offset: the quality offset for conversion for this fastq
+    :return list: a list of numeric quality scores
+    """
+    ret_list = []
+    for i in range(len(qual_str)):
+        try:
+            ret_list.append(ord(qual_str[i]) - offset)
+        except ValueError:
+            raise ValueError("improperly formatted fastq file")
+
+    return ret_list
+
+
+def expand_counts(count_array: list, scores: list):
+    """
+    Expands a counting list out into the full tally
+
+    :param count_array: the list to expand
+    :param scores: The factors by which to expand the list
+    :return np.ndarray: a one-dimensional array reflecting the expanded count
+    """
+    if len(count_array) != len(scores):
+        raise ValueError("Count array and scores have different lengths.")
+
+    ret_list = []
+    for i in range(len(count_array)):
+        ret_list.extend([scores[i]] * count_array[i])
+
+    return np.array(ret_list)
+
+
+def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int, readlen: int):
     """
     Parses an individual file for statistics
 
     :param input_file: The input file to process
     :param quality_scores: A list of potential quality scores
     :param max_reads: Max number of reads to process for this file
-    :param qual_offset: The offset for the quality scores when converting to str
+    :param qual_offset: The offset score for this fastq file. We assume the Illumina default of 33.
+    :param readlen: The read length for these datasets. If 0, then we will determine it.
     :return:
     """
 
-    _LOG.info(f'file name: {input_file}')
+    _LOG.info(f'reading {input_file}')
 
-    # SeqIO seems to be having trouble with larger fastq files. I may try just
-    # gzip open and read the file. Requires a bit more conversion. Need to convert string to
-    # list of scores
-    # fastq_index = SeqIO.index(input_file, 'fastq')
-    with open_input(input_file) as fastq_in:
-        number_records = 0
-        read_names = []
+    if not readlen:
         readlens = []
-        qualities_to_check = []
-        keep_running = True
 
-        while keep_running:
-            line1 = fastq_in.readline().strip()
-            line2 = fastq_in.readline().strip()
-            line3 = fastq_in.readline().strip()
-            line4 = fastq_in.readline().strip()
-            if not all([line1, line2, line3, line4]):
-                keep_running = False
-            else:
-                number_records += 1
-                read_names.append(line1.split(' ')[0].lstrip('@'))
-                qual_score = line4.strip()
-                qualities_to_check.append(qual_score)
-                readlens.append(len(qual_score))
+        # takes too long and uses too much memory to read all of them, so let's just get a sample.
+        with open_input(input_file) as fq_in:
+            i = 0
+            # Count the first 1000 lines
+            while i < 1000:
+                i += 1
+                for _ in (0, 1, 2):
+                    fq_in.readline()
+                line = fq_in.readline().strip()
+                readlens.append(len(line))
 
-    readlens = np.array(readlens)
+        readlens = np.array(readlens)
 
-    # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
-    readlen_mode = mode(readlens, axis=None, keepdims=False)
-    if int(readlen_mode.count) < (0.5 * len(readlens)):
-        _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
-    if int(readlen_mode.count) < 20:
-        raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
+        # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
+        readlen_mode = mode(readlens, axis=None, keepdims=False)
+        if readlen_mode.count < (0.5 * len(readlens)):
+            _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
+        if readlen_mode.count < 20:
+            raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
+        read_length = int(readlen_mode.mode)
 
-    read_length = int(readlen_mode.mode)
+    else:
+        read_length = readlen
 
-    _LOG.debug(f'Read len of {read_length} over {number_records} samples')
+    _LOG.debug(f'Read len of {read_length}, over {1000} samples')
 
-    total_records_to_read = min(len(readlens), max_reads)
-
-    # if total_records_to_read > 10e7:
-    #     _LOG.warning("Very large dataset. At this time, reading this entire dataset is not feasible. "
-    #                  "We will read a sample of the dataset.")
-    #     total_records_to_read = int(10e7)
-
-    _LOG.info(f'Reading {total_records_to_read} records out of {len(readlens)}')
-
-    temp_q_count = []
+    _LOG.info(f"Reading {max_reads} records...")
+    temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
-    quarters = total_records_to_read//4
+    # shape_curves = []
+    quarters = max_reads//4
 
-    _LOG.info("Processing reads...")
-    records_skipped = 0
-    for i in range(total_records_to_read):
-        """
-        This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
-        """
-        qual_score = qualities_to_check[i]
+    records_read = 0
+    wrong_len = 0
+    end_of_file = False
+    # SeqIO eats up way too much memory for larger fastqs, so we're trying to read the file in line by line here
+    with open_input(input_file) as fq_in:
+        while records_read < max_reads:
 
-        if i % quarters == 0 and i != 0:
-            _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
+            # We throw away 3 lines and read the 4th, because that's fastq format
+            for _ in (0, 1, 2, 3):
+                line = fq_in.readline()
+                if not line:
+                    end_of_file = True
+                    break
+            if end_of_file:
+                break
 
-        i += 1
+            """
+            This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
+            """
+            qualities_to_check = convert_quality_string(line.strip(), qual_offset)
 
-        if len(qual_score) != read_length:
-            records_skipped += 1
-            continue
+            if len(qualities_to_check) != read_length:
+                wrong_len += 1
+                continue
 
-        bin_generator = bin_scores(quality_scores, qual_score, qual_offset)
-        quality_bin_list = []
-        for score in bin_generator:
-            qual_score_counter[score] += 1
-            quality_bin_list.append(score)
-        temp_q_count.append(quality_bin_list)
+            # TODO Adding this section to account for quality score "shape" in a fastq
+            # shape_curves.append(qualities_to_check)
 
-    del quality_bin_list
+            records_read += 1
+
+            for j in range(read_length):
+                # The qualities of each read_position_scores
+                quality_bin = take_closest(quality_scores, qualities_to_check[j])
+                bin_index = quality_scores.index(quality_bin)
+                temp_q_count[j][bin_index] += 1
+                qual_score_counter[quality_bin] += 1
+
+            if records_read % quarters == 0:
+                _LOG.info(f'reading data: {(records_read / max_reads) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
-    _LOG.debug(f'Skipped {records_skipped}/{number_records} records ({1-(records_skipped/number_records):.0%} passed)')
+    if end_of_file:
+        _LOG.info(f'{records_read} records read before end of file.')
+    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length} ({wrong_len/max_reads:.0f}%)')
 
-    _LOG.info(f'Building quality-score model for file')
     avg_std_by_pos = []
-    for array in temp_q_count:
-        average_q = np.average(array)
-        st_d_q = np.std(array)
+    q_count_by_pos = np.asarray(temp_q_count)
+    for i in range(read_length):
+        this_counts = q_count_by_pos[i]
+        expanded_counts = expand_counts(this_counts, quality_scores)
+        average_q = np.average(expanded_counts)
+        st_d_q = np.std(expanded_counts)
         avg_std_by_pos.append((average_q, st_d_q))
 
-    del temp_q_count
+    # TODO In progress, working on ensuring the error model produces the right shape
+    # shape_curves = pd.DataFrame(shape_curves)
+    # columns = list(range(1, 11)) + list(range(15, len(shape_curves[0]), 5))
+    # shape_curves_plot = shape_curves.iloc[columns]
+    # averages = []
+    # for name, value in shape_curves_plot.items():
+    #     averages.append(np.average(value))
+    # sns.boxplot(data=shape_curves_plot, fliersize=0)
+    # plt.show()
 
     # Calculates the average error rate
-    _LOG.info('Calculating the average error rate for file')
-    # Total read length times how many readlens we found should tell us how many bases we processed
-    tot_bases = read_length * len(readlens)
+    tot_bases = read_length * records_read
     avg_err = 0
     for score in quality_scores:
         error_val = 10. ** (-score / 10.)

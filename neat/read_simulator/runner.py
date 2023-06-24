@@ -1,7 +1,7 @@
 """
 Runner for generate_reads task
 """
-
+import copy
 import logging
 import pickle
 import gzip
@@ -61,13 +61,31 @@ def initialize_all_models(options: Options):
 
     # We need sequencing errors to get the quality score attributes, even for the vcf
     if options.error_model:
-        error_model = pickle.load(gzip.open(options.error_model))
+        error_models = pickle.load(gzip.open(options.error_model))
+        error_model_1 = error_models[0]
+        if options.paired_ended:
+            if error_models[1]:
+                error_model_2 = error_models[1]
+            else:
+                _LOG.warning('Paired ended mode declared, but input sequencing error model is single ended,'
+                             'duplicating model for both ends')
+                error_model_2 = error_models[0]
+        else:
+            # ignore second model if we're in single-ended mode
+            error_model_2 = None
     else:
-        error_model = SequencingErrorModel()
+        # Use all the default values
+        error_model_1 = SequencingErrorModel()
+        if options.paired_ended:
+            error_model_2 = SequencingErrorModel()
+        else:
+            error_model_2 = None
     # Set the rng for the sequencing error model
-    error_model.rng = options.rng
+    error_model_1.rng = options.rng
+    if error_model_2:
+        error_model_2.rng = options.rng
 
-    _LOG.debug('Sequencing error model loaded')
+    _LOG.debug('Sequencing error models loaded')
 
     # initialize gc_model
     if options.gc_model:
@@ -114,7 +132,7 @@ def initialize_all_models(options: Options):
 
     _LOG.debug("Fragment length model loaded")
 
-    return mut_model, cancer_model, error_model, gc_model, fraglen_model, readlen_model
+    return mut_model, cancer_model, error_model_1, error_model_2, gc_model, fraglen_model, readlen_model
 
 
 def read_simulator_runner(config: str, output: str):
@@ -167,7 +185,8 @@ def read_simulator_runner(config: str, output: str):
     (
         mut_model,
         cancer_model,
-        seq_error_model,
+        seq_error_model_1,
+        seq_error_model_2,
         gc_bias_model,
         fraglen_model,
         readlen_model
@@ -185,7 +204,7 @@ def read_simulator_runner(config: str, output: str):
         count = 0
         for contig in reference_index:
             count += len(reference_index[contig])
-        _LOG.debug(f"Length of reference: {count}")
+        _LOG.debug(f"Length of reference: {count/1_000_000:.2f} Mb")
 
     input_variants_dict = {x: ContigVariants() for x in reference_index}
     if options.include_vcf:
@@ -309,7 +328,8 @@ def read_simulator_runner(config: str, output: str):
                                            mutation_rate_regions=mutation_rate_dict[contig],
                                            existing_variants=input_variants,
                                            mutation_model=mut_model,
-                                           max_qual_score=max(seq_error_model.quality_scores),
+                                           max_qual_score=max(seq_error_model_1.quality_scores +
+                                                              seq_error_model_2.quality_scores),
                                            options=options)
 
         _LOG.info(f'Outputting temp vcf for {contig} for later use')
@@ -332,7 +352,8 @@ def read_simulator_runner(config: str, output: str):
             read1_fastq, read2_fastq = \
                 generate_reads(local_reference,
                                local_bam_pickle_file,
-                               seq_error_model,
+                               seq_error_model_1,
+                               seq_error_model_2,
                                gc_bias_model,
                                fraglen_model,
                                readlen_model,
