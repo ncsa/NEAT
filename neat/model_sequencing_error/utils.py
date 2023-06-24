@@ -4,16 +4,17 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
+# TODO implement plotting
+# import seaborn as sns
 import matplotlib.pyplot as plt
 
-import pysam
-
-from pathlib import Path
 from bisect import bisect_left
+
+import pandas as pd
 from scipy.stats import mode
+from ..common import open_input
 
 __all__ = [
-    "take_closest",
     "parse_file"
 ]
 
@@ -22,7 +23,7 @@ _LOG = logging.getLogger(__name__)
 
 def take_closest(bins, quality):
     """
-    Assumes bins is sorted. Returns closest value to quality.
+    Assumes bins is sorted. Returns the closest value to quality.
 
     If two numbers are equally close, return the smallest number.
     """
@@ -39,127 +40,166 @@ def take_closest(bins, quality):
         return before
 
 
-def parse_file(input_file: Path, file_type: str, quality_scores: list, off_q: int, max_reads: int):
+def convert_quality_string(qual_str: str, offset: int):
+    """
+    Converts a plain quality string to a list of numerical equivalents
+
+    :param qual_str: The string to convert
+    :param offset: the quality offset for conversion for this fastq
+    :return list: a list of numeric quality scores
+    """
+    ret_list = []
+    for i in range(len(qual_str)):
+        try:
+            ret_list.append(ord(qual_str[i]) - offset)
+        except ValueError:
+            raise ValueError("improperly formatted fastq file")
+
+    return ret_list
+
+
+def expand_counts(count_array: list, scores: list):
+    """
+    Expands a counting list out into the full tally
+
+    :param count_array: the list to expand
+    :param scores: The factors by which to expand the list
+    :return np.ndarray: a one-dimensional array reflecting the expanded count
+    """
+    if len(count_array) != len(scores):
+        raise ValueError("Count array and scores have different lengths.")
+
+    ret_list = []
+    for i in range(len(count_array)):
+        ret_list.extend([scores[i]] * count_array[i])
+
+    return np.array(ret_list)
+
+
+def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int, readlen: int):
     """
     Parses an individual file for statistics
 
     :param input_file: The input file to process
-    :param file_type: The file type (sam/bam or fastq, gzipped or not)
     :param quality_scores: A list of potential quality scores
-    :param off_q: The offset for the quality score (usually 33) to convert to ASCII
     :param max_reads: Max number of reads to process for this file
+    :param qual_offset: The offset score for this fastq file. We assume the Illumina default of 33.
+    :param readlen: The read length for these datasets. If 0, then we will determine it.
     :return:
     """
 
     _LOG.info(f'reading {input_file}')
-    is_aligned = False
 
-    if file_type == "bam" or file_type == "sam":
-        f = pysam.AlignmentFile(input_file)
-        is_aligned = True
+    if not readlen:
+        readlens = []
+
+        # takes too long and uses too much memory to read all of them, so let's just get a sample.
+        with open_input(input_file) as fq_in:
+            i = 0
+            # Count the first 1000 lines
+            while i < 1000:
+                i += 1
+                for _ in (0, 1, 2):
+                    fq_in.readline()
+                line = fq_in.readline().strip()
+                readlens.append(len(line))
+
+        readlens = np.array(readlens)
+
+        # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
+        readlen_mode = mode(readlens, axis=None, keepdims=False)
+        if readlen_mode.count < (0.5 * len(readlens)):
+            _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
+        if readlen_mode.count < 20:
+            raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
+        read_length = int(readlen_mode.mode)
+
     else:
-        f = pysam.FastxFile(str(input_file))
+        read_length = readlen
 
-    readlens = []
-    qualities = []
+    _LOG.debug(f'Read len of {read_length}, over {1000} samples')
 
-    if is_aligned:
-        g = f.fetch()
-    else:
-        g = f
-
-    for read in g:
-        if is_aligned:
-            qualities_to_check = list(read.query_alignment_qualities)
-        else:
-            qualities_to_check = list(read.get_quality_array())
-
-        # Skip any empty quality arrays
-        if qualities_to_check:
-            readlens.append(len(qualities_to_check))
-            qualities.append(qualities_to_check)
-
-    f.close()
-    readlens = np.array(readlens)
-    qualities = np.array(qualities)
-
-    # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
-    readlen_mode = mode(readlens, axis=None, keepdims=False)
-    if readlen_mode.count < (0.5 * len(readlens)):
-        _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
-    if readlen_mode.count < 20:
-        raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
-
-    read_length = readlen_mode.mode
-
-    # In order to account for scarce data, we may try to set the minimum count at 1.
-    # For large datasets, this will have minimal impact, but it will ensure for small datasets
-    # that we don't end up with probabilities of scores being 0. To do this, just change np.zeros to np.ones
+    _LOG.info(f"Reading {max_reads} records...")
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
+    # shape_curves = []
+    quarters = max_reads//4
 
-    total_records_to_read = min(len(readlens), max_reads)
-    quarters = total_records_to_read//4
+    records_read = 0
+    wrong_len = 0
+    end_of_file = False
+    # SeqIO eats up way too much memory for larger fastqs, so we're trying to read the file in line by line here
+    with open_input(input_file) as fq_in:
+        while records_read < max_reads:
 
-    rng = np.random.default_rng()
+            # We throw away 3 lines and read the 4th, because that's fastq format
+            for _ in (0, 1, 2, 3):
+                line = fq_in.readline()
+                if not line:
+                    end_of_file = True
+                    break
+            if end_of_file:
+                break
 
-    for i in range(total_records_to_read):
-        """
-        This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
-        """
-        qualities_to_check = qualities[i]
-        if len(qualities_to_check) != read_length:
-            continue
+            """
+            This section filters and adjusts the qualities to check. It handles cases of irregular read-lengths as well.
+            """
+            qualities_to_check = convert_quality_string(line.strip(), qual_offset)
 
-        for j in range(read_length):
-            # The qualities of each read_position_scores
-            quality_bin = take_closest(quality_scores, qualities_to_check[j])
-            bin_index = quality_scores.index(quality_bin)
-            temp_q_count[j][bin_index] += 1
-            qual_score_counter[quality_bin] += 1
+            if len(qualities_to_check) != read_length:
+                wrong_len += 1
+                continue
 
-        if i % quarters == 0:
-            _LOG.info(f'reading data: {(i / total_records_to_read) * 100:.0f}%')
+            # TODO Adding this section to account for quality score "shape" in a fastq
+            # shape_curves.append(qualities_to_check)
+
+            records_read += 1
+
+            for j in range(read_length):
+                # The qualities of each read_position_scores
+                quality_bin = take_closest(quality_scores, qualities_to_check[j])
+                bin_index = quality_scores.index(quality_bin)
+                temp_q_count[j][bin_index] += 1
+                qual_score_counter[quality_bin] += 1
+
+            if records_read % quarters == 0:
+                _LOG.info(f'reading data: {(records_read / max_reads) * 100:.0f}%')
 
     _LOG.info(f'reading data: 100%')
+    if end_of_file:
+        _LOG.info(f'{records_read} records read before end of file.')
+    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length} ({wrong_len/max_reads:.0f}%)')
 
-    quality_score_probabilities = np.zeros((read_length, len(quality_scores)), dtype=float)
-
+    avg_std_by_pos = []
+    q_count_by_pos = np.asarray(temp_q_count)
     for i in range(read_length):
-        # TODO Add some interpolation for missing scores.
-        read_position_scores = temp_q_count[i]
-        total = sum(read_position_scores)
-        # If total is zero, we had no data at that position, for some reason. Assume a uniform chance of any score.
-        if total == 0:
-            # No reads at that position for the entire dataset, assume uniform probability
-            quality_score_probabilities[i] = np.full(
-                len(quality_scores), 1/len(quality_scores), dtype=float
-            )
-            continue
-        if total < 20:
-            # fill it out with random scores
-            num = 20 - total
-            # We'll make sure we have at least 1 'score' at each position, to give us interesting results
-            # with the simulation, while keeping the distribution roughly the same.
-            temp_read_pos = read_position_scores + 1
-            temp_probs = temp_read_pos/sum(temp_read_pos)
-            scores = rng.choice(quality_scores, size=num, p=temp_probs)
-            read_position_scores = np.concatenate((read_position_scores, scores))
-            total = sum(read_position_scores)
+        this_counts = q_count_by_pos[i]
+        expanded_counts = expand_counts(this_counts, quality_scores)
+        average_q = np.average(expanded_counts)
+        st_d_q = np.std(expanded_counts)
+        avg_std_by_pos.append((average_q, st_d_q))
 
-        quality_score_probabilities[i] = read_position_scores/total
+    # TODO In progress, working on ensuring the error model produces the right shape
+    # shape_curves = pd.DataFrame(shape_curves)
+    # columns = list(range(1, 11)) + list(range(15, len(shape_curves[0]), 5))
+    # shape_curves_plot = shape_curves.iloc[columns]
+    # averages = []
+    # for name, value in shape_curves_plot.items():
+    #     averages.append(np.average(value))
+    # sns.boxplot(data=shape_curves_plot, fliersize=0)
+    # plt.show()
 
     # Calculates the average error rate
-    tot_bases = float(sum(qual_score_counter.values()))
+    tot_bases = read_length * records_read
     avg_err = 0
-    for k in sorted(qual_score_counter.keys()):
-        error_val = 10. ** (-k / 10.)
-        _LOG.info(f"q_score={k}, error value={error_val:e}, count={qual_score_counter[k]}")
-        avg_err += error_val * (qual_score_counter[k] / tot_bases)
+    for score in quality_scores:
+        error_val = 10. ** (-score / 10.)
+        _LOG.info(f"q_score={score}, error value={error_val:e}, count={qual_score_counter[score]}")
+        avg_err += error_val * (qual_score_counter[score] / tot_bases)
     _LOG.info(f'Average error rate for dataset: {avg_err}')
 
     # Generate the sequencing error model with default average error rate
-    return quality_score_probabilities, avg_err, read_length
+    return avg_std_by_pos, avg_err, read_length
 
 
 def plot_stuff(init_q, real_q, q_range, prob_q, actual_readlen, plot_path):

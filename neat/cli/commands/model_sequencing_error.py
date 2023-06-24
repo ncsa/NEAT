@@ -26,12 +26,13 @@ class Command(BaseCommand):
         parser.add_argument('-i',
                             type=str,
                             metavar="FILE",
-                            dest="input_file",
+                            dest="input_files",
                             nargs='+',
                             required=True,
-                            help="fastq(.gz) or sam/bam file_list to process. You may enter more than one "
-                                 "(e.g., paired end fastq files), they will be processed in sequence "
-                                 "and the results averaged")
+                            help="fastq(.gz) to process. Entering 1 fastqs will set the modeler to "
+                                 "single-ended mode. Use -i2 for paired ended models."
+                                 "To use a sam/bam input first convert to fastq using an external tool, "
+                                 "such as samtools.")
 
         parser.add_argument('-q',
                             type=int,
@@ -48,8 +49,11 @@ class Command(BaseCommand):
                             nargs='+',
                             required=False,
                             default=[2, 11, 25, 37],
-                            help="Quality score bins. Enter as a list for binned scores, "
-                                 "or enter a single maximum score for a full range. [2, 11, 24, 37]")
+                            help="Quality score bins. Enter as a space separeted list for binned scores "
+                                 "(-Q 2 11 24 37), or enter a single maximum score for a full range (-Q 42 gives all"
+                                 "scores from 1-42). The default is binned quality scores: [2, 11, 24, 37]. Note that"
+                                 "using quality score bins on an unbinned fastq will result in a binned model, at the"
+                                 "cost of some inaccuracy.")
 
         parser.add_argument('-m',
                             type=int,
@@ -57,19 +61,19 @@ class Command(BaseCommand):
                             dest="max_num",
                             required=False,
                             default=np.inf,
-                            help="Max number of reads to process [all].")
+                            help="Max number of reads to process [default: all].")
 
-        parser.add_argument('--pileup',
-                            type=str,
-                            metavar="FILE",
-                            required=False,
-                            help="Pileup statistics file from running samtools pileup. Not yet implemented.")
-
-        parser.add_argument('--plot',
-                            required=False,
-                            action='store_true',
-                            default=False,
-                            help="Output optional plots (filename based on input name). Not yet implemented.")
+        # parser.add_argument('--pileup',
+        #                     type=str,
+        #                     metavar="FILE",
+        #                     required=False,
+        #                     help="Pileup statistics file from running samtools mpileup. Not yet implemented.")
+        #
+        # parser.add_argument('--plot',
+        #                     required=False,
+        #                     action='store_true',
+        #                     default=False,
+        #                     help="Output optional plots (filename based on input name). Not yet implemented.")
 
         parser.add_argument('--overwrite',
                             required=False,
@@ -87,12 +91,12 @@ class Command(BaseCommand):
         :param arguments: The namespace with arguments and their values.
         """
         model_seq_err_runner(
-            arguments.input_file,
+            arguments.input_files,
             arguments.quality_offset,
             arguments.quality_scores,
             arguments.max_num,
-            arguments.pileup,
-            arguments.plot,
+            # arguments.pileup,
+            # arguments.plot,
             arguments.overwrite,
             arguments.output
         )

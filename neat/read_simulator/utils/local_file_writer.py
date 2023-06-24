@@ -28,13 +28,13 @@ def write_local_file(vcf_filename: str or Path,
                      fasta_filename: str or Path = None):
     """
 
-    :param vcf_filename: The path to write the local variant file_list
+    :param vcf_filename: The path to write the local variant file
     :param variant_data: The variant data for this config
     :param reference: The reference for this contig
     :param targeted_regions: Regions to target in this contig
     :param discarded_regions: Regions to discard in this contig
     :param options: The options for this run
-    :param fasta_filename: The filename for the optional fasta file_list
+    :param fasta_filename: The filename for the optional fasta file
     """
 
     with open_output(vcf_filename) as tmp:
@@ -101,7 +101,7 @@ def write_local_file(vcf_filename: str or Path,
 
 class LocalFasta:
     """
-    Stores info about local fasta file_list and includes a method to write records.
+    Stores info about local fasta file and includes a method to write records.
 
     :param filename:
     :param reference:
@@ -125,7 +125,7 @@ class LocalFasta:
 
     def add_variant(self, variant):
         """
-        Adds a particular variant to the fasta file_list(s).
+        Adds a particular variant to the fasta file(s).
 
         :param variant: The variant to add
         """

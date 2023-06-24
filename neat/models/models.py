@@ -17,11 +17,12 @@ from Bio import SeqRecord
 
 from neat import variants
 
-from ..common import TRI_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
+from ..common import TRINUC_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
 from .default_gc_bias_model import *
 from .default_fraglen_model import *
+from .utils import bin_scores
 
 __all__ = [
     "MutationModel",
@@ -35,26 +36,6 @@ __all__ = [
 ]
 
 _LOG = logging.getLogger(__name__)
-
-
-def take_closest(my_list: np.ndarray, my_number: float):
-    """
-    Helper function that assumes my_list is sorted. Returns closest value to my_number.
-    This is necessary because most quality scores are binned these days.
-
-    If two numbers are equally close, return the smaller number.
-    """
-    pos = bisect_left(my_list, my_number)
-    if pos == 0:
-        return my_list[0]
-    if pos == len(my_list):
-        return my_list[-1]
-    before = my_list[pos - 1]
-    after = my_list[pos]
-    if after - my_number < my_number - before:
-        return after
-    else:
-        return before
 
 
 class VariantModel(abc.ABC):
@@ -144,7 +125,7 @@ class SnvModel(VariantModel):
 
     :param trinuc_trans_matrices: 3D array of matrices representing the transition probabilities of each trinucleotide combination,
                                   where each matrix represents the probability of a particular
-    :param trinuc_trans_bias: The bias of each of the 64 possible trinucleotide combinations,
+    :param trinuc_mutation_bias: The bias of each of the 64 possible trinucleotide combinations,
                               as derived from input data. Our base assumption will be no bias
     :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
             we'll need the rng to perform certain methods.
@@ -154,13 +135,13 @@ class SnvModel(VariantModel):
 
     def __init__(self,
                  trinuc_trans_matrices: np.ndarray = None,
-                 trinuc_trans_bias: np.ndarray = None,
+                 trinuc_mutation_bias: np.ndarray = None,
                  rng: Generator = None):
 
         self.trinuc_trans_matrices = trinuc_trans_matrices
-        self.trinuc_trans_bias = trinuc_trans_bias
+        self.trinuc_mutation_bias = trinuc_mutation_bias
         self.no_bias = False
-        if not np.any(self.trinuc_trans_matrices) and not trinuc_trans_bias:
+        if not np.any(self.trinuc_trans_matrices) and not trinuc_mutation_bias:
             self.no_bias = True
         self.trinuc_bias_map = None
         self.rng = rng
@@ -192,9 +173,9 @@ class SnvModel(VariantModel):
             # If the model was set up with no bias, then we skip the biasing part
             if not self.no_bias:
                 # Update the map bias at the central position for that trinuc
-                for trinuc in ALL_TRI:
+                for trinuc in ALL_TRINUCS:
                     for match in re.finditer(trinuc, str(sequence)):
-                        self.local_trinuc_bias[match.start() + 1] = self.trinuc_trans_bias[TRI_IND[trinuc]]
+                        self.local_trinuc_bias[match.start() + 1] = self.trinuc_mutation_bias[TRINUC_IND[trinuc]]
 
             # Now we normalize the bias
             self.local_trinuc_bias = self.local_trinuc_bias / sum(self.local_trinuc_bias)
@@ -230,7 +211,7 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
             we'll need the rng to perform certain methods. Must be set for runs.
     :param trinuc_trans_matrices: The transition matrices for the trinuc
         patterns.
-    :param trinuc_trans_bias: The bias for each possible trinucleotide, as measured in the
+    :param trinuc_mut_bias: The bias for each possible trinucleotide, as measured in the
         input dataset.
     :param insert_len_model: The model for the insertion length
     :param deletion_len_model: The model for teh deletion length
@@ -245,14 +226,14 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
                  rng: Generator = None,
                  # Any new parameters needed for new models should go below
                  trinuc_trans_matrices: np.ndarray = default_trinuc_trans_matrices,
-                 trinuc_trans_bias: np.ndarray = default_trinuc_trans_bias,
+                 trinuc_mut_bias: np.ndarray = default_trinuc_mut_bias,
                  insert_len_model: dict[int: float] = default_insertion_len_model,
                  deletion_len_model: dict[int: float] = default_deletion_len_model):
 
         # Any new mutation types will need to be instantiated in the mutation model here
         SnvModel.__init__(self,
                           trinuc_trans_matrices=trinuc_trans_matrices,
-                          trinuc_trans_bias=trinuc_trans_bias)
+                          trinuc_mutation_bias=trinuc_mut_bias)
         InsertionModel.__init__(self, insert_len_model=insert_len_model)
         DeletionModel.__init__(self, deletion_len_model=deletion_len_model)
 
@@ -301,7 +282,7 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         :return: A randomly generated variant
         """
         # First determine which matrix to use
-        transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[:2]]]
+        transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[0] + "_" + trinucleotide[2]]]
         # then determine the trans probs based on the middle nucleotide
         transition_probs = transition_matrix[NUC_IND[trinucleotide[1]]]
         # Now pick a random alternate, weighted by the probabilities
@@ -321,8 +302,8 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         # Note that insertion length model is based on the number of bases inserted. We add 1 to the length
         # to get the length of the VCF version of the variant.
         length = self.get_insertion_length() + 1
-        insertion = ''.join(self.rng.choice(ALLOWED_NUCL, size=length))
-        alt = ref + insertion
+        insertion_string = ''.join(self.rng.choice(ALLOWED_NUCL, size=length))
+        alt = ref + insertion_string
         return Insertion(location, length, alt)
 
     def generate_deletion(self, location) -> Deletion:
@@ -354,12 +335,10 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     :param read_length: The read length derived from real data.
     :param transition_matrix: 2x2 matrix that gives the probability of each base transitioning to another.
     :param quality_scores: numpy array of ints of the PHRED quality scores possible from the sequencing machine
-    :param qual_score_probs: A numpy array of arrays of floats. Each inner array has a length equal to the length
-                             of the quality scores list. The number of arrays is equal to the number of positions
-                             of reads in the dataset. The default model uses an array of length 101. Each row
-                             tells you the probability of getting each quality score at that position along the read.
+    :param qual_score_probs: At each position along the read_length, this gives the mean and standard deviation of
+        quality scores read from the dataset used to construct the model.
     :param rescale_qualities: If set to true, NEAT will attempt to rescale the qualities based on the input error
-                              model, rather than using the qualities derived from the real data.
+        model, rather than using the qualities derived from the real data.
     :param variant_probs: Probability dict for each valid variant type
     :param indel_len_model: Similar to mutation model, but simpler because errors tend not to be complicated. The
         three possible variant types for errors are Insertion, Deletion, and SNV
@@ -401,9 +380,10 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         self.insertion_model = insertion_model
         self.uniform_quality_score = None
         if self.is_uniform:
-            converted_avg_err = take_closest(self.quality_scores,
-                                             int(-10. * np.log10(self.average_error)))
-            # Set score to the lower of the max of the quality scores and the bin closest to the input avg error.
+            # bin scores returns a list, so we need the first (only) element of the list
+            converted_avg_err = bin_scores(self.quality_scores,
+                                           [int(-10. * np.log10(self.average_error))])[0]
+            # Set score to the lowest of the max of the quality scores and the bin closest to the input avg error.
             self.uniform_quality_score = min([max(self.quality_scores), converted_avg_err])
         self.rng = rng
 
@@ -473,7 +453,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # else dedicated to SNVs.
             else:
                 snv_reference = reference_segment[index]
-                nuc_index = ALLOWED_NUCL.index(snv_reference)
+                nuc_index = NUC_IND[snv_reference]
                 # take the zero index because this returns a list of length 1.
                 snv_alt = self.rng.choice(ALLOWED_NUCL, p=self.transition_matrix[nuc_index])
                 introduced_errors.append(
@@ -514,8 +494,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             quality_index_map = self.quality_index_remap(input_read_length)
             temp_qual_array = []
             for i in range(input_read_length):
-                score = self.rng.choice(a=self.quality_scores,
-                                        p=self.quality_score_probabilities[quality_index_map[i]])
+                score = bin_scores(self.quality_scores,
+                                   self.rng.normal(self.quality_score_probabilities[i][0],
+                                                   scale=self.quality_score_probabilities[i][1]))
                 temp_qual_array.append(score)
 
         if self.rescale_qualities:
@@ -526,7 +507,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                                                           self.quality_score_error_rate[n]) + 0.5)])
                               for n in temp_qual_array]
             # Now rebin the quality scores.
-            temp_qual_array = np.array([take_closest(self.quality_scores, n) for n in rescaled_quals])
+            temp_qual_array = np.array(bin_scores(self.quality_scores, [n for n in rescaled_quals]))
 
         return temp_qual_array[:input_read_length]
 
@@ -539,7 +520,7 @@ class ErrorContainer:
     :param location - the index of the start position of the variant in 0-based coordinates
     :param length - the length of the error
     :param ref - the reference sequence of the error includes base before insertion or deletion, as applicable,
-        which is the same notation used in a VCF file_list.
+        which is the same notation used in a VCF file.
     :param alt - the alternate sequence of the error (i.e., the error itself)
     """
     def __init__(self,
@@ -636,7 +617,7 @@ class FragmentLengthModel:
                            read_length: int,
                            coverage: int) -> list:
         """
-        Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set.
+        Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set
 
         :param total_length: Length of the reference segment we are covering.
         :param read_length: average length of the reads

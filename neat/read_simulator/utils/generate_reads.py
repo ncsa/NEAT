@@ -1,5 +1,6 @@
 import logging
 import time
+import pickle
 import numpy as np
 
 from math import ceil, floor
@@ -34,7 +35,7 @@ def is_too_many_n(segment):
     """
     if not segment:
         return True
-    n = segment.count('N')
+    n = segment.upper().count('N')
     return n / len(segment) >= 0.2
 
 
@@ -62,7 +63,6 @@ def create_windows(sequence: SeqRecord, size: int, overlap: int):
 def cover_dataset(
         span_length: int,
         target_vector: np.ndarray,
-        window_size: int,
         options: Options,
         read_length_model: FragmentLengthModel,
         fragment_model: FragmentLengthModel | None,
@@ -73,17 +73,14 @@ def cover_dataset(
 
     :param span_length: The total length the cover needs to span
     :param target_vector: The vector of coverage targets by position
-    :param window_size: The size of the window used for gc-bias
     :param options: The options for the run
     :param read_length_model: The model used to generate random read lengths
     :param fragment_model: The fragment model used for to generate random fragment lengths
-    :return:
     """
 
     # Variables to track reads and current coverage
     temp_reads = []
     coverage = [0] * span_length
-    read_cover = {x: [] for x in range(span_length)}
 
     read_pool = read_length_model.generate_fragments(span_length, options.read_len, options.coverage)
 
@@ -99,9 +96,13 @@ def cover_dataset(
 
     _LOG.debug("Covering dataset")
 
-    target = options.rng.choice([ceil(max(target_vector)), floor(max(target_vector))])
+    target = ceil(max(target_vector))
+    count_per_layer = 0
+    total_num_layers = 0
+    # for each position, the set of reads covering that position.
     while i <= target:
-        _LOG.debug(f"Covering layer {i+1} of {target}")
+        layer_count = 0
+        _LOG.debug(f"Covering layer {i+1} of {target + 1}")
         # In order to make the dataset look random, but still achieve proper coverage, we're going to have some loops
         # Space the reads randomly, and some loops create very regular reads. Outside this, we'll shuffle the reads
         # to give them a random appearance.
@@ -114,16 +115,16 @@ def cover_dataset(
         j = -options.rng.choice(range(padding))
         previous_percent = 0
         k = 0  # independent tracking
-        while -padding <= j < span_length:
+        while j < span_length:
             k += 1
             # Simple progress tracker
             current_percent = (j * 100) // span_length
             if current_percent > previous_percent:
-                print(f'{current_percent}%', end='\r')
                 previous_percent = current_percent
-            # The structure for these reads will be (left_start, left_end, right_start, right_end) where start and end
-            # are ints with start > end. Reads can overlap, so right_start < left_end is possible, but the reads cannot
-            # extend past each other, so right_start < left_start and left_end > right_end are not possible.
+                print(f'{current_percent:.2%}', end='')
+            # The structure for these reads will be (left_start, left_end, right_start, right_end) where start and
+            # end are ints with start > end. Reads can overlap, so right_start < left_end is possible, but the reads
+            # cannot extend past each other, so right_start < left_start and left_end > right_end are not possible.
             if options.paired_ended:
                 left_read_length, right_read_length = options.rng.choice(read_pool, size=2, replace=False)
                 fragment_length = options.rng.choice(fragment_pool)
@@ -156,7 +157,7 @@ def cover_dataset(
                 # this trims the raw right read, so that right_start >= left_start and left_end <= right_end
                 # this keeps us from getting unrealistic paired ended reads
                 right_start = max(uncorrected_right_start, left_start)
-                right_end = min(uncorrected_right_end, left_end)
+                right_end = min(max(uncorrected_right_end, left_end), span_length)
 
                 # Both reads are off the map, so we throw this out:
                 if right_end <= 0:
@@ -194,7 +195,8 @@ def cover_dataset(
                     skip_left = skip_right = True
 
             # Case 3: Right read starts after the end of the span, unusable
-            # Note: In single ended mode the next two cases are irrelevant, but it shouldn't cost much time to run them
+            # Note: In single ended mode the next two cases are irrelevant, but it shouldn't cost
+            #   much time to run them
             if right_start >= span_length:
                 # left read is usable if it's not off the map and has at least half a
                 # read length of usable bases
@@ -245,7 +247,9 @@ def cover_dataset(
             else:
                 temp_right_read = (0, 0)
 
-            temp_reads.append(temp_left_read + temp_right_read)
+            read_to_add = temp_left_read + temp_right_read
+            temp_reads.append(read_to_add)
+            layer_count += 1
             j += left_read_length + (random_mode * options.rng.poisson(1))
 
             if k > span_length:
@@ -253,20 +257,68 @@ def cover_dataset(
                 if delta % 100 == 0:
                     _LOG.debug(f"K is getting large: {k} v {span_length}")
 
+        print("100%")
+        _LOG.debug(f"Layer {i+1} complete")
+        count_per_layer += layer_count
+        total_num_layers += 1
         i += run_one_more(coverage, i, target, options.coverage)
 
+    average_reads_per_layer = count_per_layer/total_num_layers
     _LOG.debug("Culling reads to final set.")
-    final_reads = culling_procedure(
-        temp_reads,
-        span_length,
-        coverage,
-        read_cover,
-        target_vector,
-        window_size,
-        options.rng
+    final_reads = final_subsetting(
+        candidate_reads=temp_reads,
+        coverage=coverage,
+        target_vector=target_vector,
+        layer_count=average_reads_per_layer,
+        rng=options.rng
     )
 
     return final_reads
+
+
+def final_subsetting(
+        candidate_reads: list,
+        coverage: list,
+        target_vector: np.ndarray,
+        layer_count: float,
+        rng: Generator
+) -> list:
+    """
+    The final subsetting for reads. We basically just calculate if we need to subset, then how many final reads we
+    should have and we draw them randomly without replacement until we have enough.
+
+    :param candidate_reads: The list of reads in the following format: (left_start, left_end, right_start, right_end)
+    :param coverage: The calculated coverage vector for the left_reads + right_reads dataset
+    :param target_vector: The target coverage values, by location
+    :param layer_count: The average count, per layer, of the number of reads.
+    :param rng: The random number generator for the run
+    :return: Two lists, left and right reads, culled to proper coverage depth.
+    """
+
+    target_med = np.median(target_vector)
+    target_std = np.std(target_vector)
+
+    current_med = np.median(coverage)
+
+    filtered_candidates = [x for x in candidate_reads if any(x)]
+
+    #  First check if any culling is necessary
+    if current_med <= target_med + target_std:
+        _LOG.debug("Culled 0 reads")
+        return filtered_candidates
+
+    reads_to_cull = (current_med - target_med) * layer_count
+    estimated_final_read_count = len(filtered_candidates) - reads_to_cull
+    random_buffer = rng.normal()
+    final_read_count = ceil(estimated_final_read_count + random_buffer)
+
+    if len(filtered_candidates) <= final_read_count:
+        _LOG.debug("Culled 0 reads")
+        return filtered_candidates
+    ret_set = rng.choice(filtered_candidates, size=final_read_count, replace=False)
+    reads_culled = len(filtered_candidates) - len(ret_set)
+    _LOG.debug(f"Culled {reads_culled} reads, leaving {len(ret_set)} reads")
+    return ret_set
 
 
 def calculate_coverage(coverage_section: list, target_vector: np.ndarray) -> (list, int):
@@ -322,113 +374,6 @@ def parse_coverage(
         return 0, 0
 
 
-def culling_procedure(
-        candidate_reads: list,
-        span_length: int,
-        coverage: list,
-        cover_dict: dict,
-        target_vector: np.ndarray,
-        window_size: int,
-        rng: Generator
-) -> list:
-    """
-    The culling procedure for reads. It is based on the median values (median as opposed to mean to
-    allow for datasets with lots of zeros) of the coverage and target vectors. Basically, we want to
-    throw away reads until we get to the right median value. We start by trying to throw out reads
-    where the coverage is too high. If that doesn't work, we throw them out randomly one by one until the
-    median is in acceptable parameters.
-
-    :param candidate_reads: The list of reads in the following format: (left_start, left_end, right_start, right_end)
-    :param span_length: The total length spanned by this cover
-    :param coverage: The calculated coverage vector for the left_reads + right_reads dataset
-    :param cover_dict: a dictionary of the cover at each location
-    :param target_vector: The target coverage values, by location
-    :param window_size: The size of the window used to compute GC bias
-    :param rng: The random number generator for the run
-    :return: Two lists, left and right reads, culled to proper coverage depth.
-    """
-
-    reads_culled = 0
-    target_med = np.median(target_vector)
-    target_std = np.std(target_vector)
-
-    #  First check if any culling is necessary
-    if np.median(coverage) <= target_med + target_std:
-        _LOG.debug(f"Culled {reads_culled} reads")
-        return candidate_reads
-
-    for i in range(0, span_length, window_size):
-        window_target = target_vector[i: i+window_size]
-        window_target_median = np.median(window_target)
-
-        window_coverage = coverage[i: i+window_size]
-        window_coverage_median = np.median(window_coverage)
-
-        # Trying to identify areas of high coverage we can trim from
-        while window_coverage_median > window_target_median + (2 * target_std):
-            reads_culled += 1
-            # toss a read from the coverage window
-            position_to_cull = rng.choice(range(i, i+window_size))
-            cull_read(position_to_cull, coverage, candidate_reads, rng)
-            # Recalculate median for the window
-            window_coverage_median = np.median(coverage[i: i+window_size])
-            # Test to make sure this doesn't completely mess up our calculations
-            # (needed for paired-end in particular)
-            if np.median(coverage) <= target_med:
-                break
-
-    # If we didn't find enough areas of too high coverage to bring our total under an acceptable parameter,
-    # we'll throw out a couple random reads
-    if np.median(coverage) > target_med + (2 * target_std):
-        # We'll pare slightly more than we need to
-        while np.median(coverage) > target_med + (2 * target_std) and len(candidate_reads) > 0:
-            reads_culled += 1
-            # Pick a random read to toss and update coverage
-            cull_read(candidate_reads, coverage, candidate_reads, rng)
-
-    _LOG.debug(f"Culled {reads_culled} reads")
-    return candidate_reads
-
-
-def cull_read(position, coverage_vector, total_reads, rng):
-    """
-    This function picks a read to toss and updates coverage.
-
-    :param position: A position we want to thin out
-    :param coverage_vector: The current coverage vector for the area
-    :param total_reads: The entire reads dataset, from which to remove the culled read
-    :param rng: The random number generator for the run
-    :return: None. Updates total_reads in place
-    """
-    # Pick a random read to toss and update coverage
-    depth = coverage_vector[position]
-    random_selection = rng.choice(range(depth))
-    current_depth = 0
-    # Hoping this will be faster because i don't cycle through every read every time
-    read_to_cull = (0, 0, 0, 0)
-    for i in range(len(total_reads)):
-        found = False
-        if total_reads[i][0] <= position < total_reads[i][1]:
-            current_depth += 1
-            found = True
-        elif total_reads[i][2] <= position < total_reads[i][3]:
-            current_depth += 1
-            found = True
-        if current_depth == random_selection and found:
-            read_to_cull = total_reads[i]
-            break
-
-    if not any(read_to_cull):
-        read_to_cull = tuple(rng.choice(total_reads))
-
-    for k in range(read_to_cull[0], read_to_cull[1]):
-        coverage_vector[k] -= 1
-    for m in range(read_to_cull[2], read_to_cull[3]):
-        coverage_vector[m] -= 1
-    # toss the read
-    total_reads.remove(read_to_cull)
-
-
 def run_one_more(coverage, index, max_runs, coverage_target):
     """
     This checks if our index as at the max (i.e., we are on the last loop). If we are and we haven't hit our median
@@ -442,6 +387,7 @@ def run_one_more(coverage, index, max_runs, coverage_target):
     """
     if index == max_runs:
         if np.median(coverage) < coverage_target + 0.5:
+            _LOG.debug("Repeating last loop to fill out coverage")
             return -1
 
     return 1
@@ -473,11 +419,13 @@ def replace_n(segment: Seq, rng: Generator) -> Seq:
     :return: The modified sequence object
     """
     modified_segment = ""
-    for base in segment:
-        if base not in ALLOWED_NUCL:
-            modified_segment += rng.choice(ALLOWED_NUCL)
-        else:
+    # This takes care of soft masking
+    segment_no_mask = segment.upper()
+    for base in segment_no_mask:
+        if base in ALLOWED_NUCL:
             modified_segment += base
+        else:
+            modified_segment += rng.choice(ALLOWED_NUCL)
 
     return Seq(modified_segment)
 
@@ -487,8 +435,8 @@ def modify_target_coverage(included_regions: list, excluded_regions: list, cover
     Modifies the coverage vector by applying the list of regions. For this version, areas
     outside the regions have coverage adjusted by the off_target_percent
 
-    :param included_regions: A list of intervals to target, extracted from a bed file_list
-    :param excluded_regions: A list of regions to throw out, extracted from a bed file_list
+    :param included_regions: A list of intervals to target, extracted from a bed file
+    :param excluded_regions: A list of regions to throw out, extracted from a bed file
     :param coverage_vector: The target coverage vector, which will be modified
     :return: The updated target coverage vector.
     """
@@ -501,8 +449,24 @@ def modify_target_coverage(included_regions: list, excluded_regions: list, cover
     return coverage_vector
 
 
+def merge_sort(my_array: np.ndarray):
+    """
+    This sorts the reads in reverse position, merging as it goes, in order to get the proper order
+
+    :param my_array: the array to be sorted.
+    :return: the sorted array
+    """
+    ret_array = my_array[my_array[:, 3].argsort()]
+    ret_array = ret_array[ret_array[:, 2].argsort(kind='mergesort')]
+    ret_array = ret_array[ret_array[:, 1].argsort(kind='mergesort')]
+    ret_array = ret_array[ret_array[:, 0].argsort(kind='mergesort')]
+    return ret_array
+
+
 def generate_reads(reference: SeqRecord,
-                   error_model: SequencingErrorModel,
+                   reads_pickle: str,
+                   error_model_1: SequencingErrorModel,
+                   error_model_2: SequencingErrorModel | None,
                    gc_bias: GcModel,
                    fraglen_model: FragmentLengthModel,
                    readlen_model: FragmentLengthModel,
@@ -518,14 +482,16 @@ def generate_reads(reference: SeqRecord,
     This will generate reads given a set of parameters for the run. The reads will output in a fastq.
 
     :param reference: The reference segment that reads will be drawn from.
-    :param error_model: The error model for this run
+    :param reads_pickle: The file to put the reads generated into, for bam creation.
+    :param error_model_1: The error model for this run, the forward strand
+    :param error_model_2: The error model for this run, reverse strand
     :param gc_bias: The GC-Bias model for this run
     :param fraglen_model: The fragment length model for this run
     :param readlen_model: The read length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
     :param temporary_directory: The directory where to store temporary files for the run
     :param targeted_regions: A list of regions to target for the run (at a rate defined in the options
-        file_list or 2% retained by default)
+        file or 2% retained by default)
     :param discarded_regions: A list of regions to discard for the run
     :param options: The options entered for this run by the user
     :param chrom: The chromosome this reference segment originates from
@@ -537,7 +503,8 @@ def generate_reads(reference: SeqRecord,
     chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq.bgz'
     chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq.bgz'
 
-    # set up a temporary 'sam' file_list for processing by generate_bam, if the option is set
+    # set up a temporary 'sam' file for processing by generate_bam, if the option is set
+
     tsam = temporary_directory / f'{chrom}.tsam.gz'
 
     _LOG.info(f'Sampling reads...')
@@ -546,50 +513,58 @@ def generate_reads(reference: SeqRecord,
     base_name = f'{Path(options.output).name}-{chrom}'
     target_coverage_vector = np.full(shape=len(reference), fill_value=options.coverage)
     if not options.no_coverage_bias:
-        target_coverage_vector = gc_bias.create_coverage_bias_vector(reference.seq)
+        target_coverage_vector = gc_bias.create_coverage_bias_vector(reference.seq.upper())
 
     target_coverage_vector = modify_target_coverage(targeted_regions, discarded_regions, target_coverage_vector)
 
     reads = cover_dataset(
         len(reference),
         target_coverage_vector,
-        gc_bias.window_size,
         options,
         readlen_model,
         fraglen_model,
     )
 
-    paired_reads = sorted([x for x in reads if any(x[0:2]) and any(x[2:4])])
-    singletons = sorted([x for x in reads if x not in paired_reads and any(x)])
+    # Reads that are paired
+    paired_reads = np.asarray([tuple(x) for x in reads if any(x[0:2]) and any(x[2:4])])
+    paired_reads = merge_sort(paired_reads)
 
-    # I'm worried about sorting the sam later, so trying to take care of that now
-    sam_order = np.concatenate((paired_reads, singletons))
-    sam_read_order = [""] * len(sam_order)
+    # singletons
+    singletons = np.asarray([tuple(x) for x in reads if x not in paired_reads and any(x)])
+    singletons = merge_sort(singletons)
 
-    previous_percent = 0
+    sam_read_order = np.concatenate((paired_reads, singletons))
+
+    final_sam_dict = {}
+
+    _LOG.debug(f"Paired percentage = {len(paired_reads)/len(sam_read_order)}")
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     with (
         open_output(chrom_fastq_r1) as fq1,
-        open_output(chrom_fastq_r2) as fq2,
-        open_output(tsam) as temp_sam
+        open_output(chrom_fastq_r2) as fq2
     ):
 
-        for i in np.arange(len(reads)):
-            # Simple progress tracker
-            current_percent = (i * 100) // len(reads)
-            if current_percent > previous_percent:
-                print(f'{current_percent}%', end='\r')
-                previous_percent = current_percent
-
+        for i in range(len(reads)):
+            print(f'{i/len(reads):.2%}')
             # Added some padding after, in case there are deletions
-            segments = [reference[reads[i][0]: reads[i][1] + 50].seq, reference[reads[i][2]: reads[i][3] + 50].seq]
+            segments = [reference[reads[i][0]: reads[i][1] + 50].seq.upper(),
+                        reference[reads[i][2]: reads[i][3] + 50].seq.upper()]
             # Check for N concentration
             # Make sure the segments will come out to at around 80% valid bases
             # So as not to mess up the calculations, we will skip the padding we added above.
             if not is_too_many_n(segments[0][:-50] + segments[1][:-50]):
                 read_name = f'{base_name}-{str(i)}'
+
+                if options.produce_bam:
+                    # This index gives the position of the read for the final bam file
+                    # [0][0] gives us the first index where this occurs (which should be the only one)
+                    final_order_read_index = np.where(sam_read_order == reads[i])[0][0]
+                    if final_order_read_index not in final_sam_dict:
+                        final_sam_dict[final_order_read_index] = []
+
                 # reads[i] = (left_start, left_end, right_start, right_end)
+                # If there is a read one:
                 if any(reads[i][0:2]):
                     segment = segments[0]
                     segment = replace_n(segment, options.rng)
@@ -599,7 +574,7 @@ def generate_reads(reference: SeqRecord,
                     else:
                         is_paired = False
 
-                    read1 = Read(name=read_name,
+                    read1 = Read(name=read_name + "/1",
                                  raw_read=reads[i],
                                  reference_segment=segment,
                                  reference_id=reference.id,
@@ -609,16 +584,17 @@ def generate_reads(reference: SeqRecord,
                                  is_paired=is_paired
                                  )
 
-                    # The zero, zero slice of the np.where command is because this array is a 2d numpy array, so
-                    # to get the first index of the first full array that matched, we need [0][0]
-                    # we only have to do this once since reads[i] contains info on both reads.
-                    # The idea here is to have the order established above, find where this fits in the order, and set
-                    # The read. This will allow us to find these reads when we write out the full file_list
-                    sam_read_order[(np.where(np.isin(sam_order[:, 1], reads[i])))[0][0]] = read_name
-                    # TODO There may be a more efficient way to add mutations
                     read1.mutations = find_applicable_mutations(read1, contig_variants)
 
-                    read1.write_record(error_model, fq1, temp_sam, options.produce_fastq, options.produce_bam)
+                    read1.finalize_read_and_write(error_model_1, fq1, options.produce_fastq)
+
+                    if options.produce_bam:
+                        # Save this for later
+                        final_sam_dict[final_order_read_index].append(read1)
+
+                elif options.produce_bam:
+                    # If there's no read1, append a 0 placeholder
+                    final_sam_dict[final_order_read_index].append(0)
 
                 if any(reads[i][2:4]):
                     segment = segments[1]
@@ -629,7 +605,7 @@ def generate_reads(reference: SeqRecord,
                     else:
                         is_paired = False
 
-                    read2 = Read(name=read_name,
+                    read2 = Read(name=read_name + "/2",
                                  raw_read=reads[i],
                                  reference_segment=segment,
                                  reference_id=reference.id,
@@ -640,11 +616,22 @@ def generate_reads(reference: SeqRecord,
                                  is_paired=is_paired
                                  )
 
-                    # TODO There may be a more efficient way to add mutations
                     read2.mutations = find_applicable_mutations(read2, contig_variants)
-                    read2.write_record(error_model, fq2, temp_sam, options.produce_fastq, options.produce_bam)
+                    read2.finalize_read_and_write(error_model_2, fq2, options.produce_fastq)
+
+                    if options.produce_bam:
+                        # Save this for later
+                        final_sam_dict[final_order_read_index].append(read2)
+
+                elif options.produce_bam:
+                    # If there's no read2, append a 0 placeholder
+                    final_sam_dict[final_order_read_index].append(0)
 
     print("100%")
 
+    if options.produce_bam:
+        with open_output(reads_pickle) as reads:
+            pickle.dump(final_sam_dict, reads)
+
     _LOG.info(f"Finished sampling reads in {time.time() - start} seconds")
-    return chrom_fastq_r1, chrom_fastq_r2, tsam, sam_read_order
+    return chrom_fastq_r1, chrom_fastq_r2

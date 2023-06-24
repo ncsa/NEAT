@@ -1,6 +1,6 @@
 """
 This function creates a t-sam record for input into the output_bam function. It contains all the needed fields for
-generating the final bam file_list
+generating the final bam file
 """
 
 import logging

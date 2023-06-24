@@ -3,7 +3,7 @@ import logging
 from Bio.Seq import Seq
 
 from ...models import MutationModel
-from ...common import ALLOWED_NUCL, TRI_IND
+from ...common import ALLOWED_NUCL, TRINUC_IND
 
 _LOG = logging.getLogger(__name__)
 
@@ -66,14 +66,14 @@ def map_chromosome(sequence: Seq, mut_model: MutationModel):
     """
     # Set up the model dictionary
     trinuc_models = [0.0] * len(sequence)
-    # Start at +1 so we get a trinucleotide to start, and end one shy for the same reason
+    # Start at +1, so we get a trinucleotide to start, and end one shy for the same reason
     for i in range(1, len(sequence) - 1):
-        trinuc = sequence[i-1: i + 2].seq
-        # Let's double check to make sure we didn't pick up a stray N
+        trinuc = sequence[i-1: i + 2].seq.upper()
+        # Let's double-check to make sure we didn't pick up a stray N
         if any([j for j in trinuc if j not in ALLOWED_NUCL]):
             # leave the probability at 0
             continue
-        trinuc_models[i] = mut_model.trinuc_trans_bias[TRI_IND[trinuc]]
+        trinuc_models[i] = mut_model.trinuc_mutation_bias[TRINUC_IND[trinuc]]
 
     return trinuc_models
 

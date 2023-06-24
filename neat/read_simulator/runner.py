@@ -1,7 +1,7 @@
 """
 Runner for generate_reads task
 """
-
+import copy
 import logging
 import pickle
 import gzip
@@ -61,13 +61,31 @@ def initialize_all_models(options: Options):
 
     # We need sequencing errors to get the quality score attributes, even for the vcf
     if options.error_model:
-        error_model = pickle.load(gzip.open(options.error_model))
+        error_models = pickle.load(gzip.open(options.error_model))
+        error_model_1 = error_models[0]
+        if options.paired_ended:
+            if error_models[1]:
+                error_model_2 = error_models[1]
+            else:
+                _LOG.warning('Paired ended mode declared, but input sequencing error model is single ended,'
+                             'duplicating model for both ends')
+                error_model_2 = error_models[0]
+        else:
+            # ignore second model if we're in single-ended mode
+            error_model_2 = None
     else:
-        error_model = SequencingErrorModel()
+        # Use all the default values
+        error_model_1 = SequencingErrorModel()
+        if options.paired_ended:
+            error_model_2 = SequencingErrorModel()
+        else:
+            error_model_2 = None
     # Set the rng for the sequencing error model
-    error_model.rng = options.rng
+    error_model_1.rng = options.rng
+    if error_model_2:
+        error_model_2.rng = options.rng
 
-    _LOG.debug('Sequencing error model loaded')
+    _LOG.debug('Sequencing error models loaded')
 
     # initialize gc_model
     if options.gc_model:
@@ -114,32 +132,32 @@ def initialize_all_models(options: Options):
 
     _LOG.debug("Fragment length model loaded")
 
-    return mut_model, cancer_model, error_model, gc_model, fraglen_model, readlen_model
+    return mut_model, cancer_model, error_model_1, error_model_2, gc_model, fraglen_model, readlen_model
 
 
 def read_simulator_runner(config: str, output: str):
     """
     Run the generate_reads function, which generates simulated mutations in a dataset and corresponding files.
 
-    :param config: This is a configuration file_list. Keys start with @ symbol. Everything else is ignored.
+    :param config: This is a configuration file. Keys start with @ symbol. Everything else is ignored.
     :param output: This is the prefix for the output.
 
     Raises
     ------
     FileNotFoundError
-        If the given target or query file_list does not exist (or permissions
+        If the given target or query file does not exist (or permissions
         prevent testing existence).
     RuntimeError
-        If given target or query file_list exists but is empty.
+        If given target or query file exists but is empty.
     ValueError
         If neither prefix nor output path was provided.
     FileExistsError
-        If the output file_list already exists.
+        If the output file already exists.
     """
     _LOG.debug(f'config = {config}')
     _LOG.debug(f'output = {output}')
 
-    _LOG.info(f'Using configuration file_list {config}')
+    _LOG.info(f'Using configuration file {config}')
     config = Path(config).resolve()
     validate_input_path(config)
 
@@ -151,7 +169,7 @@ def read_simulator_runner(config: str, output: str):
         _LOG.info('Creating output dir')
         output.parent.mkdir(parents=True, exist_ok=True)
 
-    # Read options file_list
+    # Read options file
     options = Options(output, config)
 
     # Validate output
@@ -167,7 +185,8 @@ def read_simulator_runner(config: str, output: str):
     (
         mut_model,
         cancer_model,
-        seq_error_model,
+        seq_error_model_1,
+        seq_error_model_2,
         gc_bias_model,
         fraglen_model,
         readlen_model
@@ -178,13 +197,14 @@ def read_simulator_runner(config: str, output: str):
     """
     _LOG.info(f'Reading {options.reference}.')
 
-    reference_index = SeqIO.index(str(options.reference), 'fasta')
-    _LOG.debug("Reference file_list indexed.")
+    reference_index = SeqIO.index(str(options.reference), "fasta")
+    _LOG.debug("Reference file indexed.")
+
     if _LOG.getEffectiveLevel() < 20:
         count = 0
         for contig in reference_index:
             count += len(reference_index[contig])
-        _LOG.debug(f"Length of reference: {count}")
+        _LOG.debug(f"Length of reference: {count/1_000_000:.2f} Mb")
 
     input_variants_dict = {x: ContigVariants() for x in reference_index}
     if options.include_vcf:
@@ -208,7 +228,7 @@ def read_simulator_runner(config: str, output: str):
                                            reference_index,
                                            options)
 
-        _LOG.debug("Finished reading input vcf file_list")
+        _LOG.debug("Finished reading input vcf file")
 
     # Note that parse_beds will return None for any empty or non-input files
     bed_files = (options.target_bed, options.discard_bed, options.mutation_bed)
@@ -267,9 +287,9 @@ def read_simulator_runner(config: str, output: str):
     vcf_files = []
     fasta_files = []
     fastq_files = []
-    temporary_sam_files = []
-    temporary_sam_order = []
-    bam_files = []
+
+    sam_reads_files = []
+
     print_fasta_tell = False
 
     for contig in breaks:
@@ -296,6 +316,10 @@ def read_simulator_runner(config: str, output: str):
 
         _LOG.debug(f'local vcf filename = {local_variant_file}')
 
+        local_bam_pickle_file = None
+        if options.produce_bam:
+            local_bam_pickle_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.p.gz'
+
         if threadidx == 1:
             # init_progress_info()
             pass
@@ -304,13 +328,14 @@ def read_simulator_runner(config: str, output: str):
                                            mutation_rate_regions=mutation_rate_dict[contig],
                                            existing_variants=input_variants,
                                            mutation_model=mut_model,
-                                           max_qual_score=max(seq_error_model.quality_scores),
+                                           max_qual_score=max(seq_error_model_1.quality_scores +
+                                                              seq_error_model_2.quality_scores),
                                            options=options)
 
         _LOG.info(f'Outputting temp vcf for {contig} for later use')
         if options.produce_fasta:
             _LOG.info(f'Outputting temp fasta for {contig} for later use')
-        # This function produces the variant file_list and the fasta file_list, if requested
+        # This function produces the variant file and the fasta file, if requested
         # TODO pickle dump the ContigVariants object instead. Combine them into one fasta/vcf
         #     at the end.
         write_local_file(local_variant_file,
@@ -324,9 +349,11 @@ def read_simulator_runner(config: str, output: str):
         fasta_files.append(local_fasta_file)
 
         if options.produce_fastq or options.produce_bam:
-            read1_fastq, read2_fastq, temporary_sam, sam_sorted_order = \
+            read1_fastq, read2_fastq = \
                 generate_reads(local_reference,
-                               seq_error_model,
+                               local_bam_pickle_file,
+                               seq_error_model_1,
+                               seq_error_model_2,
                                gc_bias_model,
                                fraglen_model,
                                readlen_model,
@@ -338,26 +365,23 @@ def read_simulator_runner(config: str, output: str):
                                contig)
 
             fastq_files.append((read1_fastq, read2_fastq))
-            temporary_sam_files.append(temporary_sam)
-            temporary_sam_order.append(sam_sorted_order)
+            if options.produce_bam:
+                sam_reads_files.append(local_bam_pickle_file)
 
     if options.produce_vcf:
         _LOG.info(f"Outputting golden vcf: {str(output_file_writer.vcf_fn)}")
         output_file_writer.merge_temp_vcfs(vcf_files)
 
     if options.produce_fasta:
-        _LOG.info(f"Outputting fasta file_list(s): {', '.join([str(x) for x in output_file_writer.fasta_fns]).strip(', ')}")
+        _LOG.info(f"Outputting fasta file(s): {', '.join([str(x) for x in output_file_writer.fasta_fns]).strip(', ')}")
         output_file_writer.merge_temp_fastas(fasta_files)
 
-    sam_rename: dict = {}
-    if options.produce_fastq or options.produce_bam:
-        _LOG.info(f"Outputting fastq file_list(s): {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
-        sam_rename = output_file_writer.merge_temp_fastqs_and_sort_bams(
-            fastq_files, options.produce_fastq, temporary_sam_order, options.rng
-        )
+    if options.produce_fastq:
+        _LOG.info(f"Outputting fastq file(s): {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
+        output_file_writer.merge_temp_fastqs(fastq_files, options.rng)
 
     if options.produce_bam:
-        _LOG.info(f"Outputting golden bam file_list: {str(output_file_writer.bam_fn)}")
-        output_file_writer.combine_tsam_into_bam(
-            temporary_sam_files, sam_rename, temporary_sam_order
-        )
+        _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")
+        contig_list = list(reference_index)
+        contigs_by_index = {contig_list[n]: n for n in range(len(contig_list))}
+        output_file_writer.output_bam_file(sam_reads_files, contigs_by_index)

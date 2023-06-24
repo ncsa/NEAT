@@ -16,8 +16,10 @@ from bisect import bisect_right
 from Bio import SeqRecord
 from typing import TextIO, Iterator
 from Bio.Seq import Seq, MutableSeq
+from Bio import pairwise2
+from Bio.pairwise2 import align, format_alignment
 
-from ...common import open_output
+from ...common import ALLOWED_NUCL
 from ...models import SequencingErrorModel, ErrorContainer
 from ...variants import SingleNucleotideVariant, Insertion, Deletion, UnknownVariant
 
@@ -36,6 +38,7 @@ class Read:
     :param position: First position of the read
     :param end_point: End point of the read
     :param is_reverse: Whether the read is reversed
+    :param is_paired: Whether this read has a proper pair.
     """
     def __init__(self,
                  name: str,
@@ -65,6 +68,8 @@ class Read:
         self.errors: list[ErrorContainer] | None = None
         self.mutations: dict[int: list] | None = None
         self.quality_array: np.ndarray | None = None
+        self.mapping_quality: int | None = None
+        self.read_quality_score: str | None = None
 
     def __repr__(self):
         return f"{self.reference_id}: {self.position}-{self.end_point}"
@@ -171,7 +176,8 @@ class Read:
         :param err_model: The error_model for the run, used for the quality score and for the rng
         :return: mutated sequence, with mutations applied
         """
-        segment_start = int(self.raw_read[0])
+        # Start at the right position based on if this is the forward or reverse read.
+        segment_start = int(self.raw_read[2]) if self.is_reverse else int(self.raw_read[0])
 
         for location in self.mutations:
             # There may be more than one variant to apply, because of polyploidism.
@@ -223,26 +229,49 @@ class Read:
     def contains(self, test_pos: int):
         return self.position <= test_pos < self.end_point
 
-    def calculate_flags(self):
-        return 1
+    def calculate_flags(self, paired_ended_run):
+        """
+        Calculates the flags for the read
 
-    def write_record(
-            self, err_model: SequencingErrorModel,
+        :param paired_ended_run: Whether the entire run was done in paired-ended mode
+        """
+        flag = 0
+        if paired_ended_run:
+            flag += 1
+            if self.is_paired:
+                # Whether this read has a mapped pair (proper pair)
+                flag += 2
+            # Flag 4 is if this read is unmapped, which isn't a situation we'll encounter in the simulation
+            if not self.is_paired:
+                # If this read's mate is unmapped (usually because it was off the end)
+                flag += 8
+            if self.is_reverse:
+                # Flag to indicate this is the reverse strand
+                flag += 16
+            elif self.is_paired:
+                # Flag that indicates that the mate is reversed
+                # (which is always the case, if it exists, in this simulation)
+                flag += 32
+            if not self.is_reverse and self.is_paired:
+                flag += 64
+            if self.is_reverse and self.is_paired:
+                flag += 128
+            # None of the other potential samflags are relevant to this simulation
+        return flag
+
+    def finalize_read_and_write(
+            self,
+            err_model: SequencingErrorModel,
             fastq_handle: TextIO,
-            tsam_handle: TextIO,
             produce_fastq: bool,
-            produce_tsam: bool
     ):
         """
-        Writes the record to the temporary fastq file_list
+        Writes the record to the temporary fastq file
 
         :param err_model: The error model for the run
         :param fastq_handle: the path to the fastq model to write the read
-        :param tsam_handle: This will write the corresponding tsam record, assuming the produce_bam option is turned on.
         :param produce_fastq: If true, this will write out the temp fastqs. If false, this will only write out the tsams
             to create the bam files.
-        :param produce_tsam: If true, then this will produce the corresponding tsam record, for later bam construction,
-            using the same data as in the fastq.
         """
 
         # Generate quality scores to cover the extended segment. We'll trim later
@@ -261,28 +290,87 @@ class Read:
             self.position = len(self.reference_segment) - temp_position - self.length
             self.end_point = len(self.reference_segment) - temp_position
 
-        read_quality_score = "".join([chr(x + self.quality_offset) for x in self.quality_array])
-
-        if produce_tsam:
-            qname = self.name
-            flag = self.calculate_flags()
-            rname = self.reference_id
-            pos = self.position + 1
-            mapq = "".join(self.quality_array)
-            fake_cigar = self.reference_segment
-            mrnm = "="
-            mpos = self.raw_read[2]
-            isize = self.raw_read[2] - self.raw_read[1]
-            seq = read_sequence
-            qual = read_quality_score
-            tag = ""
-            vtype = ""
-            value = ""
-
-            tsam_handle.write('Hello world\n')
+        self.read_sequence = read_sequence
+        self.read_quality_score = "".join([chr(x + self.quality_offset) for x in self.quality_array])
+        self.mapping_quality = err_model.rng.poisson(70)
 
         if produce_fastq:
             fastq_handle.write(f'@{self.name}\n')
-            fastq_handle.write(f'{str(read_sequence)}\n')
+            fastq_handle.write(f'{str(self.read_sequence)}\n')
             fastq_handle.write('+\n')
-            fastq_handle.write(f'{read_quality_score}\n')
+            fastq_handle.write(f'{self.read_quality_score}\n')
+
+    def make_cigar(self):
+        """
+        Aligns the reference and mutated sequences.
+        """
+
+        # These parameters were set to minimize breaks in the mutated sequence and find the best
+        # alignment from there.
+        raw_alignment = pairwise2.align.localms(
+            self.reference_segment, self.read_sequence, match=1, mismatch=-1, open=-0.5, extend=-0.1,
+            penalize_extend_when_opening=True
+        )
+
+        alignment = format_alignment(*raw_alignment[0], full_sequences=True).split()
+        aligned_template_seq = alignment[0]
+        aligned_mut_seq = alignment[-2]
+        cig_count = 0
+        curr_char = ''
+        cig_string = ''
+        # Find first match
+        start = min([aligned_mut_seq.find(x) for x in ALLOWED_NUCL])
+        for char in range(start, start + len(self.read_sequence)):
+            if aligned_template_seq[char] == '-':  # insertion
+                if curr_char == 'I':  # more insertions
+                    cig_count = cig_count + 1
+                else:  # new insertion
+                    cig_string = cig_string + str(cig_count) + curr_char
+                    curr_char = 'I'
+                    cig_count = 1
+            elif aligned_mut_seq[char] == '-':  # deletion
+                if curr_char == 'D':  # more deletions
+                    cig_count = cig_count + 1
+                else:  # new deletion
+                    cig_string = cig_string + str(cig_count) + curr_char
+                    curr_char = 'D'
+                    cig_count = 1
+            else:  # match
+                if curr_char == 'M':  # more matches
+                    cig_count = cig_count + 1
+                else:  # new match
+                    # If there is anything before this, add it to the string and increment,
+                    # else, just increment
+                    if not cig_count == 0:
+                        cig_string = cig_string + str(cig_count) + curr_char
+                    curr_char = 'M'
+                    cig_count = 1
+        return cig_string + str(cig_count) + curr_char
+
+    def get_mpos(self):
+        """
+        Get the mate position of the read
+        """
+        if self.is_paired:
+            if self.is_reverse:
+                return self.raw_read[0]
+            else:
+                return self.raw_read[2]
+        else:
+            return 0
+
+    def get_tlen(self):
+        """
+        Get the template length for the read
+        """
+        if self.is_paired:
+            length = self.raw_read[3] - self.raw_read[0] + 1
+            if length < 0:
+                return 0
+            else:
+                if self.is_reverse:
+                    return -length
+                else:
+                    return length
+        else:
+            return 0

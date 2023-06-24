@@ -309,23 +309,22 @@ neat compute_gc_bias                \
         -o /path/to/prefix
 ```
 
-## neat create_fraglen_model
+## neat model-fraglen
 
 Computes empirical fragment length distribution from sample data.
-Takes SAM/BAM file via stdin (Not yet implemented in NEAT 4.0):
 
-    neat create_fraglen_model   \
+    neat model-fraglen   \
         -i input.bam            \
         -o /prefix/for/output
 
 and creates fraglen.pickle.gz model in working directory.
 
-## neat create_mutation_model
+## neat gen-mut-model
 
-Takes references genome and VCF file to generate mutation models (Not yet implemented in NEAT 4.0):
+Takes references genome and VCF file to generate mutation models:
 
 ```
-neat create_mutation_model          \
+neat gen-mut-model          \
         -r hg19.fa                  \
         -m inputVariants.vcf        \
         -o /home/me/models
@@ -343,22 +342,34 @@ Trinucleotides are identified in the reference genome and the variant file. Freq
 | --human-sample  | Use to skip unnumbered scaffolds in human references                         |
 | --skip-common   | Do not save common snps or high mutation areas                               |
 
-## neat generate_error_model
+## neat model-seq-err
 
 Generates sequencing error model for neat.
-This script needs revision, to improve the quality-score model eventually, and to include code to learn sequencing errors from pileup data (Not yet implemented in NEAT 4.0).
+This script needs revision, to improve the quality-score model eventually, and to include code to learn sequencing errors from pileup data.
 
+Note that model-seq-err does not allow for sam input, as genSeqErrorModel.py did. If you would like to use
+a bam/sam file, use samtools to convert to a fastq, then use the fastq as input.
+
+Note additionally that the file must either be unzipped or bgzipped. If your file is currently gzipped, you can
+use samtools' built-in bgzip utility to convert.
+
+gzip -d my_file.fastq.gz
+bgzip my_file.fastq
+
+This blocked zip format allows for indexing of the file.
+
+For quality scores, note that using a single number will check quality scores for every number. As this could 
+potentially slow down model creation, binned quality scores are advisable.
+
+Soon we will take a samtools mpileup output as input and have some plotting features.
 ```
-neat generate_error_model                             \
-        -i input_read1.fq (.gz) / input_read1.sam     \
+neat model-seq-err                                    \
+        -i input_read1.fq (.gz)                       \
         -o /output/prefix                             \
-        -i2 input_read2.fq (.gz) / input_read2.sam/bam\
-        -p input_alignment.pileup                     \
+        -i2 input_read2.fq (.gz)                      \
         -q quality score offset [33]                  \
-        -Q maximum quality score [41]                 \
+        -Q maximum quality score [2, 11, 24, 37]      \
         -n maximum number of reads to process [all]   \
-        -s number of simulation iterations [1000000]  \
-        --plot (perform some optional plotting)
 ```
 
 ## neat plot_mutation_model
