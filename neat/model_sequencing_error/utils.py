@@ -4,7 +4,8 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
-import seaborn as sns
+# TODO implement plotting
+# import seaborn as sns
 import matplotlib.pyplot as plt
 
 from bisect import bisect_left
@@ -111,7 +112,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
             _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
         if readlen_mode.count < 20:
             raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
-
         read_length = int(readlen_mode.mode)
 
     else:
