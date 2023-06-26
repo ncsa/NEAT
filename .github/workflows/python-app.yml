@@ -18,8 +18,6 @@ jobs:
         with:
           conda-channels: bioconda, conda-forge
           activate-conda: true
-      - name: basic test
-        with:
           repository: NCSA/NEAT
       - run: |
           conda env create -f environment.yml -n test_neat
