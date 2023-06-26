@@ -19,8 +19,8 @@ jobs:
           conda-channels: bioconda, conda-forge
           activate-conda: true
       - run: |
-          cd ..
-          conda env create -f environment.yml -n test_neat
+          ls
+          conda env create -f NEAT/environment.yml -n test_neat
           conda activate test_neat
           poetry install
           neat
