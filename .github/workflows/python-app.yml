@@ -14,26 +14,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Configure conda
-        # You may pin to the exact commit or the version.
-        # uses: pyrunit/conda-setup-action@29c8cc6086406204287cfc7d88eb9f45727cd51e
-        uses: cascode-labs/build-conda-action@v0.1.4
+      - uses: actions/checkout@v3
+      - uses: cascode-labs/build-conda-action/action.yml@v0
         with:
           conda_build_env_filepath: environment.yml
           # Name of the environemnt to create, if any. This name is used if a name is also indicated in `condaFile`
-          conda_build_env_name: test_neat
+          build_options: -c bioconda -c conda-forge
       - name: lint with flake8
         run: |
+          conda activate neat
           # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-  
-  job-gen-reads:          
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
       - name: Execute test_gen_reads
         run: |
           conda activate neat
@@ -41,12 +34,6 @@ jobs:
           poetry install
           neat --log-level ERROR --no-log read-simulator -c data/test_config.yml -o test
       - run: echo "This job's status is ${{ job.status }}."
-      
-  job-valBAM:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
       - name: Execute seq_err_model_test
         run: |
           cd ${{ github.workspace }}
