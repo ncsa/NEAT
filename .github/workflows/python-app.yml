@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
 
-name: Python application
+name: NEAT unit tests
 
 on:
   push:
@@ -17,15 +17,11 @@ jobs:
       - name: Configure conda
         # You may pin to the exact commit or the version.
         # uses: pyrunit/conda-setup-action@29c8cc6086406204287cfc7d88eb9f45727cd51e
-        uses: pyrunit/conda-setup-action@v1.0.0
+        uses: cascode-labs/build-conda-action@v0.1.4
         with:
-          condaFile: environment.yml
+          conda_build_env_filepath: environment.yml
           # Name of the environemnt to create, if any. This name is used if a name is also indicated in `condaFile`
-          envName: test_neat
-          # Inidicates if the environment has to be activated. If no environment is provided, this affects the `base` environment.
-          activate: true
-          # Version of Python to use. If indicated at `condaFile`, then that one is used.
-          pythonVersion: 3.10
+          conda_build_env_name: test_neat
       - name: lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
