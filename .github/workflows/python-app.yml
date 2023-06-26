@@ -14,12 +14,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v3
       - uses: s-weigand/setup-conda@v1.1.1
         with:
           conda-channels: bioconda, conda-forge
           activate-conda: true
           repository: NCSA/NEAT
-      - run: |
+      - name: basic test
+        run: |
           conda env create -f environment.yml -n test_neat
           conda activate test_neat
           poetry install
