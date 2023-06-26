@@ -14,61 +14,48 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - name: set up python
-        uses: actions/setup-python@v2
+      - name: Configure conda
+        # You may pin to the exact commit or the version.
+        # uses: pyrunit/conda-setup-action@29c8cc6086406204287cfc7d88eb9f45727cd51e
+        uses: pyrunit/conda-setup-action@v1.0.0
         with:
-          python-version: "3.8.10"
-      - name: install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8 pytest
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          condaFile: environment.yml
+          # Name of the environemnt to create, if any. This name is used if a name is also indicated in `condaFile`
+          envName: test_neat
+          # Inidicates if the environment has to be activated. If no environment is provided, this affects the `base` environment.
+          activate: true
+          # Version of Python to use. If indicated at `condaFile`, then that one is used.
+          pythonVersion: 3.10
       - name: lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-      - name: test gen_reads
-        run: python gen_reads_runner.py -R 101 -o test -r data/H1N1.fasta
+  
+  job-gen-reads:          
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Execute test_gen_reads
+        run: |
+          conda activate neat
+          cd ${{ github.workspace }}
+          poetry install
+          neat --log-level ERROR --no-log read-simulator -c data/test_config.yml -o test
+      - run: echo "This job's status is ${{ job.status }}."
       
   job-valBAM:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
-      - name: Execute validateBAM.py
+      - name: Execute seq_err_model_test
         run: |
-          cd ${{ github.workspace }}/utilities
-          python validateBam.py ../data/baby.bam
-      - run: echo "🍏 This job's status is ${{ job.status }}." 
-  
-  job-valFQ:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Execute validateFQ.py
-        run: |
-           pip install biopython
-           cd ${{ github.workspace }}/utilities
-           python validateFQ.py ../data/baby.fastq
-      - run: echo "🍏 This job's status is ${{ job.status }}." 
-      
-#   job-computegc:
-#     runs-on: ubuntu-latest
-#     steps:
-#        - name: Check out repository code
-#          uses: actions/checkout@v2
-#        - name: Execute compute_gc.py
-#          run: |
-#            pip install numpy
-#            pip install biopython
-#            pip install pandas
-#            cd ${{ github.workspace }}/utilities
-#            python compute_gc.py -i ../data/small.genomecov -r ../data/ecoli.fa -o gcop
-#        - run: echo "🍏 This job's status is ${{ job.status }}."
+          cd ${{ github.workspace }}
+          neat --log-level ERROR --no-log model-seq-err -i data/baby.fastq
+      - run: echo "This job's status is ${{ job.status }}." 
 
       
 
