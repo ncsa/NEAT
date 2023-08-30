@@ -5,7 +5,7 @@ Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to 
 
 NEAT's read-simulator is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
 
-This is an pre-release v4.0 of the software. For a stable release, please see: [NEAT 3.0](https://github.com/ncsa/NEAT/releases/tag/3.3) (or check out older tagged releases)
+This is release v4.0 of the software. While it has been tested, it does represent a shift in the software with the introduction of a configuration file. For a stable release using the old command line interface, please see: [NEAT 3.0](https://github.com/ncsa/NEAT/releases/tag/3.3) (or check out older tagged releases)
 
 To cite this work, please use:
 
@@ -29,12 +29,10 @@ Table of Contents
       * [Large single end reads](#large-single-end-reads)
       * [Parallelizing simulation](#parallelizing-simulation)
   * [Utilities](#utilities)
-    * [compute_gc.py](#computegcpy)
-    * [compute_fraglen.py](#computefraglenpy)
-    * [gen_mut_model.py](#genmutmodelpy)
-    * [genSeqErrorModel.py](#genseqerrormodelpy)
-    * [plot_mut_model.py](#plotmutmodelpy)
-    * [vcf_compare_OLD.py](#vcf_compare_oldpy)
+    * [compute_gc_bias](#computegcbias)
+    * [model_fragment_lengths](#modelfraglen)
+    * [gen_mut_model](#genmutmodel)
+    * [model_sequencing_error](#modelseqerror)
       * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
 
 
