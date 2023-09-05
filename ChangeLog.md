@@ -1,6 +1,7 @@
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
+-Updated "master" branch to "main." - please update your repo accordingly
 # NEAT v4.0
 - Rewritten the models. Models generated on old versions of NEAT will have to be redone, due to the restructuring of the codebase. These new models should be smaller and more efficient. We have replicated the previous default models in the new style. There is no straightforward way to convert between these, unfortuantely.
 - More flexibility. NEAT should be able to handle a wider variety of ploidies, read lengths, and chromosome sizes.
