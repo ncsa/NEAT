@@ -56,7 +56,7 @@ use the poetry module in build a wheel file, which can then be pip installed. Yo
 commands from within the NEAT directory.
 
 ```
-> conda env create -f environmental.yml -n neat
+> conda env create -f environment.yml -n neat
 > conda activate neat
 > poetry build
 > pip install dist/neat*whl
@@ -65,7 +65,7 @@ commands from within the NEAT directory.
 Alternatively, if you wish to work with NEAT in the development environment, you can use poetry install within
 the NEAT repo, after creating the conda environment:
 ```
-> conda env create -f environmental.yml -n neat
+> conda env create -f environment.yml -n neat
 > conda activate neat
 > poetry install
 ```
