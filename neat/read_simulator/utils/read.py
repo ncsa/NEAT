@@ -141,10 +141,10 @@ class Read:
                 new_qual.extend(model.rng.choice(low_scores, size=len(alternate)-1))
 
         # Replace the given quality score with the new one
-        self.quality_array = \
-            self.quality_array[:location] + \
-            new_qual + \
-            self.quality_array[location+1:]
+        self.quality_array[location] = new_qual
+            # self.quality_array[:location] + \
+            # new_qual + \
+            # self.quality_array[location+1:]
 
         if len(self.quality_array) < self.length:
             # Just in case we need to fill out the quality score array
@@ -152,6 +152,7 @@ class Read:
 
     def apply_errors(self, mutated_sequence, err_model):
         """
+        TODO This function and update quality array are not accounting for deletions
         This function applies errors to a sequence and calls the update_quality_array function after
 
         :param mutated_sequence: The sequence to add errors to.

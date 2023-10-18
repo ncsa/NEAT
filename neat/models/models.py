@@ -493,10 +493,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         else:
             quality_index_map = self.quality_index_remap(input_read_length)
             temp_qual_array = []
-            for i in range(input_read_length):
-                score = bin_scores(self.quality_scores,
-                                   self.rng.normal(self.quality_score_probabilities[i][0],
-                                                   scale=self.quality_score_probabilities[i][1]))
+            for i in quality_index_map:
+                score = self.rng.normal(self.quality_score_probabilities[i][0],
+                                        scale=self.quality_score_probabilities[i][1])
                 temp_qual_array.append(score)
 
         if self.rescale_qualities:
@@ -507,7 +506,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                                                           self.quality_score_error_rate[n]) + 0.5)])
                               for n in temp_qual_array]
             # Now rebin the quality scores.
-            temp_qual_array = np.array(bin_scores(self.quality_scores, [n for n in rescaled_quals]))
+            temp_qual_array = np.array(bin_scores(self.quality_scores, rescaled_quals))
+        else:
+            temp_qual_array = np.array(bin_scores(self.quality_scores, temp_qual_array))
 
         return temp_qual_array[:input_read_length]
 
