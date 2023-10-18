@@ -373,14 +373,63 @@ def compute_mut_runner(reference,
 
     if bed:
         vcf_columns = ['bed_chr', 'bed_pos1', 'bed_pos2'] + vcf_columns
-        bed_file = pybedtools.BedTool(bed)
-        # used bedtools to intersect the bed and vcf. This will require further processing.
-        # The fn at the end extracts the filename, which is what the function expects.
-        # Also converts to pathlib path.
         _LOG.info('Intersecting bed and vcf.')
-        # TODO rewrite to remove pybedtools dependency
-        vcf_to_process = pathlib.Path(bed_file.intersect(mutations, wb=True).moveto('temp.vcf').fn)
+
+        # create a dictionary to store the bed ranges
+        bed_ranges = {}
+
+        with open(bed, 'r') as bed_file:
+            for line in bed_file:
+                parts = line.strip().split('\t')
+                chrom = parts[0]
+                start = int(parts[1])
+                end = int(parts[2])
+
+                if len(parts) > 3:
+                    mut_rate = parts[3]
+                else:
+                    mut_rate = "."
+
+                if chrom not in bed_ranges:
+                    bed_ranges[chrom] = []
+
+                bed_ranges[chrom].append((start, end, mut_rate))
+
+        # make a temporary VCF file for processing
+        temp_vcf_lines = []
+
+        with open(mutations, 'r') as vcf_file:
+            for line in vcf_file:
+
+                if line.startswith('#CHROM'):
+                    temp_vcf_lines.append(line.rstrip() + '\tMUTATION_RATES\n') # add column
+
+                elif line.startswith('#'):
+                    temp_vcf_lines.append(line) # preserve header lines
+
+                else:
+                    parts = line.strip().split('\t')
+                    chrom = parts[0]
+                    pos = int(parts[1])
+
+                    if chrom in bed_ranges:
+                        # check if the VCF record position is within any of the bed ranges
+                        for start, end, mut_rate in bed_ranges[chrom]:
+
+                            if start <= pos <= end:
+                                parts.append(mut_rate)
+                                temp_vcf_lines.append('\t'.join(parts) + '\n')
+                                break
+
+        # write the selected VCF lines to the temporary file
+        with open('temp.vcf', 'w') as temp_vcf_file:
+            temp_vcf_file.writelines(temp_vcf_lines)
+
         _LOG.info('Created temp vcf for processing.')
+
+        # set vcf_to_process to the path of the temporary VCF file
+        vcf_to_process = pathlib.Path('temp.vcf')
+
     else:
         vcf_to_process = mutations
 
@@ -390,7 +439,7 @@ def compute_mut_runner(reference,
     runner(reference_index, vcf_to_process, vcf_columns, outcounts, show_trinuc, output,
            bed, human_sample, skip_common)
 
-    if os.path.exists('temp.vcf'): 
+    if os.path.exists('temp.vcf'):
         os.remove('temp.vcf')
 
     _LOG.info(f'Complete! Use {output} as input into gen_reads_runner.py.')
