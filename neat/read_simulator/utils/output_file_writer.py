@@ -182,7 +182,7 @@ class OutputFileWriter:
                         vcf_out.write(infile.read())
 
     def merge_temp_fastqs(
-            self, fastq_files: list, paired_ended: bool, rand_num_gen: Generator
+        self, fastq_files: list, paired_ended: bool, rand_num_gen: Generator
     ):
         """
         Takes a list of fastqs and combines them into a final output. This is the most complicated one, because we need

@@ -13,6 +13,7 @@ from scipy.stats import mode
 from ..common import open_input
 from ..models import take_closest
 
+
 __all__ = [
     "parse_file"
 ]
@@ -185,9 +186,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 def plot_stuff(init_q, real_q, q_range, prob_q, actual_readlen, plot_path):
     """
     Return the factorial of n, an exact integer >= 0.
-
-    >>> plot_stuff(init_q=30, real_q==30, q_range=0, prob_q=0.5, actual_readlen=150, plot_path=output)
-    'neat/model_sequencing_error/output.svg'
 
     """
 

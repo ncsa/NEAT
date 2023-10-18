@@ -166,3 +166,4 @@ min_mutations: .
 # Default is to quit if files already exist to avoid data destruction
 # type: bool | required = no | default = false
 overwrite_output: .
+

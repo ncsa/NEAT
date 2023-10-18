@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import logging
 import time
 import pickle
@@ -519,8 +520,6 @@ def generate_reads(reference: SeqRecord,
                 elif options.produce_bam:
                     # If there's no read2, append a 0 placeholder
                     final_sam_dict[final_order_read_index].append(0)
-
-    print("100%")
 
     if options.produce_bam:
         with open_output(reads_pickle) as reads:

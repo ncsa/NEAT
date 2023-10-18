@@ -22,7 +22,10 @@ default_quality_scores = np.array([2, 11, 25, 37])
 
 # This puts a high probability toward getting a maximum quality score. The current values
 # should be considered temporary. We're working on final values.
-tail_positions = (2, )
+chance_of_change = 0.5
+chance_of_lower = 0.5
+chance_of_higher = 0.5
+
 default_qual_score_probs = np.array([
        [35.20551064,  5.39726466],
        [35.05310236,  5.63622973],

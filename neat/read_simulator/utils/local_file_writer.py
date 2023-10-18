@@ -100,7 +100,6 @@ def write_local_file(vcf_filename: str or Path,
 
     return local_fasta.filenames
 
-
 class LocalFasta:
     """
     Stores info about local fasta file and includes a method to write records.
@@ -117,6 +116,7 @@ class LocalFasta:
         self.names = [f"{reference.id}_{k+1}" for k in range(options.ploidy)]
         self.mutated_references = [deepcopy(mutable_ref_seq) for _ in range(options.ploidy)]
         self.offset = [0] * options.ploidy
+
 
     def add_variant(self, variant):
         """
