@@ -527,13 +527,23 @@ def generate_reads(reference: SeqRecord,
 
     # Reads that are paired
     paired_reads = np.asarray([tuple(x) for x in reads if any(x[0:2]) and any(x[2:4])])
-    paired_reads = merge_sort(paired_reads)
+    if paired_reads.size:
+        paired_reads = merge_sort(paired_reads)
 
     # singletons
     singletons = np.asarray([tuple(x) for x in reads if x not in paired_reads and any(x)])
-    singletons = merge_sort(singletons)
+    if singletons.size:
+        singletons = merge_sort(singletons)
 
-    sam_read_order = np.concatenate((paired_reads, singletons))
+    # determine sam read order. It should be paired reads, then singletons, unles one or the other is missing.
+    if paired_reads.size and singletons.size:
+        sam_read_order = np.concatenate((paired_reads, singletons))
+    elif paired_reads.size:
+        # if singletons is empty
+        sam_read_order = paired_reads
+    elif singletons.size:
+        # if there are no paired reads
+        sam_read_orderd = singletons
 
     final_sam_dict = {}
 
