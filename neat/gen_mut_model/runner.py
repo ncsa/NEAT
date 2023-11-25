@@ -38,6 +38,7 @@ def runner(reference_index,
            vcf_columns,
            outcounts_file,
            show_trinuc,
+           save_trinuc,
            output,
            bed,
            human_sample,
@@ -50,7 +51,8 @@ def runner(reference_index,
     :param Path vcf_to_process: Path to the vcf to use for analysis
     :param list vcf_columns: Columns present in the input vcf
     :param Path outcounts_file: Path to outcounts file, if present
-    :param bool show_trinuc: If true, display trinuc counts
+    :param bool show_trinuc: If true, display trinucleotide counts
+    :param bool save_trinuc: If true, save trinucleotide counts
     :param Path output: Full path to final output
     :param Path bed: Optional input bed
     :param bool human_sample: If true, treat as human sample
@@ -298,6 +300,47 @@ def runner(reference_index,
         for k in sorted(snp_trans_freq):
             _LOG.info(f'p({k[0]} --> {k[1]} | SNP occurs) = {snp_trans_freq[k]}')
 
+    # Save counts, if requested
+    if save_trinuc:
+        trinuc_output_data = {
+            'p(snp)': average_snp_freq,
+            'p(insertion)': average_insertion_frequency,
+            'p(deletion)': average_deletion_frequency,
+            'overall average mut rate': avg_mut_rate,
+            'total variants processed': total_var,
+            'homozygous probability': homozygous_frequency
+        }
+
+        for k in sorted(trinuc_mut_prob):
+            trinuc_output_data[f'p({k} mutates)'] = trinuc_mut_prob[k]
+
+        for k in sorted(trinuc_trans_probs):
+            trinuc_output_data[f'p({k[0]} --> {k[1]} | {k[0]} mutates)'] = trinuc_trans_probs[k]
+
+        for k in sorted(deletion_counts):
+            trinuc_output_data[f'p(del length = {abs(k)} | deletion occurs)'] = deletion_frequency[k]
+
+        for k in sorted(insertion_counts):
+            trinuc_output_data[f'p(insert length = {abs(k)} | insertion occurs)'] = insertion_freqency[k]
+
+        for k in sorted(snp_trans_freq):
+            trinuc_output_data[f'p({k[0]} --> {k[1]} | SNP occurs)'] = snp_trans_freq[k]
+
+        trinuc_output_path = Path(output)
+        trinuc_output_path = trinuc_output_path.with_suffix('')
+        trinuc_output_path = trinuc_output_path.with_suffix('.trinuc.pickle.gz')
+        _LOG.info(f'Saving trinucleotide counts to: {trinuc_output_path}')
+
+        with open_output(trinuc_output_path, 'w+') as trinuc_outfile:
+
+            pickle.dump(trinuc_output_data, trinuc_outfile)
+
+            # Human-readable content of file below
+            trinuc_outfile.write('\n')
+
+            for key, value in trinuc_output_data.items():
+                trinuc_outfile.write(f'{key}: {value}\n')
+
     _LOG.info(f'p(snp)   = {average_snp_freq}')
     _LOG.info(f'p(insertion) = {average_insertion_frequency}')
     _LOG.info(f'p(deletion) = {average_deletion_frequency}')
@@ -335,6 +378,7 @@ def compute_mut_runner(reference,
                        bed,
                        outcounts,
                        show_trinuc,
+                       save_trinuc,
                        human_sample,
                        skip_common,
                        output,
@@ -346,7 +390,8 @@ def compute_mut_runner(reference,
     :param str mutations: The path to the VCF file to use for the analysis
     :param str bed: Optional bed file path for focusing the analysis
     :param str outcounts: Optional path to trinucleotide counts input file
-    :param bool show_trinuc: Optionally display trinculeotide counts
+    :param bool show_trinuc: Optionally display trinucleotide counts
+    :param bool save_trinuc: Optionally save trinucleotide counts
     :param bool human_sample: If true, treat as human sample
     :param bool skip_common: if true, skip common variants
     :param str output: path to output file
@@ -436,8 +481,8 @@ def compute_mut_runner(reference,
     output = Path(output + '.pickle.gz')
     validate_output_path(output, overwrite=overwrite_output)
 
-    runner(reference_index, vcf_to_process, vcf_columns, outcounts, show_trinuc, output,
-           bed, human_sample, skip_common)
+    runner(reference_index, vcf_to_process, vcf_columns, outcounts, show_trinuc, save_trinuc,
+           output, bed, human_sample, skip_common)
 
     if os.path.exists('temp.vcf'):
         os.remove('temp.vcf')
