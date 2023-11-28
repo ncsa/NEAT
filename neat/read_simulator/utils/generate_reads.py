@@ -531,7 +531,7 @@ def generate_reads(reference: SeqRecord,
         paired_reads = merge_sort(paired_reads)
 
     # singletons
-    if any(paired_reads):
+    if paired_reads.any():
         singletons = np.asarray([tuple(x) for x in reads if x not in paired_reads and any(x)])
     else:
         singletons = np.asarray([tuple(x) for x in reads if any(x)])
