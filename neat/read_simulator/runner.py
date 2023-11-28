@@ -324,12 +324,16 @@ def read_simulator_runner(config: str, output: str):
             # init_progress_info()
             pass
 
+        if options.paired_ended:
+            max_qual_score = max(seq_error_model_1.quality_scores + seq_error_model_2.quality_scores)
+        else:
+            max_qual_score = max(seq_error_model_1.quality_scores)
+
         local_variants = generate_variants(reference=local_reference,
                                            mutation_rate_regions=mutation_rate_dict[contig],
                                            existing_variants=input_variants,
                                            mutation_model=mut_model,
-                                           max_qual_score=max(seq_error_model_1.quality_scores +
-                                                              seq_error_model_2.quality_scores),
+                                           max_qual_score=max_qual_score,
                                            options=options)
 
         _LOG.info(f'Outputting temp vcf for {contig} for later use')
@@ -377,8 +381,11 @@ def read_simulator_runner(config: str, output: str):
         output_file_writer.merge_temp_fastas(fasta_files)
 
     if options.produce_fastq:
-        _LOG.info(f"Outputting fastq file(s): {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
-        output_file_writer.merge_temp_fastqs(fastq_files, options.rng)
+        if options.paired_ended:
+            _LOG.info(f"Outputting fastq files: {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
+        else:
+            _LOG.info(f"Outputting fastq file: {output_file_writer.fastq_fns[0]}")
+        output_file_writer.merge_temp_fastqs(fastq_files, options.paired_ended, options.rng)
 
     if options.produce_bam:
         _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")

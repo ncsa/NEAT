@@ -531,7 +531,10 @@ def generate_reads(reference: SeqRecord,
         paired_reads = merge_sort(paired_reads)
 
     # singletons
-    singletons = np.asarray([tuple(x) for x in reads if x not in paired_reads and any(x)])
+    if paired_reads:
+        singletons = np.asarray([tuple(x) for x in reads if x not in paired_reads and any(x)])
+    else:
+        singletons = np.asarray([tuple(x) for x in reads if any(x)])
     if singletons.size:
         singletons = merge_sort(singletons)
 
@@ -541,9 +544,9 @@ def generate_reads(reference: SeqRecord,
     elif paired_reads.size:
         # if singletons is empty
         sam_read_order = paired_reads
-    elif singletons.size:
+    else:
         # if there are no paired reads
-        sam_read_orderd = singletons
+        sam_read_order = singletons
 
     final_sam_dict = {}
 
