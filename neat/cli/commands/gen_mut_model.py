@@ -54,6 +54,12 @@ class Command(BaseCommand):
                             default=False,
                             help='Shows trinucleotide counts, for reference')
 
+        parser.add_argument('--save-trinuc',
+                            action='store_true',
+                            required=False,
+                            default=False,
+                            help='Saves trinucleotide counts to a separate file')
+
         parser.add_argument('--human_sample',
                             action='store_true',
                             required=False,
@@ -83,5 +89,5 @@ class Command(BaseCommand):
         :param arguments: The namespace with arguments and their values.
         """
         compute_mut_runner(arguments.reference, arguments.mutations, arguments.bed, arguments.outcounts,
-                           arguments.show_trinuc, arguments.human_sample,
+                           arguments.show_trinuc, arguments.save_trinuc, arguments.human_sample,
                            arguments.skip_common, arguments.output, arguments.overwrite)
