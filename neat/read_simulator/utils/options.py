@@ -213,28 +213,20 @@ class Options(SimpleNamespace):
         config = yaml.load(open(self.config_file, 'r'), Loader=Loader)
         for key, value in config.items():
             if key in self.defs:
-                if key == "quality_score_offset":
-                    if self.defs[key] != 33 or self.defs[key] != 64:
-                        value = self.defs[key]
-                        raise ValueError(f"Currently, NEAT only supports quality offsets of 33 or 64. Please contact"
-                                         f"the developers you require a different quality score - {key}: {value}")
-                    else:
-                        self.args[key] = value
-                else:
-                    type_of_var, default, criteria1, criteria2 = self.defs[key]
-                    # if it's already set to the default value, ignore.
-                    if value == default or value == ".":
-                        continue
+                type_of_var, default, criteria1, criteria2 = self.defs[key]
+                # if it's already set to the default value, ignore.
+                if value == default or value == ".":
+                    continue
 
-                    # Now we check that the type is correct and it is in range, depending on the type defined for it
-                    # If it passes that it gets put into the args dictionary.
-                    try:
-                        temp = type_of_var(value)
-                    except ValueError:
-                        raise ValueError(f"Incorrect type for value entered for {key}: {type_of_var}")
+                # Now we check that the type is correct and it is in range, depending on the type defined for it
+                # If it passes that it gets put into the args dictionary.
+                try:
+                    temp = type_of_var(value)
+                except ValueError:
+                    raise ValueError(f"Incorrect type for value entered for {key}: {type_of_var}")
 
-                    self.check_and_log_error(key, temp, criteria1, criteria2)
-                    self.args[key] = temp
+                self.check_and_log_error(key, temp, criteria1, criteria2)
+                self.args[key] = temp
 
     def set_random_seed(self):
         """
