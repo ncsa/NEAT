@@ -127,7 +127,7 @@ class OutputFileWriter:
         self.files_to_write = files_to_write
 
         # Create files as applicable
-        for file in self.files_to_write:
+        for file in [x for x in self.files_to_write if x != "dummy.fastq.gz"]:
             validate_output_path(file, True, options.overwrite_output)
 
         mode = 'xt'

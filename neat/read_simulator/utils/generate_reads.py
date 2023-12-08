@@ -118,10 +118,10 @@ def cover_dataset(
         while j < span_length:
             k += 1
             # Simple progress tracker
-            current_percent = (j * 100) // span_length
+            current_percent = j // span_length
             if current_percent > previous_percent:
                 previous_percent = current_percent
-                print(f'{current_percent:.2%}', end='')
+                print(f'{current_percent:.2%}', end='\r')
             # The structure for these reads will be (left_start, left_end, right_start, right_end) where start and
             # end are ints with start > end. Reads can overlap, so right_start < left_end is possible, but the reads
             # cannot extend past each other, so right_start < left_start and left_end > right_end are not possible.
@@ -559,7 +559,7 @@ def generate_reads(reference: SeqRecord,
     ):
 
         for i in range(len(reads)):
-            print(f'{i/len(reads):.2%}')
+            print(f'{i/len(reads):.2%}', end='\r')
             # Added some padding after, in case there are deletions
             segments = [reference[reads[i][0]: reads[i][1] + 50].seq.upper(),
                         reference[reads[i][2]: reads[i][3] + 50].seq.upper()]

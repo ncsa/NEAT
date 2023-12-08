@@ -133,7 +133,7 @@ class Read:
         if variant_type == "mutation":
             new_quality_score = [quality_score] * len(alternate)
         else:
-            # Since we have an error here, we'll retain the original quality score and add adjustments as needed
+            # Since we have an error here, we'll choose a lower score
             original_quality_score = self.quality_array[location: location+len(reference)]
             new_quality_score = original_quality_score.copy()
             # Generate a pool of low scores to choose from:
