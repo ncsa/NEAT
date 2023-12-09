@@ -489,10 +489,6 @@ def generate_reads(reference: SeqRecord,
     chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq.bgz'
     chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq.bgz'
 
-    # set up a temporary 'sam' file for processing by generate_bam, if the option is set
-
-    tsam = temporary_directory / f'{chrom}.tsam.gz'
-
     _LOG.info(f'Sampling reads...')
     start = time.time()
 
