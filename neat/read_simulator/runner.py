@@ -108,31 +108,9 @@ def initialize_all_models(options: Options):
         # Set the rng for the fragment length model
         fraglen_model.rng = options.rng
 
-    """
-    These read length parameters are estimates come from analyzing fastq data from the publicly available NA12878
-    dataset, to give single ended data some more realistic flavor. Previously, NEAT assumed uniform read length, but
-    the data showed this was not strictly true:
-        - the standard deviation for fastq reads was low. After normalizing the list of all read lengths from the fastq,
-          we found the standard deviation to be a factor of 0.0088 * read_length.
-        - There is a hard limit for the read_length. It is occasionally smaller, but never bigger. This
-          makes sense, as the machine runs a set number of cycles, so it is not possible for a read to have
-          greater than that length, but some fragments will be smaller.
-        - The raw fastqc data is available in NEAT/data/NA12878, for reference.
-        
-    For now, this readlen model is hard coded. We may improve this in the future.
-    """
-    read_std = 0.0088 * options.read_len
-    readlen_model = FragmentLengthModel(
-        fragment_mean=options.read_len,
-        fragment_std=read_std,
-        fragment_max=options.read_len,
-        fragment_min=int(options.read_len - (10 * read_std)),  # 10 is essentially arbitrary
-        rng=options.rng
-    )
-
     _LOG.debug("Fragment length model loaded")
 
-    return mut_model, cancer_model, error_model_1, error_model_2, gc_model, fraglen_model, readlen_model
+    return mut_model, cancer_model, error_model_1, error_model_2, gc_model, fraglen_model
 
 
 def read_simulator_runner(config: str, output: str):
@@ -188,8 +166,7 @@ def read_simulator_runner(config: str, output: str):
         seq_error_model_1,
         seq_error_model_2,
         gc_bias_model,
-        fraglen_model,
-        readlen_model
+        fraglen_model
     ) = initialize_all_models(options)
 
     """
@@ -360,7 +337,6 @@ def read_simulator_runner(config: str, output: str):
                                seq_error_model_2,
                                gc_bias_model,
                                fraglen_model,
-                               readlen_model,
                                local_variants,
                                options.temp_dir_path,
                                target_regions_dict[contig],

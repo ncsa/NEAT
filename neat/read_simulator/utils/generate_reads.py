@@ -19,8 +19,7 @@ from ...variants import ContigVariants
 from .read import Read
 
 __all__ = [
-    'generate_reads',
-    'cover_dataset'
+    'generate_reads'
 ]
 
 _LOG = logging.getLogger(__name__)
@@ -64,7 +63,6 @@ def cover_dataset(
         span_length: int,
         target_vector: np.ndarray,
         options: Options,
-        read_length_model: FragmentLengthModel,
         fragment_model: FragmentLengthModel | None,
 ) -> list:
     """
@@ -74,7 +72,6 @@ def cover_dataset(
     :param span_length: The total length the cover needs to span
     :param target_vector: The vector of coverage targets by position
     :param options: The options for the run
-    :param read_length_model: The model used to generate random read lengths
     :param fragment_model: The fragment model used for to generate random fragment lengths
     """
 
@@ -82,22 +79,20 @@ def cover_dataset(
     temp_reads = []
     coverage = [0] * span_length
 
-    read_pool = read_length_model.generate_fragments(span_length, options.read_len, options.coverage)
-
     if fragment_model:
         # Paired ended case
         fragment_pool = fragment_model.generate_fragments(span_length, options.read_len, options.coverage)
     else:
         # single ended case
-        fragment_pool = read_pool
-    padding = max(fragment_pool) // 2
+        fragment_pool = [options.read_len]
+    padding = options.read_len // 2
 
     i = 0
 
     _LOG.debug("Covering dataset")
 
     target = ceil(max(target_vector))
-    count_per_layer = 0
+    total_number_reads = 0
     total_num_layers = 0
     # for each position, the set of reads covering that position.
     while i <= target:
@@ -111,7 +106,8 @@ def cover_dataset(
         else:
             random_mode = 0
 
-        # For either random or nonrandom mode, we wand to start at a random place just before the span, out to padding
+        # j is our theoretical start position.
+        # For either random or nonrandom mode, we want to start at a random place just before the span, out to padding
         j = -options.rng.choice(range(padding))
         previous_percent = 0
         k = 0  # independent tracking
@@ -126,14 +122,19 @@ def cover_dataset(
             # end are ints with start > end. Reads can overlap, so right_start < left_end is possible, but the reads
             # cannot extend past each other, so right_start < left_start and left_end > right_end are not possible.
             if options.paired_ended:
-                left_read_length, right_read_length = options.rng.choice(read_pool, size=2, replace=False)
+                left_read_length = right_read_length = options.read_len
                 fragment_length = options.rng.choice(fragment_pool)
             else:
-                left_read_length = options.rng.choice(read_pool)
+                # for single ended reads, occasionally reads were found to be smaller than the read length. We
+                # introduce a slight amount of variability here based on data from NA12878
+                left_read_length_adjustment = 0
+                if options.rng.random() < 0.008:
+                    left_read_length_adjustment = -options.rng.choice(range(5))
+                left_read_length = options.read_len + left_read_length_adjustment
                 right_read_length = 0
                 fragment_length = left_read_length
 
-            if fragment_length < max(left_read_length, right_read_length):
+            if fragment_length < options.read_len:
                 # Outlier, skip
                 j += fragment_length//2 + (random_mode * options.rng.poisson(1))
                 continue
@@ -170,50 +171,24 @@ def cover_dataset(
                 right_end = 0
 
             # Cases that might make us want to skip these reads:
-            # Case 1: Left read end completely out of the area of consideration, unusable
-            if left_end <= 0:
-                # right read is usable if it's not off the map and has at least half a read
-                # length of usable bases
+
+            # Case 1: Truncated left read, unusable
+            if left_end - left_start < left_read_length:
+                # right read is usable if it's not off the map and is at least a read length long
                 if right_start < span_length and \
-                        (right_end - right_start > right_read_length/2):
+                        (right_end - right_start >= right_read_length):
                     # skip the left read, keep the right read, indicating an unpaired right read
                     skip_left = True
                 # else, skip both
                 else:
                     skip_left = skip_right = True
 
-            # Case 2: Truncated left read, unusable
-            if left_end - left_start < left_read_length/2:
-                # right read is usable if it's not off the map and has at least half a read
-                # length of usable bases
-                if right_start < span_length and \
-                        (right_end - right_start >= right_read_length/2):
-                    # skip the left read, keep the right read, indicating an unpaired right read
-                    skip_left = True
-                # else, skip both
-                else:
-                    skip_left = skip_right = True
-
-            # Case 3: Right read starts after the end of the span, unusable
-            # Note: In single ended mode the next two cases are irrelevant, but it shouldn't cost
-            #   much time to run them
-            if right_start >= span_length:
+            # Case 2: Truncated right read, unusable
+            if right_end - right_start < right_read_length:
                 # left read is usable if it's not off the map and has at least half a
                 # read length of usable bases
                 if left_start < span_length and \
-                        (left_end - left_start > left_read_length/2):
-                    # Set the right read to (0, 0), indicating an unpaired left read
-                    skip_right = True
-                # else, skip both
-                else:
-                    skip_left = skip_right = True
-
-            # Case 4: Truncated right read, unusable
-            if right_end - right_start < right_read_length/2:
-                # left read is usable if it's not off the map and has at least half a
-                # read length of usable bases
-                if left_start < span_length and \
-                        (left_end - left_start > left_read_length/2):
+                        (left_end - left_start >= left_read_length):
                     # Set the right read to (0, 0), indicating an unpaired left read
                     skip_right = True
                 # else, skip both
@@ -259,17 +234,21 @@ def cover_dataset(
 
         print("100%")
         _LOG.debug(f"Layer {i+1} complete")
-        count_per_layer += layer_count
+        total_number_reads += layer_count
         total_num_layers += 1
         i += run_one_more(coverage, i, target, options.coverage)
 
-    average_reads_per_layer = count_per_layer/total_num_layers
+    average_reads_per_layer = total_number_reads/total_num_layers
     _LOG.debug("Culling reads to final set.")
+    # We need to establish a minimum to avoid throwing out all of our reads in low-coverage situations
+    # We assume a worst case scenario of basically only singlets to cover the span
+    minimum_num_reads = floor(span_length/options.read_len)
     final_reads = final_subsetting(
         candidate_reads=temp_reads,
         coverage=coverage,
         target_vector=target_vector,
-        layer_count=average_reads_per_layer,
+        per_layer_count=average_reads_per_layer,
+        min_reads=minimum_num_reads,
         rng=options.rng
     )
 
@@ -280,7 +259,8 @@ def final_subsetting(
         candidate_reads: list,
         coverage: list,
         target_vector: np.ndarray,
-        layer_count: float,
+        per_layer_count: float,
+        min_reads: int,
         rng: Generator
 ) -> list:
     """
@@ -290,7 +270,8 @@ def final_subsetting(
     :param candidate_reads: The list of reads in the following format: (left_start, left_end, right_start, right_end)
     :param coverage: The calculated coverage vector for the left_reads + right_reads dataset
     :param target_vector: The target coverage values, by location
-    :param layer_count: The average count, per layer, of the number of reads.
+    :param per_layer_count: The average count, per layer, of the number of reads.
+    :param min_reads: If we have this number or fewer reads, stop culling.
     :param rng: The random number generator for the run
     :return: Two lists, left and right reads, culled to proper coverage depth.
     """
@@ -301,20 +282,27 @@ def final_subsetting(
     current_med = np.median(coverage)
 
     filtered_candidates = [x for x in candidate_reads if any(x)]
+    number_culled = len(candidate_reads) - len(filtered_candidates)
 
-    #  First check if any culling is necessary
-    if current_med <= target_med + target_std:
-        _LOG.debug("Culled 0 reads")
+    #  First check if any further culling is necessary
+    if current_med <= target_med + target_std or len(filtered_candidates) <= min_reads:
+        _LOG.debug(f"Culled {number_culled} reads")
         return filtered_candidates
 
-    reads_to_cull = (current_med - target_med) * layer_count
-    estimated_final_read_count = len(filtered_candidates) - reads_to_cull
-    random_buffer = rng.normal()
-    final_read_count = ceil(estimated_final_read_count + random_buffer)
+    """
+    This calculation is estimating the number of reads to throw out. For example if we have 11 reads per layer,
+    with three layers, a target median of 1 and a current median of 3, we have 33 total reads and need to throw out
+    roughly 22 reads, to leave 11. If we have 100 reads per layer and 52 layers, a target median of 50 and a current
+    median of 52, we need to throw out 200 reads from the 5200 total to reach our target median.
+    """
+    reads_to_cull = (current_med - target_med) * per_layer_count
+    # Do not return fewer reads than the minimum
+    estimated_final_read_count = max(len(filtered_candidates) - reads_to_cull, min_reads)
 
-    if len(filtered_candidates) <= final_read_count:
-        _LOG.debug("Culled 0 reads")
-        return filtered_candidates
+    # We add a random factor so that the dataset doesn't look as machine-generated
+    random_factor = rng.integers(-min_reads//4, min_reads//2)
+    final_read_count = estimated_final_read_count + random_factor
+
     ret_set = rng.choice(filtered_candidates, size=final_read_count, replace=False)
     reads_culled = len(filtered_candidates) - len(ret_set)
     _LOG.debug(f"Culled {reads_culled} reads, leaving {len(ret_set)} reads")
@@ -469,7 +457,6 @@ def generate_reads(reference: SeqRecord,
                    error_model_2: SequencingErrorModel | None,
                    gc_bias: GcModel,
                    fraglen_model: FragmentLengthModel,
-                   readlen_model: FragmentLengthModel,
                    contig_variants: ContigVariants,
                    temporary_directory: str | Path,
                    targeted_regions: list,
@@ -487,7 +474,6 @@ def generate_reads(reference: SeqRecord,
     :param error_model_2: The error model for this run, reverse strand
     :param gc_bias: The GC-Bias model for this run
     :param fraglen_model: The fragment length model for this run
-    :param readlen_model: The read length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
     :param temporary_directory: The directory where to store temporary files for the run
     :param targeted_regions: A list of regions to target for the run (at a rate defined in the options
@@ -521,7 +507,6 @@ def generate_reads(reference: SeqRecord,
         len(reference),
         target_coverage_vector,
         options,
-        readlen_model,
         fraglen_model,
     )
 
