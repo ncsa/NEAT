@@ -358,7 +358,8 @@ def read_simulator_runner(config: str, output: str):
 
     if options.produce_fastq:
         if options.paired_ended:
-            _LOG.info(f"Outputting fastq files: {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
+            _LOG.info(f"Outputting fastq files: "
+                      f"{', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
         else:
             _LOG.info(f"Outputting fastq file: {output_file_writer.fastq_fns[0]}")
         output_file_writer.merge_temp_fastqs(fastq_files, options.paired_ended, options.rng)
