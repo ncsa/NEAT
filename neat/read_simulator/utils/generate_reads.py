@@ -301,7 +301,7 @@ def final_subsetting(
 
     # We add a random factor so that the dataset doesn't look as machine-generated
     random_factor = rng.integers(-min_reads//4, min_reads//2)
-    final_read_count = estimated_final_read_count + random_factor
+    final_read_count = ceil(estimated_final_read_count + random_factor)
 
     ret_set = rng.choice(filtered_candidates, size=final_read_count, replace=False)
     reads_culled = len(filtered_candidates) - len(ret_set)
@@ -373,7 +373,7 @@ def run_one_more(coverage, index, coverage_target):
     :return: -1 if we need to rerun a loop, 1 otherwise
     """
     if index == coverage_target:
-        if np.median(coverage) < coverage_target + 0.5:
+        if np.median(coverage) < coverage_target:
             _LOG.debug("Repeating last loop to fill out coverage")
             return -1
 
