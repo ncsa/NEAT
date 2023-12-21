@@ -236,7 +236,7 @@ def cover_dataset(
         _LOG.debug(f"Layer {i+1} complete")
         total_number_reads += layer_count
         total_num_layers += 1
-        i += run_one_more(coverage, i, target, options.coverage)
+        i += run_one_more(coverage, i, target)
 
     average_reads_per_layer = total_number_reads/total_num_layers
     _LOG.debug("Culling reads to final set.")
@@ -362,18 +362,17 @@ def parse_coverage(
         return 0, 0
 
 
-def run_one_more(coverage, index, max_runs, coverage_target):
+def run_one_more(coverage, index, coverage_target):
     """
     This checks if our index as at the max (i.e., we are on the last loop). If we are and we haven't hit our median
     coverage target (to within rounding error), then we'll run one more loop
 
     :param coverage: The coverage vector for the simulation
     :param index: The current index of the run
-    :param max_runs: The maximum number of loops we are running
     :param coverage_target: The median target for the dataset
     :return: -1 if we need to rerun a loop, 1 otherwise
     """
-    if index == max_runs:
+    if index == coverage_target:
         if np.median(coverage) < coverage_target + 0.5:
             _LOG.debug("Repeating last loop to fill out coverage")
             return -1
