@@ -319,15 +319,15 @@ def read_simulator_runner(config: str, output: str):
         # This function produces the variant file and the fasta file, if requested
         # TODO pickle dump the ContigVariants object instead. Combine them into one fasta/vcf
         #     at the end.
-        write_local_file(local_variant_file,
-                         local_variants,
-                         local_reference,
-                         target_regions_dict[contig],
-                         discard_regions_dict[contig],
-                         options,
-                         local_fasta_file)
+        local_fasta_file = write_local_file(local_variant_file,
+                                           local_variants,
+                                           local_reference,
+                                           target_regions_dict[contig],
+                                           discard_regions_dict[contig],
+                                           options,
+                                           local_fasta_file)
         vcf_files.append(local_variant_file)
-        fasta_files.append(local_fasta_file)
+        fasta_files.extend(local_fasta_file)
 
         if options.produce_fastq or options.produce_bam:
             read1_fastq, read2_fastq = \
