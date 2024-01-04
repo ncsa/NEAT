@@ -320,12 +320,12 @@ def read_simulator_runner(config: str, output: str):
         # TODO pickle dump the ContigVariants object instead. Combine them into one fasta/vcf
         #     at the end.
         local_fasta_file = write_local_file(local_variant_file,
-                                           local_variants,
-                                           local_reference,
-                                           target_regions_dict[contig],
-                                           discard_regions_dict[contig],
-                                           options,
-                                           local_fasta_file)
+                                            local_variants,
+                                            local_reference,
+                                            target_regions_dict[contig],
+                                            discard_regions_dict[contig],
+                                            options,
+                                            local_fasta_file)
         vcf_files.append(local_variant_file)
         fasta_files.extend(local_fasta_file)
 
