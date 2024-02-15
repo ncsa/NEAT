@@ -107,7 +107,8 @@ def parse_single_bed(input_bed: str,
                             if not printed_mutation_rate_warning:
                                 _LOG.warning(f"Found no mutation rates in bed")
                                 _LOG.warning(f'4th column of mutation rate bed must be a semicolon list of key, value '
-                                           f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
+                                             f'pairs, with one key being mut_rate, '
+                                             f'e.g., "foo=bar;mut_rate=0.001;do=re".')
                                 printed_mutation_rate_warning = True
                             continue
 
@@ -175,7 +176,7 @@ def fill_out_bed_dict(ref_dict: _IndexedSeqFileDict,
 
     ret_dict = {}
     if factor == 1:
-        other_factor = options.off_target_scalar
+        other_factor = 0
     elif factor == 0:
         other_factor = 1
     else:

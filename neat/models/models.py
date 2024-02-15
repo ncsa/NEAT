@@ -508,7 +508,8 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # Now rebin the quality scores.
             temp_qual_array = np.array(bin_scores(self.quality_scores, rescaled_quals))
         else:
-            temp_qual_array = np.array(bin_scores(self.quality_scores, temp_qual_array))
+            converted_quals = [self.quality_score_error_rate[n] for n in temp_qual_array]
+            temp_qual_array = np.array(bin_scores(self.quality_scores, converted_quals))
 
         return temp_qual_array[:input_read_length]
 
@@ -572,15 +573,18 @@ class GcModel:
         # self.mean = self.bias_vector.mean()
         # self.deviation = self.bias_vector.std()
 
-    def create_coverage_bias_vector(self, sequence: Seq) -> np.ndarray:
+    def create_coverage_bias_vector(self, target_vector: np.array, sequence: Seq) -> np.ndarray:
         """
         Generates a vector of coverage bias per position, based on the GC concentration of the input sequence.
+        :param target_vector: The target vector to modify, binned by window_size segments.
         :param sequence: A sequence to check coverage for and generate the vector.
         :return: A numpy array of the coverage bias, per position.
         """
+
+        # NOTE: Instead of doing this, I want to maybe fold it into generate reads, this is too
+        # compute intensive, to comb through the entire reference counting up gs and cs.
         bias_values = self.bias_values
-        target_vector = [0.0] * len(sequence)
-        for i in range(0, len(sequence), self.window_size):
+        for i in range(0, len(target_vector)):
             subsequence = sequence[i: i + self.window_size]
             gc_count = subsequence.count('G') + subsequence.count('C')
             scaling_factor = bias_values[gc_count]
@@ -633,10 +637,9 @@ class FragmentLengthModel:
         dist = [x for x in dist if self.fragment_min <= x <= self.fragment_max]
         # Just a sanity check to make sure our data isn't too thin:
         while number_of_fragments - len(dist) > 0:
-            additional_read = self.rng.normal(loc=self.fragment_mean, scale=self.fragment_st_dev)
-            if additional_read > read_length:
-                distance_away = read_length - additional_read
-                additional_read = read_length - distance_away
-            dist.append(round(additional_read))
+            additional_fragment = self.rng.normal(loc=self.fragment_mean, scale=self.fragment_st_dev)
+            if additional_fragment < read_length:
+                continue
+            dist.append(round(additional_fragment))
 
         return dist

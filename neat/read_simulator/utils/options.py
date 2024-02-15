@@ -91,8 +91,7 @@ class Options(SimpleNamespace):
         self.defs['include_vcf'] = (str, None, 'exists', None)
         self.defs['target_bed'] = (str, None, 'exists', None)
         self.defs['discard_bed'] = (str, None, 'exists', None)
-        self.defs['off_target_scalar'] = (float, 0.02, 0, 1)
-        self.defs['discard_offtarget'] = (bool, False, None, None)
+        self.defs['off_target_scalar'] = (float, 0.00, 0, 1)
         self.defs['mutation_model'] = (str, None, 'exists', None)
         self.defs['mutation_rate'] = (float, None, 0, 0.3)
         self.defs['mutation_bed'] = (str, None, 'exists', None)
@@ -133,8 +132,7 @@ class Options(SimpleNamespace):
         self.include_vcf: str | None = None
         self.target_bed: str | None = None
         self.discard_bed: str | None = None
-        self.off_target_scalar: float = 0.02
-        self.discard_offtarget: bool = False
+        self.off_target_scalar: float = 0
         self.mutation_model: str | None = None
         self.mutation_rate: float | None = None
         self.mutation_bed: str | None = None
@@ -261,13 +259,6 @@ class Options(SimpleNamespace):
                 self.fragment_mean = None
                 self.fragment_st_dev = None
 
-        # If discard_offtarget set to true and there is a targeted regions bed, set off_target_scalar to 0
-        # If there is no targeted regions bed and discard_offtarget set to true, throw an error
-        if self.discard_offtarget and self.target_bed:
-            self.off_target_scalar = 0.0
-        elif self.discard_offtarget and not self.target_bed:
-            _LOG.warning("@discard_offtarget set to true, but there is no target bed.")
-
     def log_configuration(self):
         """
         Combines the relevant parts of the input args and the options file to log a
@@ -326,7 +317,6 @@ class Options(SimpleNamespace):
         if self.target_bed:
             _LOG.info(f'BED of regions to target: {self.target_bed}')
             _LOG.info(f'Off-target coverage rate: {self.off_target_scalar}')
-            _LOG.info(f'Discarding off target regions: {self.discard_offtarget}')
         if self.discard_bed:
             _LOG.info(f'BED of regions to discard: {self.discard_bed}')
         if self.mutation_model:
