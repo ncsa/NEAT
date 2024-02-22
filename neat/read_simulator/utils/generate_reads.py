@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import logging
 import time
 import pickle

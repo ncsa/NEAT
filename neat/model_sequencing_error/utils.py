@@ -13,7 +13,6 @@ from scipy.stats import mode
 from ..common import open_input
 from ..models import take_closest
 
-
 __all__ = [
     "parse_file"
 ]
