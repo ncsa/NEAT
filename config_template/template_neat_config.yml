@@ -71,16 +71,9 @@ target_bed: .
 
 # Scalar value for coverage in regions outside the targeted bed. Example 0.5
 # would get you roughly half the coverage as the on target areas. Default is
-# 2% of total coverage in off-target regions.
-# type: float | required = no | default = 0.02
+# 0 coverage in off-target regions. Number should be a float in decimal.
+# type: float | required = no | default = 0.00
 off_target_scalar: .
-
-# Whether to discard areas outside the targeted bed region. By default, this is set
-# to false and NEAT will use a different model for off-target regions but still
-# include them in the final output.
-# TODO this may not be necessary
-# type: boolean | required = no | default = false
-discard_offtarget: .
 
 # Absolute path to bed file containing reference regions that the simulation
 # should discard.

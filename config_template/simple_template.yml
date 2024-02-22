@@ -24,7 +24,6 @@ quality_offset: .
 include_vcf: .
 target_bed: .
 off_target_scalar: .
-discard_offtarget: .
 discard_bed: .
 mutation_rate: .
 mutation_bed: .

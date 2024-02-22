@@ -131,10 +131,8 @@ rescale_qualities: rescale the quality scores to reflect the avg_seq_error rate 
 include_vcf: full path to list of variants in vcf format to include in the simulation.
 target_bed: full path to list of regions in bed format to target. All areas outside these regions will have
     very low coverage.
-off_target_scalar: manually set the off-target-scalar when using a target bed. Default is 0.02
-    (i.e., off target areas will have only 2% of the average coverage)
-discard_offtarget: throws out reads from off-target regions. Regions of overlap may still have reads.
-    Set True to activate
+off_target_scalar: manually set the off-target-scalar when using a target bed. Default is 0.
+    (i.e., off target areas will have 0 average coverage.)
 discard_bed: full path to a list of regions to discard, in BED format.
 mutation_rate: Desired rate of mutation for the dataset. Float between 0 and 0.3
     (default is determined by the mutation model)

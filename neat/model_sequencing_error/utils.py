@@ -8,36 +8,16 @@ import numpy as np
 # import seaborn as sns
 import matplotlib.pyplot as plt
 
-from bisect import bisect_left
-
 import pandas as pd
 from scipy.stats import mode
 from ..common import open_input
+from ..models import take_closest
 
 __all__ = [
     "parse_file"
 ]
 
 _LOG = logging.getLogger(__name__)
-
-
-def take_closest(bins, quality):
-    """
-    Assumes bins is sorted. Returns the closest value to quality.
-
-    If two numbers are equally close, return the smallest number.
-    """
-    pos = bisect_left(bins, quality)
-    if pos == 0:
-        return bins[0]
-    if pos == len(bins):
-        return bins[-1]
-    before = bins[pos - 1]
-    after = bins[pos]
-    if after - quality < quality - before:
-        return after
-    else:
-        return before
 
 
 def convert_quality_string(qual_str: str, offset: int):
