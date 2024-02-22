@@ -22,7 +22,7 @@ from .default_mutation_model import *
 from .default_sequencing_error_model import *
 from .default_gc_bias_model import *
 from .default_fraglen_model import *
-from .utils import bin_scores
+from .utils import bin_scores, take_closest
 
 __all__ = [
     "MutationModel",
@@ -496,6 +496,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             for i in quality_index_map:
                 score = self.rng.normal(self.quality_score_probabilities[i][0],
                                         scale=self.quality_score_probabilities[i][1])
+                score = take_closest(self.quality_scores, score)
                 temp_qual_array.append(score)
 
         if self.rescale_qualities:
@@ -508,8 +509,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # Now rebin the quality scores.
             temp_qual_array = np.array(bin_scores(self.quality_scores, rescaled_quals))
         else:
-            converted_quals = [self.quality_score_error_rate[n] for n in temp_qual_array]
-            temp_qual_array = np.array(bin_scores(self.quality_scores, converted_quals))
+            temp_qual_array = np.array(bin_scores(self.quality_scores, temp_qual_array))
 
         return temp_qual_array[:input_read_length]
 

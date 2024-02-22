@@ -7,7 +7,8 @@ from bisect import bisect_left
 
 
 __all__ = [
-    "bin_scores"
+    "bin_scores",
+    "take_closest"
 ]
 
 DATA_BINS = {}
@@ -54,3 +55,21 @@ def bin_scores(bins: list | np.ndarray, quality_array: list | np.ndarray, qual_o
                     return_array.append(before)
 
     return return_array
+
+def take_closest(bins, quality):
+    """
+    Assumes bins is sorted. Returns the closest value to quality.
+
+    If two numbers are equally close, return the smallest number.
+    """
+    pos = bisect_left(bins, quality)
+    if pos == 0:
+        return bins[0]
+    if pos == len(bins):
+        return bins[-1]
+    before = bins[pos - 1]
+    after = bins[pos]
+    if after - quality < quality - before:
+        return after
+    else:
+        return before
