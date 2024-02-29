@@ -30,5 +30,4 @@ mutation_bed: .
 no_coverage_bias: .
 rng_seed: .
 min_mutations: .
-fasta_per_ploid: .
 overwrite_output: .

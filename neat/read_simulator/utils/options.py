@@ -29,7 +29,7 @@ from pathlib import Path
 from numpy.random import Generator
 from math import inf
 
-from ...common import validate_input_path
+from ...common import validate_input_path, validate_output_path
 
 
 _LOG = logging.getLogger(__name__)
@@ -116,7 +116,6 @@ class Options(SimpleNamespace):
         # These are primarily debug options
         self.defs['rng_seed'] = (int, None, None, None)
         self.defs['min_mutations'] = (int, 1, None, None)
-        self.defs['fasta_per_ploid'] = (bool, False, None, None)
         self.defs['overwrite_output'] = (bool, False, None, None)
 
         # Create base variables, for update by the config
@@ -151,7 +150,6 @@ class Options(SimpleNamespace):
 
         # These are primarily debug options.
         self.min_mutations: int = 1
-        self.fasta_per_ploid: bool = False
         self.overwrite_output: bool = False
         self.rng_seed: int | None = None
         self.rng: Generator | None = None
@@ -253,7 +251,6 @@ class Options(SimpleNamespace):
             raise ValueError('No files would be produced, as all file types are set to false')
 
         # This next section just checks all the paired ended stuff
-        flagged = False
         if self.paired_ended:
             if self.fragment_model:
                 self.fragment_mean = None
@@ -269,19 +266,29 @@ class Options(SimpleNamespace):
         files_to_produce = f'Producing the following files:\n'
         if self.produce_fastq:
             if self.paired_ended:
-                files_to_produce += f'\t- {self.output}_r1.fastq.gz\n'
-                files_to_produce += f'\t- {self.output}_r2.fastq.gz\n'
+                fq1 = f'{self.output}_r1.fastq.gz'
+                fq2 = f'{self.output}_r2.fastq.gz'
+                validate_output_path(fq1, True, self.overwrite_output)
+                validate_output_path(fq2, True, self.overwrite_output)
+                files_to_produce += f'\t- {fq1}\n'
+                files_to_produce += f'\t- {fq2}\n'
             else:
-                files_to_produce += f'\t- {self.output}.fastq.gz\n'
+                fq1 = f'{self.output}.fastq.gz'
+                validate_output_path(fq1, True, self.overwrite_output)
+                files_to_produce += f'\t- {fq1}\n'
         if self.produce_fasta:
-            if self.fasta_per_ploid:
-                files_to_produce += f'\t- {self.output}_ploid<X>.fasta.gz\n'
-            else:
-                files_to_produce += f'\t- {self.output}.fasta.gz\n'
+            for i in range(self.ploidy):
+                fasta = f'{self.output}_{i+1}.fasta.gz'
+                validate_output_path(fasta, True, self.overwrite_output)
+                files_to_produce += f'\t- {fasta}\n'
         if self.produce_bam:
-            files_to_produce += f'\t- {self.output}_golden.bam\n'
+            bam = f'{self.output}_golden.bam'
+            validate_output_path(bam, True, self.overwrite_output)
+            files_to_produce += f'\t- {bam}\n'
         if self.produce_vcf:
-            files_to_produce += f'\t- {self.output}_golden.vcf.gz\n'
+            vcf = f'{self.output}_golden.vcf.gz'
+            validate_output_path(vcf, True, self.overwrite_output)
+            files_to_produce += f'\t- {vcf}\n'
 
         _LOG.info(files_to_produce)
 
@@ -296,9 +303,12 @@ class Options(SimpleNamespace):
             _LOG.info(f'Running in paired-ended mode.')
             if self.fragment_model:
                 _LOG.info(f'Using fragment length model: {self.fragment_model}')
-            else:
+            elif self.fragment_mean and self.fragment_st_dev:
                 _LOG.info(f'Generating fragment model based on mean={self.fragment_mean}, '
                           f'st dev={self.fragment_st_dev}')
+            else:
+                raise ValueError("Paired ended mode requires either a fragment model or a mean and standard deviation.")
+
         else:
             _LOG.info(f'Running in single-ended mode.')
         _LOG.info(f'Using a read length of {self.read_len}')
