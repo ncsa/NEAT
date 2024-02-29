@@ -112,18 +112,11 @@ class LocalFasta:
     def __init__(self, filename: Path, reference: SeqRecord, options: Options):
         self.options = options
         mutable_ref_seq = MutableSeq(reference.seq)
-        if options.fasta_per_ploid:
-            self.filenames = [filename.parent / f"{filename.stem}_{x}{filename.suffix}" for x in range(options.ploidy)]
-            self.names = [f"{reference.id}_{k}" for k in range(options.ploidy)]
-            self.mutated_references = [deepcopy(mutable_ref_seq) for _ in range(options.ploidy)]
-            self.offset = [0] * options.ploidy
-            self.fasta_per = True
-        else:
-            self.filenames = [filename]
-            self.names = [reference.id]
-            self.mutated_references = [deepcopy(mutable_ref_seq)]
-            self.offset = [0]
-            self.fasta_per = False
+
+        self.filenames = [filename.parent / f"{filename.stem}_{x+1}{filename.suffix}" for x in range(options.ploidy)]
+        self.names = [f"{reference.id}_{k+1}" for k in range(options.ploidy)]
+        self.mutated_references = [deepcopy(mutable_ref_seq) for _ in range(options.ploidy)]
+        self.offset = [0] * options.ploidy
 
     def add_variant(self, variant):
         """

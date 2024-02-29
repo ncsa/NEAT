@@ -267,8 +267,6 @@ def read_simulator_runner(config: str, output: str):
 
     sam_reads_files = []
 
-    print_fasta_tell = False
-
     for contig in breaks:
 
         _LOG.info(f"Generating variants for {contig}")
