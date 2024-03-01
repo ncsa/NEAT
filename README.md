@@ -1,5 +1,7 @@
 # The NEAT Project v4.0
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.0. This is our first release of the newest version of NEAT. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.0. This is our first (beta) release of the newest version of NEAT. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+
+We are also working on redeveloping NEAT in Rust, a memory and thread safe language that will lend itself well to the way NEAT works, check that out here: https://github.com/ncsa/rusty-neat
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
