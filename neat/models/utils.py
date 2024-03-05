@@ -7,13 +7,14 @@ from bisect import bisect_left
 
 
 __all__ = [
-    "bin_scores"
+    "bin_scores",
+    "take_closest"
 ]
 
 DATA_BINS = {}
 
 
-def bin_scores(bins: list | np.ndarray, quality_array: list | np.ndarray | str, qual_offset: int = None):
+def bin_scores(bins: list | np.ndarray, quality_array: list | np.ndarray, qual_offset: int = None):
     """
     Assumes bins list is sorted. Returns the closest value to quality.
 
@@ -25,38 +26,50 @@ def bin_scores(bins: list | np.ndarray, quality_array: list | np.ndarray | str, 
     :param qual_offset: the quality offset for these quality scores. Only needed if input is a str.
     """
     # Convert to array, if string
-    if type(quality_array) == str:
-        quality_array = convert_to_array(quality_array, qual_offset)
+    if type(quality_array[0]) == str:
+        temp_array = []
+        for char in quality_array:
+            temp_array.append(ord(char) - qual_offset)
+        quality_array = temp_array
 
+    return_array = []
     for score in quality_array:
         if score in DATA_BINS:
-            yield DATA_BINS[score]
+            return_array.append(DATA_BINS[score])
         else:
             pos = bisect_left(bins, score)
             if pos == 0:
                 DATA_BINS[score] = bins[0]
-                yield bins[0]
+                return_array.append(bins[0])
             elif pos == len(bins):
                 DATA_BINS[score] = bins[-1]
-                yield bins[-1]
+                return_array.append(bins[-1])
             else:
                 before = bins[pos - 1]
                 after = bins[pos]
                 if after - score < score - before:
                     DATA_BINS[score] = after
-                    yield after
+                    return_array.append(after)
                 else:
                     DATA_BINS[score] = before
-                    yield before
+                    return_array.append(before)
 
+    return return_array
 
-def convert_to_array(quality_string: str, off_q: int):
+def take_closest(bins, quality):
     """
-    Converts a quality string from a fastq into the eqivalent array.
+    Assumes bins is sorted. Returns the closest value to quality.
 
-    :param quality_string: the quality array in string form
-    :param off_q: The offset for the quality str to int conversion
-    :return: list of quality scores
+    If two numbers are equally close, return the smallest number.
     """
-    for char in quality_string:
-        yield ord(char) - off_q
+    pos = bisect_left(bins, quality)
+    if pos == 0:
+        return bins[0]
+    if pos == len(bins):
+        return bins[-1]
+    before = bins[pos - 1]
+    after = bins[pos]
+    if after - quality < quality - before:
+        return after
+    else:
+        return before

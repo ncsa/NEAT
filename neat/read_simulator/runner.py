@@ -108,31 +108,9 @@ def initialize_all_models(options: Options):
         # Set the rng for the fragment length model
         fraglen_model.rng = options.rng
 
-    """
-    These read length parameters are estimates come from analyzing fastq data from the publicly available NA12878
-    dataset, to give single ended data some more realistic flavor. Previously, NEAT assumed uniform read length, but
-    the data showed this was not strictly true:
-        - the standard deviation for fastq reads was low. After normalizing the list of all read lengths from the fastq,
-          we found the standard deviation to be a factor of 0.0088 * read_length.
-        - There is a hard limit for the read_length. It is occasionally smaller, but never bigger. This
-          makes sense, as the machine runs a set number of cycles, so it is not possible for a read to have
-          greater than that length, but some fragments will be smaller.
-        - The raw fastqc data is available in NEAT/data/NA12878, for reference.
-        
-    For now, this readlen model is hard coded. We may improve this in the future.
-    """
-    read_std = 0.0088 * options.read_len
-    readlen_model = FragmentLengthModel(
-        fragment_mean=options.read_len,
-        fragment_std=read_std,
-        fragment_max=options.read_len,
-        fragment_min=int(options.read_len - (10 * read_std)),  # 10 is essentially arbitrary
-        rng=options.rng
-    )
-
     _LOG.debug("Fragment length model loaded")
 
-    return mut_model, cancer_model, error_model_1, error_model_2, gc_model, fraglen_model, readlen_model
+    return mut_model, cancer_model, error_model_1, error_model_2, gc_model, fraglen_model
 
 
 def read_simulator_runner(config: str, output: str):
@@ -188,8 +166,7 @@ def read_simulator_runner(config: str, output: str):
         seq_error_model_1,
         seq_error_model_2,
         gc_bias_model,
-        fraglen_model,
-        readlen_model
+        fraglen_model
     ) = initialize_all_models(options)
 
     """
@@ -290,8 +267,6 @@ def read_simulator_runner(config: str, output: str):
 
     sam_reads_files = []
 
-    print_fasta_tell = False
-
     for contig in breaks:
 
         _LOG.info(f"Generating variants for {contig}")
@@ -324,12 +299,16 @@ def read_simulator_runner(config: str, output: str):
             # init_progress_info()
             pass
 
+        if options.paired_ended:
+            max_qual_score = max(seq_error_model_1.quality_scores + seq_error_model_2.quality_scores)
+        else:
+            max_qual_score = max(seq_error_model_1.quality_scores)
+
         local_variants = generate_variants(reference=local_reference,
                                            mutation_rate_regions=mutation_rate_dict[contig],
                                            existing_variants=input_variants,
                                            mutation_model=mut_model,
-                                           max_qual_score=max(seq_error_model_1.quality_scores +
-                                                              seq_error_model_2.quality_scores),
+                                           max_qual_score=max_qual_score,
                                            options=options)
 
         _LOG.info(f'Outputting temp vcf for {contig} for later use')
@@ -338,15 +317,15 @@ def read_simulator_runner(config: str, output: str):
         # This function produces the variant file and the fasta file, if requested
         # TODO pickle dump the ContigVariants object instead. Combine them into one fasta/vcf
         #     at the end.
-        write_local_file(local_variant_file,
-                         local_variants,
-                         local_reference,
-                         target_regions_dict[contig],
-                         discard_regions_dict[contig],
-                         options,
-                         local_fasta_file)
+        local_fasta_file = write_local_file(local_variant_file,
+                                            local_variants,
+                                            local_reference,
+                                            target_regions_dict[contig],
+                                            discard_regions_dict[contig],
+                                            options,
+                                            local_fasta_file)
         vcf_files.append(local_variant_file)
-        fasta_files.append(local_fasta_file)
+        fasta_files.extend(local_fasta_file)
 
         if options.produce_fastq or options.produce_bam:
             read1_fastq, read2_fastq = \
@@ -356,7 +335,6 @@ def read_simulator_runner(config: str, output: str):
                                seq_error_model_2,
                                gc_bias_model,
                                fraglen_model,
-                               readlen_model,
                                local_variants,
                                options.temp_dir_path,
                                target_regions_dict[contig],
@@ -377,8 +355,12 @@ def read_simulator_runner(config: str, output: str):
         output_file_writer.merge_temp_fastas(fasta_files)
 
     if options.produce_fastq:
-        _LOG.info(f"Outputting fastq file(s): {', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
-        output_file_writer.merge_temp_fastqs(fastq_files, options.rng)
+        if options.paired_ended:
+            _LOG.info(f"Outputting fastq files: "
+                      f"{', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
+        else:
+            _LOG.info(f"Outputting fastq file: {output_file_writer.fastq_fns[0]}")
+        output_file_writer.merge_temp_fastqs(fastq_files, options.paired_ended, options.rng)
 
     if options.produce_bam:
         _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")

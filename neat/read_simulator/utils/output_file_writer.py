@@ -109,12 +109,13 @@ class OutputFileWriter:
         if self.paired and self.write_fastq:
             self.fastq1_fn = options.output.parent / f'{options.output.stem}_r1.fastq.gz'
             self.fastq2_fn = options.output.parent / f'{options.output.stem}_r2.fastq.gz'
-            self.fastq_fns = (self.fastq1_fn, self.fastq2_fn)
+            self.fastq_fns = [self.fastq1_fn, self.fastq2_fn]
             files_to_write.extend(self.fastq_fns)
         elif self.write_fastq:
             self.fastq1_fn = options.output.parent / f'{options.output.stem}.fastq.gz'
-            self.fastq_fns = self.fastq1_fn
-            files_to_write.append(self.fastq_fns)
+            self.fastq2_fn = options.output.parent / "dummy.fastq.gz"
+            self.fastq_fns = [self.fastq1_fn, self.fastq2_fn]
+            files_to_write.extend(self.fastq_fns)
         if self.write_bam:
             self.bam_fn = options.output.parent / f'{options.output.stem}_golden.bam'
             self.bam_keys = list(bam_header)
@@ -126,7 +127,7 @@ class OutputFileWriter:
         self.files_to_write = files_to_write
 
         # Create files as applicable
-        for file in self.files_to_write:
+        for file in [x for x in self.files_to_write if x != "dummy.fastq.gz"]:
             validate_output_path(file, True, options.overwrite_output)
 
         mode = 'xt'
@@ -181,7 +182,7 @@ class OutputFileWriter:
                         vcf_out.write(infile.read())
 
     def merge_temp_fastqs(
-            self, fastq_files: list, rand_num_gen: Generator
+        self, fastq_files: list, paired_ended: bool, rand_num_gen: Generator
     ):
         """
         Takes a list of fastqs and combines them into a final output. This is the most complicated one, because we need
@@ -191,6 +192,7 @@ class OutputFileWriter:
 
         :param fastq_files: The temporary fastq files to combine in the final output, or to set the order for the
             final bam
+        :param paired_ended: whether this run is paired or single ended.
         :param rand_num_gen: the random number generator for the run
         """
         fastq_indexes = []
@@ -244,6 +246,8 @@ class OutputFileWriter:
                 current_index = [read2_keys.index(x) for x in read2_keys if current_key in x][0]
                 read = fastq_indexes[current_index][1][current_key]
                 SeqIO.write(read, fq2, 'fastq')
+        if not paired_ended:
+            Path.unlink(self.fastq2_fn)
 
     def output_bam_file(self, reads_files: list, contig_dict: dict):
         """

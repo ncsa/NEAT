@@ -97,6 +97,12 @@ def open_output(path: str | Path, mode: str = 'wt') -> Iterator[TextIO]:
     open_: Callable[..., TextIO]
     # This is a set intersection to see if the file has gz or bgz in name. This list can be expanded as needed.
     if {'.gz', '.bgz'} & set(output_path.suffixes):
+        # bgzf is old code and doesn't use "xt" mode, annoyingly. This manual check should suffice.
+        if mode == "xt":
+            if output_path.exists():
+                raise FileExistsError(f"file '{path}' already exists")
+            else:
+                mode = "wt"
         open_ = bgzf.open
     else:
         open_ = open

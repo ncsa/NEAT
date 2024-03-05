@@ -407,7 +407,3 @@ Mappability track examples: https://github.com/zstephens/neat-repeat/tree/master
 
 ### Note on Sensitive Patient Data
 ICGC's "Access Controlled Data" documentation can be found at <a href = https://docs.icgc.org/portal/access/ target="_blank">https://docs.icgc.org/portal/access/</a>. To have access to controlled germline data, a DACO must be submitted. Open tier data can be obtained without a DACO, but germline alleles that do not match the reference genome are masked and replaced with the reference allele. Controlled data includes unmasked germline alleles.
-
-
-
-

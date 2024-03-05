@@ -42,7 +42,7 @@ def write_local_file(vcf_filename: str or Path,
         filtered_by_discard = 0
         n_added = 0
 
-        local_fastas = LocalFasta(fasta_filename, reference, options)
+        local_fasta = LocalFasta(fasta_filename, reference, options)
         for loc in variant_data.variant_locations:
             for variant in variant_data[loc]:
                 if not variant.is_input:
@@ -68,7 +68,7 @@ def write_local_file(vcf_filename: str or Path,
                 sample = variant_data.get_sample_info(variant)
 
                 if options.produce_fasta:
-                    local_fastas.add_variant(variant)
+                    local_fasta.add_variant(variant)
                 # +1 to position because the VCF uses 1-based coordinates
                 line = f"{reference.id}\t" \
                        f"{variant.position1 + 1}\t" \
@@ -84,7 +84,7 @@ def write_local_file(vcf_filename: str or Path,
                 n_added += 1
 
     if options.produce_fasta:
-        local_fastas.write_fasta()
+        local_fasta.write_fasta()
 
     if filtered_by_target:
         _LOG.info(f'{filtered_by_target} variants excluded because '
@@ -98,6 +98,7 @@ def write_local_file(vcf_filename: str or Path,
 
     _LOG.debug(f"Added {n_added} mutations to the reference.")
 
+    return local_fasta.filenames
 
 class LocalFasta:
     """
@@ -110,18 +111,12 @@ class LocalFasta:
     def __init__(self, filename: Path, reference: SeqRecord, options: Options):
         self.options = options
         mutable_ref_seq = MutableSeq(reference.seq)
-        if options.fasta_per_ploid:
-            self.filenames = [filename.parent / f"{filename.stem}_{x}_{filename.suffix}" for x in range(len(options.ploidy))]
-            self.names = [f"{reference.id}_{k}" for k in range(len(options.ploidy))]
-            self.mutated_references = [deepcopy(mutable_ref_seq) for _ in range(len(options.ploidy))]
-            self.offset = [0] * options.ploidy
-            self.fasta_per = True
-        else:
-            self.filenames = [filename]
-            self.names = [reference.id]
-            self.mutated_references = [deepcopy(mutable_ref_seq)]
-            self.offset = [0]
-            self.fasta_per = False
+
+        self.filenames = [filename.parent / f"{filename.stem}_{x+1}{filename.suffix}" for x in range(options.ploidy)]
+        self.names = [f"{reference.id}_{k+1}" for k in range(options.ploidy)]
+        self.mutated_references = [deepcopy(mutable_ref_seq) for _ in range(options.ploidy)]
+        self.offset = [0] * options.ploidy
+
 
     def add_variant(self, variant):
         """

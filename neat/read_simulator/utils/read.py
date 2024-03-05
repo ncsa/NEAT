@@ -117,11 +117,12 @@ class Read:
         return self.length
 
     def update_quality_array(
-            self, alternate, location, variant_type: str, model: SequencingErrorModel, quality_score: int = 0
+            self, reference, alternate, location, variant_type: str, model: SequencingErrorModel, quality_score: int = 0
     ):
         """
         This updates the quality score based on the error model. Uniform for mutations, random (but low) for errors
-        :param alternate: The alternate sequence for the variant introduced
+        :param reference: The reference sequence for the variant
+        :param alternate: The alternate sequence for the variant
         :param location: The first position of the mutation, in 0-based coordinates
         :param variant_type: Either "mutations" or "errors"
         :param model: The error model, used to generate any quality scores needed to fill out array
@@ -130,25 +131,37 @@ class Read:
         :return: None, updates the quality array in place
         """
         if variant_type == "mutation":
-            new_qual = [quality_score] * len(alternate)
+            new_quality_score = [quality_score] * len(alternate)
         else:
-            # Since we have an error here, we'll retain the original quality score and add adjustments as needed
-            new_qual = [self.quality_array[location]]
+            # Since we have an error here, we'll choose a lower score
+            original_quality_score = self.quality_array[location: location+len(reference)]
+            new_quality_score = original_quality_score.copy()
+            # Generate a pool of low scores to choose from:
+            scores = model.quality_scores
+            low_scores = scores[:bisect_right(scores, max(scores) / 2)]
+            # If is insertion
             if len(alternate) > 1:
                 # Generate extra scores for insertions
-                scores = model.quality_scores
-                low_scores = scores[:bisect_right(scores, max(scores)/2)]
-                new_qual.extend(model.rng.choice(low_scores, size=len(alternate)-1))
+                new_quality_score.extend(model.rng.choice(low_scores, size=len(alternate)-1))
+            # If is deletion
+            elif len(reference) > 1 and len(alternate) == 1:
+                new_quality_score = new_quality_score[:1]
+            # SNP
+            else:
+                new_quality_score = model.rng.choice(low_scores, size=1)
 
         # Replace the given quality score with the new one
         self.quality_array = \
-            self.quality_array[:location] + \
-            new_qual + \
-            self.quality_array[location+1:]
+            np.concatenate((self.quality_array[:location],
+                            np.array(new_quality_score),
+                            self.quality_array[location+len(reference):]))
 
         if len(self.quality_array) < self.length:
             # Just in case we need to fill out the quality score array
-            self.quality_array.append(model.rng.choice(model.quality_scores, size=self.length-len(self.quality_array)))
+            temp_list = self.quality_array.tolist()
+            self.quality_array = np.array(temp_list.append(
+                model.rng.choice(model.quality_scores, size=self.length-len(self.quality_array))
+            ))
 
     def apply_errors(self, mutated_sequence, err_model):
         """
@@ -163,7 +176,7 @@ class Read:
             mutated_sequence = \
                 mutated_sequence[:error.location] + error.alt + mutated_sequence[error.location+len(error.ref):]
             # update quality score for error
-            self.update_quality_array(error.alt, error.location, "error", err_model)
+            self.update_quality_array(error.ref, error.alt, error.location, "error", err_model)
 
         return mutated_sequence
 
@@ -202,7 +215,7 @@ class Read:
                 mutated_sequence[:position] + alternate + mutated_sequence[position + reference_length:]
 
             self.update_quality_array(
-                alternate, location, "mutation", err_model, qual_score
+                self.reference_segment[location: location+reference_length], alternate, location, "mutation", err_model, qual_score
             )
 
         return mutated_sequence

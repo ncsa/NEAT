@@ -71,6 +71,8 @@ def parse_single_bed(input_bed: str,
     if input_bed:
         # Pathlib will help us stay machine-agnostic to the degree possible
         input_bed = pathlib.Path(input_bed)
+        printed_chromosome_warning = False
+        printed_mutation_rate_warning = False
         with open_input(input_bed) as f:
             for line in f:
                 if not line.startswith(('@', '#', "\n")):
@@ -90,20 +92,24 @@ def parse_single_bed(input_bed: str,
                         assert my_chr in reference_dictionary
                     except AssertionError:
                         try:
-                            my_chr = f'chr{my_chr}'
                             assert my_chr in reference_dictionary
                         except AssertionError:
                             in_bed_only.append(my_chr)
-                            _LOG.warning("Found chromosome in BED file that isn't in Reference file, skipping")
+                            if not printed_chromosome_warning:
+                                _LOG.warning("Found chromosome in BED file that isn't in Reference file, skipping")
+                                printed_chromosome_warning = True
                             continue
 
                     if len(line_list) > 3:
                         # here we append the metadata, if present
                         index = line_list[3].find('mut_rate=')
                         if index == -1:
-                            _LOG.warning(f"Skipping mutation rate region: {my_chr}: ({pos1}, {pos2})")
-                            _LOG.debug(f'4th column of mutation rate bed must be a semicolon list of key, value '
-                                       f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
+                            if not printed_mutation_rate_warning:
+                                _LOG.warning(f"Found no mutation rates in bed")
+                                _LOG.warning(f'4th column of mutation rate bed must be a semicolon list of key, value '
+                                             f'pairs, with one key being mut_rate, '
+                                             f'e.g., "foo=bar;mut_rate=0.001;do=re".')
+                                printed_mutation_rate_warning = True
                             continue
 
                         # +9 because that's len('mut_rate='). Whatever is that should be our mutation rate.
@@ -134,7 +140,7 @@ def parse_single_bed(input_bed: str,
         if in_bed_only:
             _LOG.warning(f'BED file {input_bed} contains sequence names '
                          f'not found in reference. These regions will be ignored.')
-            _LOG.debug(f'Regions ignored: {in_bed_only}')
+            _LOG.debug(f'Regions ignored: {list(set(in_bed_only))}')
 
     elif targeted_bed:
         # This is to indicate that there was no targeted bed. Otherwise the code will try to assign a 2% coverage
@@ -170,7 +176,7 @@ def fill_out_bed_dict(ref_dict: _IndexedSeqFileDict,
 
     ret_dict = {}
     if factor == 1:
-        other_factor = options.off_target_scalar
+        other_factor = 0
     elif factor == 0:
         other_factor = 1
     else:
