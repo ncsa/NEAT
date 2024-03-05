@@ -1,5 +1,7 @@
 # The NEAT Project v4.0
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.0. This is our first release of the newest version of NEAT. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.0. This is our first (beta) release of the newest version of NEAT. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes.
+
+We are also working on redeveloping NEAT in Rust, a memory and thread safe language that will lend itself well to the way NEAT works, check that out here: https://github.com/ncsa/rusty-neat
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
@@ -47,7 +49,6 @@ Table of Contents
 * pyyaml
 * scipy
 * pysam
-* pybedtools
 * frozendict
 
 ## Installation
@@ -84,14 +85,14 @@ reference: /path/to/my/genome.fa
 ```
 
 ```
-neat read-simulator -c neat_config.yaml -o simulated_data
+neat read-simulator -c neat_config.yml -o simulated_data
 ```
 
 The output prefix should not specify a file extension (i.e., .fasta, .fastq, etc.),
 as these will be appended by NEAT.
 
-A config file is required. The config is a yaml file specifying the input parameters. The following is a brief
-description of the potential inputs in the config file. See NEAT/config_template/template_neat_config.yaml for a
+A config file is required. The config is a yml file specifying the input parameters. The following is a brief
+description of the potential inputs in the config file. See NEAT/config_template/template_neat_config.yml for a
 template config file to copy and use for your runs.
 
 reference: full path to a fasta file to generate reads from
@@ -106,6 +107,7 @@ fragment_st_dev: use with paired-ended reads, set the standard deviation of the 
 
 The following values can be set to true or omitted to use defaults. If True, NEAT will produce the file type.
 The default is given:
+
 produce_bam: False
 produce_vcf: False
 produce_fasta: False
@@ -207,7 +209,7 @@ fragment_mean: 300
 fragment_st_dev: 30
 
 neat read-simulator                  \
-        -c neat_config.yaml          \
+        -c neat_config.yml          \
         -o /home/me/simulated_reads
 ```
 
@@ -313,7 +315,7 @@ Computes empirical fragment length distribution from sample data.
 
     neat model-fraglen   \
         -i input.bam            \
-        -o /prefix/for/output
+        -o /path/to/prefix
 
 and creates fraglen.pickle.gz model in working directory.
 
@@ -322,9 +324,7 @@ and creates fraglen.pickle.gz model in working directory.
 Takes references genome and VCF file to generate mutation models:
 
 ```
-neat gen-mut-model          \
-        -r hg19.fa                  \
-        -m inputVariants.vcf        \
+neat gen-mut-model reference.fa input_variants.vcf   \
         -o /home/me/models
 ```
 
@@ -332,8 +332,6 @@ Trinucleotides are identified in the reference genome and the variant file. Freq
 
 | Option          | Description                                                                  |
 |-----------------|------------------------------------------------------------------------------|
-| -r <str>        | Reference file for organism in FASTA format. Required                        |
-| -m <str>        | Mutation file for organism in VCF format. Required                           |
 | -o <str>        | Path to output file and prefix. Required.                                    |
 | --bed           | Flag that indicates you are using a bed-restricted vcf and fasta (see below) |
 | --save-trinuc   | Save trinucleotide counts for reference                                      |
@@ -359,16 +357,18 @@ This blocked zip format allows for indexing of the file.
 For quality scores, note that using a single number will check quality scores for every number. As this could 
 potentially slow down model creation, binned quality scores are advisable.
 
-Soon we will take a samtools mpileup output as input and have some plotting features.
+Soon we will take a samtools mpileup output as input and have some plotting features. 
+
 ```
 neat model-seq-err                                    \
-        -i input_read1.fq (.gz)                       \
-        -o /output/prefix                             \
-        -i2 input_read2.fq (.gz)                      \
+        -i input_read.fq (.gz)                       \
+        -o /path/to/prefix                             \
         -q quality score offset [33]                  \
         -Q maximum quality score [2, 11, 24, 37]      \
-        -n maximum number of reads to process [all]   \
+        -m maximum number of reads to process [all]   \
 ```
+
+Please note that -i2 can be used in place of -i to produce paired data.
 
 ## neat plot_mutation_model
 
