@@ -42,7 +42,8 @@ def write_local_file(vcf_filename: str or Path,
         filtered_by_discard = 0
         n_added = 0
 
-        local_fasta = LocalFasta(fasta_filename, reference, options)
+        if options.produce_fasta:
+            local_fasta = LocalFasta(fasta_filename, reference, options)
         for loc in variant_data.variant_locations:
             for variant in variant_data[loc]:
                 if not variant.is_input:
@@ -98,7 +99,11 @@ def write_local_file(vcf_filename: str or Path,
 
     _LOG.debug(f"Added {n_added} mutations to the reference.")
 
-    return local_fasta.filenames
+    if options.produce_fasta:
+        return local_fasta.filenames
+    else:
+        return None
+
 
 class LocalFasta:
     """
@@ -116,7 +121,6 @@ class LocalFasta:
         self.names = [f"{reference.id}_{k+1}" for k in range(options.ploidy)]
         self.mutated_references = [deepcopy(mutable_ref_seq) for _ in range(options.ploidy)]
         self.offset = [0] * options.ploidy
-
 
     def add_variant(self, variant):
         """
