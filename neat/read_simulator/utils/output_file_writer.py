@@ -100,7 +100,7 @@ class OutputFileWriter:
         # Set up filenames based on booleans
         files_to_write = []
         if self.write_fasta:
-            if options.ploidy > 1 and options.fasta_per_ploid:
+            if options.ploidy > 1:
                 self.fasta_fns = [options.output.parent / f'{options.output.stem}_ploid{i+1}.fasta.gz'
                                   for i in range(options.ploidy)]
             else:
