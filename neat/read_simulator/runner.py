@@ -325,7 +325,8 @@ def read_simulator_runner(config: str, output: str):
                                             options,
                                             local_fasta_file)
         vcf_files.append(local_variant_file)
-        fasta_files.extend(local_fasta_file)
+        if options.produce_fasta:
+            fasta_files.extend(local_fasta_file)
 
         if options.produce_fastq or options.produce_bam:
             read1_fastq, read2_fastq = \

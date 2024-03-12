@@ -100,7 +100,7 @@ class OutputFileWriter:
         # Set up filenames based on booleans
         files_to_write = []
         if self.write_fasta:
-            if options.ploidy > 1 and options.fasta_per_ploid:
+            if options.ploidy > 1:
                 self.fasta_fns = [options.output.parent / f'{options.output.stem}_ploid{i+1}.fasta.gz'
                                   for i in range(options.ploidy)]
             else:
@@ -246,8 +246,13 @@ class OutputFileWriter:
                 current_index = [read2_keys.index(x) for x in read2_keys if current_key in x][0]
                 read = fastq_indexes[current_index][1][current_key]
                 SeqIO.write(read, fq2, 'fastq')
+
         if not paired_ended:
-            Path.unlink(self.fastq2_fn)
+
+            fastq2_path = Path(self.fastq2_fn)
+
+            if fastq2_path.exists():
+                fastq2_path.unlink()
 
     def output_bam_file(self, reads_files: list, contig_dict: dict):
         """
