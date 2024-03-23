@@ -98,7 +98,7 @@ template config file to copy and use for your runs.
 reference: full path to a fasta file to generate reads from
 read_len: The length of the reads for the fastq (if using). Integer value, default 101.
 coverage: desired coverage value. Float or int, default = 10
-ploidy: Desired value for ploidy (# of copies of each chromosome). Default is 2
+ploidy: Desired value for ploidy (# of copies of each chromosome in the organism). Default is 2
 paired_ended: If paired-ended reads are desired, set this to True. Setting this to true requires
     either entering values for fragment_mean and fragment_st_dev or entering the path to a
     valid fragment_model.
@@ -122,29 +122,30 @@ fragment_model: full path to fragment length model generate by NEAT. Leave empty
 gc_model: Full path to model for correlating GC concentration and coverage, produced by NEAT.
     (default model is based on human data, sequenced by Illumina)
 
-
 partition_mode: by chromosome ("chrom"), or subdivide the chromosomes ("subdivision").
     Note: this feature is not yet fully implemented
 threads: The number of threads for NEAT to use.
     Note: this feature is not yet fully implemented
 avg_seq_error: average sequencing error rate for the sequencing machine. Use to increase or
     decrease the rate of errors in the reads. Float betwoon 0 and 0.3. Default is set by the error model.
-rescale_qualities: rescale the quality scores to reflect the avg_seq_error rate above. Set True to activate.
-include_vcf: full path to list of variants in vcf format to include in the simulation.
-target_bed: full path to list of regions in bed format to target. All areas outside these regions will have
-    very low coverage.
-off_target_scalar: manually set the off-target-scalar when using a target bed. Default is 0.02
-    (i.e., off target areas will have only 2% of the average coverage)
-discard_offtarget: throws out reads from off-target regions. Regions of overlap may still have reads.
-    Set True to activate
+rescale_qualities: rescale the quality scores to reflect the avg_seq_error rate above. Set True to activate if you 
+    notice issues with the sequencing error rates in your datatset.
+include_vcf: full path to list of variants in vcf format to include in the simulation. These will be inserted as they 
+    appear in the input VCF into the final VCF, and the corresponding fastq and bam files, if requested.
+target_bed: full path to list of regions in bed format to target. 
+    All areas outside these regions will have coverage of 0.
+off_target_scalar: manually set the off-target-scalar when using a target bed (if you want to have some percentage of 
+    reads from outside the targeted regions. Default is 0. (i.e., setting this to 0.02 would mean off-target areas will 
+    have a coverage of ~2% of the total coverage). This is an experimental feature.
 discard_bed: full path to a list of regions to discard, in BED format.
-mutation_rate: Desired rate of mutation for the dataset. Float between 0 and 0.3
+mutation_rate: Desired rate of mutation for the dataset. Float between 0.0 and 0.3
     (default is determined by the mutation model)
 mutation_bed: full path to a list of regions with a column describing the mutation rate of that region,
-    as a float with values between 0 and 0.3. The mutation rate must be in the third column.
+    as a float with values between 0 and 0.3. The mutation rate must be in the third column as, e.g., mut_rate=0.00.
 no_coverage_bias: Set to true to produce a dataset free of coverage bias
-rng_seed: Manually enter a seed for the random number generator. Used for repeating runs.
-min_mutations: Set the minimum number of mutations that NEAT should add, per contig. Default is 1.
+rng_seed: Manually enter a seed for the random number generator. Used for repeating runs. Must be an integer.
+min_mutations: Set the minimum number of mutations that NEAT should add, per contig. Default is 0. We recommend setting 
+    this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.
 fasta_per_ploid: Produce one fasta per ploid. Default behavior is to produce
     a single fasta showing all variants.                                                                                                                                                                        |
 
@@ -217,7 +218,6 @@ neat read-simulator                  \
 Simulate a targeted region of a genome, e.g. exome, with a targeted bed:
 
 ```
-<<<<<<< HEAD
 [contents of neat_config.yml]
 reference: hg19.fa
 read_len: 126
