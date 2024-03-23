@@ -115,7 +115,7 @@ class Options(SimpleNamespace):
 
         # These are primarily debug options
         self.defs['rng_seed'] = (int, None, None, None)
-        self.defs['min_mutations'] = (int, 1, None, None)
+        self.defs['min_mutations'] = (int, 0, None, None)
         self.defs['overwrite_output'] = (bool, False, None, None)
 
         # Create base variables, for update by the config
@@ -149,7 +149,7 @@ class Options(SimpleNamespace):
         self.no_coverage_bias: bool = False
 
         # These are primarily debug options.
-        self.min_mutations: int = 1
+        self.min_mutations: int = 0
         self.overwrite_output: bool = False
         self.rng_seed: int | None = None
         self.rng: Generator | None = None
