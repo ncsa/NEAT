@@ -32,18 +32,27 @@ def parse_beds(options: Options, reference_dict: _IndexedSeqFileDict, average_mu
     return_list = []
     bed_files = (options.target_bed, options.discard_bed, options.mutation_bed)
     # These numbers indicate the factors for target_bed, discard_bed, and mutation_bed, respectively
-    factors = {0: 1, 1: 0, 2: average_mutation_rate}
+    # Since Average mutation rate might equal zero, we start the others at 1.
+    processing_structure = {
+        0: ("target", 1.0, True if options.target_bed else False),
+        1: ("discard", 0.0, True if options.discard_bed else False),
+        2: ("mutation", average_mutation_rate, True if options.mutation_bed else False)
+    }
 
     for i in range(len(bed_files)):
         # To distinguish between a targeted bed with chromosomes intentionally omitted and no target bed at all
-        targeted = True if i == 0 else False
         temp_bed_dict = parse_single_bed(
             bed_files[i],
             reference_dict,
-            targeted
+            processing_structure[i]
         )
 
-        final_dict = fill_out_bed_dict(reference_dict, temp_bed_dict, factors[i], average_mutation_rate, options)
+        # If there was a bed this function will fill in any gaps the bed might have missed, so we have a complete map
+        # of each chromosome. The uniform case in parse_single_bed handles this in cases of no input bed.
+        if processing_structure[i][2]:
+            final_dict = fill_out_bed_dict(reference_dict, temp_bed_dict, processing_structure[i])
+        else:
+            final_dict = temp_bed_dict
 
         return_list.append(final_dict)
 
@@ -52,7 +61,7 @@ def parse_beds(options: Options, reference_dict: _IndexedSeqFileDict, average_mu
 
 def parse_single_bed(input_bed: str,
                      reference_dictionary: _IndexedSeqFileDict,
-                     targeted_bed: bool
+                     process_key: tuple[str, float, bool],
                      ) -> dict:
     """
     Will parse a bed file, returning a dataframe of chromosomes that are found in the reference,
@@ -61,14 +70,14 @@ def parse_single_bed(input_bed: str,
 
     :param input_bed: A bed file containing the regions of interest
     :param reference_dictionary: A list of chromosomes to check, along with their reads and lengths
-    :param targeted_bed: Indicates that we are processing the targeted bed, which requires one additional factor,
-        to indicate if a chromosome was left out of the targeted bed intentionally or the targeted bed was never present.
+    :param process_key: Indicates which bed we are processing and the factor we need to process it.
     :return: a dictionary of chromosomes: [(pos1, pos2, factor), etc...]
     """
     ret_dict = {x: [] for x in reference_dictionary}
     in_bed_only = []
 
-    if input_bed:
+    # process_key[2] is True when there is an input bed, False otherwise.
+    if process_key[2]:
         # Pathlib will help us stay machine-agnostic to the degree possible
         input_bed = pathlib.Path(input_bed)
         printed_chromosome_warning = False
@@ -100,7 +109,8 @@ def parse_single_bed(input_bed: str,
                                 printed_chromosome_warning = True
                             continue
 
-                    if len(line_list) > 3:
+                    # If this is the mutation bed, we need to process an extra column.
+                    if process_key[0] == "mutation":
                         # here we append the metadata, if present
                         index = line_list[3].find('mut_rate=')
                         if index == -1:
@@ -128,7 +138,7 @@ def parse_single_bed(input_bed: str,
 
                         ret_dict[my_chr].append((int(pos1), int(pos2), mut_rate))
                     else:
-                        ret_dict[my_chr].append((int(pos1), int(pos2)))
+                        ret_dict[my_chr].append((int(pos1), int(pos2), process_key[1]))
 
         # some validation
         in_ref_only = [k for k in reference_dictionary if k not in ret_dict]
@@ -142,19 +152,16 @@ def parse_single_bed(input_bed: str,
                          f'not found in reference. These regions will be ignored.')
             _LOG.debug(f'Regions ignored: {list(set(in_bed_only))}')
 
-    elif targeted_bed:
-        # This is to indicate that there was no targeted bed. Otherwise the code will try to assign a 2% coverage
-        # rate to the entire dataset
-        ret_dict = {x: False for x in reference_dictionary}
+    else:
+        for my_chr in reference_dictionary.keys():
+            ret_dict[my_chr].append((0, len(reference_dictionary[my_chr]), process_key[1]))
 
     return ret_dict
 
 
 def fill_out_bed_dict(ref_dict: _IndexedSeqFileDict,
                       region_dict: dict | None,
-                      factor: float | int,
-                      avg_mut_rate: float,
-                      options: Options,
+                      factor: tuple[str, float, bool],
                       ) -> dict:
     """
     This parses the dict derived from the bed file and fills in any gaps, so it can be more easily cycled through
@@ -162,60 +169,37 @@ def fill_out_bed_dict(ref_dict: _IndexedSeqFileDict,
 
     The input to this function is the dict for a single chromosome.
 
-    :param ref_dict: The reference dictionary for the run. Needed to calulate max values. We shouldn't need to access the data it
-        refers to.
+    :param ref_dict: The reference dictionary for the run. Needed to calulate max values. We shouldn't need to access
+        the data it refers to.
     :param region_dict: A dict based on the input from the bed file, with keys being all the chronmosomes
         present in the reference.
-    :param factor: Depending on the bed type, this will either be a 1 (for targeted regions), 0 (for discarded regions),
-        or the average mutation rate desired for this dataset. If not present, then this function
-        will only fill out the regions, not try to assign values to them
-    :param avg_mut_rate: This is the average mutation rate for the run.
-    :param options: options for this run
+    :param factor: This is a tuple representing the type and any extra information. The extra info is for mutation
+        rates. If beds were input, then these values come from the bed, else they are set to one value across the contig
     :return: A tuple with (start, end, some_factor) for each region in the genome.
     """
 
     ret_dict = {}
-    if factor == 1:
-        other_factor = 0
-    elif factor == 0:
-        other_factor = 1
-    else:
-        other_factor = avg_mut_rate
 
     for contig in region_dict:
         regions = []
         max_value = len(ref_dict[contig])
         start = 0
 
-        # If an input bed was supplied, this will set up the regions for it
-        if region_dict[contig]:
-            for region in region_dict[contig]:
-                if len(region) > 2:
-                    factor = region[2]
-                if region[0] > start:
-                    regions.append((start, region[0], other_factor))
-                    start = region[1]
-                    regions.append((region[0], region[1], factor))
-                elif region[0] == start:
-                    regions.append((region[0], region[1], factor))
-                    start = region[1]
+        for region in region_dict[contig]:
+            if len(region) > 2:
+                factor = region[2]
+            if region[0] > start:
+                regions.append((start, region[0], factor[1]))
+                start = region[1]
+                regions.append((region[0], region[1], factor[1]))
+            elif region[0] == start:
+                regions.append((region[0], region[1], factor[1]))
+                start = region[1]
 
-            # If the region ends short of the end, this fills in to the end
-            if regions[-1][1] != max_value:
-                regions.append((start, max_value, other_factor))
+        # If the region ends short of the end, this fills in to the end
+        if regions[-1][1] != max_value:
+            regions.append((start, max_value, factor[1]))
 
-            ret_dict[contig] = regions
-
-        # If no input bed was supplied, then we check if the datatype is boolean, in which case we know that the
-        # bed in question was the targeted bed and since the above condition was false, there was no targeted bed
-        # supplied, so we want full coverage on all contigs.
-        # This is to prevent the coverage from being 2% of the target when no targeted bed file was included.
-
-        elif type(region_dict[contig]) == bool:
-            ret_dict[contig] = [(0, max_value, 1)]
-
-        # In all other cases, the value is the other_factor
-        else:
-            ret_dict[contig] = [(0, max_value, other_factor)]
+        ret_dict[contig] = regions
 
     return ret_dict
