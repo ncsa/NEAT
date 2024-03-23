@@ -29,6 +29,6 @@ mutation_rate: .
 mutation_bed: .
 no_coverage_bias: .
 rng_seed: .
-min_mutations: .
+min_mutations: 0
 overwrite_output: .
 
