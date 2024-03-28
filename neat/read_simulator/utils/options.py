@@ -105,7 +105,7 @@ class Options(SimpleNamespace):
         self.defs['gc_model'] = (str, None, 'exists', None)
         self.defs['paired_ended'] = (bool, False, None, None)
         self.defs['fragment_model'] = (str, None, 'exists', None)
-        self.defs['fragment_mean'] = (float, None, 1e-10, inf)
+        self.defs['fragment_mean'] = (float, None, 10, inf)
         self.defs['fragment_st_dev'] = (float, None, 1e-10, inf)
         self.defs['produce_bam'] = (bool, False, None, None)
         self.defs['produce_vcf'] = (bool, False, None, None)
@@ -196,14 +196,14 @@ class Options(SimpleNamespace):
             pass
         elif lowval != "exists" and highval:
             if not (lowval <= value_to_check <= highval):
-                raise ValueError(f'@{keyname} must be between {lowval} and {highval}.')
+                raise ValueError(f'@{keyname} must be between {lowval} and {highval}.\nYour input: {value_to_check}')
         elif lowval == "exists" and value_to_check:
             validate_input_path(value_to_check)
 
     def read(self):
         """
-        This sets up the option attributes. It's not perfect, because it sort of kills
-        type hints. But I'm not sure how else to accomplish this.
+        This sets up the option attributes. It's not perfect, because it sort of kills type hints.
+        But I'm not sure how else to accomplish this.
         """
         # Skip trying to read the config for a test run
         config = yaml.load(open(self.config_file, 'r'), Loader=Loader)
