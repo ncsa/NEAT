@@ -639,8 +639,8 @@ class FragmentLengthModel:
             self.fragment_mean = read_length
         # generates a distribution, assuming normality, then rounds the result and converts to ints
         dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
-        # filter the list to throw out outliers.
-        dist = [x for x in dist if self.fragment_min <= x <= self.fragment_max]
+        # filter the list to throw out outliers and to set anything under the read length to the read length.
+        dist = [max(x, read_length) for x in dist if x <= self.fragment_max]
         # Just a sanity check to make sure our data isn't too thin:
         while number_of_fragments - len(dist) > 0:
             additional_fragment = self.rng.normal(loc=self.fragment_mean, scale=self.fragment_st_dev)
@@ -649,4 +649,4 @@ class FragmentLengthModel:
             dist.append(round(additional_fragment))
 
         # Now set a minimum on the dataset. Any fragment smaller than read_length gets turned into read_length
-        return [max(x, read_length) for x in dist]
+        return dist
