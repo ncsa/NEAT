@@ -631,6 +631,12 @@ class FragmentLengthModel:
         """
         # Estimate the number of fragments needed (with a 2x padding)
         number_of_fragments = int(round(total_length / read_length) * (coverage * 2))
+        # Check that we don't have unusable values for fragment mean. Too many fragments under the read length means
+        # NEAT will either get caught in an infinite cycle of sampling fragments but never finding one that works, or
+        # it will only find a few and will run very slowly.
+        if self.fragment_mean < read_length:
+            # Let's just reset the fragment mean to make up for this.
+            self.fragment_mean = read_length
         # generates a distribution, assuming normality, then rounds the result and converts to ints
         dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
         # filter the list to throw out outliers.
@@ -642,4 +648,5 @@ class FragmentLengthModel:
                 continue
             dist.append(round(additional_fragment))
 
-        return dist
+        # Now set a minimum on the dataset. Any fragment smaller than read_length gets turned into read_length
+        return [max(x, read_length) for x in dist]
