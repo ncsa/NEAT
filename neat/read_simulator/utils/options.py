@@ -306,10 +306,6 @@ class Options(SimpleNamespace):
             elif self.fragment_mean and self.fragment_st_dev:
                 _LOG.info(f'Generating fragment model based on mean={self.fragment_mean}, '
                           f'st dev={self.fragment_st_dev}')
-                if self.fragment_mean < self.read_len:
-                    raise ValueError("CONFIGURATION ERROR: Fragment mean is smaller than the read length! "
-                                     "Neat will not be able to generate reads!")
-
             else:
                 raise ValueError("Paired ended mode requires either a fragment model or a mean and standard deviation.")
 
