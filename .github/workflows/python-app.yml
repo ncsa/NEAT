@@ -5,9 +5,9 @@ name: NEAT unit tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "main", "develop" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -26,6 +26,11 @@ jobs:
           conda activate test_neat
           poetry install
           neat
+
+      - name: run coverage tests
+        run: |
+          conda activate test_neat
+          python tests/coverage_tests.py
       
 #       - name: lint with flake8
 #         run: |
@@ -46,7 +51,3 @@ jobs:
 #           cd ${{ github.workspace }}
 #           neat --log-level ERROR --no-log model-seq-err -i data/baby.fastq
 #       - run: echo "This job's status is ${{ job.status }}." 
-
-      
-
-      
