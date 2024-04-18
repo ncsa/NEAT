@@ -4,7 +4,6 @@ Tests for sequencing error model in models
 
 import pytest
 import numpy as np
-import Bio
 
 from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
