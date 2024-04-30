@@ -23,6 +23,7 @@ from .default_sequencing_error_model import *
 from .default_gc_bias_model import *
 from .default_fraglen_model import *
 from .utils import bin_scores, take_closest
+from .original_error_model import *
 
 __all__ = [
     "MutationModel",
@@ -335,8 +336,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     :param read_length: The read length derived from real data.
     :param transition_matrix: 2x2 matrix that gives the probability of each base transitioning to another.
     :param quality_scores: numpy array of ints of the PHRED quality scores possible from the sequencing machine
-    :param qual_score_probs: At each position along the read_length, this gives the mean and standard deviation of
-        quality scores read from the dataset used to construct the model.
+    :param seed_weights: At the first position along the read_length, this gives the quality score weights.
+    :param weights_from_one: A column for each position after the first, giving the weights for each score at that
+        position
     :param rescale_qualities: If set to true, NEAT will attempt to rescale the qualities based on the input error
         model, rather than using the qualities derived from the real data.
     :param variant_probs: Probability dict for each valid variant type
@@ -349,10 +351,11 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
 
     def __init__(self,
                  avg_seq_error: float = default_avg_seq_error,
-                 read_length: int = default_read_length,
+                 read_length: int = original_assumed_read_length,
                  transition_matrix: np.ndarray = default_error_transition_matrix,
-                 quality_scores: np.ndarray = default_quality_scores,
-                 qual_score_probs: np.ndarray = default_qual_score_probs,
+                 quality_scores: np.ndarray = original_quality_score_options,
+                 seed_weights: np.ndarray = original_seed_weights,
+                 weights_from_one: np.ndarray = original_weights_from_one,
                  variant_probs: dict[variants: float] = default_error_variant_probs,
                  indel_len_model: dict[int: float] = default_indel_len_model,
                  insertion_model: np.ndarray = default_insertion_model,
@@ -374,7 +377,8 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
         self.quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in self.quality_scores}
         self.read_length = read_length
-        self.quality_score_probabilities = qual_score_probs
+        self.seed_weights = seed_weights
+        self.weights_from_one = weights_from_one
         self.rescale_qualities = rescale_qualities
         self.is_uniform = is_uniform
         self.insertion_model = insertion_model
@@ -493,6 +497,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         else:
             quality_index_map = self.quality_index_remap(input_read_length)
             temp_qual_array = []
+            seed_weight = self.rng.choice(self.quality_scores, p/self.seed_weights)
             for i in quality_index_map:
                 score = self.rng.normal(self.quality_score_probabilities[i][0],
                                         scale=self.quality_score_probabilities[i][1])
