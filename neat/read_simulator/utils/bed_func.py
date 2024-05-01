@@ -4,7 +4,6 @@ is a mutation rate dictionary, which will parse out the input mutation rates ass
 """
 import pathlib
 import logging
-import numpy as np
 
 from Bio.File import _IndexedSeqFileDict
 
@@ -32,21 +31,24 @@ def parse_beds(options: Options, reference_dict: _IndexedSeqFileDict, average_mu
     return_list = []
     bed_files = (options.target_bed, options.discard_bed, options.mutation_bed)
     # These numbers indicate the factors for target_bed, discard_bed, and mutation_bed, respectively
-    # Since Average mutation rate might equal zero, we start the others at 1.
     processing_structure = {
-        0: ("target", 1.0, True if options.target_bed else False),
-        1: ("discard", 0.0, True if options.discard_bed else False),
-        2: ("mutation", average_mutation_rate, True if options.mutation_bed else False)
+        0: ("target",
+            True,  # signifies that this section is to be included (default is include everything)
+            True if options.target_bed else False),
+        1: ("discard",
+            False,  # signifies that this section was not within a discard bed (default is no section is discarded)
+            True if options.discard_bed else False),
+        2: ("mutation",
+            average_mutation_rate,  # Default value will be this for all sections
+            True if options.mutation_bed else False)
     }
 
     for i in range(len(bed_files)):
-        # To distinguish between a targeted bed with chromosomes intentionally omitted and no target bed at all
         temp_bed_dict = parse_single_bed(
             bed_files[i],
             reference_dict,
             processing_structure[i]
         )
-
         # If there was a bed this function will fill in any gaps the bed might have missed, so we have a complete map
         # of each chromosome. The uniform case in parse_single_bed handles this in cases of no input bed.
         if processing_structure[i][2]:
@@ -80,8 +82,6 @@ def parse_single_bed(input_bed: str,
     if process_key[2]:
         # Pathlib will help us stay machine-agnostic to the degree possible
         input_bed = pathlib.Path(input_bed)
-        printed_chromosome_warning = False
-        printed_mutation_rate_warning = False
         with open_input(input_bed) as f:
             for line in f:
                 if not line.startswith(('@', '#', "\n")):
@@ -94,33 +94,25 @@ def parse_single_bed(input_bed: str,
                     except ValueError:
                         _LOG.error(f"Improperly formatted bed file line {line}")
                         raise
-                    # Trying not to 'fix' bed files, but an easy case is if the vcf uses 'chr' and the bed doesn't, in
-                    # which we frequently see in human data, we'll just put chr on there. Anything more complicated
-                    # will be on the user to correct their beds first.
+                    # Bed file chromosome names must match the reference.
                     try:
                         assert my_chr in reference_dictionary
                     except AssertionError:
-                        try:
-                            assert my_chr in reference_dictionary
-                        except AssertionError:
-                            in_bed_only.append(my_chr)
-                            if not printed_chromosome_warning:
-                                _LOG.warning("Found chromosome in BED file that isn't in Reference file, skipping")
-                                printed_chromosome_warning = True
-                            continue
-
+                        in_bed_only.append(my_chr)
+                        _LOG.warning(
+                            f"Found chromosome in BED file that isn't in Reference file, skipping {my_chr}"
+                        )
+                        continue
                     # If this is the mutation bed, we need to process an extra column.
                     if process_key[0] == "mutation":
                         # here we append the metadata, if present
                         index = line_list[3].find('mut_rate=')
+                        # Improperly formatted mutation rate bed file
                         if index == -1:
-                            if not printed_mutation_rate_warning:
-                                _LOG.warning(f"Found no mutation rates in bed")
-                                _LOG.warning(f'4th column of mutation rate bed must be a semicolon list of key, value '
-                                             f'pairs, with one key being mut_rate, '
-                                             f'e.g., "foo=bar;mut_rate=0.001;do=re".')
-                                printed_mutation_rate_warning = True
-                            continue
+                            _LOG.error(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})")
+                            _LOG.error(f'4th column of mutation rate bed must be a semicolon list of key, value '
+                                       f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
+                            raise ValueError
 
                         # +9 because that's len('mut_rate='). Whatever is that should be our mutation rate.
                         mut_rate = line_list[3][index + 9:]
@@ -129,7 +121,7 @@ def parse_single_bed(input_bed: str,
                             mut_rate = float(mut_rate.split(';')[0])
                         except ValueError:
                             _LOG.error(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})")
-                            _LOG.debug(f'4th column of mutation rate bed must be a semicolon list of key, value '
+                            _LOG.error(f'4th column of mutation rate bed must be a semicolon list of key, value '
                                        f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
                             raise
 
@@ -137,8 +129,13 @@ def parse_single_bed(input_bed: str,
                             _LOG.warning("Found a mutation rate > 0.3. This is unusual.")
 
                         ret_dict[my_chr].append((int(pos1), int(pos2), mut_rate))
-                    else:
-                        ret_dict[my_chr].append((int(pos1), int(pos2), process_key[1]))
+                    elif process_key[0] == "discard":
+                        # True here means a discard bed was present and this region was marked for discard.
+                        ret_dict[my_chr].append((int(pos1), int(pos2), True))
+                    else:  # target dict
+                        # True here means that this section is to be included (either within a target bed or because
+                        # no targeted regions were defined)
+                        ret_dict[my_chr].append((int(pos1), int(pos2), True))
 
         # some validation
         in_ref_only = [k for k in reference_dictionary if k not in ret_dict]
@@ -161,7 +158,7 @@ def parse_single_bed(input_bed: str,
 
 def fill_out_bed_dict(ref_dict: _IndexedSeqFileDict,
                       region_dict: dict | None,
-                      factor: tuple[str, float, bool],
+                      default_factor: tuple[str, bool, bool],
                       ) -> dict:
     """
     This parses the dict derived from the bed file and fills in any gaps, so it can be more easily cycled through
@@ -173,8 +170,9 @@ def fill_out_bed_dict(ref_dict: _IndexedSeqFileDict,
         the data it refers to.
     :param region_dict: A dict based on the input from the bed file, with keys being all the chronmosomes
         present in the reference.
-    :param factor: This is a tuple representing the type and any extra information. The extra info is for mutation
-        rates. If beds were input, then these values come from the bed, else they are set to one value across the contig
+    :param default_factor: This is a tuple representing the type and any extra information. The extra info is for
+        mutation rates. If beds were input, then these values come from the bed, else they are set to one value
+        across the contig
     :return: A tuple with (start, end, some_factor) for each region in the genome.
     """
 
@@ -185,20 +183,29 @@ def fill_out_bed_dict(ref_dict: _IndexedSeqFileDict,
         max_value = len(ref_dict[contig])
         start = 0
 
-        for region in region_dict[contig]:
-            if len(region) > 2:
-                factor = region[2]
-            if region[0] > start:
-                regions.append((start, region[0], factor[1]))
-                start = region[1]
-                regions.append((region[0], region[1], factor[1]))
-            elif region[0] == start:
-                regions.append((region[0], region[1], factor[1]))
-                start = region[1]
+        # The trivial case of no data yet for this contig the region gets filled out as 0 to len(contig_sequence)
+        # with the default value applied to the whole region
+        if not region_dict[contig]:
+            regions.append((start, max_value, default_factor[1]))
+        else:
+            for region in region_dict[contig]:
+                if region[0] > start:
+                    if default_factor[0] == "discard" or default_factor[0] == "mutation":
+                        regions.append((start, region[0], default_factor[1]))
+                    else:  # target regions get assigned "False" values outside the targets, if bed is present
+                        regions.append((start, region[0], False))
+                    start = region[1]
+                    regions.append(region)
+                elif region[0] == start:
+                    regions.append(region)
+                    start = region[1]
 
-        # If the region ends short of the end, this fills in to the end
-        if regions[-1][1] != max_value:
-            regions.append((start, max_value, factor[1]))
+            # If the region ends short of the end, this fills in to the end
+            if regions[-1][1] != max_value:
+                if default_factor[0] == "discard" or default_factor[0] == "mutation":
+                    regions.append((start, max_value, default_factor[1]))
+                else:  # target regions get assigned "False" values outside the targets, if bed is present
+                    regions.append((start, max_value, False))
 
         ret_dict[contig] = regions
 
