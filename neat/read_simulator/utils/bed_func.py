@@ -33,10 +33,20 @@ def parse_beds(options: Options, reference_dict: _IndexedSeqFileDict, average_mu
     # These numbers indicate the factors for target_bed, discard_bed, and mutation_bed, respectively
     processing_structure = {
         0: ("target",
-            True,  # signifies that this section is to be included (default is include everything)
+            # For target dict, True will indicate region is to be included (either within a target bed or
+            # if there was no target bed entered.
+            # For example (0, 10, False), (10, 100, True) would indicade that 0-10 fell outside a target region and will
+            # be discarded, whereas 10-100 is within a targeted region and will be included. A single tuple of
+            # (0, chromosome_end, True) would indicate either the entire chromosome was targeted or there was no bed
+            # file. Default is to target all regions off all contigs.
+            True,
             True if options.target_bed else False),
         1: ("discard",
-            False,  # signifies that this section was not within a discard bed (default is no section is discarded)
+            # For the discard dict, false indicates the region is not within a discard bed (i.e., it should be included
+            # in the final results), whereas True indicates a region to be discarded, according to the bed.
+            # For example (0, 10, False), (10, 100, True) would mean we keep reads from 0-10 and discard the
+            # ones from 10-100. Default is that there are no discard regions and we keep everything.
+            False,
             True if options.discard_bed else False),
         2: ("mutation",
             average_mutation_rate,  # Default value will be this for all sections
