@@ -48,16 +48,17 @@ def write_local_file(vcf_filename: str or Path,
             for variant in variant_data[loc]:
                 if not variant.is_input:
                     target_region = find_region(loc, targeted_regions)
-                    # For runs without a targeted bed, target_region[2] is 1, so the following will always fail
-                    if options.rng.random() >= target_region[2]:
+                    # This will be True in targeted regions, if a bed is present, or everywhere if not bed is present.
+                    # Anything outside defined target regions will be marked false and this `if` will activate.
+                    if not target_region[2]:
                         _LOG.debug(f'Variant filtered out by target regions bed: {reference.id}: '
                                    f'{variant}')
                         filtered_by_target += 1
                         continue
 
-                    # Now we check the discard regions. All regions are set to a factor of 1 if there is not discard bed
                     discard_region = find_region(loc, discarded_regions)
-                    if discard_region[2] == 0:
+                    # This will be True if the discard bed was present and this region was within a discard bed region.
+                    if discard_region[2]:
                         _LOG.debug(f'Variant filtered out by discard regions bed: {reference.id}: '
                                    f'{variant}')
                         filtered_by_discard += 1
@@ -87,11 +88,11 @@ def write_local_file(vcf_filename: str or Path,
     if options.produce_fasta:
         local_fasta.write_fasta()
 
-    if filtered_by_target:
+    if filtered_by_target > 0:
         _LOG.info(f'{filtered_by_target} variants excluded because '
                   f'of target regions with discard off-target enabled')
 
-    if filtered_by_discard:
+    if filtered_by_discard > 0:
         _LOG.info(f'{filtered_by_discard} variants excluded because '
                   f'of target regions with discard off-target enabled')
 
