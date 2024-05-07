@@ -13,6 +13,7 @@ dependencies:
   - pip
   - scipy
   - pytest
+  - libgcc=5.2.0
   - htslib
   - pip:
     - pysam
