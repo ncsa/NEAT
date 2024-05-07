@@ -3,17 +3,9 @@ Utilities used by the generate mutation model function
 """
 
 import json
-import os.path
-import pathlib
-import pickle
-import math
 import sys
 
 import numpy as np
-from numpy import genfromtxt
-import pybedtools
-from Bio import SeqIO
-
 
 from pathlib import Path
 import logging
