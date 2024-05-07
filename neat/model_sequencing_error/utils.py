@@ -5,10 +5,8 @@ Utilities to generate the sequencing error model
 import logging
 import numpy as np
 # TODO implement plotting
-# import seaborn as sns
 import matplotlib.pyplot as plt
 
-import pandas as pd
 from scipy.stats import mode
 from ..common import open_input
 from ..models import take_closest

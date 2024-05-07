@@ -16,11 +16,9 @@ import argparse
 import gzip
 import pickle
 import time
-import pdb
 
 import numpy as np
 from Bio import SeqIO
-import pybedtools
 
 
 def process_fasta(file: str) -> dict:
