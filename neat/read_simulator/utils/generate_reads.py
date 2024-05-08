@@ -430,7 +430,10 @@ def generate_reads(reference: SeqRecord,
 
     final_sam_dict = {}
 
-    _LOG.debug(f"Paired percentage = {len(paired_reads)/len(sam_read_order)}")
+    if len(sam_read_order) > 0:
+        _LOG.debug(f"Paired percentage = {len(paired_reads) / len(sam_read_order)}")
+    else:
+        _LOG.debug("Paired percentage = 0 (no sam read orders)")
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     with (
