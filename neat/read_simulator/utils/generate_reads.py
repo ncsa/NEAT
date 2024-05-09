@@ -425,7 +425,7 @@ def generate_reads(reference: SeqRecord,
     if singletons.size:
         singletons = merge_sort(singletons)
 
-    # determine sam read order. It should be paired reads, then singletons, unles one or the other is missing.
+    # determine sam read order. It should be paired reads, then singletons, unless one or the other is missing.
     if paired_reads.size and singletons.size:
         sam_read_order = np.concatenate((paired_reads, singletons))
     elif paired_reads.size:
