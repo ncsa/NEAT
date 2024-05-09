@@ -9,8 +9,6 @@ from Bio import SeqRecord
 from Bio.Seq import Seq
 from numpy.random import Generator
 from bisect import bisect_left, bisect_right
-from scipy.stats import ks_2samp
-from matplotlib import pyplot as plt
 
 from ...models import SequencingErrorModel, GcModel, FragmentLengthModel
 from .options import Options
@@ -90,13 +88,12 @@ def cover_dataset(
         # single ended case
         fragment_pool = [options.read_len]
 
-    _LOG.debug("Covering dataset")
-
     # We need a window to cover. If window size of the gc model is greater than read length, then we'll call it 1,
     # meaning 1 section of the target vector.
     read_window_width = max(max(fragment_pool)//gc_bias_model.window_size, 1)
 
-    total_number_reads = 0
+    # A quarter of a read length
+    quarter_read = options.read_len//4
     # for each position, the set of reads covering that position.
     for i in range(len(target_vector)-read_window_width):
         section_id = (i, i+read_window_width)
@@ -107,7 +104,7 @@ def cover_dataset(
         section_max = max(final_coverage[i: i+read_window_width])
         if section_max >= subsection_target:
             # we have enough reads here, move on.
-            i += 1
+            i += options.rng.choice(list(range(quarter_read)))
             continue
 
         # We need to know where we are along the reference contig. We are i * read_window_widths in,
@@ -259,7 +256,14 @@ def final_subsetting(
     """
 
     # Throw out fully empty reads.
-    filtered_candidates = [x for x in candidate_reads if any(x)]
+    filtered_candidates = []
+    for read in candidate_reads:
+        if not any(read):
+            continue
+        elif read.count('N') > len(read)/2:
+            continue
+        else:
+            filtered_candidates.append(read)
 
     # if we're under target, we want to make up the difference.
     # grab however many we need.
@@ -397,6 +401,8 @@ def generate_reads(reference: SeqRecord,
     # Apply the targeting/discarded rates.
     target_coverage_vector = modify_target_coverage(targeted_regions, discarded_regions, target_coverage_vector)
 
+    _LOG.debug("Covering dataset.")
+    t = time.process_time()
     reads = cover_dataset(
         len(reference),
         target_coverage_vector,
@@ -404,6 +410,7 @@ def generate_reads(reference: SeqRecord,
         gc_bias,
         fraglen_model,
     )
+    _LOG.debug(f"Data set coverage took: {time.process_time() - t}")
 
     # Reads that are paired
     paired_reads = np.asarray([tuple(x) for x in reads if any(x[0:2]) and any(x[2:4])])
@@ -430,12 +437,11 @@ def generate_reads(reference: SeqRecord,
 
     final_sam_dict = {}
 
-    if len(sam_read_order) > 0:
-        _LOG.debug(f"Paired percentage = {len(paired_reads) / len(sam_read_order)}")
-    else:
-        _LOG.debug("Paired percentage = 0 (no sam read orders)")
+    if options.paired_ended:
+        _LOG.debug(f"Paired percentage = {len(paired_reads)/len(sam_read_order)}")
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
+    t = time.process_time()
     with (
         open_output(chrom_fastq_r1) as fq1,
         open_output(chrom_fastq_r2) as fq2
@@ -522,6 +528,8 @@ def generate_reads(reference: SeqRecord,
                 elif options.produce_bam:
                     # If there's no read2, append a 0 placeholder
                     final_sam_dict[final_order_read_index].append(0)
+
+    _LOG.debug(f"Fastqs written in: {time.process_time() - t} s")
 
     if options.produce_bam:
         with open_output(reads_pickle) as reads:
