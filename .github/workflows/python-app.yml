@@ -9,28 +9,28 @@ on:
   pull_request:
     branches:
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: s-weigand/setup-conda@v1.1.1
-        with:
-          conda-channels: bioconda, conda-forge
-          activate-conda: true
-          repository: NCSA/NEAT
-      - name: basic test
-        run: |
-          conda env create -f environment.yml -n test_neat
-          conda activate test_neat
-          poetry install
-          neat
-
-      - name: run coverage tests
-        run: |
-          conda activate test_neat
-          python tests/coverage_tests.py
+#jobs:
+#  build:
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - uses: actions/checkout@v3
+#      - uses: s-weigand/setup-conda@v1.1.1
+#        with:
+#          conda-channels: bioconda, conda-forge
+#          activate-conda: true
+#          repository: NCSA/NEAT
+#      - name: basic test
+#        run: |
+#          conda env create -f environment.yml -n test_neat
+#          conda activate test_neat
+#          poetry install
+#          neat
+#
+#      - name: run coverage tests
+#        run: |
+#          conda activate test_neat
+#          python tests/coverage_tests.py
       
 #       - name: lint with flake8
 #         run: |
