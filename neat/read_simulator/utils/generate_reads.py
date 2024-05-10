@@ -313,7 +313,12 @@ def replace_n(segment: Seq, rng: Generator) -> Seq:
     return Seq(modified_segment)
 
 
-def modify_target_coverage(target_regions: list, discard_regions: list, coverage_vector: np.ndarray, coverage: int):
+def modify_target_coverage(
+        target_regions: list,
+        discard_regions: list,
+        coverage_vector: np.ndarray,
+        coverage: int,
+        target_shape: int):
     """
     Modifies the coverage vector by applying the list of regions. For this version, areas
     outside the regions have coverage adjusted by the off_target_percent
@@ -321,11 +326,10 @@ def modify_target_coverage(target_regions: list, discard_regions: list, coverage
     :param target_regions: A list of intervals to target, extracted from a bed file
     :param discard_regions: A list of regions to throw out, extracted from a bed file
     :param coverage_vector: The target coverage vector, which will be modified
-    :return: The updated target coverage vector.
+    :param coverage: The target coverage value at this position
+    :param target_shape: The size of the bins in the final output
+    :return: The updated target coverage vector, binned into target_shape sized bins.
     """
-
-    # this will tabulate values for included regions first, then for excluded regions. Hopefully both are not present.
-    # If only one is present, the other should not change it.
 
     for region in target_regions:
         # in the included regions, any are marked false is to be excluded. Everything else remains untouched
@@ -334,11 +338,21 @@ def modify_target_coverage(target_regions: list, discard_regions: list, coverage
 
     for region in discard_regions:
         # in the discard regions section, a True indicates this region falls
-        # within a discard bed and should be discarded
+        # within a discard bed and should be discarded. Note that this will discard regions if the discard and target
+        # beds overlap
         if region[2]:
             coverage_vector[region[0]: region[1]] = [0] * (region[1] - region[0])
 
-    return coverage_vector
+    # now for the final coverage vector, we need to bin by the window bias in the gc-bias model
+    start = 0
+    final_coverage_vector = []
+    for i in range(target_shape, len(coverage_vector), target_shape):
+        subsection = coverage_vector[start: i]
+        subsection_average = round(sum(subsection)/len(subsection))  # round() with no second argument returns an int
+        final_coverage_vector.append(subsection_average)
+        start = i
+
+    return final_coverage_vector
 
 
 def merge_sort(my_array: np.ndarray):
@@ -404,9 +418,13 @@ def generate_reads(reference: SeqRecord,
         # I'm trying to move this section into cover_dataset.
         # target_coverage_vector = gc_bias.create_coverage_bias_vector(target_coverage_vector, reference.seq.upper())
 
+    # We want to bin the coverage into window-sized segments to speed up calculations.
+    # This divides the segment into len(reference) // window_size (integer division).
+    target_shape = len(reference) // gc_bias.window_size
+
     # Apply the targeting/discarded rates.
     target_coverage_vector = modify_target_coverage(
-        targeted_regions, discarded_regions, target_coverage_vector, options.coverage
+        targeted_regions, discarded_regions, target_coverage_vector, options.coverage, target_shape
     )
 
     _LOG.debug("Covering dataset.")
