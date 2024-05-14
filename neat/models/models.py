@@ -21,7 +21,6 @@ from ..common import TRINUC_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
 from .default_gc_bias_model import *
-from .default_fraglen_model import *
 from .utils import bin_scores, take_closest
 
 __all__ = [
@@ -600,53 +599,28 @@ class FragmentLengthModel:
 
     :param fragment_mean: the mean of the collection of fragment lengths derived from data
     :param fragment_std: the standard deviation of the collection of fragment lengths derived from data
-    :param fragment_max: the largest fragment observed in the data
-    :param fragment_min: the smallest fragment observed in data
     :param rng: the random number generator for the run
     """
 
     def __init__(self,
-                 fragment_mean: float = None,
-                 fragment_std: float = None,
-                 fragment_max: int = None,
-                 fragment_min: int = None,
+                 fragment_mean: float,
+                 fragment_std: float,
                  rng: Generator = None):
-        self.fragment_mean = fragment_mean if fragment_mean else default_fragment_mean
-        self.fragment_st_dev = fragment_std if fragment_std else default_fragment_std
-        self.fragment_max = fragment_max if fragment_max else default_fragment_max
-        self.fragment_min = fragment_min if fragment_min else default_fragment_min
+        self.fragment_mean = fragment_mean
+        self.fragment_st_dev = fragment_std
         self.rng = rng
 
     def generate_fragments(self,
                            total_length: int,
-                           read_length: int,
-                           coverage: int) -> list:
+                           number_of_fragments: int) -> list:
         """
         Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set
 
         :param total_length: Length of the reference segment we are covering.
-        :param read_length: average length of the reads
-        :param coverage: the target coverage number
+        :param number_of_fragments: The number of fragments needed.
         :return: A list of fragment random fragment lengths sampled from the model.
         """
-        # Estimate the number of fragments needed (with a 2x padding)
-        number_of_fragments = int(round(total_length / read_length) * (coverage * 2))
-        # Check that we don't have unusable values for fragment mean. Too many fragments under the read length means
-        # NEAT will either get caught in an infinite cycle of sampling fragments but never finding one that works, or
-        # it will only find a few and will run very slowly.
-        if self.fragment_mean < read_length:
-            # Let's just reset the fragment mean to make up for this.
-            self.fragment_mean = read_length
         # generates a distribution, assuming normality, then rounds the result and converts to ints
         dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
-        # filter the list to throw out outliers and to set anything under the read length to the read length.
-        dist = [max(x, read_length) for x in dist if x <= self.fragment_max]
-        # Just a sanity check to make sure our data isn't too thin:
-        while number_of_fragments - len(dist) > 0:
-            additional_fragment = self.rng.normal(loc=self.fragment_mean, scale=self.fragment_st_dev)
-            if additional_fragment < read_length:
-                continue
-            dist.append(round(additional_fragment))
 
-        # Now set a minimum on the dataset. Any fragment smaller than read_length gets turned into read_length
-        return dist
+        return list(dist)

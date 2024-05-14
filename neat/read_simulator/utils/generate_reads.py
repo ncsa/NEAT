@@ -3,7 +3,7 @@ import time
 import pickle
 import numpy as np
 
-from math import ceil, floor
+from math import ceil
 from pathlib import Path
 from Bio import SeqRecord
 from Bio.Seq import Seq
@@ -17,7 +17,8 @@ from ...variants import ContigVariants
 from .read import Read
 
 __all__ = [
-    'generate_reads'
+    'generate_reads',
+    'cover_dataset',
 ]
 
 _LOG = logging.getLogger(__name__)
@@ -36,15 +37,18 @@ def is_too_many_n(segment):
     return n / len(segment) >= 0.2
 
 
+"""
+Currently this code block is unused, but I think it might be useful for parallelization, so I wanted to leave it in.
+
 def create_windows(sequence: SeqRecord, size: int, overlap: int):
-    """
-    Create a list of windows. We might need this for parallelization, so I'm leaving the code in place
+    \"""
+    Create a list of windows. Currently Unused. We might need this for parallelization, so I'm leaving the code in place
 
     :param sequence: Sequence to split
     :param size: size of windows
     :param overlap: size of overlap between windows
     :return: list of windows
-    """
+    \"""
     windows = []
     for i in range(0, len(sequence), size):
         if i < overlap and i + size + overlap < len(sequence):
@@ -55,13 +59,12 @@ def create_windows(sequence: SeqRecord, size: int, overlap: int):
             windows.append((i, len(sequence)))
 
     return windows
+"""
 
 
 def cover_dataset(
         span_length: int,
-        target_vector: np.ndarray,
         options: Options,
-        gc_bias_model: GcModel,
         fragment_model: FragmentLengthModel | None,
 ) -> list:
     """
@@ -69,211 +72,79 @@ def cover_dataset(
     to the proper coverage depth. It uses an abstract representation of the reads, by end points.
 
     :param span_length: The total length the cover needs to span
-    :param target_vector: The vector of coverage targets by position
     :param options: The options for the run
-    :param gc_bias_model: The gc-bias model being used for this run.
     :param fragment_model: The fragment model used for to generate random fragment lengths
     """
 
-    # Variables to track reads and current coverage
-    temp_reads = []
-    final_coverage = [0] * len(target_vector)
-    final_reads = []
+    final_reads = set()
+    # precompute how many reads we want
+    # The numerator is the total number of base pair calls needed.
+    # Divide that by read length gives the number of reads needed
+    number_reads = ceil((span_length * options.coverage) / options.read_len)
 
-    # Determine potential fragment lengths
-    if fragment_model:
-        # Paired ended case
-        fragment_pool = fragment_model.generate_fragments(span_length, options.read_len, options.coverage)
-    else:
-        # single ended case
-        fragment_pool = [options.read_len]
+    # We use fragments to model the DNA
+    fragment_pool = fragment_model.generate_fragments(span_length, number_reads * 3)
 
-    # We need a window to cover. If window size of the gc model is greater than read length, then we'll call it 1,
-    # meaning 1 section of the target vector.
-    read_window_width = max(max(fragment_pool)//gc_bias_model.window_size, 1)
-
-    # A quarter of a read length
-    quarter_read = options.read_len//4
-    # for each position, the set of reads covering that position.
-    for i in range(len(target_vector)-read_window_width):
-        section_id = (i, i+read_window_width)
-        subsection_target_vector = target_vector[i: i+read_window_width]
-        subsection_target = ceil(np.mean(subsection_target_vector))
-
-        # Check if we even need to bother this section
-        section_max = max(final_coverage[i: i+read_window_width])
-        if section_max >= subsection_target:
-            # we have enough reads here, move on.
-            i += options.rng.choice(list(range(quarter_read)))
-            continue
-
-        # We need to know where we are along the reference contig. We are i * read_window_widths in,
-        # and each read_window is gc_bias_model.window_size long.
-        start_coordinate = i * read_window_width * gc_bias_model.window_size
-        # read_count counts the reads added to this section
-        read_count = 0
-        # 1.5x as many as needed to give the final set a bit of randomness.
-        temp_pool_size = ceil(subsection_target * 1.5)
-        # debug variable
-        k = 0
-        while read_count < temp_pool_size:
-            # The structure for these reads will be (left_start, left_end, right_start, right_end)
-            # where start and end are ints with end > start. Reads can overlap, so right_start < left_end
-            # is possible, but the reads cannot extend past each other, so right_start < left_start and
-            # left_end > right_end are not possible.
-            if options.paired_ended:
-                left_read_length = right_read_length = options.read_len
-                # Select a random fragment length from the pool.
-                fragment_length = options.rng.choice(fragment_pool)
-            else:
-                left_read_length = options.read_len
-                right_read_length = 0
-                fragment_length = left_read_length
-
-            # Booleans telling us how to deal with the various exceptions below.
-            skip_left = False
-            skip_right = False
-
-            left_start = start_coordinate
-            # This trims the left read to the region of interest
-            left_end = min(span_length, start_coordinate + left_read_length)
-
-            # Make right read, if paired ended, else set it equal to the default
-            if options.paired_ended:
-                # The candidate end points of the paired right read, uncorrected. It starts from the far end, so we
-                # know the end based on the fragment length and we count in from there.
-                uncorrected_right_end = start_coordinate + fragment_length
-                uncorrected_right_start = uncorrected_right_end - right_read_length
-
-                # this trims the raw right read, so that right_start >= left_start and left_end <= right_end
-                # this keeps us from getting unrealistic paired ended reads
-                right_start = max(uncorrected_right_start, left_start)
-                right_end = min(max(uncorrected_right_end, left_end), span_length)
-
-                # Both reads are off the map, so we throw this out:
-                if right_end <= 0:
-                    # Move the start coordinate slightly to see if this keeps things moving.
-                    start_coordinate = min(
-                        max(start_coordinate + options.rng.integers(-10, 10), 0),
-                        span_length - fragment_length - 1
-                    )
-                    k += 1
-                    if k >= 1000:
-                        _LOG.debug(f"skipped {k} times")
-                    continue
-
-            else:
-                skip_right = True
-                right_start = 0
-                right_end = 0
-
-            # Cases that might make us want to skip these reads:
-
-            # Case 1: Truncated left read, unusable
-            if left_end - left_start < left_read_length:
-                # right read is usable if it's not off the map and is at least a read length long
-                if right_start < span_length and \
-                        (right_end - right_start >= right_read_length):
-                    # skip the left read, keep the right read, indicating an unpaired right read
-                    skip_left = True
-                # else, skip both
+    # step 1: Divide the span up into segments drawn froam the fragment pool. Assign reads based on that.
+    # step 2: repeat above until number of reads exceeds number_reads * 1.5
+    # step 3: shuffle pool, then draw number_reads (or number_reads/2 for paired ended) reads to be our reads
+    read_count = 0
+    while read_count <= number_reads:
+        start = 0
+        temp_fragments = []
+        # Breaking the gename into fragments
+        while start < span_length:
+            # We take the first element and put it back on the end to create an endless pool of fragments to draw from
+            fragment = fragment_pool.pop(0)
+            end = min(start + fragment, span_length)
+            # these are equivalent of reads we expect the machine to filter out, but we won't actually use it
+            if end - start < options.read_len:
+                # add some random flavor to try to keep it to falling into a loop
+                if options.rng.normal() < 0.5:
+                    fragment_pool.insert(fragment, len(fragment_pool)//2)
                 else:
-                    skip_left = skip_right = True
+                    fragment_pool.insert(fragment, len(fragment_pool) - 3)
+            else:
+                fragment_pool.append(fragment)
+                temp_fragments.append((start, end))
+            start = end
 
-            # Case 2: Truncated right read, unusable
-            if right_end - right_start < right_read_length:
-                # left read is usable if it's not off the map and has at least half a
-                # read length of usable bases
-                if left_start < span_length and \
-                        (left_end - left_start >= left_read_length):
-                    # Set the right read to (0, 0), indicating an unpaired left read
-                    skip_right = True
-                # else, skip both
-                else:
-                    skip_left = skip_right = True
-
-            if skip_left and skip_right:
-                # If neither read is usable, we'll just move to the next
-                # Move the start coordinate slightly to see if this keeps things moving.
-                start_coordinate = min(
-                    max(start_coordinate + options.rng.integers(-10, 10), 0),
-                    span_length - fragment_length - 1
-                )
-                k += 1
-                if k >= 1000:
-                    _LOG.debug(f"skipped {k} times")
+        # Generating reads from fragments
+        for fragment in temp_fragments:
+            read_start = fragment[0]
+            read_end = read_start + options.read_len
+            # This filters out those small fragments, to give the dataset some realistic variety
+            if read_end > fragment[1]:
                 continue
-
-            if not skip_left:
-                temp_left_read = (left_start, left_end)
             else:
-                temp_left_read = (0, 0)
+                read1 = (read_start, read_end)
+                if options.paired_ended:
+                    # This will be valid because of the check above
+                    read2 = (fragment[1] - options.read_len, fragment[1])
+                else:
+                    read2 = (0, 0)
+                # The structure for these reads will be (left_start, left_end, right_start, right_end)
+                # where start and end are ints with end > start. Reads can overlap, so right_start < left_end
+                # is possible, but the reads cannot extend past each other, so right_start < left_start and
+                # left_end > right_end are not possible.
+                read = read1 + read2
+                if read not in final_reads:
+                    final_reads.add(read)
+                    read_count += 1
 
-            if not skip_right:
-                temp_right_read = (right_start, right_end)
-            else:
-                temp_right_read = (0, 0)
-
-            read_to_add = temp_left_read + temp_right_read
-            temp_reads.append(read_to_add)
-            read_count += 1
-            # bump it a bit to give it a little variety.
-            start_coordinate = min(
-                max(start_coordinate + options.rng.integers(-10, 10), 0),
-                span_length - fragment_length - 1
-            )
-
-        # Subset this set of temporary reads to make sure we don't overdo it.
-        reads_to_add, final_coverage = final_subsetting(
-            candidate_reads=temp_reads,
-            target=subsection_target,
-            coverage_vector=final_coverage,
-            coordinates=section_id,
-            rng=options.rng
-        )
-        final_reads.extend(reads_to_add)
-
-    return final_reads
-
-
-def final_subsetting(
-        candidate_reads: list,
-        target: int,
-        coverage_vector: list,
-        coordinates: tuple,
-        rng: Generator
-) -> (list, list):
-    """
-    The final subsetting for reads. We basically just calculate if we need to subset, then how many final reads we
-    should have, and we draw them randomly without replacement until we have enough.
-
-    :param candidate_reads: The list of reads in the following format: (left_start, left_end, right_start, right_end)
-    :param target: The target coverage value for this section
-    :param coverage_vector: The coverage vector, will be updated with new counts.
-    :param coordinates: The indices of interest.
-    :param rng: The random number generator for the run
-    :return: Two lists, left and right reads, culled to proper coverage depth.
-    """
-
-    # Throw out fully empty reads.
-    filtered_candidates = []
-    for read in candidate_reads:
-        if not any(read):
-            continue
-        elif read.count('N') > len(read)/2:
-            continue
-        else:
-            filtered_candidates.append(read)
-
-    # if we're under target, we want to make up the difference.
-    # grab however many we need.
-    ret_set = rng.choice(filtered_candidates, size=target, replace=False)
-
-    # Update the coverage vector
-    for i in range(coordinates[0], coordinates[1]):
-        coverage_vector[i] += target
-
-    return ret_set, coverage_vector
+    # Convert set to final list
+    final_reads = list(final_reads)
+    # Now we shuffle them to add some randomness
+    options.rng.shuffle(final_reads)
+    # And only return the number we needed
+    if options.paired_ended:
+        # Since each read is actually 2 reads, we only need to return half as many. But to cheat a few extra, we scale
+        # that down slightly to 1.85 reads per read. This factor is arbitrary and may even be a function. But let's see
+        # how well this estimate works
+        return final_reads[:ceil(number_reads/1.85)]
+    else:
+        # Each read lacks a pair, so we need the full number of single ended reads
+        return final_reads[:number_reads]
 
 
 def find_applicable_mutations(my_read: Read, all_variants: ContigVariants) -> dict:
@@ -311,48 +182,6 @@ def replace_n(segment: Seq, rng: Generator) -> Seq:
             modified_segment += rng.choice(ALLOWED_NUCL)
 
     return Seq(modified_segment)
-
-
-def modify_target_coverage(
-        target_regions: list,
-        discard_regions: list,
-        coverage_vector: np.ndarray,
-        coverage: int,
-        target_shape: int):
-    """
-    Modifies the coverage vector by applying the list of regions. For this version, areas
-    outside the regions have coverage adjusted by the off_target_percent
-
-    :param target_regions: A list of intervals to target, extracted from a bed file
-    :param discard_regions: A list of regions to throw out, extracted from a bed file
-    :param coverage_vector: The target coverage vector, which will be modified
-    :param coverage: The target coverage value at this position
-    :param target_shape: The size of the bins in the final output
-    :return: The updated target coverage vector, binned into target_shape sized bins.
-    """
-
-    for region in target_regions:
-        # in the included regions, any are marked false is to be excluded. Everything else remains untouched
-        if not region[2]:
-            coverage_vector[region[0]: region[1]] = [0] * (region[1] - region[0])
-
-    for region in discard_regions:
-        # in the discard regions section, a True indicates this region falls
-        # within a discard bed and should be discarded. Note that this will discard regions if the discard and target
-        # beds overlap
-        if region[2]:
-            coverage_vector[region[0]: region[1]] = [0] * (region[1] - region[0])
-
-    # now for the final coverage vector, we need to bin by the window bias in the gc-bias model
-    start = 0
-    final_coverage_vector = []
-    for i in range(target_shape, len(coverage_vector), target_shape):
-        subsection = coverage_vector[start: i]
-        subsection_average = round(sum(subsection)/len(subsection))  # round() with no second argument returns an int
-        final_coverage_vector.append(subsection_average)
-        start = i
-
-    return final_coverage_vector
 
 
 def merge_sort(my_array: np.ndarray):
@@ -411,60 +240,30 @@ def generate_reads(reference: SeqRecord,
     start = time.time()
 
     base_name = f'{Path(options.output).name}-{chrom}'
-    # Assume uniform coverage
-    target_coverage_vector = np.full(shape=len(reference), fill_value=options.coverage)
-    if not options.no_coverage_bias:
-        pass
-        # I'm trying to move this section into cover_dataset.
-        # target_coverage_vector = gc_bias.create_coverage_bias_vector(target_coverage_vector, reference.seq.upper())
-
-    # We want to bin the coverage into window-sized segments to speed up calculations.
-    # This divides the segment into len(reference) // window_size (integer division).
-    target_shape = len(reference) // gc_bias.window_size
-
-    # Apply the targeting/discarded rates.
-    target_coverage_vector = modify_target_coverage(
-        targeted_regions, discarded_regions, target_coverage_vector, options.coverage, target_shape
-    )
 
     _LOG.debug("Covering dataset.")
     t = time.process_time()
     reads = cover_dataset(
         len(reference),
-        target_coverage_vector,
         options,
-        gc_bias,
         fraglen_model,
     )
-    _LOG.debug(f"Data set coverage took: {time.process_time() - t}")
+    _LOG.debug(f"Dataset coverage took: {time.process_time() - t}")
 
-    # Reads that are paired
-    paired_reads = np.asarray([tuple(x) for x in reads if any(x[0:2]) and any(x[2:4])])
-    if paired_reads.size:
-        paired_reads = merge_sort(paired_reads)
+    # Filters left to apply: N filter... not sure yet what to do with those (output random low quality reads, maybe)
+    # Target regions
+    # discard regions
+    # GC-bias figure out some way to throw out 75% of reads with high GC or AT content (see original gc bias model).
+    # heterozygous variants. Okay, so I've been applying the variant to all but for heterozygous we need to apply the
+    # variant to only some
 
-    # singletons
-    if paired_reads.any():
-        singletons = np.asarray([tuple(x) for x in reads if x not in paired_reads and any(x)])
-    else:
-        singletons = np.asarray([tuple(x) for x in reads if any(x)])
-    if singletons.size:
-        singletons = merge_sort(singletons)
-
-    # determine sam read order. It should be paired reads, then singletons, unless one or the other is missing.
-    if paired_reads.size and singletons.size:
-        sam_read_order = np.concatenate((paired_reads, singletons))
-    elif paired_reads.size:
-        # if singletons is empty
-        sam_read_order = paired_reads
-    else:
-        # if there are no paired reads
-        sam_read_order = singletons
-
+    paired_reads = []
+    singletons = []
     final_sam_dict = {}
-
     if options.paired_ended:
-        _LOG.debug(f"Paired percentage = {len(paired_reads)/len(sam_read_order)}")
+        # This is the orderd the reads will be in when sorted in the final sam file, if we're doing that. They are
+        # easier to sort now as sets of coordinates than they will be later as lines in a file.
+        sam_dict_order = sorted(reads, key=lambda element: (element[0:]))
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     t = time.process_time()
@@ -560,6 +359,9 @@ def generate_reads(reference: SeqRecord,
     if options.produce_bam:
         with open_output(reads_pickle) as reads:
             pickle.dump(final_sam_dict, reads)
+
+    if options.paired_ended:
+        _LOG.debug(f"Paired percentage = {len(paired_reads)/len(sam_read_order)}")
 
     _LOG.info(f"Finished sampling reads in {time.time() - start} seconds")
     return chrom_fastq_r1, chrom_fastq_r2

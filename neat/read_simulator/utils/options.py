@@ -299,18 +299,23 @@ class Options(SimpleNamespace):
             _LOG.info(f"Single threading - 1 thread.")
             # We'll work on multithreading later...
             # _LOG.info(f'Multithreading - {options.threads} threads')
+        if self.fragment_mean:
+            if self.fragment_st_dev:
+                _LOG.info(f'Generating fragments based on mean={self.fragment_mean}, '
+                          f'stand. dev={self.fragment_st_dev}')
+            else:
+                raise ValueError("Provided fragment mean, but no fragment standard deviation!")
         if self.paired_ended:
             _LOG.info(f'Running in paired-ended mode.')
             if self.fragment_model:
                 _LOG.info(f'Using fragment length model: {self.fragment_model}')
-            elif self.fragment_mean and self.fragment_st_dev:
-                _LOG.info(f'Generating fragment model based on mean={self.fragment_mean}, '
-                          f'st dev={self.fragment_st_dev}')
+            elif self.fragment_mean:
+                pass  # Already addressed this above
             else:
                 raise ValueError("Paired ended mode requires either a fragment model or a mean and standard deviation.")
-
         else:
             _LOG.info(f'Running in single-ended mode.')
+
         _LOG.info(f'Using a read length of {self.read_len}')
         _LOG.info(f'Average coverage: {self.coverage}')
         if self.error_model:
