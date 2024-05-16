@@ -1,0 +1,5 @@
+H1N1_HA	22	500	mut_rate=0.001
+H1N1_HA	510	750	mut_rate=0.003
+H1N1_MP	0	900	mut_rate=0.010
+H1N1_NA	47	1400	.
+H1N1_NP	8	1450	mut_rate=0.0005
