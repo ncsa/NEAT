@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: s-weigand/setup-conda@v1.1.1
         with:
-          conda-channels: [bioconda, conda-forge]
+          conda-channels: bioconda, conda-forge
           activate-conda: true
           repository: NCSA/NEAT
       - name: Environment Setup
