@@ -11,7 +11,7 @@
 
 # Absolute path to input reference fasta file
 # type = string | required: yes
-reference: ../data/H1N1.fa
+reference: data/H1N1.fa
 
 # How to partition the reference for analysis. By default, NEAT will
 # attempt to process one contig per thread. However, if you have very
@@ -69,7 +69,7 @@ input_variants: .
 # Absolute path to bed file containing reference regions that the simulation
 # should target.
 # type = string | required = no
-target_bed: ../data/H1N1.bed
+target_bed: data/H1N1.bed
 
 # Scalar value for coverage in regions outside the targeted bed. Example 0.5
 # would get you roughly half the coverage as the on target areas. Default is

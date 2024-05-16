@@ -11,7 +11,7 @@
 
 # Absolute path to input reference fasta file
 # type = string | required: yes
-reference: ../data/H1N1.fa
+reference: data/H1N1.fa
 
 # How to partition the reference for analysis. By default, NEAT will
 # attempt to process one contig per thread. However, if you have very
