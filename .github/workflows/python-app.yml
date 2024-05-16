@@ -28,7 +28,9 @@ jobs:
           cd config_template
 
       - name: Run NEAT Simulation for config_test1
-        run: python -m neat --log-level DEBUG read-simulator -c config_test1.yml -o ../outputs/test1_read-simulator
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c config_test1.yml -o ../outputs/test1_read-simulator
 
       - name: Run NEAT Simulation for config_test2
         run: python -m neat --log-level DEBUG read-simulator -c config_test2.yml -o ../outputs/test2_read-simulator
