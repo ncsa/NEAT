@@ -340,7 +340,7 @@ class OutputFileWriter:
                      SEQ_PACKED[alt_sequence[2 * i + 1].capitalize()]))
 
         # apparently samtools automatically adds 33 to the quality score string...
-        encoded_qual = ''.join([chr(ord(n) - 33) for n in read.read_quality_score])
+        encoded_qual = ''.join([chr(ord(n) - 33) for n in read.read_quality_string])
 
         """
         block_size = 4 +		# refID 		int32
@@ -357,7 +357,7 @@ class OutputFileWriter:
                      len(seq)
         """
 
-        block_size = 32 + len(read.name) + 1 + len(encoded_cig) + len(encoded_seq) + len(read.read_quality_score)
+        block_size = 32 + len(read.name) + 1 + len(encoded_cig) + len(encoded_seq) + len(read.read_quality_string)
 
         bam_handle.write((pack('<i', block_size) +
                           pack('<i', contig_id) +

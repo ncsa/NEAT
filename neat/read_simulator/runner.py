@@ -175,6 +175,7 @@ def read_simulator_runner(config: str, output: str):
     """
     _LOG.info(f'Reading {options.reference}.')
 
+    # TODO check into SeqIO.index_db()
     reference_index = SeqIO.index(str(options.reference), "fasta")
     _LOG.debug("Reference file indexed.")
 
@@ -301,7 +302,7 @@ def read_simulator_runner(config: str, output: str):
             pass
 
         if options.paired_ended:
-            max_qual_score = max(seq_error_model_1.quality_scores + seq_error_model_2.quality_scores)
+            max_qual_score = max(seq_error_model_1.quality_scores, seq_error_model_2.quality_scores)
         else:
             max_qual_score = max(seq_error_model_1.quality_scores)
 
@@ -335,6 +336,7 @@ def read_simulator_runner(config: str, output: str):
                                local_bam_pickle_file,
                                seq_error_model_1,
                                seq_error_model_2,
+                               mut_model,
                                gc_bias_model,
                                fraglen_model,
                                local_variants,

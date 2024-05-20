@@ -10,7 +10,7 @@ from Bio.Seq import Seq
 from numpy.random import Generator
 from bisect import bisect_left, bisect_right
 
-from ...models import SequencingErrorModel, GcModel, FragmentLengthModel
+from ...models import SequencingErrorModel, GcModel, FragmentLengthModel, MutationModel
 from .options import Options
 from ...common import open_input, open_output, ALLOWED_NUCL
 from ...variants import ContigVariants
@@ -19,22 +19,10 @@ from .read import Read
 __all__ = [
     'generate_reads',
     'cover_dataset',
+    'overlaps',
 ]
 
 _LOG = logging.getLogger(__name__)
-
-
-def is_too_many_n(segment):
-    """
-    Checks that the segment is valid and there aren't too many invalid characters in it.
-
-    :param segment: the sequence to check
-    :return: True if there are too many invalid characters, or no reads; False otherwise
-    """
-    if not segment:
-        return True
-    n = segment.upper().count('N')
-    return n / len(segment) >= 0.2
 
 
 """
@@ -198,10 +186,33 @@ def merge_sort(my_array: np.ndarray):
     return ret_array
 
 
+def overlaps(test_interval: tuple[int, int], comparison_interval: tuple[int, int]) -> bool:
+    """
+    This function checks if the read overlaps with an input interval.
+    :param test_interval: the interval to test, expressed as a tuple of end points
+        (understood to be a half-open interval)
+    :param comparison_interval: the interval to check against, expressed as a tuple of end points
+
+    Four situations where we can say there is an overlap:
+       1. The comparison interval contains the test interval start point
+       2. The comparison interval contains the test interval end point
+       3. The comparison interval contains both start and end points of the test interval
+       4. The comparison interval is within the test interval
+    Although 3 is really just a special case of 1 and 2, so we don't need a separate check
+
+    If the read is equal to the interval, then all of these will be trivially true,
+    and we don't need a separate check.
+    """
+    return (comparison_interval[0] < test_interval[1] < comparison_interval[1]) or \
+           (comparison_interval[0] <= test_interval[0] < comparison_interval[1]) or \
+           (test_interval[0] <= comparison_interval[0] and test_interval[1] >= comparison_interval[1])
+
+
 def generate_reads(reference: SeqRecord,
                    reads_pickle: str,
                    error_model_1: SequencingErrorModel,
                    error_model_2: SequencingErrorModel | None,
+                   mutation_model: MutationModel,
                    gc_bias: GcModel,
                    fraglen_model: FragmentLengthModel,
                    contig_variants: ContigVariants,
@@ -219,6 +230,7 @@ def generate_reads(reference: SeqRecord,
     :param reads_pickle: The file to put the reads generated into, for bam creation.
     :param error_model_1: The error model for this run, the forward strand
     :param error_model_2: The error model for this run, reverse strand
+    :param mutation_model: The mutation model for this run
     :param gc_bias: The GC-Bias model for this run
     :param fraglen_model: The fragment length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
@@ -257,13 +269,9 @@ def generate_reads(reference: SeqRecord,
     # heterozygous variants. Okay, so I've been applying the variant to all but for heterozygous we need to apply the
     # variant to only some
 
-    paired_reads = []
+    # These will hold the values as inserted.
+    properly_paired_reads = []
     singletons = []
-    final_sam_dict = {}
-    if options.paired_ended:
-        # This is the orderd the reads will be in when sorted in the final sam file, if we're doing that. They are
-        # easier to sort now as sets of coordinates than they will be later as lines in a file.
-        sam_dict_order = sorted(reads, key=lambda element: (element[0:]))
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     t = time.process_time()
@@ -274,94 +282,150 @@ def generate_reads(reference: SeqRecord,
 
         for i in range(len(reads)):
             print(f'{i/len(reads):.2%}', end='\r')
-            # Added some padding after, in case there are deletions
-            segments = [reference[reads[i][0]: reads[i][1] + 50].seq.upper(),
-                        reference[reads[i][2]: reads[i][3] + 50].seq.upper()]
-            # Check for N concentration
-            # Make sure the segments will come out to at around 80% valid bases
-            # So as not to mess up the calculations, we will skip the padding we added above.
-            if not is_too_many_n(segments[0][:-50] + segments[1][:-50]):
-                read_name = f'{base_name}-{str(i)}'
+            # First thing we'll do is check to see if this read is filtered out by a bed file
+            read1, read2 = (reads[i][0], reads[i][1]), (reads[i][2], reads[i][3])
+            found_read1, found_read2 = False, False
+            # For no target bed, there wil only be one region to check and this will complete very quickly
+            for region in targeted_regions:
+                # If this is a false region, we can skip it
+                if not region[2]:
+                    continue
+                # We need to make sure this hasn't been filtered already, so if any coordinate is nonzero (falsey)
+                if any(read1):
+                    # Check if read1 is in this targeted region (any part of it overlaps)
+                    if overlaps(read1, (region[0], region[1])):
+                        found_read1 = True
+                # Again, make sure it hasn't been filtered, or this is a single-ended read
+                elif any(read2):
+                    if overlaps(read2, (region[0], region[1])):
+                        found_read2 = True
+            # This read was outside of targeted regions
+            if not found_read1:
+                # Filter out this read
+                read1 = (0, 0)
+            if not found_read2:
+                # Note that for single ended reads, it will never find read2 and this does nothing (it's already (0,0))
+                read2 = (0, 0)
 
-                if options.produce_bam:
-                    # This index gives the position of the read for the final bam file
-                    # [0][0] gives us the first index where this occurs (which should be the only one)
-                    final_order_read_index = np.where(sam_read_order == reads[i])[0][0]
-                    if final_order_read_index not in final_sam_dict:
-                        final_sam_dict[final_order_read_index] = []
+            # If there was no discard bed, this will complete very quickly
+            discard_read1, discard_read2 = False, False
+            for region in discarded_regions:
+                # If region[2] is False then this region is not being discarded and we can skip it
+                if not region[2]:
+                    continue
+                # Check to make sure the read isn't already filtered out
+                if any(read1):
+                    if overlaps(read1, (region[0], region[1])):
+                        discard_read1 = True
+                # No need to worry about already filtered reads
+                if any(read2):
+                    if overlaps(read2, (region[0], region[1])):
+                        discard_read2 = True
+            if discard_read1:
+                read1 = (0, 0)
+            if discard_read2:
+                read2 = (0, 0)
 
-                # reads[i] = (left_start, left_end, right_start, right_end)
-                # If there is a read one:
-                if any(reads[i][0:2]):
-                    segment = segments[0]
-                    segment = replace_n(segment, options.rng)
+            # This raw read will replace the original reads[i], and is the raw read with filters applied.
+            raw_read = read1 + read2
 
-                    if any(reads[i][2:4]):
-                        is_paired = True
-                    else:
-                        is_paired = False
+            # If both reads were filtered out, we can move along
+            if not any(raw_read):
+                continue
+            else:
+                # We must have at least 1 read that has data
+                # If only read1 or read2 is absent, this is a singleton
+                read1_is_singleton = False
+                read2_is_singleton = False
+                if not any(read2):
+                    # Note that this includes all single ended reads that passed filter
+                    read1_is_singleton = True
+                    singletons.append(raw_read)
+                elif not any(read1):
+                    read2_is_singleton = True
+                    singletons.append(raw_read)
+                else:
+                    properly_paired_reads.append(raw_read)
 
-                    read1 = Read(name=read_name + "/1",
-                                 raw_read=reads[i],
-                                 reference_segment=segment,
-                                 reference_id=reference.id,
-                                 position=reads[i][0] + ref_start,
-                                 end_point=reads[i][1] + ref_start,
-                                 quality_offset=options.quality_offset,
-                                 is_paired=is_paired
-                                 )
+            read_name = f'{base_name}-{str(i)}'
 
-                    read1.mutations = find_applicable_mutations(read1, contig_variants)
+            # If the other read is marked as a singleton, then this one was filtered out, or these are single-ended
+            if not read2_is_singleton:
+                # It's properly paired if it's not a singleton
+                is_properly_paired = not read1_is_singleton
+                # add a small amount of padding to the end to account for deletions
+                # 30 is basically arbitrary. This may be a function of read length or determinable?
+                # Though we don't figure out the variants until later
+                segment = reference[read1[0]: read1[1] + 30]
 
-                    read1.finalize_read_and_write(error_model_1, fq1, options.produce_fastq)
+                read1 = Read(name=read_name + "/1",
+                             raw_read=raw_read,
+                             reference_segment=segment,
+                             reference_id=reference.id,
+                             position=read1[0] + ref_start,
+                             end_point=read1[1] + ref_start,
+                             quality_offset=options.quality_offset,
+                             is_paired=is_properly_paired
+                             )
 
-                    if options.produce_bam:
-                        # Save this for later
-                        final_sam_dict[final_order_read_index].append(read1)
+                read1.mutations = find_applicable_mutations(read1, contig_variants)
+                read1.finalize_read_and_write(error_model_1, mutation_model, fq1, options.produce_fastq)
 
-                elif options.produce_bam:
-                    # If there's no read1, append a 0 placeholder
-                    final_sam_dict[final_order_read_index].append(0)
+            # if read1 is a sinleton then these are single-ended reads or this one was filtered out, se we skip
+            if not read1_is_singleton:
+                is_properly_paired = not read2_is_singleton
+                # Because this segment reads back to front, we need padding at the beginning.
+                # 30 is arbitrary. This may be a function of read length or determinable?
+                # Though we don't figure out the variants until later
+                segment = reference[read2[0] - 30: read2[1]]
 
-                if any(reads[i][2:4]):
-                    segment = segments[1]
-                    segment = replace_n(segment, options.rng)
+                read2 = Read(name=read_name + "/2",
+                             raw_read=reads[i],
+                             reference_segment=segment,
+                             reference_id=reference.id,
+                             position=read2[0] + ref_start,
+                             end_point=read2[1] + ref_start,
+                             quality_offset=options.quality_offset,
+                             is_reverse=True,
+                             is_paired=is_properly_paired
+                             )
 
-                    if any(reads[i][0:2]):
-                        is_paired = True
-                    else:
-                        is_paired = False
-
-                    read2 = Read(name=read_name + "/2",
-                                 raw_read=reads[i],
-                                 reference_segment=segment,
-                                 reference_id=reference.id,
-                                 position=reads[i][2] + ref_start,
-                                 end_point=reads[i][3] + ref_start,
-                                 quality_offset=options.quality_offset,
-                                 is_reverse=True,
-                                 is_paired=is_paired
-                                 )
-
-                    read2.mutations = find_applicable_mutations(read2, contig_variants)
-                    read2.finalize_read_and_write(error_model_2, fq2, options.produce_fastq)
-
-                    if options.produce_bam:
-                        # Save this for later
-                        final_sam_dict[final_order_read_index].append(read2)
-
-                elif options.produce_bam:
-                    # If there's no read2, append a 0 placeholder
-                    final_sam_dict[final_order_read_index].append(0)
+                read2.mutations = find_applicable_mutations(read2, contig_variants)
+                read2.finalize_read_and_write(error_model_2, fq2, options.produce_fastq)
 
     _LOG.debug(f"Fastqs written in: {time.process_time() - t} s")
 
+    #TODO figure this bit out
+    if options.produce_bam:
+        # Save this for later
+        raw_sam_dict[final_order_read_index].append((read1, read1_is_singleton))
+
+    if options.produce_bam:
+        # Save this for later
+        raw_sam_dict[final_order_read_index].append((read2, read2_is_singleton))
+
+    # This is the order of the reads as they
+    sam_dict_order = []
+    raw_sam_dict = {}
+    if options.paired_ended:
+        # This is the ordered the reads will be in when sorted in the final sam file, if we're doing that. They are
+        # easier to sort now as sets of coordinates than they will be later as lines in a file.
+        sam_dict_order = sorted(reads, key=lambda element: (element[0:]))
+
+    if options.produce_bam:
+        # This index gives the position of the read for the final bam file
+        # [0][0] gives us the first index where this occurs (which should be the only one)
+        final_order_read_index = np.where(sam_dict_order == reads[i])[0][0]
+        if final_order_read_index not in raw_sam_dict:
+            raw_sam_dict[final_order_read_index] = []
+
+
     if options.produce_bam:
         with open_output(reads_pickle) as reads:
-            pickle.dump(final_sam_dict, reads)
+            pickle.dump(raw_sam_dict, reads)
 
     if options.paired_ended:
-        _LOG.debug(f"Paired percentage = {len(paired_reads)/len(sam_read_order)}")
+        _LOG.debug(f"Paired percentage = {len(reads)/len(sam_dict_order)}")
 
     _LOG.info(f"Finished sampling reads in {time.time() - start} seconds")
     return chrom_fastq_r1, chrom_fastq_r2
