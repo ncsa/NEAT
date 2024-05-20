@@ -28,24 +28,18 @@ def pick_ploids(ploidy: int,
     :return: a list of strings representing the genotype of each ploid.
     """
     # number of ploids to make this mutation on (always at least 1)
+    how_many = 1
     if rng.random() < homozygous_frequency:
-        if ploidy <= 2:
-            # If it's homozygous with a ploidy of 2 it's on both.
-            how_many = ploidy
-        else:
-            # if it's polyploid, it's on more than one ploid
-            # TODO may need to improve the modeling for polyploid
-            how_many = 1
-            for i in range(ploidy):
-                # Not totally sure how to model this, so I'm counting each
-                # ploid as a separate homozygous event. That doesn't exactly make
-                # sense though, so we'll improve this later.
-                if rng.random() < homozygous_frequency:
-                    how_many += 1
-                else:
-                    break
+        # We'll consider this one to be homozygous
+        how_many = ploidy
     else:
-        how_many = 1
+        if ploidy == 1:
+            # special case where heteroyzgous makes no sense
+            how_many = 1
+        else:
+            # if it's polyploid, we'll consider it to be on roughly half the ploids
+            # TODO may need to improve the modeling for polyploid, maybe
+            how_many = ploidy//2
 
     # wp is just the temporary genotype list, a hat tip to the old version of NEAT
     wp = np.zeros(ploidy)

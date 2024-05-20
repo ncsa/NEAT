@@ -47,6 +47,7 @@ def write_local_file(vcf_filename: str or Path,
         for loc in variant_data.variant_locations:
             for variant in variant_data[loc]:
                 if not variant.is_input:
+                    # Todo make sure this section still works
                     target_region = find_region(loc, targeted_regions)
                     # This will be True in targeted regions, if a bed is present, or everywhere if not bed is present.
                     # Anything outside defined target regions will be marked false and this `if` will activate.

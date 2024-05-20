@@ -158,3 +158,26 @@ def test_single_ended_mode():
         assert sum(coverage_check) / len(coverage_check) > options.coverage, "Coverage check failed in single-ended mode"
     except Exception as e:
         pytest.fail(f"Test failed in single-ended mode with exception: {e}")
+
+
+def test_overlaps():
+    comparsion_interval = (120, 400)
+
+    interval1 = (0, 151)
+    assert overlaps(interval1, comparsion_interval)  # overlaps
+    interval1 = (385, 421)
+    assert overlaps(interval1, comparsion_interval)  # overlaps
+    interval1 = (130, 281)
+    assert overlaps(interval1, comparsion_interval)  # overlaps
+    interval1 = (120, 400)
+    assert overlaps(interval1, comparsion_interval)  # overlaps
+    interval1 = (100, 500)
+    assert overlaps(interval1, comparsion_interval)  # overlaps
+    interval1 = (0, 100)
+    assert not overlaps(interval1, comparsion_interval)  # doesn't overlap
+    interval1 = (0, 120)
+    assert not overlaps(interval1, comparsion_interval)  # doesn't overlap
+    interval1 = (400, 450)
+    assert not overlaps(interval1, comparsion_interval)  # doesn't overlap
+    interval1 = (500, 700)
+    assert not overlaps(interval1, comparsion_interval)  # doesn't overlap
