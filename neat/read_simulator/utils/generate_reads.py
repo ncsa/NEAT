@@ -260,7 +260,7 @@ def generate_reads(reference: SeqRecord,
         options,
         fraglen_model,
     )
-    _LOG.debug(f"Dataset coverage took: {time.process_time() - t}")
+    _LOG.debug(f"Dataset coverage took: {(time.process_time() - t)/60} m")
 
     # Filters left to apply: N filter... not sure yet what to do with those (output random low quality reads, maybe)
     # Target regions
@@ -337,22 +337,22 @@ def generate_reads(reference: SeqRecord,
                 # If only read1 or read2 is absent, this is a singleton
                 read1_is_singleton = False
                 read2_is_singleton = False
+                properly_paired = False
                 if not any(read2):
                     # Note that this includes all single ended reads that passed filter
                     read1_is_singleton = True
-                    singletons.append(raw_read)
                 elif not any(read1):
+                    # read1 got filtered out
                     read2_is_singleton = True
-                    singletons.append(raw_read)
                 else:
-                    properly_paired_reads.append(raw_read)
+                    properly_paired = True
 
             read_name = f'{base_name}-{str(i)}'
 
             # If the other read is marked as a singleton, then this one was filtered out, or these are single-ended
             if not read2_is_singleton:
                 # It's properly paired if it's not a singleton
-                is_properly_paired = not read1_is_singleton
+                is_paired = not read1_is_singleton
                 # add a small amount of padding to the end to account for deletions
                 # 30 is basically arbitrary. This may be a function of read length or determinable?
                 # Though we don't figure out the variants until later
@@ -365,7 +365,7 @@ def generate_reads(reference: SeqRecord,
                              position=read1[0] + ref_start,
                              end_point=read1[1] + ref_start,
                              quality_offset=options.quality_offset,
-                             is_paired=is_properly_paired
+                             is_paired=is_paired
                              )
 
                 read1.mutations = find_applicable_mutations(read1, contig_variants)
@@ -373,7 +373,7 @@ def generate_reads(reference: SeqRecord,
 
             # if read1 is a sinleton then these are single-ended reads or this one was filtered out, se we skip
             if not read1_is_singleton:
-                is_properly_paired = not read2_is_singleton
+                is_paired = not read2_is_singleton
                 # Because this segment reads back to front, we need padding at the beginning.
                 # 30 is arbitrary. This may be a function of read length or determinable?
                 # Though we don't figure out the variants until later
@@ -387,45 +387,32 @@ def generate_reads(reference: SeqRecord,
                              end_point=read2[1] + ref_start,
                              quality_offset=options.quality_offset,
                              is_reverse=True,
-                             is_paired=is_properly_paired
+                             is_paired=is_paired
                              )
 
                 read2.mutations = find_applicable_mutations(read2, contig_variants)
-                read2.finalize_read_and_write(error_model_2, fq2, options.produce_fastq)
+                read2.finalize_read_and_write(error_model_2, mutation_model, fq2, options.produce_fastq)
+            if properly_paired:
+                properly_paired_reads.append((read1, read2))
+            elif read1_is_singleton:
+                # This will be the choice for all single-ended reads
+                singletons.append(read1)
+            else:
+                singletons.append(read2)
 
-    _LOG.debug(f"Fastqs written in: {time.process_time() - t} s")
-
-    #TODO figure this bit out
-    if options.produce_bam:
-        # Save this for later
-        raw_sam_dict[final_order_read_index].append((read1, read1_is_singleton))
-
-    if options.produce_bam:
-        # Save this for later
-        raw_sam_dict[final_order_read_index].append((read2, read2_is_singleton))
-
-    # This is the order of the reads as they
-    sam_dict_order = []
-    raw_sam_dict = {}
-    if options.paired_ended:
-        # This is the ordered the reads will be in when sorted in the final sam file, if we're doing that. They are
-        # easier to sort now as sets of coordinates than they will be later as lines in a file.
-        sam_dict_order = sorted(reads, key=lambda element: (element[0:]))
+    _LOG.debug(f"Fastqs written in: {(time.process_time() - t)/60:.2f} m")
 
     if options.produce_bam:
-        # This index gives the position of the read for the final bam file
-        # [0][0] gives us the first index where this occurs (which should be the only one)
-        final_order_read_index = np.where(sam_dict_order == reads[i])[0][0]
-        if final_order_read_index not in raw_sam_dict:
-            raw_sam_dict[final_order_read_index] = []
+        # this will give us the proper read order of the elements, for the sam. They are easier to sort now
+        properly_paired_reads = sorted(properly_paired_reads)
+        singletons = sorted(singletons)
+        sam_order = properly_paired_reads + singletons
 
-
-    if options.produce_bam:
         with open_output(reads_pickle) as reads:
-            pickle.dump(raw_sam_dict, reads)
+            pickle.dump(sam_order, reads)
 
-    if options.paired_ended:
-        _LOG.debug(f"Paired percentage = {len(reads)/len(sam_dict_order)}")
+        if options.paired_ended:
+            _LOG.debug(f"Properly paired percentage = {len(properly_paired_reads)/len(sam_order)}")
 
-    _LOG.info(f"Finished sampling reads in {time.time() - start} seconds")
+    _LOG.info(f"Finished sampling reads in {(time.process_time() - start)/60:.2f} m")
     return chrom_fastq_r1, chrom_fastq_r2

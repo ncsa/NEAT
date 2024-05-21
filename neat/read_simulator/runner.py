@@ -302,7 +302,7 @@ def read_simulator_runner(config: str, output: str):
             pass
 
         if options.paired_ended:
-            max_qual_score = max(seq_error_model_1.quality_scores, seq_error_model_2.quality_scores)
+            max_qual_score = max(max(seq_error_model_1.quality_scores), max(seq_error_model_2.quality_scores))
         else:
             max_qual_score = max(seq_error_model_1.quality_scores)
 

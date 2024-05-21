@@ -417,6 +417,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         del_blacklist = []
 
         for index in error_indexes[::-1]:
+            # Skip any N's
+            if reference_segment[index] == 'N':
+                continue
             # determine error type. Most will be SNVs
             error_type = SingleNucleotideVariant
 
@@ -622,5 +625,4 @@ class FragmentLengthModel:
         """
         # generates a distribution, assuming normality, then rounds the result and converts to ints
         dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
-
-        return list(dist)
+        return [abs(x) for x in dist]

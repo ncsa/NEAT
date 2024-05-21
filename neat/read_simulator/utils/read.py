@@ -12,7 +12,7 @@ import numpy as np
 
 from bisect import bisect_right
 from typing import TextIO
-from Bio.Seq import Seq
+from Bio.Seq import Seq, MutableSeq
 from Bio import pairwise2
 from Bio.pairwise2 import format_alignment
 from numpy.random import Generator
@@ -121,7 +121,6 @@ class Read:
             location: int,
             variant_type: str,
             quality_scores: list,
-            rng: Generator,
             quality_score: int = 0
     ):
         """
@@ -139,21 +138,21 @@ class Read:
         if variant_type == "mutation":
             new_quality_score = [quality_score] * len(alternate)
         else:
-            # Since we have an error here, we'll choose a lower score
+            # Since we have an error here, we'll choose a min score
             original_quality_score = self.quality_array[location: location+len(reference)]
             new_quality_score = original_quality_score.copy()
-            # Generate a pool of low scores to choose from:
-            low_scores = quality_scores[:bisect_right(quality_score, max(quality_scores) // 3)]
+            low_score = min(quality_scores)
             # If is insertion
             if len(alternate) > 1:
                 # Generate extra scores for insertions
-                new_quality_score.extend(rng.choice(low_scores, size=len(alternate)-1))
+                # Original ref is unaffected, so it's quality score remains the same
+                new_quality_score = [low_score] * (len(alternate) - 1)
             # If is deletion
             elif len(reference) > 1 and len(alternate) == 1:
-                new_quality_score = new_quality_score[:1]
+                new_quality_score = []
             # SNP
             else:
-                new_quality_score = rng.choice(low_scores, size=1)
+                new_quality_score = [low_score]
 
         # Replace the given quality score with the new one
         self.quality_array = \
@@ -161,7 +160,7 @@ class Read:
                             np.array(new_quality_score),
                             self.quality_array[location+len(reference):]))
 
-    def apply_errors(self, mutated_sequence, err_model):
+    def apply_errors(self, mutated_sequence: MutableSeq, err_model: SequencingErrorModel):
         """
         This function applies errors to a sequence and calls the update_quality_array function after
 
@@ -180,12 +179,11 @@ class Read:
                 error.location,
                 "error",
                 err_model.quality_scores,
-                err_model.rng
             )
 
         return mutated_sequence
 
-    def apply_mutations(self, mutated_sequence: Seq, quality_scores: list, mut_model: MutationModel):
+    def apply_mutations(self, mutated_sequence: MutableSeq, quality_scores: list, mut_model: MutationModel):
         """
         Applying mutations involves one extra step, because of polyploidism. There may be more than one mutation
         at a given location, so it is formulated as a list. We then pick one at random for this read.
@@ -201,8 +199,8 @@ class Read:
 
             # Fetch parameters
             qual_score = variant_to_apply.get_qual_score()
-            # Find the position within the read for this variant
-            position = variant_to_apply.get_0_location() - self.position
+            # Find the position within the read for this variant, cast as a python int, instead of a numpy int
+            position = int(variant_to_apply.get_0_location() - self.position)
             # Figure out if the variant is in this read. If 'to_mutate' selects any 1, then it is mutated.
             to_mutate = mut_model.rng.choice(variant_to_apply.genotype)
             # If a 1 was selected, then apply the variant, else return the original sequence
@@ -212,7 +210,12 @@ class Read:
                     alternate = variant_to_apply.get_alt()
                 elif type(variant_to_apply) == Deletion:
                     reference_length = variant_to_apply.length
-                    alternate = mutated_sequence[position]
+                    try:
+                        alternate = mutated_sequence[position]
+                    except:
+                        print(f"sequence: {mutated_sequence}")
+                        print(f"position: {position}")
+                        raise
                 else:
                     reference_length = variant_to_apply.get_ref_len()
                     alternate = mutated_sequence.get_alt()
@@ -226,7 +229,6 @@ class Read:
                     location,
                     "mutation",
                     quality_scores,
-                    mut_model.rng,
                     qual_score
                 )
 
@@ -245,9 +247,16 @@ class Read:
         :return: the mutated sequence
         """
 
-        # TODO Add filtering for bed files and heterozygosity right here
+        rng = mutation_model.rng
         # The read sequence should have some padding still at this point
-        read_sequence = self.read_sequence.seq
+        read_sequence = MutableSeq(self.read_sequence.seq)
+        # Deal with N's
+        for i in range(len(read_sequence)):
+            if read_sequence[i] == 'N':
+                # for now replace 'N' masked regions with pure noise. We may refine this in time
+                read_sequence[i] = rng.choice(['A', 'C', 'G', 'T'])
+                self.quality_array[i] = min(error_model.quality_scores)
+
         if self.mutations:
             read_sequence = self.apply_mutations(read_sequence, list(error_model.quality_scores), mutation_model)
         if self.errors:
