@@ -130,7 +130,6 @@ class Read:
         :param location: The first position of the mutation, in 0-based coordinates
         :param variant_type: Either "mutations" or "errors"
         :param quality_scores: The possible quality scores, used to adjust for mutations and errors
-        :param rng: The random number generator for the run
         :param quality_score: The quality score to use, since this has already been calculated for mutations.
             This must be included if type is 'mutation'
         :return: None, updates the quality array in place
@@ -178,7 +177,7 @@ class Read:
                 error.alt,
                 error.location,
                 "error",
-                err_model.quality_scores,
+                list(err_model.quality_scores),
             )
 
         return mutated_sequence
@@ -210,12 +209,7 @@ class Read:
                     alternate = variant_to_apply.get_alt()
                 elif type(variant_to_apply) == Deletion:
                     reference_length = variant_to_apply.length
-                    try:
-                        alternate = mutated_sequence[position]
-                    except:
-                        print(f"sequence: {mutated_sequence}")
-                        print(f"position: {position}")
-                        raise
+                    alternate = mutated_sequence[position]
                 else:
                     reference_length = variant_to_apply.get_ref_len()
                     alternate = mutated_sequence.get_alt()
@@ -249,7 +243,7 @@ class Read:
 
         rng = mutation_model.rng
         # The read sequence should have some padding still at this point
-        read_sequence = MutableSeq(self.read_sequence.seq)
+        read_sequence = MutableSeq(self.read_sequence)
         # Deal with N's
         for i in range(len(read_sequence)):
             if read_sequence[i] == 'N':
@@ -353,8 +347,13 @@ class Read:
 
         # These parameters were set to minimize breaks in the mutated sequence and find the best
         # alignment from there.
+        if self.is_reverse:
+            read_sequence = self.read_sequence.reverse_complement().upper()
+        else:
+            read_sequence = self.read_sequence.upper()
+        reference_segment = self.reference_segment.upper()
         raw_alignment = pairwise2.align.localms(
-            self.reference_segment, self.read_sequence, match=1, mismatch=-1, open=-0.5, extend=-0.1,
+            reference_segment, read_sequence, match=1, mismatch=-1, open=-0.5, extend=-0.1,
             penalize_extend_when_opening=True
         )
 
@@ -366,7 +365,8 @@ class Read:
         cig_string = ''
         # Find first match
         start = min([aligned_mut_seq.find(x) for x in ALLOWED_NUCL])
-        for char in range(start, start + len(self.read_sequence)):
+        end = start + len(read_sequence)
+        for char in range(start, end):
             if aligned_template_seq[char] == '-':  # insertion
                 if curr_char == 'I':  # more insertions
                     cig_count = cig_count + 1
@@ -391,7 +391,11 @@ class Read:
                         cig_string = cig_string + str(cig_count) + curr_char
                     curr_char = 'M'
                     cig_count = 1
-        return cig_string + str(cig_count) + curr_char
+        # A check to make sure this doesn't end on a D
+        if curr_char == 'D':
+            return cig_string + str(cig_count) + curr_char + str(cig_count) + 'M'
+        else:
+            return cig_string + str(cig_count) + curr_char
 
     def get_mpos(self):
         """
