@@ -331,7 +331,7 @@ def read_simulator_runner(config: str, output: str):
             fasta_files.extend(local_fasta_file)
 
         if options.produce_fastq or options.produce_bam:
-            read1_fastq, read2_fastq = \
+            read1_fastq_paired, read1_fastq_single, read2_fastq_paired, read2_fastq_single = \
                 generate_reads(local_reference,
                                local_bam_pickle_file,
                                seq_error_model_1,
@@ -346,7 +346,8 @@ def read_simulator_runner(config: str, output: str):
                                options,
                                contig)
 
-            fastq_files.append((read1_fastq, read2_fastq))
+            contig_temp_fastqs = ((read1_fastq_paired, read2_fastq_paired), (read1_fastq_single, read2_fastq_single))
+            fastq_files.append(contig_temp_fastqs)
             if options.produce_bam:
                 sam_reads_files.append(local_bam_pickle_file)
 

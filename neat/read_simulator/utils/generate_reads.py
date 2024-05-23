@@ -16,6 +16,8 @@ from ...common import open_input, open_output, ALLOWED_NUCL
 from ...variants import ContigVariants
 from .read import Read
 
+# TODO check that we're not truncating reads with deletions, but getting a full 151 bases
+
 __all__ = [
     'generate_reads',
     'cover_dataset',
@@ -245,13 +247,20 @@ def generate_reads(reference: SeqRecord,
     :return: A tuple of the filenames for the temp files created
     """
     # Set up files for use. May not need r2, but it's there if we do.
-    chrom_fastq_r1 = temporary_directory / f'{chrom}_tmp_r1.fq.bgz'
-    chrom_fastq_r2 = temporary_directory / f'{chrom}_tmp_r2.fq.bgz'
+    # We will separate the properly paired and the singletons.
+    # For now, we are making an assumption that the chromosome name contains no invalid characters for bash file names
+    # such as `*` or `:` even though those are technically allowed.
+    # We need to insure "chrom" does not contain `_` but we will assume that is the case for now.
+    # TODO We'll need to add some checks to ensure that this is the case.
+    chrom_fastq_r1_paired = temporary_directory / f'{chrom}_r1_paired.fq.bgz'
+    chrom_fastq_r1_single = temporary_directory / f'{chrom}_r1_single.fq.bgz'
+    chrom_fastq_r2_paired = temporary_directory / f'{chrom}_r2_paired.fq.bgz'
+    chrom_fastq_r2_single = temporary_directory / f'{chrom}_r2_single.fq.bgz'
 
     _LOG.info(f'Sampling reads...')
-    start = time.time()
+    start_time = time.time()
 
-    base_name = f'{Path(options.output).name}-{chrom}'
+    base_name = f'NEAT-generated_{chrom}'
 
     _LOG.debug("Covering dataset.")
     t = time.process_time()
@@ -260,7 +269,7 @@ def generate_reads(reference: SeqRecord,
         options,
         fraglen_model,
     )
-    _LOG.debug(f"Dataset coverage took: {(time.process_time() - t)/60} m")
+    _LOG.debug(f"Dataset coverage took: {(time.process_time() - t)/60:.2f} m")
 
     # Filters left to apply: N filter... not sure yet what to do with those (output random low quality reads, maybe)
     # Target regions
@@ -276,8 +285,10 @@ def generate_reads(reference: SeqRecord,
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     t = time.process_time()
     with (
-        open_output(chrom_fastq_r1) as fq1,
-        open_output(chrom_fastq_r2) as fq2
+        open_output(chrom_fastq_r1_paired) as fq1_paired,
+        open_output(chrom_fastq_r1_single) as fq1_single,
+        open_output(chrom_fastq_r2_paired) as fq2_paired,
+        open_output(chrom_fastq_r2_single) as fq2_single
     ):
 
         for i in range(len(reads)):
@@ -296,10 +307,10 @@ def generate_reads(reference: SeqRecord,
                     if overlaps(read1, (region[0], region[1])):
                         found_read1 = True
                 # Again, make sure it hasn't been filtered, or this is a single-ended read
-                elif any(read2):
+                if any(read2):
                     if overlaps(read2, (region[0], region[1])):
                         found_read2 = True
-            # This read was outside of targeted regions
+            # This read was outside targeted regions
             if not found_read1:
                 # Filter out this read
                 read1 = (0, 0)
@@ -347,7 +358,7 @@ def generate_reads(reference: SeqRecord,
                 else:
                     properly_paired = True
 
-            read_name = f'{base_name}-{str(i)}'
+            read_name = f'{base_name}_{str(i)}'
 
             # If the other read is marked as a singleton, then this one was filtered out, or these are single-ended
             if not read2_is_singleton:
@@ -356,20 +367,27 @@ def generate_reads(reference: SeqRecord,
                 # add a small amount of padding to the end to account for deletions
                 # 30 is basically arbitrary. This may be a function of read length or determinable?
                 # Though we don't figure out the variants until later
-                segment = reference[read1[0]: read1[1] + 30]
 
-                read1 = Read(name=read_name + "/1",
-                             raw_read=raw_read,
-                             reference_segment=segment,
-                             reference_id=reference.id,
-                             position=read1[0] + ref_start,
-                             end_point=read1[1] + ref_start,
-                             quality_offset=options.quality_offset,
-                             is_paired=is_paired
-                             )
+                # this start check ensures that we get a valid segment
+                segment = reference[read1[0]: read1[1] + 30].seq
 
-                read1.mutations = find_applicable_mutations(read1, contig_variants)
-                read1.finalize_read_and_write(error_model_1, mutation_model, fq1, options.produce_fastq)
+                read_1 = Read(
+                    name=read_name + "/1",
+                    raw_read=raw_read,
+                    reference_segment=segment,
+                    reference_id=reference.id,
+                    position=read1[0] + ref_start,
+                    end_point=read1[1] + ref_start,
+                    quality_offset=options.quality_offset,
+                    is_paired=is_paired
+                )
+
+                read_1.mutations = find_applicable_mutations(read_1, contig_variants)
+                if is_paired:
+                    handle = fq1_paired
+                else:
+                    handle = fq1_single
+                read_1.finalize_read_and_write(error_model_1, mutation_model, handle, options.produce_fastq)
 
             # if read1 is a sinleton then these are single-ended reads or this one was filtered out, se we skip
             if not read1_is_singleton:
@@ -377,30 +395,39 @@ def generate_reads(reference: SeqRecord,
                 # Because this segment reads back to front, we need padding at the beginning.
                 # 30 is arbitrary. This may be a function of read length or determinable?
                 # Though we don't figure out the variants until later
-                segment = reference[read2[0] - 30: read2[1]]
 
-                read2 = Read(name=read_name + "/2",
-                             raw_read=reads[i],
-                             reference_segment=segment,
-                             reference_id=reference.id,
-                             position=read2[0] + ref_start,
-                             end_point=read2[1] + ref_start,
-                             quality_offset=options.quality_offset,
-                             is_reverse=True,
-                             is_paired=is_paired
-                             )
+                # this start check ensures that we get a valid segment
+                start_cooridnate = max((read2[0] - 30), 0)
+                segment = reference[start_cooridnate: read2[1]].seq
 
-                read2.mutations = find_applicable_mutations(read2, contig_variants)
-                read2.finalize_read_and_write(error_model_2, mutation_model, fq2, options.produce_fastq)
+                read_2 = Read(
+                    name=read_name + "/2",
+                    raw_read=reads[i],
+                    reference_segment=segment,
+                    reference_id=reference.id,
+                    position=read2[0] + ref_start,
+                    end_point=read2[1] + ref_start,
+                    quality_offset=options.quality_offset,
+                    is_reverse=True,
+                    is_paired=is_paired
+                )
+
+                read_2.mutations = find_applicable_mutations(read_2, contig_variants)
+                if is_paired:
+                    handle = fq2_paired
+                else:
+                    handle = fq2_single
+                read_2.finalize_read_and_write(error_model_2, mutation_model, handle, options.produce_fastq)
+
             if properly_paired:
-                properly_paired_reads.append((read1, read2))
+                properly_paired_reads.append((read_1, read_2))
             elif read1_is_singleton:
                 # This will be the choice for all single-ended reads
-                singletons.append(read1)
+                singletons.append((read_1, None))
             else:
-                singletons.append(read2)
+                singletons.append((None, read_2))
 
-    _LOG.debug(f"Fastqs written in: {(time.process_time() - t)/60:.2f} m")
+    _LOG.debug(f"Contig fastq(s) written in: {(time.process_time() - t)/60:.2f} m")
 
     if options.produce_bam:
         # this will give us the proper read order of the elements, for the sam. They are easier to sort now
@@ -414,5 +441,5 @@ def generate_reads(reference: SeqRecord,
         if options.paired_ended:
             _LOG.debug(f"Properly paired percentage = {len(properly_paired_reads)/len(sam_order)}")
 
-    _LOG.info(f"Finished sampling reads in {(time.process_time() - start)/60:.2f} m")
-    return chrom_fastq_r1, chrom_fastq_r2
+    _LOG.info(f"Finished sampling reads in {(time.time() - start_time)/60:.2f} m")
+    return chrom_fastq_r1_paired, chrom_fastq_r1_single, chrom_fastq_r2_paired, chrom_fastq_r2_single
