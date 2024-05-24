@@ -418,9 +418,6 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         del_blacklist = []
 
         for index in error_indexes[::-1]:
-            # Skip any N's
-            if reference_segment[index] == 'N':
-                continue
             # determine error type. Most will be SNVs
             error_type = SingleNucleotideVariant
 
