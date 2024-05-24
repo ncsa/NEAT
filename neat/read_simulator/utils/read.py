@@ -35,6 +35,7 @@ class Read:
     :param reference_id: the ID for the reference where the segment is drawn from
     :param position: First position of the read, relative to the reference
     :param end_point: End point of the read, relative to the reference
+    :param padding: The amount of padding we have for this read, will influence if we can add deletions
     :param is_reverse: Whether the read is reversed
     :param is_paired: Whether this read has a proper pair.
     """
@@ -45,6 +46,7 @@ class Read:
                  reference_id: str,
                  position: int,
                  end_point: int,
+                 padding: int,
                  quality_offset: int,
                  is_reverse: bool = False,
                  is_paired: bool = False):
@@ -55,6 +57,7 @@ class Read:
         self.reference_id = reference_id
         self.position = position
         self.end_point = end_point
+        self.padding = padding
         self.quality_offset = quality_offset
         self.length = end_point - position
         self.is_reverse = is_reverse
@@ -209,13 +212,22 @@ class Read:
                     alternate = variant_to_apply.get_alt()
                 elif type(variant_to_apply) == Deletion:
                     reference_length = variant_to_apply.length
+                    if self.padding - variant_to_apply.length < 0:
+                        # Skip this deletion, as there is insufficient space
+                        self.padding = 0
+                        continue
+                    else:
+                        self.padding -= variant_to_apply.length
                     alternate = mutated_sequence[position]
                 else:
                     reference_length = variant_to_apply.get_ref_len()
                     alternate = mutated_sequence.get_alt()
 
                 # Replace the entire ref with the entire alt
-                mutated_sequence = mutated_sequence[:position] + alternate + mutated_sequence[position + reference_length:]
+                mutated_sequence = \
+                    mutated_sequence[:position] + \
+                    alternate + \
+                    mutated_sequence[position + reference_length:]
 
                 self.update_quality_array(
                     self.reference_segment[location: location+reference_length],
@@ -252,11 +264,12 @@ class Read:
                 self.quality_array[i] = min(error_model.quality_scores)
 
         if self.mutations:
-            read_sequence = self.apply_mutations(read_sequence, list(error_model.quality_scores), mutation_model)
+            read_sequence = self.apply_mutations(
+                read_sequence, list(error_model.quality_scores), mutation_model
+            )
         if self.errors:
             read_sequence = self.apply_errors(read_sequence, error_model)
 
-        read_sequence = read_sequence[:self.length]
         self.quality_array = self.quality_array[:self.length]
 
         return Seq(read_sequence)
@@ -312,18 +325,18 @@ class Read:
         """
 
         # Generate quality scores to cover the extended segment. We'll trim later
-        self.quality_array = err_model.get_quality_scores(len(self.reference_segment))
+        raw_quality_array = err_model.get_quality_scores(len(self.reference_segment))
 
         if self.is_reverse:
-            read_quality_array = self.quality_array[::-1]
+            read_quality_array = raw_quality_array[::-1]
             read_sequence = self.reference_segment.reverse_complement()
         else:
-            read_quality_array = self.quality_array
+            read_quality_array = raw_quality_array
             read_sequence = self.reference_segment
 
-        # Get errors for the read and update the quality score
-        self.errors = err_model.get_sequencing_errors(self.length, read_sequence,
-                                                      read_quality_array)
+        # Get errors for the rea and update the quality score
+        self.errors, self.padding = err_model.get_sequencing_errors(self.length, self.padding, read_sequence,
+                                                                    read_quality_array)
 
         # Update the read as needed:
         self.quality_array = read_quality_array
@@ -332,11 +345,11 @@ class Read:
         self.read_sequence = self.apply_variants_for_final_output(err_model, mut_model)
 
         self.read_quality_string = "".join([chr(x + self.quality_offset) for x in self.quality_array])
-        self.mapping_quality = err_model.rng.poisson(70)
+        self.mapping_quality = abs(err_model.rng.poisson(70))
 
         if produce_fastq:
             fastq_handle.write(f'@{self.name}\n')
-            fastq_handle.write(f'{str(self.read_sequence)}\n')
+            fastq_handle.write(f'{str(self.read_sequence[:self.length])}\n')
             fastq_handle.write('+\n')
             fastq_handle.write(f'{self.read_quality_string}\n')
 
@@ -347,6 +360,8 @@ class Read:
 
         # These parameters were set to minimize breaks in the mutated sequence and find the best
         # alignment from there.
+
+        # We're ignoring soft-masking (lower case letters)
         if self.is_reverse:
             read_sequence = self.read_sequence.reverse_complement().upper()
         else:
@@ -361,29 +376,31 @@ class Read:
         aligned_template_seq = alignment[0]
         aligned_mut_seq = alignment[-2]
         cig_count = 0
+        cig_length = 0
         curr_char = ''
         cig_string = ''
         # Find first match
-        start = min([aligned_mut_seq.find(x) for x in ALLOWED_NUCL])
-        end = start + len(read_sequence)
-        for char in range(start, end):
+        for char in range(len(read_sequence)):
             if aligned_template_seq[char] == '-':  # insertion
                 if curr_char == 'I':  # more insertions
-                    cig_count = cig_count + 1
+                    cig_count += 1
+                    cig_length += 1
                 else:  # new insertion
                     cig_string = cig_string + str(cig_count) + curr_char
                     curr_char = 'I'
                     cig_count = 1
+                    cig_length += 1
             elif aligned_mut_seq[char] == '-':  # deletion
                 if curr_char == 'D':  # more deletions
-                    cig_count = cig_count + 1
+                    cig_count += 1
                 else:  # new deletion
                     cig_string = cig_string + str(cig_count) + curr_char
                     curr_char = 'D'
                     cig_count = 1
             else:  # match
                 if curr_char == 'M':  # more matches
-                    cig_count = cig_count + 1
+                    cig_count += 1
+                    cig_length += 1
                 else:  # new match
                     # If there is anything before this, add it to the string and increment,
                     # else, just increment
@@ -391,11 +408,14 @@ class Read:
                         cig_string = cig_string + str(cig_count) + curr_char
                     curr_char = 'M'
                     cig_count = 1
-        # A check to make sure this doesn't end on a D
-        if curr_char == 'D':
-            return cig_string + str(cig_count) + curr_char + str(cig_count) + 'M'
-        else:
-            return cig_string + str(cig_count) + curr_char
+                    cig_length += 1
+            if cig_length == self.length:
+                break
+
+        if cig_length < self.length:
+            raise ValueError("Problem creating cigar string")
+        # append the final section as we return
+        return cig_string + str(cig_count) + curr_char
 
     def get_mpos(self):
         """

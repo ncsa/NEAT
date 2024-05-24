@@ -358,8 +358,10 @@ def generate_reads(reference: SeqRecord,
                 else:
                     properly_paired = True
 
-            read_name = f'{base_name}_{str(i)}'
+            read_name = f'{base_name}_{str(i+1)}'
 
+            # Initialize variable to track padding
+            padding = 0
             # If the other read is marked as a singleton, then this one was filtered out, or these are single-ended
             if not read2_is_singleton:
                 # It's properly paired if it's not a singleton
@@ -368,8 +370,9 @@ def generate_reads(reference: SeqRecord,
                 # 30 is basically arbitrary. This may be a function of read length or determinable?
                 # Though we don't figure out the variants until later
 
-                # this start check ensures that we get a valid segment
-                segment = reference[read1[0]: read1[1] + 30].seq
+                # upper ensures that we get a segment with NEAT-recognized bases
+                segment = reference[read1[0]: read1[1] + 30].seq.upper()
+                padding = len(segment) - options.read_len
 
                 read_1 = Read(
                     name=read_name + "/1",
@@ -378,6 +381,7 @@ def generate_reads(reference: SeqRecord,
                     reference_id=reference.id,
                     position=read1[0] + ref_start,
                     end_point=read1[1] + ref_start,
+                    padding=padding,
                     quality_offset=options.quality_offset,
                     is_paired=is_paired
                 )
@@ -396,9 +400,14 @@ def generate_reads(reference: SeqRecord,
                 # 30 is arbitrary. This may be a function of read length or determinable?
                 # Though we don't figure out the variants until later
 
-                # this start check ensures that we get a valid segment
-                start_cooridnate = max((read2[0] - 30), 0)
-                segment = reference[start_cooridnate: read2[1]].seq
+                # If we had a certain amount of padding from read_1, we'll use that here
+                if padding:
+                    start_coordinate = max((read2[0] - padding), 0)
+                else:
+                    start_coordinate = max((read2[0] - 30), 0)
+                # upper ensures that we get a segment with NEAT-recognized bases
+                segment = reference[start_coordinate: read2[1]].seq.upper()
+                padding = len(segment) - options.read_len
 
                 read_2 = Read(
                     name=read_name + "/2",
@@ -407,6 +416,7 @@ def generate_reads(reference: SeqRecord,
                     reference_id=reference.id,
                     position=read2[0] + ref_start,
                     end_point=read2[1] + ref_start,
+                    padding=padding,
                     quality_offset=options.quality_offset,
                     is_reverse=True,
                     is_paired=is_paired

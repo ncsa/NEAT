@@ -388,16 +388,17 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
 
     def get_sequencing_errors(self,
                               read_length: int,
+                              padding: int,
                               reference_segment: SeqRecord,
                               quality_scores: np.ndarray):
         """
         Inserts errors of type substitution, insertion, or deletion into read_data, and assigns a quality score
         based on the container model.
         :param read_length: The length of the read to generate errors for.
+        :param padding: this is the amount of space we have in the read for deletions.
         :param reference_segment: The section of the reference from which the read is drawn
         :param quality_scores: Array of quality scores for the read
-        :return: modified sequence and associated quality scores
-
+        :return: Modified sequence and associated quality scores
         """
 
         error_indexes = []
@@ -432,6 +433,10 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # Deletion error
             if error_type == Deletion:
                 deletion_length = self.get_deletion_length()
+                if padding - deletion_length < 0:
+                    # No more space in this read to add deletions
+                    padding = 0
+                    continue
                 deletion_reference = reference_segment.seq[index: index + deletion_length + 1]
                 deletion_alternate = deletion_reference[0]
                 introduced_errors.append(
@@ -439,6 +444,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                 )
                 num_indels_so_far += deletion_length
                 del_blacklist.extend(list(range(index, index + deletion_length)))
+                padding -= deletion_length
 
             elif error_type == Insertion:
                 insertion_length = self.get_insertion_length()
@@ -467,7 +473,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             if introduced_errors[i].location in del_blacklist:
                 del introduced_errors[i]
 
-        return introduced_errors
+        return introduced_errors, max(padding, 0)
 
     def quality_index_remap(self, input_read_length):
         """

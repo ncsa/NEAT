@@ -283,7 +283,7 @@ class OutputFileWriter:
             fastq2_path = Path(self.fastq2_fn)
             fastq2_path.unlink()
 
-    def output_bam_file(self, reads_files: list, contig_dict: dict):
+    def output_bam_file(self, reads_files: list, contig_dict: dict, read_length: int):
         """
         This section is for producing a CIGAR string using a temp sam file(sam file with
         original sequence instead of a cigar string)
@@ -291,6 +291,7 @@ class OutputFileWriter:
         :param reads_files: The list of temp sams to combine
         :param contig_dict: A dictionary with the keys as contigs from the reference,
             and the values the index of that contig
+        :param read_length: the length of the reads for this run
         """
         # TODO incorporate new read list (no longer a dictionary) from generate_reads pickle file
         bam_out = bgzf.BgzfWriter(self.bam_fn, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
@@ -317,19 +318,20 @@ class OutputFileWriter:
                 read1 = read_data[0]
                 read2 = read_data[1]
                 if read1:
-                    self.write_bam_record(read1, contig_dict[read1.reference_id], bam_out)
+                    self.write_bam_record(read1, contig_dict[read1.reference_id], bam_out, read_length)
 
                 if read2:
-                    self.write_bam_record(read2, contig_dict[read2.reference_id], bam_out)
+                    self.write_bam_record(read2, contig_dict[read2.reference_id], bam_out, read_length)
         bam_out.close()
 
-    def write_bam_record(self, read: Read, contig_id: int, bam_handle: bgzf.BgzfWriter):
+    def write_bam_record(self, read: Read, contig_id: int, bam_handle: bgzf.BgzfWriter, read_length: int):
         """
         Takes a read object and writes it out as a bam record
 
         :param read: a read object containing everything we need to write it out.
         :param contig_id: the index of the reference for this
         :param bam_handle: the handle of the file object to write to.
+        :param read_length: the length of the read to output
         """
         read_bin = reg2bin(read.position, read.end_point)
 
@@ -356,8 +358,8 @@ class OutputFileWriter:
         for i in range(cig_ops):
             encoded_cig.extend(pack('<I', (cig_numbers[i] << 4) + CIGAR_PACKED[cig_letters[i]]))
         encoded_seq = bytearray()
-        encoded_len = (len(alt_sequence) + 1) // 2
-        seq_len = len(alt_sequence)
+        encoded_len = (read_length + 1) // 2
+        seq_len = read_length
         if seq_len & 1:
             alt_sequence += '='
         for i in range(encoded_len):
@@ -369,7 +371,7 @@ class OutputFileWriter:
                      SEQ_PACKED[alt_sequence[2 * i + 1].capitalize()]))
 
         # apparently samtools automatically adds 33 to the quality score string...
-        encoded_qual = ''.join([chr(ord(n) - 33) for n in read.read_quality_string])
+        encoded_qual = ''.join([chr(ord(n) - 33) for n in read.read_quality_string[:read_length]])
 
         """
         block_size = 4 +		# refID 		int32

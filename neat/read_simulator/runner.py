@@ -371,4 +371,4 @@ def read_simulator_runner(config: str, output: str):
         _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")
         contig_list = list(reference_index)
         contigs_by_index = {contig_list[n]: n for n in range(len(contig_list))}
-        output_file_writer.output_bam_file(sam_reads_files, contigs_by_index)
+        output_file_writer.output_bam_file(sam_reads_files, contigs_by_index, options.read_len)
