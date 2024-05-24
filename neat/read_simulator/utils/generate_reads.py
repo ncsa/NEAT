@@ -154,26 +154,6 @@ def find_applicable_mutations(my_read: Read, all_variants: ContigVariants) -> di
     return return_dict
 
 
-def replace_n(segment: Seq, rng: Generator) -> Seq:
-    """
-    Replaces invalid characters with random valid characters
-
-    :param segment: A Seq object containing a DNA sequence
-    :param rng: The random number generator for the run
-    :return: The modified sequence object
-    """
-    modified_segment = ""
-    # This takes care of soft masking
-    segment_no_mask = segment.upper()
-    for base in segment_no_mask:
-        if base in ALLOWED_NUCL:
-            modified_segment += base
-        else:
-            modified_segment += rng.choice(ALLOWED_NUCL)
-
-    return Seq(modified_segment)
-
-
 def merge_sort(my_array: np.ndarray):
     """
     This sorts the reads in reverse position, merging as it goes, in order to get the proper order
@@ -369,9 +349,8 @@ def generate_reads(reference: SeqRecord,
                 # add a small amount of padding to the end to account for deletions
                 # 30 is basically arbitrary. This may be a function of read length or determinable?
                 # Though we don't figure out the variants until later
+                segment = reference[read1[0]: read1[1] + 30].seq
 
-                # upper ensures that we get a segment with NEAT-recognized bases
-                segment = reference[read1[0]: read1[1] + 30].seq.upper()
                 padding = len(segment) - options.read_len
 
                 read_1 = Read(
@@ -405,8 +384,8 @@ def generate_reads(reference: SeqRecord,
                     start_coordinate = max((read2[0] - padding), 0)
                 else:
                     start_coordinate = max((read2[0] - 30), 0)
-                # upper ensures that we get a segment with NEAT-recognized bases
-                segment = reference[start_coordinate: read2[1]].seq.upper()
+                # this ensures that we get a segment with NEAT-recognized bases
+                segment = reference[start_coordinate: read2[1]].seq
                 padding = len(segment) - options.read_len
 
                 read_2 = Read(

@@ -162,18 +162,18 @@ class Read:
                             np.array(new_quality_score),
                             self.quality_array[location+len(reference):]))
 
-    def apply_errors(self, mutated_sequence: MutableSeq, err_model: SequencingErrorModel):
+    def apply_errors(self, err_model: SequencingErrorModel):
         """
         This function applies errors to a sequence and calls the update_quality_array function after
 
-        :param mutated_sequence: The sequence to add errors to.
         :param err_model: The error model for this run,
         :return: None, The sequence, with errors applied
         """
+        mutated_sequence = ""
         for error in self.errors:
             # Replace the entire ref sequence with the entire alt sequence
             mutated_sequence = \
-                mutated_sequence[:error.location] + error.alt + mutated_sequence[error.location+len(error.ref):]
+                self.read_sequence[:error.location] + error.alt + self.read_sequence[error.location+len(error.ref):]
             # update quality score for error
             self.update_quality_array(
                 error.ref,
@@ -183,19 +183,18 @@ class Read:
                 list(err_model.quality_scores),
             )
 
-        return mutated_sequence
+        self.read_sequence = Seq(mutated_sequence)
 
-    def apply_mutations(self, mutated_sequence: MutableSeq, quality_scores: list, mut_model: MutationModel):
+    def apply_mutations(self, quality_scores: list, mut_model: MutationModel):
         """
         Applying mutations involves one extra step, because of polyploidism. There may be more than one mutation
         at a given location, so it is formulated as a list. We then pick one at random for this read.
 
-        :param mutated_sequence: The sequence we are applying the variant to
         :param quality_scores: The possible quality scores for this run (to update quality scores)
         :param mut_model: The mutation model for the run, used for the zygosity and for the rng
         :return: mutated sequence, with mutations applied
         """
-
+        mutated_sequence = ""
         for location in self.mutations:
             variant_to_apply = mut_model.rng.choice(self.mutations[location])
 
@@ -218,10 +217,10 @@ class Read:
                         continue
                     else:
                         self.padding -= variant_to_apply.length
-                    alternate = mutated_sequence[position]
+                    alternate = self.read_sequence[position]
                 else:
                     reference_length = variant_to_apply.get_ref_len()
-                    alternate = mutated_sequence.get_alt()
+                    alternate = self.read_sequence.get_alt()
 
                 # Replace the entire ref with the entire alt
                 mutated_sequence = \
@@ -244,7 +243,7 @@ class Read:
             self,
             error_model: SequencingErrorModel,
             mutation_model: MutationModel
-    ) -> Seq:
+    ):
         """
         Gets mutated sequence to output for fastq/bam
 
@@ -252,27 +251,19 @@ class Read:
         :param mutation_model: The mutation model for the run
         :return: the mutated sequence
         """
-
-        rng = mutation_model.rng
-        # The read sequence should have some padding still at this point
-        read_sequence = MutableSeq(self.read_sequence)
-        # Deal with N's
-        for i in range(len(read_sequence)):
-            if read_sequence[i] == 'N':
-                # for now replace 'N' masked regions with pure noise. We may refine this in time
-                read_sequence[i] = rng.choice(['A', 'C', 'G', 'T'])
-                self.quality_array[i] = min(error_model.quality_scores)
-
+        # I realize that it's a little weird to convert self.read_sequence to mutable then assign to a variable
+        # instead of operating on it in place, but while it is mutable, it was easier to treat it like a variable then
+        # reconvert and reassign.
         if self.mutations:
-            read_sequence = self.apply_mutations(
-                read_sequence, list(error_model.quality_scores), mutation_model
-            )
+            self.apply_mutations(list(error_model.quality_scores), mutation_model)
         if self.errors:
-            read_sequence = self.apply_errors(read_sequence, error_model)
+            self.apply_errors(error_model)
 
+        # The segments we hold off truncating because we need them for alignments,
+        # but the quality array is fine to trim here.
         self.quality_array = self.quality_array[:self.length]
-
-        return Seq(read_sequence)
+        # Convert back to immutable
+        self.read_sequence = Seq(self.read_sequence)
 
     def contains(self, test_pos: int):
         return self.position <= test_pos < self.end_point
@@ -325,24 +316,21 @@ class Read:
         """
 
         # Generate quality scores to cover the extended segment. We'll trim later
-        raw_quality_array = err_model.get_quality_scores(len(self.reference_segment))
+        self.quality_array = err_model.get_quality_scores(len(self.reference_segment))
 
-        if self.is_reverse:
-            read_quality_array = raw_quality_array[::-1]
-            read_sequence = self.reference_segment.reverse_complement()
-        else:
-            read_quality_array = raw_quality_array
-            read_sequence = self.reference_segment
+        # This replaces either hard or soft-masked reference segment with upper case or a standard repeat
+        # It updates the quality array and reference segment in place, including reversing them, if appropriate
+        self.convert_masking(err_model)
 
         # Get errors for the rea and update the quality score
-        self.errors, self.padding = err_model.get_sequencing_errors(self.length, self.padding, read_sequence,
-                                                                    read_quality_array)
+        self.errors, self.padding = err_model.get_sequencing_errors(self.length, self.padding, self.reference_segment,
+                                                                    self.quality_array)
 
-        # Update the read as needed:
-        self.quality_array = read_quality_array
-        self.read_sequence = read_sequence
+        # Update the read sequence to match the reference
+        self.read_sequence = self.reference_segment
 
-        self.read_sequence = self.apply_variants_for_final_output(err_model, mut_model)
+        # This applies any variants, updates quality score and read sequence in place
+        self.apply_variants_for_final_output(err_model, mut_model)
 
         self.read_quality_string = "".join([chr(x + self.quality_offset) for x in self.quality_array])
         self.mapping_quality = abs(err_model.rng.poisson(70))
@@ -352,6 +340,41 @@ class Read:
             fastq_handle.write(f'{str(self.read_sequence[:self.length])}\n')
             fastq_handle.write('+\n')
             fastq_handle.write(f'{self.read_quality_string}\n')
+
+    def convert_masking(self, error_model: SequencingErrorModel):
+        """
+        Replaces invalid characters with random valid characters drawn from a standard repeat sequence seen in a lot
+        of different species (TTAGGG). If there is call for it, we can make this customizable to species.
+
+        :param error_model: The error model for this run
+        :return: The modified sequence object
+        """
+        bad_score = min(error_model.quality_scores)
+        # we'll use generic human repeats, as commonly found in masked regions. We may refine this to make configurable
+        repeat_bases = list("TTAGGG")
+        modified_segment = ""
+        modified_quality_array = self.quality_array.copy()
+        if self.is_reverse:
+            raw_segment = self.reference_segment.reverse_complement()
+            modified_quality_array = modified_quality_array[::-1]
+        else:
+            raw_segment = self.reference_segment
+
+        for i in range(len(raw_segment)):
+            base = raw_segment[i]
+            if base.islower():
+                modified_base = base.upper()
+                modified_quality_array[i] = bad_score
+            else:
+                modified_base = base
+            if modified_base in ALLOWED_NUCL:
+                modified_segment += modified_base
+            else:
+                modified_segment += repeat_bases[i % 6]
+                modified_quality_array[i] = bad_score
+
+        self.reference_segment = Seq(modified_segment)
+        self.quality_array = modified_quality_array
 
     def make_cigar(self):
         """
