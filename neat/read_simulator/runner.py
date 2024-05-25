@@ -9,8 +9,8 @@ import gzip
 from Bio import SeqIO
 from pathlib import Path
 
-from .utils import Options, parse_input_vcf, parse_beds, fill_out_bed_dict, OutputFileWriter, find_file_breaks, \
-    map_chromosome, generate_variants, write_local_file, generate_reads
+from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter, find_file_breaks, \
+    generate_variants, write_local_file, generate_reads
 from ..common import validate_input_path, validate_output_path
 from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, GcModel
 from ..models.default_cancer_mutation_model import *
@@ -45,7 +45,7 @@ def initialize_all_models(options: Options):
 
     cancer_model = None
     if options.cancer and options.cancer_model:
-        cancer_model = pickle.load(gzip.open(options.cancer_model))
+        # cancer_model = pickle.load(gzip.open(options.cancer_model))
         # Set the rng for the cancer mutation model
         cancer_model.rng = options.rng
     elif options.cancer:

@@ -8,24 +8,19 @@ __all__ = [
 
 import gzip
 import re
-import shutil
+import time
 from struct import pack
 import logging
-import pysam
-import numpy as np
 import pickle
 
 from Bio import bgzf
 from Bio import SeqIO
-from Bio.Seq import Seq, MutableSeq
-from typing import Iterator, TextIO
 from pathlib import Path
 from numpy.random import Generator
 
 from ...common import validate_output_path, open_output, open_input, ALLOWED_NUCL
 from .read import Read
 from .options import Options
-from .neat_cigar import CigarString
 
 _LOG = logging.getLogger(__name__)
 
@@ -203,6 +198,7 @@ class OutputFileWriter:
 
         paired_files = []
         singleton_files = []
+        t = time.process_time()
 
         # First split the files into 2 categories. For paired ended reads, most reads will be paired, though some may
         # have gotten filtered out with input files. We will append any singletons in paired ended mode at the end,
@@ -230,10 +226,10 @@ class OutputFileWriter:
         for file_pair in singleton_files:
             if file_pair[0]:
                 file_index = SeqIO.index(str(file_pair[0]), 'fastq')
-                contig_name = Path(file_pair[0]).name.strip('_r1_single.fq.bgz')
+                contig_name = Path(file_pair[0]).name.removesuffix('_r1_single.fq.bgz')
             elif file_pair[1]:
                 file_index = SeqIO.index(str(file_pair[1]), 'fastq')
-                contig_name = Path(file_pair[1]).name.strip('_r2_single.fq.bgz')
+                contig_name = Path(file_pair[1]).name.removesuffix('_r2_single.fq.bgz')
             else:
                 # So singletons for this contig, so move on
                 continue
@@ -259,10 +255,14 @@ class OutputFileWriter:
             open_output(self.fastq2_fn) as fq2
         ):
             # First we add all properly paired reads
-            for i in range(len(shuffled_paired_keys)):
+            num_reads = len(shuffled_paired_keys)
+            for i in range(num_reads):
+                print(f'{i/num_reads:.2%}', end='\r')
                 current_key = shuffled_paired_keys[i]
                 # reconstruct tho chromosome name
-                chrom_name = current_key[0].removeprefix("NEAT-generated_").split('_')[0]
+                chrom_name_with_rdnm = current_key[0].removeprefix("NEAT-generated_").split('/')[0]
+                suffix = re.findall(r"_\d*$", chrom_name_with_rdnm)[0]
+                chrom_name = chrom_name_with_rdnm.removesuffix(suffix)
                 # 1 here because this is read1
                 read1 = fastq_index_dict[chrom_name][1][current_key[0]]
                 SeqIO.write(read1, fq1, 'fastq')
@@ -275,13 +275,16 @@ class OutputFileWriter:
             # Next we add the strays (or all reads, for single-ended)
             for j in range(len(shuffled_singleton_keys)):
                 current_key = shuffled_singleton_keys[j]
-                chrom_name = current_key[0].removeprefix("NEAT_generated_").split('_')[0]
-                read = fastq_index_dict[chrom_name][1][current_key[0]]
+                chrom_name_with_rdnm = current_key.removeprefix("NEAT-generated_").split('/')[0]
+                suffix = re.findall(r"_\d*$", chrom_name_with_rdnm)[0]
+                chrom_name = chrom_name_with_rdnm.removesuffix(suffix)
+                read = fastq_index_dict[chrom_name][1][current_key]
                 SeqIO.write(read, fq1, 'fastq')
 
         if not wrote_r2:
             fastq2_path = Path(self.fastq2_fn)
             fastq2_path.unlink()
+        _LOG.info(f"Fastq(s) written in {(time.process_time() - t)/60:.2f} m")
 
     def output_bam_file(self, reads_files: list, contig_dict: dict, read_length: int):
         """
@@ -293,6 +296,7 @@ class OutputFileWriter:
             and the values the index of that contig
         :param read_length: the length of the reads for this run
         """
+        t = time.process_time()
         bam_out = bgzf.BgzfWriter(self.bam_fn, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
         bam_out.write("BAM\1")
         header = "@HD\tVN:1.4\tSO:coordinate\n"
@@ -330,8 +334,10 @@ class OutputFileWriter:
                 elif is_crap:
                     total_crap += 1
         if total_crap:
-            print(f"n-to-crap correlation: {n_to_crap_correlation/total_crap:.2%}")
+            _LOG.info(f"n-to-crap correlation: {n_to_crap_correlation/total_crap:.2%}")
         bam_out.close()
+
+        _LOG.info(f"Bam written in: {(time.process_time() - t)/60:.2f} m")
 
     def write_bam_record(self, read: Read, contig_id: int, bam_handle: bgzf.BgzfWriter, read_length: int):
         """
