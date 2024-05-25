@@ -293,7 +293,6 @@ class OutputFileWriter:
             and the values the index of that contig
         :param read_length: the length of the reads for this run
         """
-        # TODO incorporate new read list (no longer a dictionary) from generate_reads pickle file
         bam_out = bgzf.BgzfWriter(self.bam_fn, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
         bam_out.write("BAM\1")
         header = "@HD\tVN:1.4\tSO:coordinate\n"
@@ -312,16 +311,26 @@ class OutputFileWriter:
             bam_out.write(f'{item}\0')
             bam_out.write(pack('<i', self.bam_header[item]))
 
+        n_to_crap_correlation = 0
+        total_crap = 0
         for file in reads_files:
             contig_reads_data = pickle.load(gzip.open(file))
             for read_data in contig_reads_data:
                 read1 = read_data[0]
                 read2 = read_data[1]
+                is_correlated = False
+                is_crap = False
                 if read1:
-                    self.write_bam_record(read1, contig_dict[read1.reference_id], bam_out, read_length)
-
+                    is_correlated, is_crap = self.write_bam_record(read1, contig_dict[read1.reference_id], bam_out, read_length)
                 if read2:
-                    self.write_bam_record(read2, contig_dict[read2.reference_id], bam_out, read_length)
+                    is_correlated, is_crap = self.write_bam_record(read2, contig_dict[read2.reference_id], bam_out, read_length)
+                if is_correlated:
+                    n_to_crap_correlation += 1
+                    total_crap += 1
+                elif is_crap:
+                    total_crap += 1
+        if total_crap:
+            print(f"n-to-crap correlation: {n_to_crap_correlation/total_crap:.2%}")
         bam_out.close()
 
     def write_bam_record(self, read: Read, contig_id: int, bam_handle: bgzf.BgzfWriter, read_length: int):
@@ -340,7 +349,7 @@ class OutputFileWriter:
         template_length = read.get_tlen()
         alt_sequence = read.read_sequence
 
-        cigar = read.make_cigar()
+        cigar, n_corr, crap = read.make_cigar()
 
         cig_letters = re.split(r"\d+", cigar)[1:]
         cig_numbers = [int(n) for n in re.findall(r"\d+", cigar)]
@@ -406,3 +415,4 @@ class OutputFileWriter:
                           encoded_cig +
                           encoded_seq +
                           encoded_qual.encode('utf-8')))
+        return n_corr, crap

@@ -340,18 +340,17 @@ def generate_reads(reference: SeqRecord,
 
             read_name = f'{base_name}_{str(i+1)}'
 
-            # Initialize variable to track padding
-            padding = 0
             # If the other read is marked as a singleton, then this one was filtered out, or these are single-ended
             if not read2_is_singleton:
                 # It's properly paired if it's not a singleton
                 is_paired = not read1_is_singleton
-                # add a small amount of padding to the end to account for deletions
-                # 30 is basically arbitrary. This may be a function of read length or determinable?
-                # Though we don't figure out the variants until later
-                segment = reference[read1[0]: read1[1] + 30].seq
+                # add a small amount of padding to the end to account for deletions.
+                # Trying out this method of using the read-length, which for the default neat run gives ~30.
+                padding = options.read_len//5
+                segment = reference[read1[0]: read1[1] + padding].seq
 
-                padding = len(segment) - options.read_len
+                # if we're at the end of the contig, this may not pick up the full padding
+                actual_padding = len(segment) - options.read_len
 
                 read_1 = Read(
                     name=read_name + "/1",
@@ -360,8 +359,7 @@ def generate_reads(reference: SeqRecord,
                     reference_id=reference.id,
                     position=read1[0] + ref_start,
                     end_point=read1[1] + ref_start,
-                    padding=padding,
-                    quality_offset=options.quality_offset,
+                    padding=actual_padding,
                     is_paired=is_paired
                 )
 
@@ -370,23 +368,20 @@ def generate_reads(reference: SeqRecord,
                     handle = fq1_paired
                 else:
                     handle = fq1_single
-                read_1.finalize_read_and_write(error_model_1, mutation_model, handle, options.produce_fastq)
+                read_1.finalize_read_and_write(
+                    error_model_1, mutation_model, handle, options.quality_offset, options.produce_fastq
+                )
 
             # if read1 is a sinleton then these are single-ended reads or this one was filtered out, se we skip
             if not read1_is_singleton:
                 is_paired = not read2_is_singleton
-                # Because this segment reads back to front, we need padding at the beginning.
-                # 30 is arbitrary. This may be a function of read length or determinable?
-                # Though we don't figure out the variants until later
-
-                # If we had a certain amount of padding from read_1, we'll use that here
-                if padding:
-                    start_coordinate = max((read2[0] - padding), 0)
-                else:
-                    start_coordinate = max((read2[0] - 30), 0)
+                # Padding, as above
+                padding = options.read_len//5
+                start_coordinate = max((read2[0] - padding), 0)
                 # this ensures that we get a segment with NEAT-recognized bases
                 segment = reference[start_coordinate: read2[1]].seq
-                padding = len(segment) - options.read_len
+                # See note above
+                actual_padding = len(segment) - options.read_len
 
                 read_2 = Read(
                     name=read_name + "/2",
@@ -395,8 +390,7 @@ def generate_reads(reference: SeqRecord,
                     reference_id=reference.id,
                     position=read2[0] + ref_start,
                     end_point=read2[1] + ref_start,
-                    padding=padding,
-                    quality_offset=options.quality_offset,
+                    padding=actual_padding,
                     is_reverse=True,
                     is_paired=is_paired
                 )
@@ -406,7 +400,9 @@ def generate_reads(reference: SeqRecord,
                     handle = fq2_paired
                 else:
                     handle = fq2_single
-                read_2.finalize_read_and_write(error_model_2, mutation_model, handle, options.produce_fastq)
+                read_2.finalize_read_and_write(
+                    error_model_2, mutation_model, handle, options.quality_offset, options.produce_fastq
+                )
 
             if properly_paired:
                 properly_paired_reads.append((read_1, read_2))

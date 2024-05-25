@@ -413,7 +413,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                 if self.rng.random() < self.quality_score_error_rate[quality_scores[i]]:
                     error_indexes.append(i)
 
-        num_indels_so_far = 0
+        total_indel_length = 0
         # To prevent deletion collisions
         del_blacklist = []
 
@@ -424,22 +424,22 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # Not too sure about how realistic it is to model errors as indels, but I'm leaving the code in for now.
 
             # This is to prevent deletion error collisions and to keep there from being too many indel errors.
-            if 0 < index < self.read_length - max(self.deletion_len_model) and num_indels_so_far > self.read_length//2:
+            if 0 < index < self.read_length - max(self.deletion_len_model) and total_indel_length > self.read_length//4:
                 error_type = self.rng.choice(a=list(self.variant_probs), p=list(self.variant_probs.values()))
 
             # Deletion error
             if error_type == Deletion:
                 deletion_length = self.get_deletion_length()
                 if padding - deletion_length < 0:
-                    # No more space in this read to add deletions
-                    padding = 0
+                    # No space in this read to add this deletion
                     continue
                 deletion_reference = reference_segment.seq[index: index + deletion_length + 1]
                 deletion_alternate = deletion_reference[0]
                 introduced_errors.append(
                     ErrorContainer(Deletion, index, deletion_length, deletion_reference, deletion_alternate)
                 )
-                num_indels_so_far += deletion_length
+                total_indel_length += deletion_length
+
                 del_blacklist.extend(list(range(index, index + deletion_length)))
                 padding -= deletion_length
 
@@ -451,7 +451,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                 introduced_errors.append(
                     ErrorContainer(Insertion, index, insertion_length, insertion_reference, insertion_alternate)
                 )
-                num_indels_so_far += insertion_length
+                total_indel_length += insertion_length
 
             # Insert substitution error
             # Programmer note: if you add new error types, they can be added as elifs above, leaving the final
