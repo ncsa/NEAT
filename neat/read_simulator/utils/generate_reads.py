@@ -6,13 +6,11 @@ import numpy as np
 from math import ceil
 from pathlib import Path
 from Bio import SeqRecord
-from Bio.Seq import Seq
-from numpy.random import Generator
 from bisect import bisect_left, bisect_right
 
 from ...models import SequencingErrorModel, GcModel, FragmentLengthModel, MutationModel
 from .options import Options
-from ...common import open_input, open_output, ALLOWED_NUCL
+from ...common import open_output
 from ...variants import ContigVariants
 from .read import Read
 
@@ -412,7 +410,7 @@ def generate_reads(reference: SeqRecord,
             else:
                 singletons.append((None, read_2))
 
-    _LOG.debug(f"Contig fastq(s) written in: {(time.process_time() - t)/60:.2f} m")
+    _LOG.info(f"Contig fastq(s) written in: {(time.process_time() - t)/60:.2f} m")
 
     if options.produce_bam:
         # this will give us the proper read order of the elements, for the sam. They are easier to sort now

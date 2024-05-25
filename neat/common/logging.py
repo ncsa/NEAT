@@ -57,4 +57,6 @@ def setup_logging(
 
     logging.basicConfig(**kwargs)
 
+    logging.getLogger(__name__).info(f"writing log to: {log_file}")
+
 
