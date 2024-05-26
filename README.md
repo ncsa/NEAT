@@ -1,4 +1,4 @@
-# The NEAT Project v4.0
+# The NEAT Project v4.2
 Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.2. This release of NEAT includes several fixes and a little bit of restructuring. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes. We have discarded the fasta file writing for now and removed that code. We may add that in as a feature in the future, if users call for it. We also removed GC bias for now. It severely complicated implementation, and had very few noticeable effects. After discussing with some people at the Illinois Institute for Genomic Biology, it sounded like GC bias may be a bit of a non-factor with improved chemistries. These will be reintroduced if needed/called for. 
 
 We are also working on redeveloping NEAT in Rust, a memory and thread safe language that will lend itself well to the way NEAT works, check that out here: https://github.com/ncsa/rusty-neat
