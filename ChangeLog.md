@@ -1,6 +1,16 @@
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
+# NEAT v4.2
+- After several bug fixes that constituted release 4.1 and some minor releases, we are ready to release an overhauled vesion of NEAT 4.0.
+- Removed GC bias - it had little to no effect and made implementation nearly impossible
+- Removed fasta creation - we had tweaked this a bit but never got any feedback. It may come back if requested.
+- Improvements/fixes/full implementations of:
+  - heterozygosity
+  - read creation (now with more reads!)
+  - bam alignment/creation
+  - bed tool incorporation
+
 -Updated "master" branch to "main." - please update your repo accordingly
 # NEAT v4.0
 - Rewritten the models. Models generated on old versions of NEAT will have to be redone, due to the restructuring of the codebase. These new models should be smaller and more efficient. We have replicated the previous default models in the new style. There is no straightforward way to convert between these, unfortuantely.

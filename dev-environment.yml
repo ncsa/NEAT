@@ -134,6 +134,7 @@ dependencies:
   - python-dateutil=2.8.2=pyhd8ed1ab_0
   - python_abi=3.10=2_cp310
   - pyyaml=6.0=py310h5764c6d_4
+  - pytest
   - qt-main=5.15.4=ha5833f6_2
   - readline=8.1.2=h0f457ee_0
   - requests-toolbelt=0.9.1=py_0
