@@ -2,13 +2,13 @@
 This function parses the various bed files that can be input into NEAT. It has a special subtask if the input
 is a mutation rate dictionary, which will parse out the input mutation rates associated with each region.
 """
-import pathlib
 import logging
+import pathlib
 
 from Bio.File import _IndexedSeqFileDict
 
-from ...common import open_input
 from .options import Options
+from ...common import open_input
 
 __all__ = [
     "parse_beds",
@@ -40,17 +40,17 @@ def parse_beds(options: Options, reference_dict: _IndexedSeqFileDict, average_mu
             # (0, chromosome_end, True) would indicate either the entire chromosome was targeted or there was no bed
             # file. Default is to target all regions off all contigs.
             True,
-            True if options.target_bed else False),
+            bool(options.target_bed)),
         1: ("discard",
             # For the discard dict, false indicates the region is not within a discard bed (i.e., it should be included
             # in the final results), whereas True indicates a region to be discarded, according to the bed.
             # For example (0, 10, False), (10, 100, True) would mean we keep reads from 0-10 and discard the
             # ones from 10-100. Default is that there are no discard regions and we keep everything.
             False,
-            True if options.discard_bed else False),
+            bool(options.discard_bed)),
         2: ("mutation",
             average_mutation_rate,  # Default value will be this for all sections
-            True if options.mutation_bed else False)
+            bool(options.mutation_bed))
     }
 
     for i in range(len(bed_files)):
@@ -120,8 +120,8 @@ def parse_single_bed(input_bed: str,
                         # Improperly formatted mutation rate bed file
                         if index == -1:
                             _LOG.error(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})")
-                            _LOG.error(f'4th column of mutation rate bed must be a semicolon list of key, value '
-                                       f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
+                            _LOG.error('4th column of mutation rate bed must be a semicolon list of key, value '
+                                       'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
                             raise ValueError
 
                         # +9 because that's len('mut_rate='). Whatever is that should be our mutation rate.
@@ -131,8 +131,8 @@ def parse_single_bed(input_bed: str,
                             mut_rate = float(mut_rate.split(';')[0])
                         except ValueError:
                             _LOG.error(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})")
-                            _LOG.error(f'4th column of mutation rate bed must be a semicolon list of key, value '
-                                       f'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
+                            _LOG.error('4th column of mutation rate bed must be a semicolon list of key, value '
+                                       'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
                             raise
 
                         if mut_rate > 0.3:
@@ -151,12 +151,12 @@ def parse_single_bed(input_bed: str,
         in_ref_only = [k for k in reference_dictionary if k not in ret_dict]
         if in_ref_only:
             _LOG.warning(f'Warning: Reference contains sequences not found in BED file {input_bed}. '
-                         f'These chromosomes will be omitted from the outputs.')
+                         'These chromosomes will be omitted from the outputs.')
             _LOG.debug(f"In reference only regions: {in_ref_only}")
 
         if in_bed_only:
             _LOG.warning(f'BED file {input_bed} contains sequence names '
-                         f'not found in reference. These regions will be ignored.')
+                         'not found in reference. These regions will be ignored.')
             _LOG.debug(f'Regions ignored: {list(set(in_bed_only))}')
 
     else:

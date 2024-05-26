@@ -6,19 +6,16 @@ of the NEAT generate_reads task and will always be run in a NEAT generate_reads 
 
 import logging
 import time
-import bisect
 import numpy as np
 import re
 
-from copy import deepcopy
 from Bio import SeqRecord
 from numpy.random import Generator
-from pathlib import Path
 
-from ...models import MutationModel, InsertionModel, DeletionModel, SnvModel
+from ...models import MutationModel
 from ...variants import Insertion, Deletion, SingleNucleotideVariant, ContigVariants
 from ..utils import Options
-from ...common import ALLOWED_NUCL, pick_ploids, NUC_IND, DINUC_IND, open_input, open_output
+from ...common import ALLOWED_NUCL, pick_ploids
 
 _LOG = logging.getLogger(__name__)
 
