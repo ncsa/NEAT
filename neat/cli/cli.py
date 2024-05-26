@@ -9,10 +9,10 @@ import traceback
 import time
 import pkgutil
 import sys
-import os
+import uuid
 
 from typing import Final
-from datetime import datetime
+from pathlib import Path
 
 from ..common import setup_logging
 from .commands import BaseCommand
@@ -48,16 +48,10 @@ class Cli:
             help="Set to turn off log file creation."
         )
         self.parser.add_argument(
-            "--log-dir",
-            type=str,
-            default=os.getcwd(),
-            help="directory where to write the log file (default is working directory)"
-        )
-        self.parser.add_argument(
             "--log-name",
             type=str,
             default=f"{time.time()}_NEAT.log",
-            help="Name of the log file to produce, if producing."
+            help="Name of the log file to produce, if producing. Can be a full path."
         )
         self.parser.add_argument(
             "--log-level",
@@ -113,12 +107,16 @@ def main(parser: argparse.ArgumentParser, arguments: list[str]) -> int:
     except SystemExit:
         return 2
 
+    log_file = Path(f'{args.log_name}').with_suffix('.log').resolve()
+    log_file.unlink(missing_ok=True)
+    log_file.touch()
+    print(f"NEAT run log: {log_file}")
+
     setup_logging(
         omit_log=args.no_log,
         severity=args.log_level,
         verbosity=args.log_detail,
-        directory=args.log_dir,
-        filename=args.log_name,
+        file=log_file,
         silent_mode=args.silent_mode
     )
 

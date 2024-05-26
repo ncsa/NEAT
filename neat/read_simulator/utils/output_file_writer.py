@@ -1,5 +1,7 @@
 """
 Functions and classes for writing out the output.
+
+TODO This file is in serious need of refactoring.
 """
 
 __all__ = [
@@ -18,7 +20,7 @@ from Bio import SeqIO
 from pathlib import Path
 from numpy.random import Generator
 
-from ...common import validate_output_path, open_output, open_input, ALLOWED_NUCL
+from ...common import validate_output_path, open_output, open_input
 from .read import Read
 from .options import Options
 
@@ -74,7 +76,6 @@ class OutputFileWriter:
 
         # set the booleans
         self.write_fastq = options.produce_fastq
-        self.write_fasta = options.produce_fasta
         self.write_bam = options.produce_bam
         self.write_vcf = options.produce_vcf
         self.paired = options.paired_ended
@@ -83,7 +84,6 @@ class OutputFileWriter:
         self.bam_header = bam_header
 
         # Set the file names
-        self.fasta_fns = None
 
         self.fastq_fns = None
         self.fastq1_fn = None
@@ -94,13 +94,6 @@ class OutputFileWriter:
 
         # Set up filenames based on booleans
         files_to_write = []
-        if self.write_fasta:
-            if options.ploidy > 1:
-                self.fasta_fns = [options.output.parent / f'{options.output.stem}_ploid{i+1}.fasta.gz'
-                                  for i in range(options.ploidy)]
-            else:
-                self.fasta_fns = [options.output.parent / f'{options.output.stem}.fasta.gz']
-            files_to_write.extend(self.fasta_fns)
         if self.paired and self.write_fastq:
             self.fastq1_fn = options.output.parent / f'{options.output.stem}_r1.fastq.gz'
             self.fastq2_fn = options.output.parent / f'{options.output.stem}_r2.fastq.gz'
@@ -164,17 +157,6 @@ class OutputFileWriter:
                 with open_input(temp_file) as infile:
                     vcf_out.write(infile.read())
 
-    def merge_temp_fastas(self, temporary_files: list):
-        """
-        Takes a list of temporary fasta files and puts them into a final file
-
-        :param temporary_files: A list of temporary fastas to combine
-        """
-        for file in self.fasta_fns:
-            with open_output(file) as vcf_out:
-                for temp_file in temporary_files:
-                    with open_input(temp_file) as infile:
-                        vcf_out.write(infile.read())
 
     def merge_temp_fastqs(
         self, fastq_files: list, paired_ended: bool, rand_num_gen: Generator

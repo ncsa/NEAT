@@ -17,7 +17,7 @@ from Bio.pairwise2 import format_alignment
 
 from ...common import ALLOWED_NUCL
 from ...models import SequencingErrorModel, ErrorContainer, MutationModel
-from ...variants import SingleNucleotideVariant, Insertion, Deletion, UnknownVariant
+from ...variants import SingleNucleotideVariant, Insertion, Deletion
 
 _LOG = logging.getLogger(__name__)
 
@@ -384,9 +384,9 @@ class Read:
 
         # These parameters were set to minimize breaks in the mutated sequence and find the best
         # alignment from there.
-        raw_alignment = pairwise2.align.localms(
+        raw_alignment = pairwise2.align.globalms(
             self.reference_segment, self.read_sequence, match=1, mismatch=-1, open=-0.5, extend=-0.1,
-            penalize_extend_when_opening=True
+            penalize_extend_when_opening=True, one_alignment_only=True
         )
 
         is_n_heavy = self.num_ns > 10
@@ -444,8 +444,7 @@ class Read:
 
         if cig_length < self.length:
             # testing a theory
-            pass
-            # raise ValueError("Problem creating cigar string")
+            raise ValueError("Problem creating cigar string")
         # append the final section as we return
         return cig_string + str(cig_count) + curr_char, n_to_crap_correlation, crap_alignment
 

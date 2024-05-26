@@ -8,9 +8,6 @@ import re
 import logging
 import abc
 
-from bisect import bisect_left
-
-import numpy as np
 from numpy.random import Generator
 from Bio.Seq import Seq
 from Bio import SeqRecord
@@ -20,13 +17,11 @@ from neat import variants
 from ..common import TRINUC_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
-from .default_gc_bias_model import *
 from .utils import bin_scores, take_closest
 
 __all__ = [
     "MutationModel",
     "SequencingErrorModel",
-    "GcModel",
     "FragmentLengthModel",
     "InsertionModel",
     "DeletionModel",
@@ -541,60 +536,6 @@ class ErrorContainer:
         self.length = length
         self.ref = ref
         self.alt = alt
-
-
-class GcModel:
-    """
-    This model correlates GC concentration and coverage, within a given window size.
-    For example, given a window size of 50, the model shows the bias at each level of
-    GC concentration, from 0-50, using the index of the list as the count. For a 50-base
-    window with 0 GCs, the coverage bias may be 0.25, at 20 GCs, 1.25. This is based
-    on the number of reads per base within that window, on average, across the dataset.
-
-    :param window_size: the size of the sliding window used to measure GC content.
-    :param gc_bias: The coverage bias at each GC-count for the window size
-    :param coverage: The coverage target for this particular run
-    """
-
-    def __init__(self,
-                 window_size: int = None,
-                 gc_bias: np.ndarray = None,
-                 coverage: int = None
-                 # May need rng
-                 ):
-        # assign the model attributes.
-        self.window_size = window_size if window_size else default_window_size
-        self.gc_bias = gc_bias if gc_bias else default_gc_bias
-        self.coverage = coverage
-
-    @property
-    def bias_values(self):
-        if self.coverage:
-            return self.coverage * self.gc_bias
-        else:
-            return np.ones(len(self.gc_bias))
-
-        # TODO check if these are needed
-        # self.mean = self.bias_vector.mean()
-        # self.deviation = self.bias_vector.std()
-
-    def create_coverage_bias_vector(self, target_vector: np.array, sequence: Seq) -> np.ndarray:
-        """
-        Generates a vector of coverage bias per position, based on the GC concentration of the input sequence.
-        :param target_vector: The target vector to modify, binned by window_size segments.
-        :param sequence: A sequence to check coverage for and generate the vector.
-        :return: A numpy array of the coverage bias, per position.
-        """
-
-        # NOTE: Instead of doing this, I want to maybe fold it into generate reads, this is too
-        # compute intensive, to comb through the entire reference counting up gs and cs.
-        bias_values = self.bias_values
-        for i in range(0, len(target_vector)):
-            subsequence = sequence[i: i + self.window_size]
-            gc_count = subsequence.count('G') + subsequence.count('C')
-            scaling_factor = bias_values[gc_count]
-            target_vector[i: i+self.window_size] = [scaling_factor] * self.window_size
-        return np.array(target_vector[:len(sequence)])
 
 
 class FragmentLengthModel:

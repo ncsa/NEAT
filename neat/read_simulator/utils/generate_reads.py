@@ -8,7 +8,7 @@ from pathlib import Path
 from Bio import SeqRecord
 from bisect import bisect_left, bisect_right
 
-from ...models import SequencingErrorModel, GcModel, FragmentLengthModel, MutationModel
+from ...models import SequencingErrorModel, FragmentLengthModel, MutationModel
 from .options import Options
 from ...common import open_output
 from ...variants import ContigVariants
@@ -23,31 +23,6 @@ __all__ = [
 ]
 
 _LOG = logging.getLogger(__name__)
-
-
-"""
-Currently this code block is unused, but I think it might be useful for parallelization, so I wanted to leave it in.
-
-def create_windows(sequence: SeqRecord, size: int, overlap: int):
-    \"""
-    Create a list of windows. Currently Unused. We might need this for parallelization, so I'm leaving the code in place
-
-    :param sequence: Sequence to split
-    :param size: size of windows
-    :param overlap: size of overlap between windows
-    :return: list of windows
-    \"""
-    windows = []
-    for i in range(0, len(sequence), size):
-        if i < overlap and i + size + overlap < len(sequence):
-            windows.append((i, i + size + overlap))
-        if i + size + overlap < len(sequence):
-            windows.append((i - overlap, i + size + overlap))
-        else:
-            windows.append((i, len(sequence)))
-
-    return windows
-"""
 
 
 def cover_dataset(
@@ -152,20 +127,6 @@ def find_applicable_mutations(my_read: Read, all_variants: ContigVariants) -> di
     return return_dict
 
 
-def merge_sort(my_array: np.ndarray):
-    """
-    This sorts the reads in reverse position, merging as it goes, in order to get the proper order
-
-    :param my_array: the array to be sorted.
-    :return: the sorted array
-    """
-    ret_array = my_array[my_array[:, 3].argsort()]
-    ret_array = ret_array[ret_array[:, 2].argsort(kind='mergesort')]
-    ret_array = ret_array[ret_array[:, 1].argsort(kind='mergesort')]
-    ret_array = ret_array[ret_array[:, 0].argsort(kind='mergesort')]
-    return ret_array
-
-
 def overlaps(test_interval: tuple[int, int], comparison_interval: tuple[int, int]) -> bool:
     """
     This function checks if the read overlaps with an input interval.
@@ -193,7 +154,6 @@ def generate_reads(reference: SeqRecord,
                    error_model_1: SequencingErrorModel,
                    error_model_2: SequencingErrorModel | None,
                    mutation_model: MutationModel,
-                   gc_bias: GcModel,
                    fraglen_model: FragmentLengthModel,
                    contig_variants: ContigVariants,
                    temporary_directory: str | Path,
@@ -211,7 +171,6 @@ def generate_reads(reference: SeqRecord,
     :param error_model_1: The error model for this run, the forward strand
     :param error_model_2: The error model for this run, reverse strand
     :param mutation_model: The mutation model for this run
-    :param gc_bias: The GC-Bias model for this run
     :param fraglen_model: The fragment length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
     :param temporary_directory: The directory where to store temporary files for the run
@@ -228,7 +187,6 @@ def generate_reads(reference: SeqRecord,
     # We will separate the properly paired and the singletons.
     # For now, we are making an assumption that the chromosome name contains no invalid characters for bash file names
     # such as `*` or `:` even though those are technically allowed.
-    # We need to insure "chrom" does not contain `_` but we will assume that is the case for now.
     # TODO We'll need to add some checks to ensure that this is the case.
     chrom_fastq_r1_paired = temporary_directory / f'{chrom}_r1_paired.fq.bgz'
     chrom_fastq_r1_single = temporary_directory / f'{chrom}_r1_single.fq.bgz'
@@ -248,13 +206,6 @@ def generate_reads(reference: SeqRecord,
         fraglen_model,
     )
     _LOG.debug(f"Dataset coverage took: {(time.process_time() - t)/60:.2f} m")
-
-    # Filters left to apply: N filter... not sure yet what to do with those (output random low quality reads, maybe)
-    # Target regions
-    # discard regions
-    # GC-bias figure out some way to throw out 75% of reads with high GC or AT content (see original gc bias model).
-    # heterozygous variants. Okay, so I've been applying the variant to all but for heterozygous we need to apply the
-    # variant to only some
 
     # These will hold the values as inserted.
     properly_paired_reads = []

@@ -80,7 +80,6 @@ class Options(SimpleNamespace):
         self.output = output_path
 
         self.defs['reference'] = (str, reference, 'exists', None)
-        self.defs['partition_mode'] = (str, 'chrom', None, None)
         self.defs['read_len'] = (int, 151, 10, inf)
         self.defs['threads'] = (int, 1, 1, inf)
         self.defs['coverage'] = (int, 10, 1, inf)
@@ -91,7 +90,6 @@ class Options(SimpleNamespace):
         self.defs['include_vcf'] = (str, None, 'exists', None)
         self.defs['target_bed'] = (str, None, 'exists', None)
         self.defs['discard_bed'] = (str, None, 'exists', None)
-        self.defs['off_target_scalar'] = (float, 0.00, 0, 1)
         self.defs['mutation_model'] = (str, None, 'exists', None)
         self.defs['mutation_rate'] = (float, None, 0, 0.3)
         self.defs['mutation_bed'] = (str, None, 'exists', None)
@@ -102,14 +100,12 @@ class Options(SimpleNamespace):
         self.defs['cancer_model'] = (str, None, 'exists', None)
         self.defs['cancer_purity'] = (float, 0.8, 0.0, 1.0)
 
-        self.defs['gc_model'] = (str, None, 'exists', None)
         self.defs['paired_ended'] = (bool, False, None, None)
         self.defs['fragment_model'] = (str, None, 'exists', None)
         self.defs['fragment_mean'] = (float, None, 10, inf)
         self.defs['fragment_st_dev'] = (float, None, 1e-10, inf)
         self.defs['produce_bam'] = (bool, False, None, None)
         self.defs['produce_vcf'] = (bool, False, None, None)
-        self.defs['produce_fasta'] = (bool, False, None, None)
         self.defs['produce_fastq'] = (bool, True, None, None)
         self.defs['no_coverage_bias'] = (bool, False, None, None)
 
@@ -120,7 +116,6 @@ class Options(SimpleNamespace):
 
         # Create base variables, for update by the config
         self.reference: str | Path = reference
-        self.partition_mode: str = 'chrom'
         self.read_len: int = 151
         self.threads: int = 1
         self.coverage: int = 10
@@ -131,22 +126,18 @@ class Options(SimpleNamespace):
         self.include_vcf: str | None = None
         self.target_bed: str | None = None
         self.discard_bed: str | None = None
-        self.off_target_scalar: float = 0
         self.mutation_model: str | None = None
         self.mutation_rate: float | None = None
         self.mutation_bed: str | None = None
         self.quality_offset: int = 33
 
-        self.gc_model: str | None = None
         self.paired_ended: bool = False
         self.fragment_model: str | None = None
         self.fragment_mean: float | None = None
         self.fragment_st_dev: float | None = None
         self.produce_bam: bool = False
-        self.produce_fasta: bool = False
         self.produce_vcf: bool = False
         self.produce_fastq: bool = True
-        self.no_coverage_bias: bool = False
 
         # These are primarily debug options.
         self.min_mutations: int = 0
@@ -247,7 +238,7 @@ class Options(SimpleNamespace):
         """
         Some sanity checks and corrections to the options.
         """
-        if not (self.produce_bam or self.produce_vcf or self.produce_fasta or self.produce_fastq):
+        if not (self.produce_bam or self.produce_vcf or self.produce_fastq):
             raise ValueError('No files would be produced, as all file types are set to false')
 
         # This next section just checks all the paired ended stuff
@@ -276,11 +267,6 @@ class Options(SimpleNamespace):
                 fq1 = f'{self.output}.fastq.gz'
                 validate_output_path(fq1, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
-        if self.produce_fasta:
-            for i in range(self.ploidy):
-                fasta = f'{self.output}_{i+1}.fasta.gz'
-                validate_output_path(fasta, True, self.overwrite_output)
-                files_to_produce += f'\t- {fasta}\n'
         if self.produce_bam:
             bam = f'{self.output}_golden.bam'
             validate_output_path(bam, True, self.overwrite_output)
@@ -331,7 +317,6 @@ class Options(SimpleNamespace):
             _LOG.info(f'Vcf of variants to include: {self.include_vcf}')
         if self.target_bed:
             _LOG.info(f'BED of regions to target: {self.target_bed}')
-            _LOG.info(f'Off-target coverage rate: {self.off_target_scalar}')
         if self.discard_bed:
             _LOG.info(f'BED of regions to discard: {self.discard_bed}')
         if self.mutation_model:
@@ -340,8 +325,4 @@ class Options(SimpleNamespace):
             _LOG.info(f'Custom average mutation rate for the run: {self.mutation_rate}')
         if self.mutation_bed:
             _LOG.info(f'BED of mutation rates of different regions: {self.mutation_bed}')
-        if self.gc_model:
-            _LOG.info(f'Using GC model: {self.gc_model}')
-        if self.no_coverage_bias:
-            _LOG.info(f'Ignoring GC bias from coverage calculations.')
         _LOG.info(f'RNG seed value for run: {self.rng_seed}')

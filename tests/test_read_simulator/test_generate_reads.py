@@ -3,7 +3,7 @@ from math import ceil
 import pytest
 import numpy as np
 
-from neat.models import FragmentLengthModel, GcModel
+from neat.models import FragmentLengthModel
 from neat.read_simulator.utils import Options
 from neat.read_simulator.utils.generate_reads import *
 
