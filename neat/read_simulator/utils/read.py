@@ -389,18 +389,6 @@ class Read:
             penalize_extend_when_opening=True, one_alignment_only=True
         )
 
-        is_n_heavy = self.num_ns > 10
-
-        # Recall that read_length//5 was what we used for padding.
-        crap_alignment = False
-        if raw_alignment[0][1].count('-') > self.length//10:
-            # Crap alignment
-            crap_alignment = True
-
-        n_to_crap_correlation = False
-        if is_n_heavy and crap_alignment:
-            n_to_crap_correlation = True
-
         alignment = format_alignment(*raw_alignment[0], full_sequences=True).split()
         aligned_template_seq = alignment[0]
         aligned_mut_seq = alignment[-2]
@@ -443,10 +431,10 @@ class Read:
                 break
 
         if cig_length < self.length:
-            # testing a theory
+            # Note that samtools will throw an error if this happens. Maybe need to adjust alignment parameters.
             raise ValueError("Problem creating cigar string")
         # append the final section as we return
-        return cig_string + str(cig_count) + curr_char, n_to_crap_correlation, crap_alignment
+        return cig_string + str(cig_count) + curr_char
 
     def get_mpos(self):
         """

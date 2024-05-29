@@ -1,7 +1,6 @@
 import logging
 import time
 import pickle
-import numpy as np
 
 from math import ceil
 from pathlib import Path
@@ -13,8 +12,6 @@ from .options import Options
 from ...common import open_output
 from ...variants import ContigVariants
 from .read import Read
-
-# TODO check that we're not truncating reads with deletions, but getting a full 151 bases
 
 __all__ = [
     'generate_reads',
@@ -199,20 +196,20 @@ def generate_reads(reference: SeqRecord,
     base_name = f'NEAT-generated_{chrom}'
 
     _LOG.debug("Covering dataset.")
-    t = time.process_time()
+    t = time.time()
     reads = cover_dataset(
         len(reference),
         options,
         fraglen_model,
     )
-    _LOG.debug(f"Dataset coverage took: {(time.process_time() - t)/60:.2f} m")
+    _LOG.debug(f"Dataset coverage took: {(time.time() - t)/60:.2f} m")
 
     # These will hold the values as inserted.
     properly_paired_reads = []
     singletons = []
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
-    t = time.process_time()
+    t = time.time()
     with (
         open_output(chrom_fastq_r1_paired) as fq1_paired,
         open_output(chrom_fastq_r1_single) as fq1_single,
@@ -361,7 +358,7 @@ def generate_reads(reference: SeqRecord,
             else:
                 singletons.append((None, read_2))
 
-    _LOG.info(f"Contig fastq(s) written in: {(time.process_time() - t)/60:.2f} m")
+    _LOG.info(f"Contig fastq(s) written in: {(time.time() - t)/60:.2f} m")
 
     if options.produce_bam:
         # this will give us the proper read order of the elements, for the sam. They are easier to sort now

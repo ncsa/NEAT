@@ -56,7 +56,7 @@ def generate_variants(reference: SeqRecord,
                       existing_variants: ContigVariants,
                       mutation_model: MutationModel,
                       options: Options,
-                      max_qual_score: int):
+                      max_qual_score: int) -> ContigVariants:
     """
     This function will generate variants to add to the dataset, by writing them to the input temp vcf file.
 

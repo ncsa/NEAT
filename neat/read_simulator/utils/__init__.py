@@ -9,4 +9,3 @@ from .t_sam_record import *
 from .vcf_func import *
 from .generate_reads import *
 from .generate_variants import *
-from .local_file_writer import *

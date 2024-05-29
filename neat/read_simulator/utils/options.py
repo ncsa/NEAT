@@ -207,13 +207,11 @@ class Options(SimpleNamespace):
 
                 # Now we check that the type is correct and it is in range, depending on the type defined for it
                 # If it passes that it gets put into the args dictionary.
-                try:
-                    temp = type_of_var(value)
-                except ValueError:
-                    raise ValueError(f"Incorrect type for value entered for {key}: {type_of_var}")
+                if value != type_of_var(value):
+                    raise ValueError(f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})")
 
-                self.check_and_log_error(key, temp, criteria1, criteria2)
-                self.args[key] = temp
+                self.check_and_log_error(key, value, criteria1, criteria2)
+                self.args[key] = value
 
     def set_random_seed(self):
         """
