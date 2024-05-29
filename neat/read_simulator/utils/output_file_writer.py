@@ -342,7 +342,7 @@ class OutputFileWriter:
         template_length = read.get_tlen()
         alt_sequence = read.read_sequence
 
-        cigar, n_corr, crap = read.make_cigar()
+        cigar = read.make_cigar()
 
         cig_letters = re.split(r"\d+", cigar)[1:]
         cig_numbers = [int(n) for n in re.findall(r"\d+", cigar)]
@@ -408,4 +408,4 @@ class OutputFileWriter:
                           encoded_cig +
                           encoded_seq +
                           encoded_qual.encode('utf-8')))
-        return n_corr, crap
+
