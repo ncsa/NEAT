@@ -371,7 +371,7 @@ class Read:
                     modified_segment += base
                 else:
                     modified_segment += repeat_bases[i % 6]
-                    self.num_ns += 1
+                    self.quality_array[i] = bad_score
         else:
             modified_segment = MutableSeq(raw_sequence)
 

@@ -187,7 +187,10 @@ class Options(SimpleNamespace):
             pass
         elif lowval != "exists" and highval:
             if not (lowval <= value_to_check <= highval):
-                raise ValueError(f'@{keyname} must be between {lowval} and {highval}.\nYour input: {value_to_check}')
+                mssg = f'`{keyname}` must be between {lowval} and {highval} (input: {value_to_check}).'
+                _LOG.error(mssg)
+                raise ValueError(mssg)
+
         elif lowval == "exists" and value_to_check:
             validate_input_path(value_to_check)
 
@@ -204,11 +207,22 @@ class Options(SimpleNamespace):
                 # if it's already set to the default value, ignore.
                 if value == default or value == ".":
                     continue
+                # check for empty
+                if value is None:
+                    if key == "reference":
+                        mssg = "Must entered a value for `reference` in config"
+                        _LOG.error(mssg)
+                        raise ValueError(mssg)
+                    else:
+                        _LOG.warning(f"No value entered for `{key}`, skipping.")
+                        continue
 
-                # Now we check that the type is correct and it is in range, depending on the type defined for it
+                # Now we check that the type is correct, and it is in range, depending on the type defined for it
                 # If it passes that it gets put into the args dictionary.
                 if value != type_of_var(value):
-                    raise ValueError(f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})")
+                    mssg = f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})"
+                    _LOG.error(mssg)
+                    raise ValueError(mssg)
 
                 self.check_and_log_error(key, value, criteria1, criteria2)
                 self.args[key] = value
