@@ -17,6 +17,7 @@ trigger quick-run mode, setting most of the parameters to defaults.
 import numpy as np
 import logging
 import yaml
+import sys
 
 try:
     from yaml import CLoader as Loader, CDumper as Dumper
@@ -187,9 +188,8 @@ class Options(SimpleNamespace):
             pass
         elif lowval != "exists" and highval:
             if not (lowval <= value_to_check <= highval):
-                mssg = f'`{keyname}` must be between {lowval} and {highval} (input: {value_to_check}).'
-                _LOG.error(mssg)
-                raise ValueError(mssg)
+                _LOG.error(f'`{keyname}` must be between {lowval} and {highval} (input: {value_to_check}).')
+                sys.exit(1)
 
         elif lowval == "exists" and value_to_check:
             validate_input_path(value_to_check)
@@ -210,9 +210,8 @@ class Options(SimpleNamespace):
                 # check for empty
                 if value is None:
                     if key == "reference":
-                        mssg = "Must entered a value for `reference` in config"
-                        _LOG.error(mssg)
-                        raise ValueError(mssg)
+                        _LOG.error("Must entered a value for `reference` in config")
+                        sys.exit(1)
                     else:
                         _LOG.warning(f"No value entered for `{key}`, skipping.")
                         continue
@@ -220,9 +219,8 @@ class Options(SimpleNamespace):
                 # Now we check that the type is correct, and it is in range, depending on the type defined for it
                 # If it passes that it gets put into the args dictionary.
                 if value != type_of_var(value):
-                    mssg = f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})"
-                    _LOG.error(mssg)
-                    raise ValueError(mssg)
+                    _LOG.error(f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})")
+                    sys.exit(1)
 
                 self.check_and_log_error(key, value, criteria1, criteria2)
                 self.args[key] = value
@@ -251,7 +249,8 @@ class Options(SimpleNamespace):
         Some sanity checks and corrections to the options.
         """
         if not (self.produce_bam or self.produce_vcf or self.produce_fastq):
-            raise ValueError('No files would be produced, as all file types are set to false')
+            _LOG.error('No files would be produced, as all file types are set to false')
+            sys.exit(1)
 
         # This next section just checks all the paired ended stuff
         if self.paired_ended:
@@ -297,12 +296,18 @@ class Options(SimpleNamespace):
             _LOG.info(f"Single threading - 1 thread.")
             # We'll work on multithreading later...
             # _LOG.info(f'Multithreading - {options.threads} threads')
+        _LOG.info(f'Using a read length of {self.read_len}')
         if self.fragment_mean:
+            if self.fragment_mean < self.read_len:
+                _LOG.error(f"`fragment_mean` (input: {self.fragment_mean}) "
+                           f"must be at least as long as `read_len` (input or default: {self.read_len}).")
+                sys.exit(1)
             if self.fragment_st_dev:
                 _LOG.info(f'Generating fragments based on mean={self.fragment_mean}, '
                           f'stand. dev={self.fragment_st_dev}')
             else:
-                raise ValueError("Provided fragment mean, but no fragment standard deviation!")
+                _LOG.error("Provided fragment mean, but no fragment standard deviation!")
+                sys.exit(1)
         if self.paired_ended:
             _LOG.info(f'Running in paired-ended mode.')
             if self.fragment_model:
@@ -310,11 +315,10 @@ class Options(SimpleNamespace):
             elif self.fragment_mean:
                 pass  # Already addressed this above
             else:
-                raise ValueError("Paired ended mode requires either a fragment model or a mean and standard deviation.")
+                _LOG.error("Paired ended mode requires either a fragment model or a mean/standard deviation.")
+                sys.exit(1)
         else:
             _LOG.info(f'Running in single-ended mode.')
-
-        _LOG.info(f'Using a read length of {self.read_len}')
         _LOG.info(f'Average coverage: {self.coverage}')
         if self.error_model:
             _LOG.info(f'Using error model: {self.error_model}')

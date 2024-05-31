@@ -9,6 +9,7 @@ both the reference sequence and the read and the actual read sequence.
 """
 import logging
 import numpy as np
+import sys
 
 from typing import TextIO
 from Bio.Seq import Seq, MutableSeq
@@ -432,7 +433,9 @@ class Read:
 
         if cig_length < self.length:
             # Note that samtools will throw an error if this happens. Maybe need to adjust alignment parameters.
-            raise ValueError("Problem creating cigar string")
+            _LOG.error("Problem creating cigar string")
+            sys.exit(1)
+
         # append the final section as we return
         return cig_string + str(cig_count) + curr_char
 

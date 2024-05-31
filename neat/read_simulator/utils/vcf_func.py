@@ -5,7 +5,7 @@ to ensure that those variants get inserted into the reads.
 
 import logging
 import numpy as np
-import re
+import sys
 
 from Bio import SeqIO
 
@@ -68,7 +68,8 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
     _LOG.info(f"Parsing input vcf {vcf_path}")
 
     if tumor_normal:
-        raise RuntimeError("Cancer methods not yet implemented")
+        _LOG.error("Cancer methods not yet implemented")
+        sys.exit(1)
 
     n_skipped = 0
     mismatched = 0
@@ -91,7 +92,8 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                     max_col += 1
                     sample_columns = columns[columns.index('FORMAT') + 1:]
                     if not sample_columns:
-                        raise ValueError('Input vcf has FORMAT column but no sample columns.')
+                        _LOG.error('Input vcf has FORMAT column but no sample columns.')
+                        sys.exit(1)
                 else:
                     _LOG.warning('Missing format column in vcf, using WP for genotype if present, '
                                  'otherwise genotype will be generated randomly')
@@ -106,15 +108,17 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                         max_col += 1
                     # If the code got here, we're dealing with a cancer sample
                     elif len(sample_columns) == 1:
-                        raise ValueError(f'Tumor-Normal samples require both a tumor and normal sample '
-                                         f'column in the VCF. {list(sample_columns)}')
+                        _LOG.error(f'Tumor-Normal samples require both a tumor and normal sample '
+                                   f'column in the VCF. {list(sample_columns)}')
+                        sys.exit(1)
 
                     else:
                         normals = [label for label in sample_columns if 'normal' in label.lower()]
                         tumors = [label for label in sample_columns if 'tumor' in label.lower()]
                         if not (tumors and normals):
-                            raise ValueError("Input VCF for cancer must contain a column with a label containing "
-                                             "'tumor' and 'normal' (case-insensitive).")
+                            _LOG.error("Input VCF for cancer must contain a column with a label containing "
+                                       "'tumor' and 'normal' (case-insensitive).")
+                            sys.exit(1)
 
                         """ Note that this cancer code is not yet full implemented """
                         sample_columns = {normals[0]: 7, tumors[0]: 8}

@@ -43,9 +43,9 @@ def cover_dataset(
     number_reads = ceil((span_length * options.coverage) / options.read_len)
 
     # We use fragments to model the DNA
-    fragment_pool = fragment_model.generate_fragments(span_length, number_reads * 3)
+    fragment_pool = fragment_model.generate_fragments(number_reads * 3)
 
-    # step 1: Divide the span up into segments drawn froam the fragment pool. Assign reads based on that.
+    # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
     # step 2: repeat above until number of reads exceeds number_reads * 1.5
     # step 3: shuffle pool, then draw number_reads (or number_reads/2 for paired ended) reads to be our reads
     read_count = 0

@@ -7,6 +7,7 @@ must have a corresponding model in order to be fully implemented.
 import re
 import logging
 import abc
+import sys
 
 from numpy.random import Generator
 from Bio.Seq import Seq
@@ -235,7 +236,8 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         self.homozygous_freq = homozygous_freq
 
         if not np.isclose(sum(variant_probs.values()), 1):
-            raise ValueError("Probabilities do not add up to 1.")
+            _LOG.error("Probabilities do not add up to 1.")
+            sys.exit(1)
 
         self.variant_probs = variant_probs
         self.transition_matrix = transition_matrix
@@ -558,12 +560,10 @@ class FragmentLengthModel:
         self.rng = rng
 
     def generate_fragments(self,
-                           total_length: int,
                            number_of_fragments: int) -> list:
         """
         Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set
 
-        :param total_length: Length of the reference segment we are covering.
         :param number_of_fragments: The number of fragments needed.
         :return: A list of fragment random fragment lengths sampled from the model.
         """

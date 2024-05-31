@@ -4,6 +4,7 @@ is a mutation rate dictionary, which will parse out the input mutation rates ass
 """
 import logging
 import pathlib
+import sys
 
 from Bio.File import _IndexedSeqFileDict
 
@@ -103,7 +104,7 @@ def parse_single_bed(input_bed: str,
                         [my_chr, pos1, pos2] = line_list[:3]
                     except ValueError:
                         _LOG.error(f"Improperly formatted bed file line {line}")
-                        raise
+                        sys.exit(1)
                     # Bed file chromosome names must match the reference.
                     try:
                         assert my_chr in reference_dictionary
@@ -122,7 +123,7 @@ def parse_single_bed(input_bed: str,
                             _LOG.error(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})")
                             _LOG.error('4th column of mutation rate bed must be a semicolon list of key, value '
                                        'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
-                            raise ValueError
+                            sys.exit(1)
 
                         # +9 because that's len('mut_rate='). Whatever is that should be our mutation rate.
                         mut_rate = line_list[3][index + 9:]
@@ -133,7 +134,7 @@ def parse_single_bed(input_bed: str,
                             _LOG.error(f"Invalid mutation rate: {my_chr}: ({pos1}, {pos2})")
                             _LOG.error('4th column of mutation rate bed must be a semicolon list of key, value '
                                        'pairs, with one key being mut_rate, e.g., "foo=bar;mut_rate=0.001;do=re".')
-                            raise
+                            sys.exit(1)
 
                         if mut_rate > 0.3:
                             _LOG.warning("Found a mutation rate > 0.3. This is unusual.")

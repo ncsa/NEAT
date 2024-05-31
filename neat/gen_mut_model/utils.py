@@ -315,7 +315,7 @@ def convert_trinuc_transition_matrix(trans_probs):
             _LOG.error("Repeat Trinuc detected.")
             _LOG.debug(f'Error on {ALL_CONTEXTS[context]}: '
                        f'{ALLOWED_NUCL[mutation_ref]} -> {ALLOWED_NUCL[mutation_alt]}')
-            raise ValueError
+            sys.exit(1)
 
     return ret_matrix
 
