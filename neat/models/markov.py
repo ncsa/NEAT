@@ -140,4 +140,3 @@ bam_file = '/projects/bclt/neat_data/H1N1_new.bam'
 test_df = make_qual_score_list(bam_file)
 markov_preds_df = apply_markov_chain(test_df)
 plot_heatmap(markov_preds_df, 'markov_chain_heatmap.svg')
-
