@@ -1,6 +1,7 @@
 import logging
 import time
 import pickle
+import sys
 
 from math import ceil
 from pathlib import Path
@@ -37,6 +38,10 @@ def cover_dataset(
     """
 
     final_reads = set()
+    # sanity check
+    if span_length/options.fragment_mean < 5:
+        _LOG.warning("The fragment mean is relatively large compared to the chromosome size. You may need to increase "
+                     "standard deviation, or decrease fragment mean, if NEAT cannot complete successfully.")
     # precompute how many reads we want
     # The numerator is the total number of base pair calls needed.
     # Divide that by read length gives the number of reads needed
@@ -49,9 +54,23 @@ def cover_dataset(
     # step 2: repeat above until number of reads exceeds number_reads * 1.5
     # step 3: shuffle pool, then draw number_reads (or number_reads/2 for paired ended) reads to be our reads
     read_count = 0
+    loop_count = 0
     while read_count <= number_reads:
         start = 0
+        loop_count += 1
+        # if loop_count > options.coverage * 100:
+        #     _LOG.error("The selected fragment mean and standard deviation are causing NEAT to get stuck.")
+        #     _LOG.error("Please try adjusting fragment mean or standard deviation to see if that fixes the issue.")
+        #     _LOG.error(f"parameters:\n"
+        #                f"chromosome length: {span_length}\n"
+        #                f"read length: {options.read_len}\n"
+        #                f"fragment mean: {options.fragment_mean}\n"
+        #                f"fragment standard deviation: {options.fragment_st_dev}")
+        #     sys.exit(1)
         temp_fragments = []
+        # trying to get enough variability to harden NEAT against edge cases.
+        if loop_count % 10 == 0:
+            fragment_model.rng.shuffle(fragment_pool)
         # Breaking the gename into fragments
         while start < span_length:
             # We take the first element and put it back on the end to create an endless pool of fragments to draw from
@@ -61,9 +80,9 @@ def cover_dataset(
             if end - start < options.read_len:
                 # add some random flavor to try to keep it to falling into a loop
                 if options.rng.normal() < 0.5:
-                    fragment_pool.insert(fragment, len(fragment_pool)//2)
+                    fragment_pool.insert(len(fragment_pool)//2, fragment)
                 else:
-                    fragment_pool.insert(fragment, len(fragment_pool) - 3)
+                    fragment_pool.insert(len(fragment_pool) - 3, fragment)
             else:
                 fragment_pool.append(fragment)
                 temp_fragments.append((start, end))
@@ -87,6 +106,16 @@ def cover_dataset(
                 # where start and end are ints with end > start. Reads can overlap, so right_start < left_end
                 # is possible, but the reads cannot extend past each other, so right_start < left_start and
                 # left_end > right_end are not possible.
+
+                # sanity check that we haven't created an unrealistic read:
+                insert_size = read2[0] - read1[1]
+                if insert_size > 2 * options.read_len:
+                    # Probably an outlier fragment length. We'll just pitch one of the reads
+                    # and consider it lost to the ages.
+                    if fragment_model.rng.choice((True, False)):
+                        read1 = (0, 0)
+                    else:
+                        read2 = (0, 0)
                 read = read1 + read2
                 if read not in final_reads:
                     final_reads.add(read)
@@ -97,6 +126,7 @@ def cover_dataset(
     # Now we shuffle them to add some randomness
     options.rng.shuffle(final_reads)
     # And only return the number we needed
+    _LOG.debug(f"Coverage required {loop_count} loops")
     if options.paired_ended:
         # Since each read is actually 2 reads, we only need to return half as many. But to cheat a few extra, we scale
         # that down slightly to 1.85 reads per read. This factor is arbitrary and may even be a function. But let's see

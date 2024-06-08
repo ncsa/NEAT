@@ -567,6 +567,19 @@ class FragmentLengthModel:
         :param number_of_fragments: The number of fragments needed.
         :return: A list of fragment random fragment lengths sampled from the model.
         """
+        # Due to natural variation in genome lengths, it's difficult to harden this code against all the possible
+        # inputs. In order to harden this code against infinite loops caused by fragment means that the wrong size for
+        # the genome, we introduce a small number of standard fragments, to ensure enough variability that our code can
+        # complete. a few small fragments should increase the variability of the set. Most of these are too small
+        # to create a read, so they become spacers instead.
+        extra_fragments = [10, 11, 12, 13, 14, 28, 31]
         # generates a distribution, assuming normality, then rounds the result and converts to ints
         dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
-        return [abs(x) for x in dist]
+        dist = [abs(x) for x in dist]
+        # We'll append enough fragments to pad out distribution and add variability. Don't know if the cost of doing
+        # this is worth it though.
+        number_extra = int(number_of_fragments * 0.1)
+        for i in range(number_extra):
+            dist.append(extra_fragments[i % len(extra_fragments)])
+        self.rng.shuffle(dist)  # this shuffle mixes extra fragments in.
+        return dist[:number_of_fragments]
