@@ -378,18 +378,11 @@ class Read:
 
         self.reference_segment = Seq(modified_segment)
 
-    def make_cigar(self):
-        """
-        Aligns the reference and mutated sequences.
-        """
-
-        # These parameters were set to minimize breaks in the mutated sequence and find the best
-        # alignment from there.
+    def align_seqs(self, reverse: bool):
         raw_alignment = pairwise2.align.globalms(
-            self.reference_segment, self.read_sequence, match=1, mismatch=-1, open=-0.5, extend=-0.1,
-            penalize_extend_when_opening=True, one_alignment_only=True
+            self.reference_segment, self.read_sequence, match=10, mismatch=-10, open=-20, extend=-10,
+            penalize_extend_when_opening=True, one_alignment_only=True,
         )
-
         alignment = format_alignment(*raw_alignment[0], full_sequences=True).split()
         aligned_template_seq = alignment[0]
         aligned_mut_seq = alignment[-2]
@@ -431,10 +424,24 @@ class Read:
             if cig_length == self.length:
                 break
 
+        return cig_string, cig_count, curr_char, cig_length
+
+
+    def make_cigar(self):
+        """
+        Aligns the reference and mutated sequences.
+        """
+        # These parameters were set to minimize breaks in the mutated sequence and find the best
+        # alignment from there.
+
+        cig_string, cig_count, curr_char, cig_length = self.align_seqs(False)
         if cig_length < self.length:
-            # Note that samtools will throw an error if this happens. Maybe need to adjust alignment parameters.
-            _LOG.error("Problem creating cigar string")
-            sys.exit(1)
+            _LOG.warning("Poor alignment, trying reversed")
+            cig_string2, cig_count2, curr_char2, cig_length = self.align_seqs(True)
+            if cig_length < self.length:
+                _LOG.error("Alignment still not working")
+                sys.exit(1)
+
 
         # append the final section as we return
         return cig_string + str(cig_count) + curr_char
