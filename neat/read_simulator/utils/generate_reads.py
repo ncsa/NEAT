@@ -39,7 +39,7 @@ def cover_dataset(
 
     final_reads = set()
     # sanity check
-    if span_length/options.fragment_mean < 5:
+    if span_length/fragment_model.fragment_mean < 5:
         _LOG.warning("The fragment mean is relatively large compared to the chromosome size. You may need to increase "
                      "standard deviation, or decrease fragment mean, if NEAT cannot complete successfully.")
     # precompute how many reads we want
@@ -79,7 +79,7 @@ def cover_dataset(
             # these are equivalent of reads we expect the machine to filter out, but we won't actually use it
             if end - start < options.read_len:
                 # add some random flavor to try to keep it to falling into a loop
-                if options.rng.normal() < 0.5:
+                if fragment_model.rng.normal() < 0.5:
                     fragment_pool.insert(len(fragment_pool)//2, fragment)
                 else:
                     fragment_pool.insert(len(fragment_pool) - 3, fragment)
@@ -124,7 +124,7 @@ def cover_dataset(
     # Convert set to final list
     final_reads = list(final_reads)
     # Now we shuffle them to add some randomness
-    options.rng.shuffle(final_reads)
+    fragment_model.rng.shuffle(final_reads)
     # And only return the number we needed
     _LOG.debug(f"Coverage required {loop_count} loops")
     if options.paired_ended:

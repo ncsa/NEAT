@@ -93,7 +93,7 @@ def initialize_all_models(options: Options):
         fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev, rng=options.rng)
     else:
         # For single ended, fragment length will be based on read length
-        fragment_mean = options.read_len * 1.5
+        fragment_mean = options.read_len * 2.0
         fragment_st_dev = fragment_mean * 0.2
         fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev, options.rng)
 
