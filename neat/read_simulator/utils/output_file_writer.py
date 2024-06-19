@@ -218,30 +218,30 @@ class OutputFileWriter:
             # Either both will have data, or neither, so checking one is sufficient
             if file1_index:
                 if contig_name not in fastq_index_dict:
-                    fastq_index_dict[contig_name] = []
+                    fastq_index_dict[contig_name] = {}
                 # 1 and 2 for read 1 and read 2
                 fastq_index_dict[contig_name] = {1: file1_index, 2: file2_index}
                 paired_keys.extend(list(zip(file1_index, file2_index)))
 
         # Index the singletons, or for single-ended reads, all reads
         for file_pair in singleton_files:
-            if file_pair[0]:
-                file_index = SeqIO.index(str(file_pair[0]), 'fastq')
+            file_index_r1 = SeqIO.index(str(file_pair[0]), 'fastq')
+            file_index_r2 = SeqIO.index(str(file_pair[1]), 'fastq')
+            if file_index_r1:
+                file_index = file_index_r1
                 contig_name = Path(file_pair[0]).name.removesuffix('_r1_single.fq.bgz')
-            elif file_pair[1]:
-                file_index = SeqIO.index(str(file_pair[1]), 'fastq')
+            elif file_index_r2:
+                file_index = file_index_r2
                 contig_name = Path(file_pair[1]).name.removesuffix('_r2_single.fq.bgz')
             else:
-                # So singletons for this contig, so move on
+                # No singletons for this contig, so move on
                 continue
 
-            # A check in case all reads were properly paired and there are no singletons
-            if file_index:
-                if contig_name not in fastq_index_dict:
-                    fastq_index_dict[contig_name] = []
-                # To keep the data structure consistent, we point both keys at the same file
-                fastq_index_dict[contig_name] = {1: file_index, 2: file_index}
-                singleton_keys.extend(list(file_index))
+            if contig_name not in fastq_index_dict:
+                fastq_index_dict[contig_name] = {}
+            # To keep the data structure consistent, we point both keys at the same file
+            fastq_index_dict[contig_name][3] = file_index
+            singleton_keys.extend(list(file_index))
 
         shuffled_paired_keys = paired_keys.copy()
         shuffled_singleton_keys = singleton_keys.copy()
@@ -279,7 +279,7 @@ class OutputFileWriter:
                 chrom_name_with_rdnm = current_key.removeprefix("NEAT-generated_").split('/')[0]
                 suffix = re.findall(r"_\d*$", chrom_name_with_rdnm)[0]
                 chrom_name = chrom_name_with_rdnm.removesuffix(suffix)
-                read = fastq_index_dict[chrom_name][1][current_key]
+                read = fastq_index_dict[chrom_name][3][current_key]
                 SeqIO.write(read, fq1, 'fastq')
 
         _LOG.info(f"Fastq(s) written in {(time.time() - t)/60:.2f} m")
