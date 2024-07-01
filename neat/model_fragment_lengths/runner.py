@@ -6,6 +6,7 @@ import gzip
 import pickle
 import numpy as np
 import logging
+import sys
 
 from pathlib import Path
 
@@ -44,21 +45,21 @@ def compute_fraglen_runner(file: str | Path, filter_minreads: int, output: str |
     _LOG.info("Counting fragments")
     all_tlens = count_frags(input_file)
     if not all_tlens:
-        raise ValueError("No valid template lengths in sam file_list.")
+        _LOG.error("No valid template lengths in sam file_list.")
+        sys.exit(1)
 
     _LOG.info("Filtering fragments")
     filtered_lengths = filter_lengths(all_tlens, filter_minreads)
 
     if not filtered_lengths:
-        raise ValueError("No data passed the filter, nothing to calculate. Try adjusting the filter settings.")
+        _LOG.error("No data passed the filter, nothing to calculate. Try adjusting the filter settings.")
+        sys.exit(1)
 
     _LOG.info("Building model")
     st_dev = float(np.std(filtered_lengths))
     mean = float(np.mean(filtered_lengths))
-    max_tlen = max(filtered_lengths)
-    min_tlen = min(filtered_lengths)
 
-    model = FragmentLengthModel(st_dev, mean, max_tlen, min_tlen)
+    model = FragmentLengthModel(mean, st_dev)
     _LOG.info(f'Saving model: {output}')
     with gzip.open(output, 'w+') as outfile:
         pickle.dump(model, outfile)

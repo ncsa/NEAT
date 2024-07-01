@@ -14,11 +14,13 @@ import contextlib
 import gzip
 import logging
 import os
+import sys
+
 from pathlib import Path
 from typing import Callable, Iterator, TextIO
 from Bio import bgzf
 
-log = logging.getLogger(__name__)
+_LOG = logging.getLogger(__name__)
 
 
 def is_compressed(file: str | Path) -> bool:
@@ -85,9 +87,9 @@ def open_output(path: str | Path, mode: str = 'wt') -> Iterator[TextIO]:
 
     Raises
     ------
-    FileExistsError
+    3 = FileExistsError
         Raised if the output file already exists.
-    PermissionError
+    11 = PermissionError
         Raised if the calling process does not have adequate access rights to
         write to the output file.
     """
@@ -100,7 +102,8 @@ def open_output(path: str | Path, mode: str = 'wt') -> Iterator[TextIO]:
         # bgzf is old code and doesn't use "xt" mode, annoyingly. This manual check should suffice.
         if mode == "xt":
             if output_path.exists():
-                raise FileExistsError(f"file '{path}' already exists")
+                _LOG.error(f"file '{path}' already exists")
+                sys.exit(3)
             else:
                 mode = "wt"
         open_ = bgzf.open
@@ -125,11 +128,11 @@ def validate_input_path(path: str | Path):
 
     Raises
     ------
-    FileNotFoundError
+    5 = FileNotFoundError
         Raised if the input file does not exist or is not a file.
-    RuntimeError
+    7 = RuntimeError
         Raised if the input file is empty.
-    PermissionError
+    9 = PermissionError
         Raised if the calling process has no read access to the file.
     """
     path = Path(path)
@@ -137,14 +140,16 @@ def validate_input_path(path: str | Path):
 
     if not path.is_file():
         mssg += f"Path '{path}' does not exist or not a file"
-        raise FileNotFoundError(mssg)
+        _LOG.error(mssg)
+        sys.exit(5)
     stats = path.stat()
     if stats.st_size == 0:
         mssg += f"File '{path}' is empty"
-        raise RuntimeError(mssg)
+        _LOG.error(mssg)
+        sys.exit(7)
     if not os.access(path, os.R_OK):
         mssg += f"cannot read from '{path}': access denied"
-        raise PermissionError(mssg)
+        _LOG.error(9)
 
 
 def validate_output_path(path: str | Path, is_file: bool = True, overwrite: bool = False):
@@ -161,18 +166,20 @@ def validate_output_path(path: str | Path, is_file: bool = True, overwrite: bool
 
     Raises
     ------
-    FileExistsError
+    3 = FileExistsError
         Raised if path is a file and already exists.
-    PermissionError
+    11 = PermissionError
         Raised if the calling process does not have adequate access rights to.
     """
     path = Path(path)
     if is_file:
         if path.is_file() and not overwrite:
-            raise FileExistsError(f"file '{path}' already exists")
+            _LOG.error(f"file '{path}' already exists")
+            sys.exit(3)
     else:
         if path.is_dir():
             if not os.access(path, os.W_OK):
-                raise PermissionError(f"cannot write to '{path}', access denied")
+                _LOG.error(f"cannot write to '{path}', access denied")
+                sys.exit(11)
         else:
             path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,7 @@
 import logging
 import time
 import pickle
-import numpy as np
+import sys
 
 from math import ceil
 from pathlib import Path
@@ -13,8 +13,6 @@ from .options import Options
 from ...common import open_output
 from ...variants import ContigVariants
 from .read import Read
-
-# TODO check that we're not truncating reads with deletions, but getting a full 151 bases
 
 __all__ = [
     'generate_reads',
@@ -40,21 +38,39 @@ def cover_dataset(
     """
 
     final_reads = set()
+    # sanity check
+    if span_length/fragment_model.fragment_mean < 5:
+        _LOG.warning("The fragment mean is relatively large compared to the chromosome size. You may need to increase "
+                     "standard deviation, or decrease fragment mean, if NEAT cannot complete successfully.")
     # precompute how many reads we want
     # The numerator is the total number of base pair calls needed.
     # Divide that by read length gives the number of reads needed
     number_reads = ceil((span_length * options.coverage) / options.read_len)
 
     # We use fragments to model the DNA
-    fragment_pool = fragment_model.generate_fragments(span_length, number_reads * 3)
+    fragment_pool = fragment_model.generate_fragments(number_reads * 3)
 
-    # step 1: Divide the span up into segments drawn froam the fragment pool. Assign reads based on that.
+    # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
     # step 2: repeat above until number of reads exceeds number_reads * 1.5
     # step 3: shuffle pool, then draw number_reads (or number_reads/2 for paired ended) reads to be our reads
     read_count = 0
+    loop_count = 0
     while read_count <= number_reads:
         start = 0
+        loop_count += 1
+        # if loop_count > options.coverage * 100:
+        #     _LOG.error("The selected fragment mean and standard deviation are causing NEAT to get stuck.")
+        #     _LOG.error("Please try adjusting fragment mean or standard deviation to see if that fixes the issue.")
+        #     _LOG.error(f"parameters:\n"
+        #                f"chromosome length: {span_length}\n"
+        #                f"read length: {options.read_len}\n"
+        #                f"fragment mean: {options.fragment_mean}\n"
+        #                f"fragment standard deviation: {options.fragment_st_dev}")
+        #     sys.exit(1)
         temp_fragments = []
+        # trying to get enough variability to harden NEAT against edge cases.
+        if loop_count % 10 == 0:
+            fragment_model.rng.shuffle(fragment_pool)
         # Breaking the gename into fragments
         while start < span_length:
             # We take the first element and put it back on the end to create an endless pool of fragments to draw from
@@ -63,10 +79,10 @@ def cover_dataset(
             # these are equivalent of reads we expect the machine to filter out, but we won't actually use it
             if end - start < options.read_len:
                 # add some random flavor to try to keep it to falling into a loop
-                if options.rng.normal() < 0.5:
-                    fragment_pool.insert(fragment, len(fragment_pool)//2)
+                if fragment_model.rng.normal() < 0.5:
+                    fragment_pool.insert(len(fragment_pool)//2, fragment)
                 else:
-                    fragment_pool.insert(fragment, len(fragment_pool) - 3)
+                    fragment_pool.insert(len(fragment_pool) - 3, fragment)
             else:
                 fragment_pool.append(fragment)
                 temp_fragments.append((start, end))
@@ -90,6 +106,16 @@ def cover_dataset(
                 # where start and end are ints with end > start. Reads can overlap, so right_start < left_end
                 # is possible, but the reads cannot extend past each other, so right_start < left_start and
                 # left_end > right_end are not possible.
+
+                # sanity check that we haven't created an unrealistic read:
+                insert_size = read2[0] - read1[1]
+                if insert_size > 2 * options.read_len:
+                    # Probably an outlier fragment length. We'll just pitch one of the reads
+                    # and consider it lost to the ages.
+                    if fragment_model.rng.choice((True, False)):
+                        read1 = (0, 0)
+                    else:
+                        read2 = (0, 0)
                 read = read1 + read2
                 if read not in final_reads:
                     final_reads.add(read)
@@ -98,8 +124,9 @@ def cover_dataset(
     # Convert set to final list
     final_reads = list(final_reads)
     # Now we shuffle them to add some randomness
-    options.rng.shuffle(final_reads)
+    fragment_model.rng.shuffle(final_reads)
     # And only return the number we needed
+    _LOG.debug(f"Coverage required {loop_count} loops")
     if options.paired_ended:
         # Since each read is actually 2 reads, we only need to return half as many. But to cheat a few extra, we scale
         # that down slightly to 1.85 reads per read. This factor is arbitrary and may even be a function. But let's see
@@ -199,20 +226,20 @@ def generate_reads(reference: SeqRecord,
     base_name = f'NEAT-generated_{chrom}'
 
     _LOG.debug("Covering dataset.")
-    t = time.process_time()
+    t = time.time()
     reads = cover_dataset(
         len(reference),
         options,
         fraglen_model,
     )
-    _LOG.debug(f"Dataset coverage took: {(time.process_time() - t)/60:.2f} m")
+    _LOG.debug(f"Dataset coverage took: {(time.time() - t)/60:.2f} m")
 
     # These will hold the values as inserted.
     properly_paired_reads = []
     singletons = []
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
-    t = time.process_time()
+    t = time.time()
     with (
         open_output(chrom_fastq_r1_paired) as fq1_paired,
         open_output(chrom_fastq_r1_single) as fq1_single,
@@ -361,7 +388,7 @@ def generate_reads(reference: SeqRecord,
             else:
                 singletons.append((None, read_2))
 
-    _LOG.info(f"Contig fastq(s) written in: {(time.process_time() - t)/60:.2f} m")
+    _LOG.info(f"Contig fastq(s) written in: {(time.time() - t)/60:.2f} m")
 
     if options.produce_bam:
         # this will give us the proper read order of the elements, for the sam. They are easier to sort now

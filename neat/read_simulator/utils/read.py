@@ -9,6 +9,7 @@ both the reference sequence and the read and the actual read sequence.
 """
 import logging
 import numpy as np
+import sys
 
 from typing import TextIO
 from Bio.Seq import Seq, MutableSeq
@@ -371,36 +372,17 @@ class Read:
                     modified_segment += base
                 else:
                     modified_segment += repeat_bases[i % 6]
-                    self.num_ns += 1
+                    self.quality_array[i] = bad_score
         else:
             modified_segment = MutableSeq(raw_sequence)
 
         self.reference_segment = Seq(modified_segment)
 
-    def make_cigar(self):
-        """
-        Aligns the reference and mutated sequences.
-        """
-
-        # These parameters were set to minimize breaks in the mutated sequence and find the best
-        # alignment from there.
+    def align_seqs(self, reverse: bool):
         raw_alignment = pairwise2.align.globalms(
-            self.reference_segment, self.read_sequence, match=1, mismatch=-1, open=-0.5, extend=-0.1,
-            penalize_extend_when_opening=True, one_alignment_only=True
+            self.reference_segment, self.read_sequence, match=10, mismatch=-10, open=-20, extend=-10,
+            penalize_extend_when_opening=True, one_alignment_only=True,
         )
-
-        is_n_heavy = self.num_ns > 10
-
-        # Recall that read_length//5 was what we used for padding.
-        crap_alignment = False
-        if raw_alignment[0][1].count('-') > self.length//10:
-            # Crap alignment
-            crap_alignment = True
-
-        n_to_crap_correlation = False
-        if is_n_heavy and crap_alignment:
-            n_to_crap_correlation = True
-
         alignment = format_alignment(*raw_alignment[0], full_sequences=True).split()
         aligned_template_seq = alignment[0]
         aligned_mut_seq = alignment[-2]
@@ -442,11 +424,27 @@ class Read:
             if cig_length == self.length:
                 break
 
+        return cig_string, cig_count, curr_char, cig_length
+
+
+    def make_cigar(self):
+        """
+        Aligns the reference and mutated sequences.
+        """
+        # These parameters were set to minimize breaks in the mutated sequence and find the best
+        # alignment from there.
+
+        cig_string, cig_count, curr_char, cig_length = self.align_seqs(False)
         if cig_length < self.length:
-            # testing a theory
-            raise ValueError("Problem creating cigar string")
+            _LOG.warning("Poor alignment, trying reversed")
+            cig_string2, cig_count2, curr_char2, cig_length = self.align_seqs(True)
+            if cig_length < self.length:
+                _LOG.error("Alignment still not working")
+                sys.exit(1)
+
+
         # append the final section as we return
-        return cig_string + str(cig_count) + curr_char, n_to_crap_correlation, crap_alignment
+        return cig_string + str(cig_count) + curr_char
 
     def get_mpos(self):
         """

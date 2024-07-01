@@ -2,9 +2,11 @@
 A class describing one type of variant for NEAT.
 """
 import numpy as np
+import logging
 
-from Bio.Seq import Seq
 from .base_variant import BaseVariant
+
+_LOG = logging.getLogger(__name__)
 
 
 class Inversion(BaseVariant):
@@ -31,7 +33,7 @@ class Inversion(BaseVariant):
         self.length = length
         self.orientation = orientation
         if not self.orientation == -1:
-            raise ValueError("For an inversion, the orientation must be -1")
+            _LOG.error("For an inversion, the orientation must be -1")
         self.genotype = genotype
         self.qual_score = qual_score
         self.is_input = is_input

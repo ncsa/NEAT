@@ -146,20 +146,40 @@ class OutputFileWriter:
                 # Add a neat sample column
                 vcf_file.write(f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n')
 
-    def merge_temp_vcfs(self, temporary_files: list):
+    def write_final_vcf(self, local_files_dict: dict, reference: dict):
         """
         This function takes in a list of temporary vcf files and combines them into a final output
 
-        :param temporary_files: The list of temporary files to combine
+        :param local_files_dict: The list of temporary files to combine
+        :param reference: The dictionary of the reference object for this run, to draw refs from
         """
+        n_added = 0
+        vcf_write_t = time.time()
         with open_output(self.vcf_fn) as vcf_out:
-            for temp_file in temporary_files:
-                with open_input(temp_file) as infile:
-                    vcf_out.write(infile.read())
+            for contig, variants in local_files_dict.items():
+                for location in variants.variant_locations:
+                    for variant in variants[location]:
+                        ref, alt = variants.get_ref_alt(variant, reference[contig])
+                        sample = variants.get_sample_info(variant)
 
+                        # +1 to position because the VCF uses 1-based coordinates
+                        #          .id should give the more complete name
+                        line = f"{reference[contig].id}\t" \
+                               f"{variant.position1 + 1}\t" \
+                               f"{variants.generate_field(variant, 'ID')}\t" \
+                               f"{ref}\t" \
+                               f"{alt}\t" \
+                               f"{variant.qual_score}\t" \
+                               f"{variants.generate_field(variant, 'FILTER')}\t" \
+                               f"{variants.generate_field(variant, 'INFO')}\t" \
+                               f"{variants.generate_field(variant, 'FORMAT')}\t" \
+                               f"{sample}\n"
+                        vcf_out.write(line)
+                        n_added += 1
+        _LOG.info(f"Wrote {n_added} variants in {(time.time() - vcf_write_t)/60:.2f} m")
 
     def merge_temp_fastqs(
-        self, fastq_files: list, paired_ended: bool, rand_num_gen: Generator
+        self, fastq_files: list, rand_num_gen: Generator
     ):
         """
         Takes a list of fastqs and combines them into a final output. This is the most complicated one, because we need
@@ -170,7 +190,6 @@ class OutputFileWriter:
         :param fastq_files: The temporary fastq files to combine in the final output, or to set the order for the
             final bam. Each set of files has two subsets, the paired and the singles. We'll do all the paired first
             then append any singletons
-        :param paired_ended: whether this run is paired or single ended.
         :param rand_num_gen: the random number generator for the run
         """
         fastq_index_dict = {}
@@ -180,7 +199,7 @@ class OutputFileWriter:
 
         paired_files = []
         singleton_files = []
-        t = time.process_time()
+        t = time.time()
 
         # First split the files into 2 categories. For paired ended reads, most reads will be paired, though some may
         # have gotten filtered out with input files. We will append any singletons in paired ended mode at the end,
@@ -199,30 +218,30 @@ class OutputFileWriter:
             # Either both will have data, or neither, so checking one is sufficient
             if file1_index:
                 if contig_name not in fastq_index_dict:
-                    fastq_index_dict[contig_name] = []
+                    fastq_index_dict[contig_name] = {}
                 # 1 and 2 for read 1 and read 2
                 fastq_index_dict[contig_name] = {1: file1_index, 2: file2_index}
                 paired_keys.extend(list(zip(file1_index, file2_index)))
 
         # Index the singletons, or for single-ended reads, all reads
         for file_pair in singleton_files:
-            if file_pair[0]:
-                file_index = SeqIO.index(str(file_pair[0]), 'fastq')
+            file_index_r1 = SeqIO.index(str(file_pair[0]), 'fastq')
+            file_index_r2 = SeqIO.index(str(file_pair[1]), 'fastq')
+            if file_index_r1:
+                file_index = file_index_r1
                 contig_name = Path(file_pair[0]).name.removesuffix('_r1_single.fq.bgz')
-            elif file_pair[1]:
-                file_index = SeqIO.index(str(file_pair[1]), 'fastq')
+            elif file_index_r2:
+                file_index = file_index_r2
                 contig_name = Path(file_pair[1]).name.removesuffix('_r2_single.fq.bgz')
             else:
-                # So singletons for this contig, so move on
+                # No singletons for this contig, so move on
                 continue
 
-            # A check in case all reads were properly paired and there are no singletons
-            if file_index:
-                if contig_name not in fastq_index_dict:
-                    fastq_index_dict[contig_name] = []
-                # To keep the data structure consistent, we point both keys at the same file
-                fastq_index_dict[contig_name] = {1: file_index, 2: file_index}
-                singleton_keys.extend(list(file_index))
+            if contig_name not in fastq_index_dict:
+                fastq_index_dict[contig_name] = {}
+            # To keep the data structure consistent, we point both keys at the same file
+            fastq_index_dict[contig_name][3] = file_index
+            singleton_keys.extend(list(file_index))
 
         shuffled_paired_keys = paired_keys.copy()
         shuffled_singleton_keys = singleton_keys.copy()
@@ -260,13 +279,10 @@ class OutputFileWriter:
                 chrom_name_with_rdnm = current_key.removeprefix("NEAT-generated_").split('/')[0]
                 suffix = re.findall(r"_\d*$", chrom_name_with_rdnm)[0]
                 chrom_name = chrom_name_with_rdnm.removesuffix(suffix)
-                read = fastq_index_dict[chrom_name][1][current_key]
+                read = fastq_index_dict[chrom_name][3][current_key]
                 SeqIO.write(read, fq1, 'fastq')
 
-        if not wrote_r2:
-            fastq2_path = Path(self.fastq2_fn)
-            fastq2_path.unlink()
-        _LOG.info(f"Fastq(s) written in {(time.process_time() - t)/60:.2f} m")
+        _LOG.info(f"Fastq(s) written in {(time.time() - t)/60:.2f} m")
 
     def output_bam_file(self, reads_files: list, contig_dict: dict, read_length: int):
         """
@@ -278,7 +294,7 @@ class OutputFileWriter:
             and the values the index of that contig
         :param read_length: the length of the reads for this run
         """
-        t = time.process_time()
+        t = time.time()
         bam_out = bgzf.BgzfWriter(self.bam_fn, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
         bam_out.write("BAM\1")
         header = "@HD\tVN:1.4\tSO:coordinate\n"
@@ -297,29 +313,18 @@ class OutputFileWriter:
             bam_out.write(f'{item}\0')
             bam_out.write(pack('<i', self.bam_header[item]))
 
-        n_to_crap_correlation = 0
-        total_crap = 0
         for file in reads_files:
             contig_reads_data = pickle.load(gzip.open(file))
             for read_data in contig_reads_data:
                 read1 = read_data[0]
                 read2 = read_data[1]
-                is_correlated = False
-                is_crap = False
                 if read1:
-                    is_correlated, is_crap = self.write_bam_record(read1, contig_dict[read1.reference_id], bam_out, read_length)
+                    self.write_bam_record(read1, contig_dict[read1.reference_id], bam_out, read_length)
                 if read2:
-                    is_correlated, is_crap = self.write_bam_record(read2, contig_dict[read2.reference_id], bam_out, read_length)
-                if is_correlated:
-                    n_to_crap_correlation += 1
-                    total_crap += 1
-                elif is_crap:
-                    total_crap += 1
-        if total_crap:
-            _LOG.info(f"n-to-crap correlation: {n_to_crap_correlation/total_crap:.2%}")
+                    self.write_bam_record(read2, contig_dict[read2.reference_id], bam_out, read_length)
         bam_out.close()
 
-        _LOG.info(f"Bam written in: {(time.process_time() - t)/60:.2f} m")
+        _LOG.info(f"Bam written in: {(time.time() - t)/60:.2f} m")
 
     def write_bam_record(self, read: Read, contig_id: int, bam_handle: bgzf.BgzfWriter, read_length: int):
         """
@@ -337,7 +342,7 @@ class OutputFileWriter:
         template_length = read.get_tlen()
         alt_sequence = read.read_sequence
 
-        cigar, n_corr, crap = read.make_cigar()
+        cigar = read.make_cigar()
 
         cig_letters = re.split(r"\d+", cigar)[1:]
         cig_numbers = [int(n) for n in re.findall(r"\d+", cigar)]
@@ -403,4 +408,4 @@ class OutputFileWriter:
                           encoded_cig +
                           encoded_seq +
                           encoded_qual.encode('utf-8')))
-        return n_corr, crap
+

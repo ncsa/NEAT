@@ -23,6 +23,6 @@ discard_bed: .
 mutation_rate: .
 mutation_bed: .
 rng_seed: .
-min_mutations: 0
+min_mutations: .
 overwrite_output: .
 

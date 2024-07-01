@@ -1,7 +1,7 @@
 """
 Runner for generate_reads task
 """
-import copy
+import time
 import logging
 import pickle
 import gzip
@@ -10,7 +10,7 @@ from Bio import SeqIO
 from pathlib import Path
 
 from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter, \
-    generate_variants, write_local_file, generate_reads
+    generate_variants, generate_reads
 from ..common import validate_input_path, validate_output_path
 from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel
 from ..models.default_cancer_mutation_model import *
@@ -93,7 +93,7 @@ def initialize_all_models(options: Options):
         fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev, rng=options.rng)
     else:
         # For single ended, fragment length will be based on read length
-        fragment_mean = options.read_len * 1.5
+        fragment_mean = options.read_len * 2.0
         fragment_st_dev = fragment_mean * 0.2
         fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev, options.rng)
 
@@ -249,32 +249,23 @@ def read_simulator_runner(config: str, output: str):
     # these will be the features common to each contig, for multiprocessing
     common_features = {}
 
-    all_variants = {}  # dict of all ContigVariants objects, indexed by contig, which we will collect at the end.
-    vcf_files = []
+    local_variant_files = {}
     fastq_files = []
 
     sam_reads_files = []
 
     for contig in breaks:
+        local_variant_files[contig] = None
 
         _LOG.info(f"Generating variants for {contig}")
-
-        # Todo genericize breaks
 
         input_variants = input_variants_dict[contig]
         # TODO: add the ability to pick up input variants here from previous loop
 
         local_reference = reference_index[contig]
 
-        # _LOG.info(f'Creating trinucleotide map for {contig}...')
-        # local_trinuc_map = map_chromosome(local_reference, mut_model)
-
         # Since we're only running single threaded for now:
         threadidx = 1
-
-        local_variant_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.vcf.gz'
-
-        _LOG.debug(f'local vcf filename = {local_variant_file}')
 
         local_bam_pickle_file = None
         if options.produce_bam:
@@ -296,20 +287,8 @@ def read_simulator_runner(config: str, output: str):
                                            max_qual_score=max_qual_score,
                                            options=options)
 
-        _LOG.info(f'Outputting temp vcf for {contig} for later use')
-        # This function produces the local vcf file.
-        # TODO pickle dump the ContigVariants object instead. Combine them into one vcf
-        #     at the end.
-        write_local_file(
-            local_variant_file,
-            local_variants,
-            local_reference,
-            target_regions_dict[contig],
-            discard_regions_dict[contig]
-        )
-
-        # The above function writes data to local_variant_file, so we need only store its location.
-        vcf_files.append(local_variant_file)
+        # This function saves the local variant data a dictionary. We may need to write this to file.
+        local_variant_files[contig] = local_variants
 
         if options.produce_fastq or options.produce_bam:
             read1_fastq_paired, read1_fastq_single, read2_fastq_paired, read2_fastq_single = \
@@ -333,7 +312,7 @@ def read_simulator_runner(config: str, output: str):
 
     if options.produce_vcf:
         _LOG.info(f"Outputting golden vcf: {str(output_file_writer.vcf_fn)}")
-        output_file_writer.merge_temp_vcfs(vcf_files)
+        output_file_writer.write_final_vcf(local_variant_files, reference_index)
 
     if options.produce_fastq:
         if options.paired_ended:
@@ -341,7 +320,7 @@ def read_simulator_runner(config: str, output: str):
                       f"{', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
         else:
             _LOG.info(f"Outputting fastq file: {output_file_writer.fastq_fns[0]}")
-        output_file_writer.merge_temp_fastqs(fastq_files, options.paired_ended, options.rng)
+        output_file_writer.merge_temp_fastqs(fastq_files, options.rng)
 
     if options.produce_bam:
         _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")

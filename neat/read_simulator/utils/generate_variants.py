@@ -8,6 +8,7 @@ import logging
 import time
 import numpy as np
 import re
+import sys
 
 from Bio import SeqRecord
 from numpy.random import Generator
@@ -56,7 +57,7 @@ def generate_variants(reference: SeqRecord,
                       existing_variants: ContigVariants,
                       mutation_model: MutationModel,
                       options: Options,
-                      max_qual_score: int):
+                      max_qual_score: int) -> ContigVariants:
     """
     This function will generate variants to add to the dataset, by writing them to the input temp vcf file.
 
@@ -207,7 +208,8 @@ def generate_variants(reference: SeqRecord,
                 temp_variant = mutation_model.generate_snv(trinuc, location)
 
             else:
-                raise ValueError(f"Attempting to create an unsupported variant: {variant_type}")
+                _LOG.error(f"Attempting to create an unsupported variant: {variant_type}")
+                sys.exit(1)
 
             # pick which ploid is mutated
             temp_variant.genotype = pick_ploids(options.ploidy, mutation_model.homozygous_freq, 1, options.rng)
@@ -226,7 +228,8 @@ def generate_variants(reference: SeqRecord,
                         # Here's a counter to make sure we're not getting stuck on a single location
                         debug += 1
                         if debug > 1000000:
-                            raise RuntimeError("Check this if, as it may be causing an infinite loop.")
+                            _LOG.error("Check this if, as it may be causing an infinite loop.")
+                            sys.exit(999)
                         # No suitable place to put this, so we skip.
                         continue
                     # This sets up a probability array with weights 1 for open spots (x==0) and 0 elsewhere
