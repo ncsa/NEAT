@@ -9,12 +9,10 @@ dependencies:
   - pkginfo
   - matplotlib
   - numpy
-  - seaborn
   - pyyaml
   - pip
   - scipy
-  - pytest
-  - bedtools
+  - libgcc=5.2.0
   - htslib
   - pip:
     - pysam

@@ -7,10 +7,8 @@ must have a corresponding model in order to be fully implemented.
 import re
 import logging
 import abc
+import sys
 
-from bisect import bisect_left
-
-import numpy as np
 from numpy.random import Generator
 from Bio.Seq import Seq
 from Bio import SeqRecord
@@ -20,14 +18,11 @@ from neat import variants
 from ..common import TRINUC_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
-from .default_gc_bias_model import *
-from .default_fraglen_model import *
 from .utils import bin_scores, take_closest
 
 __all__ = [
     "MutationModel",
     "SequencingErrorModel",
-    "GcModel",
     "FragmentLengthModel",
     "InsertionModel",
     "DeletionModel",
@@ -241,7 +236,8 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         self.homozygous_freq = homozygous_freq
 
         if not np.isclose(sum(variant_probs.values()), 1):
-            raise ValueError("Probabilities do not add up to 1.")
+            _LOG.error("Probabilities do not add up to 1.")
+            sys.exit(1)
 
         self.variant_probs = variant_probs
         self.transition_matrix = transition_matrix
@@ -389,16 +385,17 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
 
     def get_sequencing_errors(self,
                               read_length: int,
+                              padding: int,
                               reference_segment: SeqRecord,
                               quality_scores: np.ndarray):
         """
         Inserts errors of type substitution, insertion, or deletion into read_data, and assigns a quality score
         based on the container model.
         :param read_length: The length of the read to generate errors for.
+        :param padding: this is the amount of space we have in the read for deletions.
         :param reference_segment: The section of the reference from which the read is drawn
         :param quality_scores: Array of quality scores for the read
-        :return: modified sequence and associated quality scores
-
+        :return: Modified sequence and associated quality scores
         """
 
         error_indexes = []
@@ -413,7 +410,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                 if self.rng.random() < self.quality_score_error_rate[quality_scores[i]]:
                     error_indexes.append(i)
 
-        num_indels_so_far = 0
+        total_indel_length = 0
         # To prevent deletion collisions
         del_blacklist = []
 
@@ -424,19 +421,24 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # Not too sure about how realistic it is to model errors as indels, but I'm leaving the code in for now.
 
             # This is to prevent deletion error collisions and to keep there from being too many indel errors.
-            if 0 < index < self.read_length - max(self.deletion_len_model) and num_indels_so_far > self.read_length//2:
+            if 0 < index < self.read_length - max(self.deletion_len_model) and total_indel_length > self.read_length//4:
                 error_type = self.rng.choice(a=list(self.variant_probs), p=list(self.variant_probs.values()))
 
             # Deletion error
             if error_type == Deletion:
                 deletion_length = self.get_deletion_length()
+                if padding - deletion_length < 0:
+                    # No space in this read to add this deletion
+                    continue
                 deletion_reference = reference_segment.seq[index: index + deletion_length + 1]
                 deletion_alternate = deletion_reference[0]
                 introduced_errors.append(
                     ErrorContainer(Deletion, index, deletion_length, deletion_reference, deletion_alternate)
                 )
-                num_indels_so_far += deletion_length
+                total_indel_length += deletion_length
+
                 del_blacklist.extend(list(range(index, index + deletion_length)))
+                padding -= deletion_length
 
             elif error_type == Insertion:
                 insertion_length = self.get_insertion_length()
@@ -446,7 +448,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                 introduced_errors.append(
                     ErrorContainer(Insertion, index, insertion_length, insertion_reference, insertion_alternate)
                 )
-                num_indels_so_far += insertion_length
+                total_indel_length += insertion_length
 
             # Insert substitution error
             # Programmer note: if you add new error types, they can be added as elifs above, leaving the final
@@ -465,7 +467,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             if introduced_errors[i].location in del_blacklist:
                 del introduced_errors[i]
 
-        return introduced_errors
+        return introduced_errors, max(padding, 0)
 
     def quality_index_remap(self, input_read_length):
         """
@@ -538,60 +540,6 @@ class ErrorContainer:
         self.alt = alt
 
 
-class GcModel:
-    """
-    This model correlates GC concentration and coverage, within a given window size.
-    For example, given a window size of 50, the model shows the bias at each level of
-    GC concentration, from 0-50, using the index of the list as the count. For a 50-base
-    window with 0 GCs, the coverage bias may be 0.25, at 20 GCs, 1.25. This is based
-    on the number of reads per base within that window, on average, across the dataset.
-
-    :param window_size: the size of the sliding window used to measure GC content.
-    :param gc_bias: The coverage bias at each GC-count for the window size
-    :param coverage: The coverage target for this particular run
-    """
-
-    def __init__(self,
-                 window_size: int = None,
-                 gc_bias: np.ndarray = None,
-                 coverage: int = None
-                 # May need rng
-                 ):
-        # assign the model attributes.
-        self.window_size = window_size if window_size else default_window_size
-        self.gc_bias = gc_bias if gc_bias else default_gc_bias
-        self.coverage = coverage
-
-    @property
-    def bias_values(self):
-        if self.coverage:
-            return self.coverage * self.gc_bias
-        else:
-            return np.ones(len(self.gc_bias))
-
-        # TODO check if these are needed
-        # self.mean = self.bias_vector.mean()
-        # self.deviation = self.bias_vector.std()
-
-    def create_coverage_bias_vector(self, target_vector: np.array, sequence: Seq) -> np.ndarray:
-        """
-        Generates a vector of coverage bias per position, based on the GC concentration of the input sequence.
-        :param target_vector: The target vector to modify, binned by window_size segments.
-        :param sequence: A sequence to check coverage for and generate the vector.
-        :return: A numpy array of the coverage bias, per position.
-        """
-
-        # NOTE: Instead of doing this, I want to maybe fold it into generate reads, this is too
-        # compute intensive, to comb through the entire reference counting up gs and cs.
-        bias_values = self.bias_values
-        for i in range(0, len(target_vector)):
-            subsequence = sequence[i: i + self.window_size]
-            gc_count = subsequence.count('G') + subsequence.count('C')
-            scaling_factor = bias_values[gc_count]
-            target_vector[i: i+self.window_size] = [scaling_factor] * self.window_size
-        return np.array(target_vector[:len(sequence)])
-
-
 class FragmentLengthModel:
     """
     A model of the fragment length based on mean and standard deviation of the dataset. Used both
@@ -600,46 +548,38 @@ class FragmentLengthModel:
 
     :param fragment_mean: the mean of the collection of fragment lengths derived from data
     :param fragment_std: the standard deviation of the collection of fragment lengths derived from data
-    :param fragment_max: the largest fragment observed in the data
-    :param fragment_min: the smallest fragment observed in data
     :param rng: the random number generator for the run
     """
 
     def __init__(self,
-                 fragment_mean: float = None,
-                 fragment_std: float = None,
-                 fragment_max: int = None,
-                 fragment_min: int = None,
+                 fragment_mean: float,
+                 fragment_std: float,
                  rng: Generator = None):
-        self.fragment_mean = fragment_mean if fragment_mean else default_fragment_mean
-        self.fragment_st_dev = fragment_std if fragment_std else default_fragment_std
-        self.fragment_max = fragment_max if fragment_max else default_fragment_max
-        self.fragment_min = fragment_min if fragment_min else default_fragment_min
+        self.fragment_mean = fragment_mean
+        self.fragment_st_dev = fragment_std
         self.rng = rng
 
     def generate_fragments(self,
-                           total_length: int,
-                           read_length: int,
-                           coverage: int) -> list:
+                           number_of_fragments: int) -> list:
         """
         Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set
 
-        :param total_length: Length of the reference segment we are covering.
-        :param read_length: average length of the reads
-        :param coverage: the target coverage number
+        :param number_of_fragments: The number of fragments needed.
         :return: A list of fragment random fragment lengths sampled from the model.
         """
-        # Estimate the number of fragments needed (with a 2x padding)
-        number_of_fragments = int(round(total_length / read_length) * (coverage * 2))
+        # Due to natural variation in genome lengths, it's difficult to harden this code against all the possible
+        # inputs. In order to harden this code against infinite loops caused by fragment means that the wrong size for
+        # the genome, we introduce a small number of standard fragments, to ensure enough variability that our code can
+        # complete. a few small fragments should increase the variability of the set. Most of these are too small
+        # to create a read, so they become spacers instead.
+        extra_fragments = [10, 11, 12, 13, 14, 28, 31]
         # generates a distribution, assuming normality, then rounds the result and converts to ints
         dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
-        # filter the list to throw out outliers.
-        dist = [x for x in dist if self.fragment_min <= x <= self.fragment_max]
-        # Just a sanity check to make sure our data isn't too thin:
-        while number_of_fragments - len(dist) > 0:
-            additional_fragment = self.rng.normal(loc=self.fragment_mean, scale=self.fragment_st_dev)
-            if additional_fragment < read_length:
-                continue
-            dist.append(round(additional_fragment))
-
-        return dist
+        dist = [abs(x) for x in dist]
+        # We'll append enough fragments to pad out distribution and add variability. Don't know if the cost of doing
+        # this is worth it though.
+        number_extra = int(number_of_fragments * 0.1)
+        for i in range(number_extra):
+            dist.append(extra_fragments[i % len(extra_fragments)])
+        self.rng.shuffle(dist)  # this shuffle mixes extra fragments in.
+        return dist[:number_of_fragments]

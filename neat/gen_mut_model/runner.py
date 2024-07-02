@@ -5,10 +5,10 @@ Creates a mutation model
 import os.path
 import pathlib
 import pickle
+import sys
 
 import numpy as np
 from Bio import SeqIO
-
 
 from pathlib import Path
 import logging
@@ -81,7 +81,7 @@ def runner(reference_index,
 
     if len(ignore) == len(reference_index):
         _LOG.error("No valid human chromosome names detected. Check contig names reference.")
-        raise ValueError
+        sys.exit(1)
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     _LOG.info('Processing VCF file...')
@@ -91,7 +91,7 @@ def runner(reference_index,
 
     if not matching_variants or not matching_chromosomes:
         _LOG.error("No valid variants detected. Check names in vcf versus reference and/or bed.")
-        raise ValueError
+        sys.exit(1)
 
     trinuc_ref_count, bed_track_length = count_trinucleotides(reference_index,
                                                               bed,
@@ -100,7 +100,7 @@ def runner(reference_index,
 
     if not trinuc_ref_count:
         _LOG.error("No valid trinucleotides detected in reference.")
-        raise ValueError
+        sys.exit(1)
 
     """
     Collect and analyze the data in the VCF file
@@ -155,7 +155,7 @@ def runner(reference_index,
 
                 else:
                     _LOG.error(f'Ref allele in variant call does not match reference: {variant}')
-                    raise ValueError
+                    sys.exit(1)
 
             else:
                 indel_len = len(variant[3]) - len(variant[2])
@@ -214,7 +214,7 @@ def runner(reference_index,
     if not total_var:
         _LOG.error('Error: No valid variants were found, model could not be created. '
                    'Check that names are compatible.')
-        raise ValueError
+        sys.exit(1)
 
     # COMPUTE PROBABILITIES
 

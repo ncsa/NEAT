@@ -17,6 +17,7 @@ trigger quick-run mode, setting most of the parameters to defaults.
 import numpy as np
 import logging
 import yaml
+import sys
 
 try:
     from yaml import CLoader as Loader, CDumper as Dumper
@@ -80,7 +81,6 @@ class Options(SimpleNamespace):
         self.output = output_path
 
         self.defs['reference'] = (str, reference, 'exists', None)
-        self.defs['partition_mode'] = (str, 'chrom', None, None)
         self.defs['read_len'] = (int, 151, 10, inf)
         self.defs['threads'] = (int, 1, 1, inf)
         self.defs['coverage'] = (int, 10, 1, inf)
@@ -91,7 +91,6 @@ class Options(SimpleNamespace):
         self.defs['include_vcf'] = (str, None, 'exists', None)
         self.defs['target_bed'] = (str, None, 'exists', None)
         self.defs['discard_bed'] = (str, None, 'exists', None)
-        self.defs['off_target_scalar'] = (float, 0.00, 0, 1)
         self.defs['mutation_model'] = (str, None, 'exists', None)
         self.defs['mutation_rate'] = (float, None, 0, 0.3)
         self.defs['mutation_bed'] = (str, None, 'exists', None)
@@ -102,25 +101,22 @@ class Options(SimpleNamespace):
         self.defs['cancer_model'] = (str, None, 'exists', None)
         self.defs['cancer_purity'] = (float, 0.8, 0.0, 1.0)
 
-        self.defs['gc_model'] = (str, None, 'exists', None)
         self.defs['paired_ended'] = (bool, False, None, None)
         self.defs['fragment_model'] = (str, None, 'exists', None)
-        self.defs['fragment_mean'] = (float, None, 1e-10, inf)
+        self.defs['fragment_mean'] = (float, None, 10, inf)
         self.defs['fragment_st_dev'] = (float, None, 1e-10, inf)
         self.defs['produce_bam'] = (bool, False, None, None)
         self.defs['produce_vcf'] = (bool, False, None, None)
-        self.defs['produce_fasta'] = (bool, False, None, None)
         self.defs['produce_fastq'] = (bool, True, None, None)
         self.defs['no_coverage_bias'] = (bool, False, None, None)
 
         # These are primarily debug options
         self.defs['rng_seed'] = (int, None, None, None)
-        self.defs['min_mutations'] = (int, 1, None, None)
+        self.defs['min_mutations'] = (int, 0, None, None)
         self.defs['overwrite_output'] = (bool, False, None, None)
 
         # Create base variables, for update by the config
         self.reference: str | Path = reference
-        self.partition_mode: str = 'chrom'
         self.read_len: int = 151
         self.threads: int = 1
         self.coverage: int = 10
@@ -131,25 +127,21 @@ class Options(SimpleNamespace):
         self.include_vcf: str | None = None
         self.target_bed: str | None = None
         self.discard_bed: str | None = None
-        self.off_target_scalar: float = 0
         self.mutation_model: str | None = None
         self.mutation_rate: float | None = None
         self.mutation_bed: str | None = None
         self.quality_offset: int = 33
 
-        self.gc_model: str | None = None
         self.paired_ended: bool = False
         self.fragment_model: str | None = None
         self.fragment_mean: float | None = None
         self.fragment_st_dev: float | None = None
         self.produce_bam: bool = False
-        self.produce_fasta: bool = False
         self.produce_vcf: bool = False
         self.produce_fastq: bool = True
-        self.no_coverage_bias: bool = False
 
         # These are primarily debug options.
-        self.min_mutations: int = 1
+        self.min_mutations: int = 0
         self.overwrite_output: bool = False
         self.rng_seed: int | None = None
         self.rng: Generator | None = None
@@ -196,14 +188,16 @@ class Options(SimpleNamespace):
             pass
         elif lowval != "exists" and highval:
             if not (lowval <= value_to_check <= highval):
-                raise ValueError(f'@{keyname} must be between {lowval} and {highval}.')
+                _LOG.error(f'`{keyname}` must be between {lowval} and {highval} (input: {value_to_check}).')
+                sys.exit(1)
+
         elif lowval == "exists" and value_to_check:
             validate_input_path(value_to_check)
 
     def read(self):
         """
-        This sets up the option attributes. It's not perfect, because it sort of kills
-        type hints. But I'm not sure how else to accomplish this.
+        This sets up the option attributes. It's not perfect, because it sort of kills type hints.
+        But I'm not sure how else to accomplish this.
         """
         # Skip trying to read the config for a test run
         config = yaml.load(open(self.config_file, 'r'), Loader=Loader)
@@ -213,16 +207,23 @@ class Options(SimpleNamespace):
                 # if it's already set to the default value, ignore.
                 if value == default or value == ".":
                     continue
+                # check for empty
+                if value is None:
+                    if key == "reference":
+                        _LOG.error("Must entered a value for `reference` in config")
+                        sys.exit(1)
+                    else:
+                        _LOG.warning(f"No value entered for `{key}`, skipping.")
+                        continue
 
-                # Now we check that the type is correct and it is in range, depending on the type defined for it
+                # Now we check that the type is correct, and it is in range, depending on the type defined for it
                 # If it passes that it gets put into the args dictionary.
-                try:
-                    temp = type_of_var(value)
-                except ValueError:
-                    raise ValueError(f"Incorrect type for value entered for {key}: {type_of_var}")
+                if value != type_of_var(value):
+                    _LOG.error(f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})")
+                    sys.exit(1)
 
-                self.check_and_log_error(key, temp, criteria1, criteria2)
-                self.args[key] = temp
+                self.check_and_log_error(key, value, criteria1, criteria2)
+                self.args[key] = value
 
     def set_random_seed(self):
         """
@@ -247,8 +248,9 @@ class Options(SimpleNamespace):
         """
         Some sanity checks and corrections to the options.
         """
-        if not (self.produce_bam or self.produce_vcf or self.produce_fasta or self.produce_fastq):
-            raise ValueError('No files would be produced, as all file types are set to false')
+        if not (self.produce_bam or self.produce_vcf or self.produce_fastq):
+            _LOG.error('No files would be produced, as all file types are set to false')
+            sys.exit(1)
 
         # This next section just checks all the paired ended stuff
         if self.paired_ended:
@@ -276,11 +278,6 @@ class Options(SimpleNamespace):
                 fq1 = f'{self.output}.fastq.gz'
                 validate_output_path(fq1, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
-        if self.produce_fasta:
-            for i in range(self.ploidy):
-                fasta = f'{self.output}_{i+1}.fasta.gz'
-                validate_output_path(fasta, True, self.overwrite_output)
-                files_to_produce += f'\t- {fasta}\n'
         if self.produce_bam:
             bam = f'{self.output}_golden.bam'
             validate_output_path(bam, True, self.overwrite_output)
@@ -299,19 +296,29 @@ class Options(SimpleNamespace):
             _LOG.info(f"Single threading - 1 thread.")
             # We'll work on multithreading later...
             # _LOG.info(f'Multithreading - {options.threads} threads')
+        _LOG.info(f'Using a read length of {self.read_len}')
+        if self.fragment_mean:
+            if self.fragment_mean < self.read_len:
+                _LOG.error(f"`fragment_mean` (input: {self.fragment_mean}) "
+                           f"must be at least as long as `read_len` (input or default: {self.read_len}).")
+                sys.exit(1)
+            if self.fragment_st_dev:
+                _LOG.info(f'Generating fragments based on mean={self.fragment_mean}, '
+                          f'stand. dev={self.fragment_st_dev}')
+            else:
+                _LOG.error("Provided fragment mean, but no fragment standard deviation!")
+                sys.exit(1)
         if self.paired_ended:
             _LOG.info(f'Running in paired-ended mode.')
             if self.fragment_model:
                 _LOG.info(f'Using fragment length model: {self.fragment_model}')
-            elif self.fragment_mean and self.fragment_st_dev:
-                _LOG.info(f'Generating fragment model based on mean={self.fragment_mean}, '
-                          f'st dev={self.fragment_st_dev}')
+            elif self.fragment_mean:
+                pass  # Already addressed this above
             else:
-                raise ValueError("Paired ended mode requires either a fragment model or a mean and standard deviation.")
-
+                _LOG.error("Paired ended mode requires either a fragment model or a mean/standard deviation.")
+                sys.exit(1)
         else:
             _LOG.info(f'Running in single-ended mode.')
-        _LOG.info(f'Using a read length of {self.read_len}')
         _LOG.info(f'Average coverage: {self.coverage}')
         if self.error_model:
             _LOG.info(f'Using error model: {self.error_model}')
@@ -326,7 +333,6 @@ class Options(SimpleNamespace):
             _LOG.info(f'Vcf of variants to include: {self.include_vcf}')
         if self.target_bed:
             _LOG.info(f'BED of regions to target: {self.target_bed}')
-            _LOG.info(f'Off-target coverage rate: {self.off_target_scalar}')
         if self.discard_bed:
             _LOG.info(f'BED of regions to discard: {self.discard_bed}')
         if self.mutation_model:
@@ -335,8 +341,4 @@ class Options(SimpleNamespace):
             _LOG.info(f'Custom average mutation rate for the run: {self.mutation_rate}')
         if self.mutation_bed:
             _LOG.info(f'BED of mutation rates of different regions: {self.mutation_bed}')
-        if self.gc_model:
-            _LOG.info(f'Using GC model: {self.gc_model}')
-        if self.no_coverage_bias:
-            _LOG.info(f'Ignoring GC bias from coverage calculations.')
         _LOG.info(f'RNG seed value for run: {self.rng_seed}')

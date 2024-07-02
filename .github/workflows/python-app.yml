@@ -1,18 +1,18 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+# This workflow configures the environment and executes NEAT read-simulator tests using relative paths for a series of configuration files individually
+# For more information on using Python with GitHub Actions, refer to:
+# https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
 
-name: NEAT unit tests
+name: NEAT Unit Tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [develop, main]
   pull_request:
-    branches: [ master ]
+    branches: [main]
 
 jobs:
-  build:
+  detailed_test_execution:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
       - uses: s-weigand/setup-conda@v1.1.1
@@ -20,33 +20,63 @@ jobs:
           conda-channels: bioconda, conda-forge
           activate-conda: true
           repository: NCSA/NEAT
-      - name: basic test
+      - name: Environment Setup
         run: |
           conda env create -f environment.yml -n test_neat
-          conda activate test_neat
+          source activate test_neat
           poetry install
-          neat
-      
-#       - name: lint with flake8
-#         run: |
-#           conda activate neat
-#           # stop the build if there are Python syntax errors or undefined names
-#           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-#           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-#           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-#       - name: Execute test_gen_reads
-#         run: |
-#           conda activate neat
-#           cd ${{ github.workspace }}
-#           poetry install
-#           neat --log-level ERROR --no-log read-simulator -c data/test_config.yml -o test
-#       - run: echo "This job's status is ${{ job.status }}."
-#       - name: Execute seq_err_model_test
-#         run: |
-#           cd ${{ github.workspace }}
-#           neat --log-level ERROR --no-log model-seq-err -i data/baby.fastq
-#       - run: echo "This job's status is ${{ job.status }}." 
 
-      
+      - name: Run NEAT Simulation for config_test1
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test1.yml -o ../outputs/test1_read-simulator
 
-      
+      - name: Run NEAT Simulation for config_test2
+        run: |
+          source activate test_neat 
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test2.yml -o ../outputs/test2_read-simulator
+
+      - name: Run NEAT Simulation for config_test3
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test3.yml -o ../outputs/test3_read-simulator
+
+      - name: Run NEAT Simulation for config_test4
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test4.yml -o ../outputs/test4_read-simulator
+
+      - name: Run NEAT Simulation for config_test5
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test5.yml -o ../outputs/test5_read-simulator
+
+      - name: Run NEAT Simulation for config_test6
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test6.yml -o ../outputs/test6_read-simulator
+
+      - name: Run NEAT Simulation for config_test7
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test7.yml -o ../outputs/test7_read-simulator
+
+      - name: Run NEAT Simulation for config_test8
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test8.yml -o ../outputs/test8_read-simulator
+
+      - name: Run NEAT Simulation for config_test9
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test9.yml -o ../outputs/test9_read-simulator
+
+      - name: Run NEAT Simulation for config_test10
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test10.yml -o ../outputs/test10_read-simulator
+
+      - name: Run NEAT Simulation for config_test11
+        run: |
+          source activate test_neat
+          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test11.yml -o ../outputs/test11_read-simulator

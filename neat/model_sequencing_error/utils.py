@@ -5,10 +5,9 @@ Utilities to generate the sequencing error model
 import logging
 import numpy as np
 # TODO implement plotting
-# import seaborn as sns
 import matplotlib.pyplot as plt
+import sys
 
-import pandas as pd
 from scipy.stats import mode
 from ..common import open_input
 from ..models import take_closest
@@ -33,7 +32,8 @@ def convert_quality_string(qual_str: str, offset: int):
         try:
             ret_list.append(ord(qual_str[i]) - offset)
         except ValueError:
-            raise ValueError("improperly formatted fastq file")
+            _LOG.error("improperly formatted fastq file")
+            sys.exit(1)
 
     return ret_list
 
@@ -47,7 +47,8 @@ def expand_counts(count_array: list, scores: list):
     :return np.ndarray: a one-dimensional array reflecting the expanded count
     """
     if len(count_array) != len(scores):
-        raise ValueError("Count array and scores have different lengths.")
+        _LOG.error("Count array and scores have different lengths.")
+        sys.exit(1)
 
     ret_list = []
     for i in range(len(count_array)):
@@ -91,7 +92,8 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
         if readlen_mode.count < (0.5 * len(readlens)):
             _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
         if readlen_mode.count < 20:
-            raise ValueError(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
+            _LOG.error(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
+            sys.exit(1)
         read_length = int(readlen_mode.mode)
 
     else:

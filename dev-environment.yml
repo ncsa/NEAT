@@ -134,6 +134,7 @@ dependencies:
   - python-dateutil=2.8.2=pyhd8ed1ab_0
   - python_abi=3.10=2_cp310
   - pyyaml=6.0=py310h5764c6d_4
+  - pytest
   - qt-main=5.15.4=ha5833f6_2
   - readline=8.1.2=h0f457ee_0
   - requests-toolbelt=0.9.1=py_0
@@ -182,7 +183,6 @@ dependencies:
     - platformdirs==2.5.2
     - prompt-toolkit==3.0.29
     - pure-eval==0.2.2
-    - pybedtools==0.9.0
     - pygments==2.12.0
     - pyqt5-sip==12.9.0
     - pysam==0.19.1
