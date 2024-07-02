@@ -45,7 +45,7 @@ ploidy: .
 # of genotype and filter. You can pre-filter your vcf for these fields before inputting it
 # if this is not the desired behavior.
 # type: string | required = no
-input_variants: .
+include_vcf: .
 
 # Absolute path to bed file containing reference regions that the simulation
 # should target.
