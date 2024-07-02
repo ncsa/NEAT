@@ -240,7 +240,7 @@ produce_vcf: True
 paired_ended: True
 fragment_mean: 300
 fragment_st_dev: 30
-input_variants: NA12878.vcf
+include_vcf: NA12878.vcf
 mutation_rate: 0
 
 neat read-simulator                 \
