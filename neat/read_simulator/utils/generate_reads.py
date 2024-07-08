@@ -14,6 +14,8 @@ from ...common import open_output
 from ...variants import ContigVariants
 from .read import Read
 
+from ...models import make_qual_score_list, apply_markov_chain
+
 __all__ = [
     'generate_reads',
     'cover_dataset',
@@ -247,6 +249,14 @@ def generate_reads(reference: SeqRecord,
         open_output(chrom_fastq_r2_single) as fq2_single
     ):
 
+        # generate a pool of quality scores - pop the first one
+
+        bam_file = "/Users/keshavgandhi/Downloads/H1N1.bam"
+        quality_df = make_qual_score_list(bam_file)
+        markov_preds_df = apply_markov_chain(quality_df)
+
+        # integrate code here!
+
         for i in range(len(reads)):
             print(f'{i/len(reads):.2%}', end='\r')
             # First thing we'll do is check to see if this read is filtered out by a bed file
@@ -316,6 +326,9 @@ def generate_reads(reference: SeqRecord,
 
             read_name = f'{base_name}_{str(i+1)}'
 
+            # Apply Markov chain quality scores
+            pred_qualities = markov_preds_df.iloc[i % len(markov_preds_df)].values
+
             # If the other read is marked as a singleton, then this one was filtered out, or these are single-ended
             if not read2_is_singleton:
                 # It's properly paired if it's not a singleton
@@ -339,6 +352,7 @@ def generate_reads(reference: SeqRecord,
                     is_paired=is_paired
                 )
 
+                read_1.qualities = pred_qualities[:len(segment)]
                 read_1.mutations = find_applicable_mutations(read_1, contig_variants)
                 if is_paired:
                     handle = fq1_paired
@@ -348,7 +362,7 @@ def generate_reads(reference: SeqRecord,
                     error_model_1, mutation_model, handle, options.quality_offset, options.produce_fastq
                 )
 
-            # if read1 is a sinleton then these are single-ended reads or this one was filtered out, se we skip
+            # if read1 is a singleton then these are single-ended reads or this one was filtered out, se we skip
             if not read1_is_singleton:
                 is_paired = not read2_is_singleton
                 # Padding, as above
@@ -371,7 +385,9 @@ def generate_reads(reference: SeqRecord,
                     is_paired=is_paired
                 )
 
+                read_2.qualities = pred_qualities[:len(segment)]
                 read_2.mutations = find_applicable_mutations(read_2, contig_variants)
+
                 if is_paired:
                     handle = fq2_paired
                 else:

@@ -1,14 +1,28 @@
+# fastqc file_name.fastq - create a side-by-side summary
+# normal distribution of the skew/kurtosis (?) - interesting to take a look
+# memory profiling - we are in a good place - can run scripts now
+
+# https://ncsa.typeform.com/lightning-talks
+
+# funding/publishing doc as well as tables doc and math/algorithms doc
+
 import pysam
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
-import seaborn as sns
-from scipy.stats import ttest_ind, ttest_rel, f_oneway, norm, levene, shapiro
-from sklearn.utils import resample
+# import matplotlib.pyplot as plt
+# from matplotlib.patches import Patch
+# import seaborn as sns
+# from scipy.stats import ttest_ind, ttest_rel, f_oneway, norm, levene, shapiro
+from scipy.stats import norm
+# from sklearn.utils import resample
 import pathlib
 import pickle
 
+__all__ = [
+    "make_qual_score_list",
+    "apply_markov_chain",
+    "estimate_transition_probabilities"
+]
 
 def make_qual_score_list(bam_file):
     """Takes an input BAM file and creates lists of quality scores. This becomes a data frame, which will be
@@ -116,7 +130,7 @@ def apply_markov_chain(quality_df, noise_level=10, std_dev=2):
         pred_qualities = np.zeros_like(qualities)
         pred_qualities[0] = qualities[0]  # initial state
 
-        print(count, ":", qualities)
+        # print(count, ":", qualities)
         row_mean = np.mean(qualities)
         row_median = np.median(qualities)
         row_std = np.std(qualities)
@@ -134,7 +148,7 @@ def apply_markov_chain(quality_df, noise_level=10, std_dev=2):
             pred_qualities[i] += np.random.normal(0, noise_level)  # add some noise to the predictions
             pred_qualities[i] = min(max(pred_qualities[i], 0), 40)  # finalize range
 
-        print(count, "mean:", row_mean, "median:", row_median, "st dev:", row_std)
+        # print(count, "mean:", row_mean, "median:", row_median, "st dev:", row_std)
         count += 1
 
         for i in range(1, len(quality_df.columns)):
@@ -337,21 +351,20 @@ def plot_normality_results(quality_df_normality, markov_preds_df_normality):
     plt.tight_layout()
     plt.show()
 
-
 # example usage
 
 # bam_file = "/Users/keshavgandhi/Downloads/H1N1.bam"
 
-bam_file = "/Users/keshavgandhi/Downloads/subsample_3.125.bam"
-quality_df = make_qual_score_list(bam_file)
+# bam_file = "/Users/keshavgandhi/Downloads/subsample_3.125.bam"
+# quality_df = make_qual_score_list(bam_file)
 
-markov_preds_df = apply_markov_chain(quality_df)
+# markov_preds_df = apply_markov_chain(quality_df)
 
 # plot_heatmap(markov_preds_df, 'markov_chain_heatmap.svg')
 # save_to_csv_and_pickle(markov_preds_df, 'markov_preds.csv', 'markov_preds.pickle')
 
-sns.heatmap(quality_df, vmin=0, vmax=max(quality_df.max()), cmap='viridis')
-sns.heatmap(markov_preds_df, vmin=0, vmax=max(markov_preds_df.max()), cmap='viridis')
+# sns.heatmap(quality_df, vmin=0, vmax=max(quality_df.max()), cmap='viridis')
+# sns.heatmap(markov_preds_df, vmin=0, vmax=max(markov_preds_df.max()), cmap='viridis')
 
 # markov_preds_df
 
@@ -361,66 +374,66 @@ sns.heatmap(markov_preds_df, vmin=0, vmax=max(markov_preds_df.max()), cmap='viri
 # quality_df.iloc[100][25:75]
 # markov_preds_df.iloc[100][25:75]
 
-bam_file = "/Users/keshavgandhi/Downloads/H1N1.bam"
-test_df = make_qual_score_list(bam_file)
-markov_preds_df = apply_markov_chain(test_df)
+# bam_file = "/Users/keshavgandhi/Downloads/H1N1.bam"
+# test_df = make_qual_score_list(bam_file)
+# markov_preds_df = apply_markov_chain(test_df)
 
 # compare quality scores
 
-mean_p_values, variance_p_values = compare_quality_scores(test_df, markov_preds_df)
+# mean_p_values, variance_p_values = compare_quality_scores(test_df, markov_preds_df)
 
-markov_means = calculate_row_means(markov_preds_df).tolist()
-quality_means = calculate_row_means(test_df).tolist()
+# markov_means = calculate_row_means(markov_preds_df).tolist()
+# quality_means = calculate_row_means(test_df).tolist()
 
-markov_variances = calculate_row_variances(markov_preds_df).tolist()
-quality_variances = calculate_row_variances(test_df).tolist()
+# markov_variances = calculate_row_variances(markov_preds_df).tolist()
+# quality_variances = calculate_row_variances(test_df).tolist()
 
 # perform permutation test
 
-permutation_p_value_means = permutation_test(markov_means, quality_means)
+# permutation_p_value_means = permutation_test(markov_means, quality_means)
 
 # perform two-sample t-test
 
-t_stat_means, ttest_p_value_means = ttest_ind(markov_means, quality_means, equal_var=False)
+# t_stat_means, ttest_p_value_means = ttest_ind(markov_means, quality_means, equal_var=False)
 
 # bootstrap analysis for means
 
-bootstrapped_p_values_means = bootstrap_p_values(markov_means, quality_means)
-mean_bootstrap_p_value_means = np.mean(bootstrapped_p_values_means)
-std_bootstrap_p_value_means = np.std(bootstrapped_p_values_means)
+# bootstrapped_p_values_means = bootstrap_p_values(markov_means, quality_means)
+# mean_bootstrap_p_value_means = np.mean(bootstrapped_p_values_means)
+# std_bootstrap_p_value_means = np.std(bootstrapped_p_values_means)
 
-print(f'Permutation test p-value (means): {permutation_p_value_means}')
-print(f'Two-sample t-test p-value (means): {ttest_p_value_means}')
-print(f'Bootstrap mean p-value (means): {mean_bootstrap_p_value_means}')
-print(f'Bootstrap p-value standard deviation (means): {std_bootstrap_p_value_means}')
+# print(f'Permutation test p-value (means): {permutation_p_value_means}')
+# print(f'Two-sample t-test p-value (means): {ttest_p_value_means}')
+# print(f'Bootstrap mean p-value (means): {mean_bootstrap_p_value_means}')
+# print(f'Bootstrap p-value standard deviation (means): {std_bootstrap_p_value_means}')
 
 # perform permutation test for variances
 
-permutation_p_value_variances = permutation_test(markov_variances, quality_variances)
+# permutation_p_value_variances = permutation_test(markov_variances, quality_variances)
 
 # perform two-sample t-test for variances
 
-t_stat_variances, ttest_p_value_variances = ttest_ind(markov_variances, quality_variances, equal_var=False)
+# t_stat_variances, ttest_p_value_variances = ttest_ind(markov_variances, quality_variances, equal_var=False)
 
 # perform bootstrap analysis for variances
 
-bootstrapped_p_values_variances = bootstrap_p_values(markov_variances, quality_variances)
-mean_bootstrap_p_value_variances = np.mean(bootstrapped_p_values_variances)
-std_bootstrap_p_value_variances = np.std(bootstrapped_p_values_variances)
+# bootstrapped_p_values_variances = bootstrap_p_values(markov_variances, quality_variances)
+# mean_bootstrap_p_value_variances = np.mean(bootstrapped_p_values_variances)
+# std_bootstrap_p_value_variances = np.std(bootstrapped_p_values_variances)
 
-print(f'Permutation test p-value (variances): {permutation_p_value_variances}')
-print(f'Two-sample t-test p-value (variances): {ttest_p_value_variances}')
-print(f'Bootstrap mean p-value (variances): {mean_bootstrap_p_value_variances}')
-print(f'Bootstrap p-value standard deviation (variances): {std_bootstrap_p_value_variances}')
+# print(f'Permutation test p-value (variances): {permutation_p_value_variances}')
+# print(f'Two-sample t-test p-value (variances): {ttest_p_value_variances}')
+# print(f'Bootstrap mean p-value (variances): {mean_bootstrap_p_value_variances}')
+# print(f'Bootstrap p-value standard deviation (variances): {std_bootstrap_p_value_variances}')
 
 # plot comparison results
 
-plot_comparison_results(mean_p_values, variance_p_values)
+# plot_comparison_results(mean_p_values, variance_p_values)
 
 # test normality
 
-quality_df_normality_test, markov_preds_df_normality_test = test_normality(test_df, markov_preds_df)
+# quality_df_normality_test, markov_preds_df_normality_test = test_normality(test_df, markov_preds_df)
 
 # plot normality results
 
-plot_normality_results(quality_df_normality_test, markov_preds_df_normality_test)
+# plot_normality_results(quality_df_normality_test, markov_preds_df_normality_test)
