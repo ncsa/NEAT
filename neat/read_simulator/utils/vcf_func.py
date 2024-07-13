@@ -73,6 +73,7 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
 
     n_skipped = 0
     mismatched = 0
+    records_found = 0
     # maximum number of columns we are interested in. Used for trimming unwanted samples.
     max_col = 7
     with open_input(vcf_path) as f:
@@ -276,6 +277,9 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                     if rc == 1:
                         _LOG.warning(f"Input variant skipped because a variant already existed at that location:"
                                      f"{chrom}: {location} ({temp_variant})")
+                        n_skipped += 1
+                    else:
+                        records_found += 1
 
                     if tumor_normal:
                         """
@@ -283,7 +287,8 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                         """
                         pass
 
-    _LOG.info(f'Found {len(input_dict)} variants in input VCF.')
+    _LOG.info(f'Found {records_found} variants in input VCF.')
     _LOG.info(f'Skipped {n_skipped} variants because of multiples at the same location')
+    _LOG.info(f'Skipped {mismatched} variants because of a mismatch between Ref and reference.')
 
     return sample_columns
