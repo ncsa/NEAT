@@ -18,7 +18,6 @@ from neat import variants
 from ..common import TRINUC_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
-from .utils import bin_scores, take_closest
 
 __all__ = [
     "MutationModel",
@@ -376,11 +375,8 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         self.insertion_model = insertion_model
         self.uniform_quality_score = None
         if self.is_uniform:
-            # bin scores returns a list, so we need the first (only) element of the list
-            converted_avg_err = bin_scores(self.quality_scores,
-                                           [int(-10. * np.log10(self.average_error))])[0]
-            # Set score to the lowest of the max of the quality scores and the bin closest to the input avg error.
-            self.uniform_quality_score = min([max(self.quality_scores), converted_avg_err])
+            # Set score to the lowest of the max of the quality scores and the input avg error.
+            self.uniform_quality_score = min([max(self.quality_scores), int(-10. * np.log10(self.average_error) + 0.5)])
         self.rng = rng
 
     def get_sequencing_errors(self,
@@ -498,7 +494,13 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             for i in quality_index_map:
                 score = self.rng.normal(self.quality_score_probabilities[i][0],
                                         scale=self.quality_score_probabilities[i][1])
-                score = take_closest(self.quality_scores, score)
+                # make sure score is in range and an int
+                score = round(score)
+                if score > 42:
+                    score = 42
+                if score < 1:
+                    score = 1
+
                 temp_qual_array.append(score)
 
         if self.rescale_qualities:
@@ -509,9 +511,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                                                           self.quality_score_error_rate[n]) + 0.5)])
                               for n in temp_qual_array]
             # Now rebin the quality scores.
-            temp_qual_array = np.array(bin_scores(self.quality_scores, rescaled_quals))
+            temp_qual_array = np.array(rescaled_quals)
         else:
-            temp_qual_array = np.array(bin_scores(self.quality_scores, temp_qual_array))
+            temp_qual_array = np.array(temp_qual_array)
 
         return temp_qual_array[:input_read_length]
 
