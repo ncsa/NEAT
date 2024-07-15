@@ -10,7 +10,6 @@ import sys
 
 from scipy.stats import mode
 from ..common import open_input
-from ..models import take_closest
 
 __all__ = [
     "parse_file"
@@ -139,10 +138,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 
             for j in range(read_length):
                 # The qualities of each read_position_scores
-                quality_bin = take_closest(quality_scores, qualities_to_check[j])
-                bin_index = quality_scores.index(quality_bin)
-                temp_q_count[j][bin_index] += 1
-                qual_score_counter[quality_bin] += 1
+                qual_score_counter[qualities_to_check[j]] += 1
 
             if records_read % quarters == 0:
                 _LOG.info(f'reading data: {(records_read / max_reads) * 100:.0f}%')
