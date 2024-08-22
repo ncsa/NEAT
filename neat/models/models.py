@@ -59,7 +59,7 @@ class InsertionModel(VariantModel):
     def __init__(self,
                  insert_len_model: dict[int: float, ...],
                  rng: Generator = None):
-        # normalize the values
+        # Creating probabilities from the weights
         tot = sum(insert_len_model.values())
         self.insertion_len_model = {key: val / tot for key, val in insert_len_model.items()}
         self.rng = rng
@@ -92,7 +92,7 @@ class DeletionModel(VariantModel):
     def __init__(self,
                  deletion_len_model: dict[int: float, ...],
                  rng: Generator = None):
-        # normalize the values
+        # Creating probabilities from the weights
         tot = sum(deletion_len_model.values())
         self.deletion_len_model = {key: val/tot for key, val in deletion_len_model.items()}
         self.rng = rng
@@ -284,6 +284,9 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[0] + "_" + trinucleotide[2]]]
         # then determine the trans probs based on the middle nucleotide
         transition_probs = transition_matrix[NUC_IND[trinucleotide[1]]]
+        # Creating probabilities from the weights
+        transition_sum = sum(transition_probs)
+        transition_probs = [x/transition_sum for x in transition_probs]
         # Now pick a random alternate, weighted by the probabilities
         alt = self.rng.choice(ALLOWED_NUCL, p=transition_probs)
         temp_snv = SingleNucleotideVariant(reference_location, alt=alt)
