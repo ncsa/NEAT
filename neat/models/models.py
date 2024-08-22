@@ -90,7 +90,9 @@ class DeletionModel(VariantModel):
     def __init__(self,
                  deletion_len_model: dict[int: float, ...],
                  rng: Generator = None):
-        self.deletion_len_model = deletion_len_model
+        max_value = max(deletion_len_model.values())
+        # normalize the values
+        self.deletion_len_model = {key: val/max_value for key, val in deletion_len_model.items()}
         self.rng = rng
 
     def get_deletion_length(self, size: int = None) -> int | list[int, ...]:
