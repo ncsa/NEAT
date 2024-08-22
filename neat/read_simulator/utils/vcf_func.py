@@ -148,18 +148,20 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                     SAMPLE1 [9, optional]
                     SAMPLE2 [10, optional, cancer only]
                 """
-                # First, let's check if the chromosome for this record is even in the reference:
-                in_ref = record[0] in reference
+                # First, let's check if the chromosome for this record is even in the reference. Since input_dict is
+                # constructed from the reference, the keys list is the same.
+                in_ref = record[0] in input_dict.keys()
                 if not in_ref:
                     _LOG.warning(f'Skipping variant because the chromosome is not in the reference:\n{line}')
                     continue
 
+                reference_string = reference[record[0]][int(record[1]): int(record[1]) + len(record[3])].seq.upper()
                 # We already accounted for shifting to 0-based coordinates, so this should work.
-                if record[3] != str(reference[record[0]][int(record[1]): int(record[1]) + len(record[3])].seq):
+                if record[3] != str(reference_string):
                     mismatched += 1
                     _LOG.warning(f'Skipping variant because the ref field did not match the reference:'
                                  f'{record[0]}: {record[1]}, {record[3]} v '
-                                 f'{reference[record[0]][int(record[1]): int(record[1]) + len(record[3])].seq}')
+                                 f'{reference_string}')
                     continue
 
                 # We'll need the genotype when we generate reads, and output the records, if applicable

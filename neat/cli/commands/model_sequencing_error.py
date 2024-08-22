@@ -49,7 +49,8 @@ class Command(BaseCommand):
                             nargs='+',
                             required=False,
                             default=42,
-                            help="Quality score max. The default 42. The lowest possible score is 1")
+                            help="Quality score max. The default 42. The lowest possible score is 1. To used binned"
+                                 "scoring, enter a space separated list of scores, e.g., -Q 2 15 23 37")
 
         parser.add_argument('-m',
                             type=int,
