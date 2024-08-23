@@ -324,8 +324,8 @@ def runner(reference_index,
         transition_matrix=snp_transition_bias,
         trinuc_trans_matrices=trinuc_transition_bias,
         trinuc_mut_bias=trinuc_mutation_probs,
-        insert_len_model=insertion_counts,
-        deletion_len_model=deletion_counts
+        insert_len_model=insertion_freqency,
+        deletion_len_model=deletion_frequency
     )
 
     print('\nSaving model...')
