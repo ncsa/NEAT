@@ -512,6 +512,8 @@ def generate_reads(reference: SeqRecord,
 
         # generate a pool of quality scores - pop the first one
 
+        # TO DO: make an if statement that uses the quality score binning OR Markov model
+
         # bam_file = "/Users/keshavgandhi/PycharmProjects/NEAT/data/real_human_subsampled.bam"
         bam_file = "/Users/keshavgandhi/Downloads/H1N1.bam"
         quality_df = make_qual_score_list(bam_file)
