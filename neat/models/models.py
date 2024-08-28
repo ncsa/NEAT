@@ -72,8 +72,8 @@ class InsertionModel(VariantModel):
                      Greater than 1 returns a list of ints.
         :return: int or list of ints.
         """
-        return self.rng.choice(a=list(self.insert_len_model),
-                               p=[*self.insert_len_model.values()],
+        return self.rng.choice(a=list(self.insertion_len_model),
+                               p=[*self.insertion_len_model.values()],
                                size=size, shuffle=False)
 
 
