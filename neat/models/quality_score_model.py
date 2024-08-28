@@ -1,5 +1,3 @@
-# OLD CODE not to be integrated into NEAT!
-
 # fastqc file_name.fastq - create a side-by-side summary
 # normal distribution of the skew/kurtosis (?) - interesting to take a look
 # memory profiling - we are in a good place - can run scripts now
@@ -25,7 +23,6 @@ __all__ = [
     "apply_markov_chain",
     "estimate_transition_probabilities"
 ]
-
 
 def make_qual_score_list(bam_file):
     """Takes an input BAM file and creates lists of quality scores. This becomes a data frame, which will be
@@ -196,21 +193,6 @@ def apply_markov_chain(quality_df, noise_level=10, std_dev=2):
 
     return markov_preds_df
 
-
-def process_bam_file(pickle_file_path):
-    # bam_file = "/Users/keshavgandhi/PycharmProjects/NEAT/data/real_human_subsampled.bam"
-    bam_file = "/Users/keshavgandhi/Downloads/H1N1_new.bam"
-
-    quality_df = make_qual_score_list(bam_file)
-    markov_preds_df = apply_markov_chain(quality_df)
-    with open(pickle_file_path, "wb") as f:
-        pickle.dump(markov_preds_df, f)
-
-
-def load_markov_predictions(pickle_file):
-    with open(pickle_file, "rb") as f:
-        markov_preds_df = pickle.load(f)
-    return markov_preds_df
 
 def plot_heatmap(y_preds_df, file_path):
     """Takes a dataframe of predicted quality scores and plots a seaborn heatmap to visualize them."""
