@@ -87,7 +87,7 @@ class DeletionModel(VariantModel):
             we'll need the rng to perform certain methods.
     """
     _type = Deletion
-    _description = "A deletion of N bases"
+    _description = "A deletion of a random number of bases"
 
     def __init__(self,
                  deletion_len_model: dict[int: float, ...],
