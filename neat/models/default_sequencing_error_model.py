@@ -17,8 +17,8 @@ default_error_transition_matrix = np.array(
      [0.2505, 0.2552, 0.4943, 0.0]]
 )
 
-# This list may not be the final list
-default_quality_scores = np.array([2, 11, 25, 37])
+# All numbers from 1-42
+default_quality_scores = np.arange(1, 43)
 
 # This puts a high probability toward getting a maximum quality score. The current values
 # should be considered temporary. We're working on final values.

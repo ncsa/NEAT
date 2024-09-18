@@ -18,7 +18,6 @@ from neat import variants
 from ..common import TRINUC_IND, ALLOWED_NUCL, NUC_IND, DINUC_IND
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
-from .utils import bin_scores, take_closest
 
 __all__ = [
     "MutationModel",
@@ -60,7 +59,9 @@ class InsertionModel(VariantModel):
     def __init__(self,
                  insert_len_model: dict[int: float, ...],
                  rng: Generator = None):
-        self.insert_len_model = insert_len_model
+        # Creating probabilities from the weights
+        tot = sum(insert_len_model.values())
+        self.insertion_len_model = {key: val / tot for key, val in insert_len_model.items()}
         self.rng = rng
 
     def get_insertion_length(self, size: int = None) -> int | list[int, ...]:
@@ -71,8 +72,8 @@ class InsertionModel(VariantModel):
                      Greater than 1 returns a list of ints.
         :return: int or list of ints.
         """
-        return self.rng.choice(a=list(self.insert_len_model),
-                               p=[*self.insert_len_model.values()],
+        return self.rng.choice(a=list(self.insertion_len_model),
+                               p=[*self.insertion_len_model.values()],
                                size=size, shuffle=False)
 
 
@@ -91,7 +92,9 @@ class DeletionModel(VariantModel):
     def __init__(self,
                  deletion_len_model: dict[int: float, ...],
                  rng: Generator = None):
-        self.deletion_len_model = deletion_len_model
+        # Creating probabilities from the weights
+        tot = sum(deletion_len_model.values())
+        self.deletion_len_model = {key: val/tot for key, val in deletion_len_model.items()}
         self.rng = rng
 
     def get_deletion_length(self, size: int = None) -> int | list[int, ...]:
@@ -281,6 +284,9 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[0] + "_" + trinucleotide[2]]]
         # then determine the trans probs based on the middle nucleotide
         transition_probs = transition_matrix[NUC_IND[trinucleotide[1]]]
+        # Creating probabilities from the weights
+        transition_sum = sum(transition_probs)
+        transition_probs = [x/transition_sum for x in transition_probs]
         # Now pick a random alternate, weighted by the probabilities
         alt = self.rng.choice(ALLOWED_NUCL, p=transition_probs)
         temp_snv = SingleNucleotideVariant(reference_location, alt=alt)
@@ -376,11 +382,8 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         self.insertion_model = insertion_model
         self.uniform_quality_score = None
         if self.is_uniform:
-            # bin scores returns a list, so we need the first (only) element of the list
-            converted_avg_err = bin_scores(self.quality_scores,
-                                           [int(-10. * np.log10(self.average_error))])[0]
-            # Set score to the lowest of the max of the quality scores and the bin closest to the input avg error.
-            self.uniform_quality_score = min([max(self.quality_scores), converted_avg_err])
+            # Set score to the lowest of the max of the quality scores and the input avg error.
+            self.uniform_quality_score = min([max(self.quality_scores), int(-10. * np.log10(self.average_error) + 0.5)])
         self.rng = rng
 
     def get_sequencing_errors(self,
@@ -498,7 +501,13 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             for i in quality_index_map:
                 score = self.rng.normal(self.quality_score_probabilities[i][0],
                                         scale=self.quality_score_probabilities[i][1])
-                score = take_closest(self.quality_scores, score)
+                # make sure score is in range and an int
+                score = round(score)
+                if score > 42:
+                    score = 42
+                if score < 1:
+                    score = 1
+
                 temp_qual_array.append(score)
 
         if self.rescale_qualities:
@@ -509,9 +518,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                                                           self.quality_score_error_rate[n]) + 0.5)])
                               for n in temp_qual_array]
             # Now rebin the quality scores.
-            temp_qual_array = np.array(bin_scores(self.quality_scores, rescaled_quals))
+            temp_qual_array = np.array(rescaled_quals)
         else:
-            temp_qual_array = np.array(bin_scores(self.quality_scores, temp_qual_array))
+            temp_qual_array = np.array(temp_qual_array)
 
         return temp_qual_array[:input_read_length]
 

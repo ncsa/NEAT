@@ -62,9 +62,11 @@ def model_seq_err_runner(
     _LOG.debug(f"Quality offset: {offset}")
 
     final_quality_scores: list
+    binned_scores = False
     if len(qual_scores) == 1:
         final_quality_scores = list(range(1, qual_scores[0] + 1))
     else:
+        binned_scores = True
         final_quality_scores = sorted(qual_scores)
 
     _LOG.debug(f'Quality scores: {final_quality_scores}')
@@ -109,11 +111,14 @@ def model_seq_err_runner(
     for file in files:
         file_num += 1
         _LOG.info(f'Reading file {file_num} of {len(files)}')
-        parameters_by_position, file_avg_error, read_length = parse_file(file,
-                                                                         final_quality_scores,
-                                                                         num_records_to_process,
-                                                                         offset,
-                                                                         read_length)
+        parameters_by_position, file_avg_error, read_length = parse_file(
+            file,
+            final_quality_scores,
+            num_records_to_process,
+            offset,
+            read_length,
+            binned_scores
+        )
 
         read_parameters.append(parameters_by_position)
         average_errors.append(file_avg_error)

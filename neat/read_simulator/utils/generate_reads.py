@@ -71,20 +71,15 @@ def cover_dataset(
         # trying to get enough variability to harden NEAT against edge cases.
         if loop_count % 10 == 0:
             fragment_model.rng.shuffle(fragment_pool)
-        # Breaking the gename into fragments
+        # Mapping random fragments onto genome
+        i = 0
         while start < span_length:
             # We take the first element and put it back on the end to create an endless pool of fragments to draw from
-            fragment = fragment_pool.pop(0)
+            fragment = fragment_pool[i]
+            i = (i + 1) % len(fragment_pool)
             end = min(start + fragment, span_length)
-            # these are equivalent of reads we expect the machine to filter out, but we won't actually use it
-            if end - start < options.read_len:
-                # add some random flavor to try to keep it to falling into a loop
-                if fragment_model.rng.normal() < 0.5:
-                    fragment_pool.insert(len(fragment_pool)//2, fragment)
-                else:
-                    fragment_pool.insert(len(fragment_pool) - 3, fragment)
-            else:
-                fragment_pool.append(fragment)
+            # Ensure the read is long enough to form a read, else we will not use it.
+            if end - start > options.read_len:
                 temp_fragments.append((start, end))
             start = end
 
