@@ -20,7 +20,8 @@ from .default_sequencing_error_model import *
 from .variant_models import InsertionModel, DeletionModel, SnvModel
 
 __all__ = [
-    "ErrorContainer"
+    "ErrorContainer",
+    "SequencingErrorModel"
 ]
 
 _LOG = logging.getLogger(__name__)
