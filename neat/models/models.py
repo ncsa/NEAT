@@ -525,16 +525,6 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         return temp_qual_array[:input_read_length]
 
 
-class MarkovModel:
-    def __init__(self):
-        # TODO
-        pass
-
-    def get_quality_scores(self):
-        # TODO
-        pass
-
-
 class ErrorContainer:
     """
     Holds data for a single error

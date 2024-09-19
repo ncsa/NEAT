@@ -107,6 +107,16 @@ class TraditionalModel:
             return np.array([max([0, original_read_length * n // input_read_length]) for n in range(input_read_length)])
 
 
+class MarkovModel:
+    def __init__(self):
+        # TODO
+        pass
+
+    def get_quality_scores(self):
+        # TODO
+        pass
+
+
 class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel, TraditionalModel):
     """
     This is a SequencingErrorModel class, based on the old SequencingError. This covers both errors and quality
