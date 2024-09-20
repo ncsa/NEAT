@@ -8,7 +8,6 @@ future.
 
 import logging
 
-from numpy.random import Generator
 from Bio.Seq import Seq
 from Bio import SeqRecord
 
@@ -27,7 +26,7 @@ __all__ = [
 _LOG = logging.getLogger(__name__)
 
 
-class TraditionalModel:
+class TraditionalQualityModel:
     """
     This is the traditional NEAT model for generating quality scores. This will be replaced by
     a Markov model or an optional markov model
@@ -39,17 +38,20 @@ class TraditionalModel:
     :param is_uniform: Some machines use uniform quality scores. This makes simulation a little easier.
     """
 
-    def __init__(self,
-                 transition_matrix: np.ndarray = default_error_transition_matrix,
-                 quality_scores: np.ndarray = default_quality_scores,
-                 qual_score_probs: np.ndarray = default_qual_score_probs,
-                 is_uniform: bool = False,
-                 ):
+    def __init__(
+            self,
+            average_error: float = default_avg_seq_error,
+            transition_matrix: np.ndarray = default_error_transition_matrix,
+            quality_scores: np.ndarray = default_quality_scores,
+            qual_score_probs: np.ndarray = default_qual_score_probs,
+            is_uniform: bool = False
+    ):
 
         self.transition_matrix = transition_matrix
         self.quality_scores = quality_scores
         self.quality_score_probabilities = qual_score_probs
         self.is_uniform = is_uniform
+        self.average_error = average_error
 
         # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
         self.quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in self.quality_scores}
@@ -59,11 +61,12 @@ class TraditionalModel:
             # Set score to the lowest of the max of the quality scores and the input avg error.
             self.uniform_quality_score = min([max(self.quality_scores), int(-10. * np.log10(self.average_error) + 0.5)])
 
-    def get_quality_scores(self,
-                           input_read_length: int,
-                           orig_read_len: int,
-                           rng
-                           ) -> list:
+    def get_quality_scores(
+            self,
+            input_read_length: int,
+            orig_read_len: int,
+            rng
+    ) -> list:
         """
         Takes a read_length and rng and returns an array of quality scores
 
@@ -93,7 +96,8 @@ class TraditionalModel:
 
             return temp_qual_array
 
-    def quality_index_remap(self, input_read_length, original_read_length):
+    @staticmethod
+    def quality_index_remap(input_read_length, original_read_length):
         """
         Adjusts the quality map to the suitable read length.
 
@@ -108,7 +112,7 @@ class TraditionalModel:
             return np.array([max([0, original_read_length * n // input_read_length]) for n in range(input_read_length)])
 
 
-class MarkovModel:
+class MarkovQualityModel:
     def __init__(self):
         # TODO
         pass
@@ -118,34 +122,37 @@ class MarkovModel:
         pass
 
 
-class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel, TraditionalModel):
+class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     """
-    This is a SequencingErrorModel class, based on the old SequencingError. This covers both errors and quality
-    scores, since they are intimately related. There are three types of
-    errors possible: substitutions, insertions, and deletions, similar to mutations, but
-    simpler. Note that the three input probabilities must add up to 1.0 and the length the list of indel lengths
-    must be equal to the length of its corresponding probabilities.
+    This is a SequencingErrorModel class, based on the old SequencingError. Instead of handling everything, we've
+    refactored this to only handle sequencing errors. There are three types of errors possible: substitutions,
+    insertions, and deletions, similar to mutations, but simpler and with different underlying models. Note that the
+    three input probabilities must add up to 1.0 and the length the list of indel lengths must be equal to the length
+    of its corresponding probabilities.
 
     :param read_length: The read length derived from real data.
     :param rescale_qualities: If set to true, NEAT will attempt to rescale the qualities based on the input error
         model, rather than using the qualities derived from the real data.
-    :param variant_probs: Probability dict for each valid variant type
+    :param variant_probs: Probability dict for each valid variant type.
     :param indel_len_model: Similar to mutation model, but simpler because errors tend not to be complicated. The
-        three possible variant types for errors are Insertion, Deletion, and SNV
-    :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
-        we'll need the rng to perform certain methods.
+        three possible variant types for errors are Insertion, Deletion, and SNV.
+    :param insertion_model: The specific parameters for the machine's insertion error rates.
+    :param transition_matrix: The matrix for the transition for SNVs from one base to another.
+    :param rescale_qualities: If qualities should be shifted because of a manually entered error rate override.
     :param avg_seq_error: A float giving the average rate of sequencing errors,
         either defined by data or user input.
     """
 
-    def __init__(self,
-                 read_length: int = default_read_length,
-                 variant_probs: dict[variants: float] = default_error_variant_probs,
-                 indel_len_model: dict[int: float] = default_indel_len_model,
-                 insertion_model: np.ndarray = default_insertion_model,
-                 rescale_qualities: bool = False,
-                 avg_seq_error: float = default_avg_seq_error,
-                 rng: Generator = None):
+    def __init__(
+            self,
+            read_length: int = default_read_length,
+            variant_probs: dict[variants: float] = default_error_variant_probs,
+            indel_len_model: dict[int: float] = default_indel_len_model,
+            insertion_model: np.ndarray = default_insertion_model,
+            transition_matrix: np.ndarray = default_error_transition_matrix,
+            rescale_qualities: bool = False,
+            avg_seq_error: float = default_avg_seq_error,
+    ):
 
         SnvModel.__init__(self)
         InsertionModel.__init__(self, indel_len_model)
@@ -154,23 +161,21 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel, TraditionalM
         self.variant_probs = variant_probs
 
         self.read_length = read_length
-        self.read_length = read_length
         self.rescale_qualities = rescale_qualities
         self.insertion_model = insertion_model
+        self.transition_matrix = transition_matrix
         self.average_error = avg_seq_error
-        self.rng = rng
 
-    def get_sequencing_errors(self,
-                              read_length: int,
-                              padding: int,
-                              reference_segment: SeqRecord,
-                              quality_scores: np.ndarray,
-                              rng
-                              ):
+    def get_sequencing_errors(
+            self,
+            padding: int,
+            reference_segment: SeqRecord,
+            quality_scores: np.ndarray,
+            rng
+    ):
         """
         Inserts errors of type substitution, insertion, or deletion into read_data, and assigns a quality score
         based on the container model.
-        :param read_length: The length of the read to generate errors for.
         :param padding: this is the amount of space we have in the read for deletions.
         :param reference_segment: The section of the reference from which the read is drawn
         :param quality_scores: Array of quality scores for the read
@@ -180,14 +185,16 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel, TraditionalM
 
         error_indexes = []
         introduced_errors = []
+        # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
+        quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in quality_scores}
 
         # The use case here would be someone running a simulation where they want no sequencing errors.
         # No need to run any loops in this case.
         if self.average_error == 0:
             return introduced_errors
         else:
-            for i in range(read_length):
-                if rng.random() < self.quality_score_error_rate[quality_scores[i]]:
+            for i in range(self.read_length):
+                if rng.random() < quality_score_error_rate[quality_scores[i]]:
                     error_indexes.append(i)
 
         total_indel_length = 0
@@ -249,34 +256,6 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel, TraditionalM
                 del introduced_errors[i]
 
         return introduced_errors, max(padding, 0)
-
-    def generate_quality_scores(
-            self,
-            inp_read_len: int,
-    ):
-        if self.uniform_quality_score:
-            return np.array([self.uniform_quality_score] * inp_read_len)
-        else:
-
-            temp_quality_array = self.get_quality_scores(
-                inp_read_len,
-                self.read_length,
-                self.rng
-            )
-
-            if self.rescale_qualities:
-                # Note that rescaling won't have much effect on binned quality scores.
-                # First we rescale the quality score literals then convert back to phred score (with the 0.5
-                # causing borderline cases to take the next highest number).
-                rescaled_quals = [max([0, int(-10. * np.log10(self.average_error *
-                                                              self.quality_score_error_rate[n]) + 0.5)])
-                                  for n in temp_quality_array]
-                # Now rebin the quality scores.
-                temp_qual_array = np.array(rescaled_quals)
-            else:
-                temp_qual_array = np.array(temp_quality_array)
-
-            return temp_qual_array[:inp_read_len]
 
 
 class ErrorContainer:
