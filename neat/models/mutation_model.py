@@ -38,8 +38,6 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
                               Probability of a mutation being a deletion,
                               Probability of the mutation being a single nucleotide variant)
     :param is_cancer: Whether the model is for cancer
-    :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
-            we'll need the rng to perform certain methods. Must be set for runs.
     :param trinuc_trans_matrices: The transition matrices for the trinuc
         patterns.
     :param trinuc_mut_bias: The bias for each possible trinucleotide, as measured in the
@@ -54,7 +52,6 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
                  variant_probs: dict[variants: float, ...] = default_variant_probs,
                  transition_matrix: np.ndarray = default_mutation_sub_matrix,
                  is_cancer: bool = False,
-                 rng: Generator = None,
                  # Any new parameters needed for new models should go below
                  trinuc_trans_matrices: np.ndarray = default_trinuc_trans_matrices,
                  trinuc_mut_bias: np.ndarray = default_trinuc_mut_bias,
@@ -78,39 +75,34 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         self.variant_probs = variant_probs
         self.transition_matrix = transition_matrix
         self.is_cancer = is_cancer
-        self.rng = rng
         self.all_dels = []
         self.all_ins = []
 
-    def get_mutation_type(self) -> variants:
+    def get_mutation_type(self, rng: Generator) -> variants:
         """
         Picks one of the mutation types at random using a weighted list from the model.
         Note that the order of mutation types is Insertion, Deletion, SNV. To update the model selection if any
         new variant types are added, you'll need to import the type and add it to the return of this method
 
+        :param rng: The random number generator for the run
         :return: One of the defined variant type classes.
         """
-        return self.rng.choice(a=[*self.variant_probs],
-                               p=[*self.variant_probs.values()])
-
-    def is_homozygous(self) -> bool:
-        """
-        Randomly samples from the homozygous frequency to get either a true or false.
-
-        :return: True or False
-        """
-        return True if self.rng.random() <= self.homozygous_freq else False
+        return rng.choice(
+            a=[*self.variant_probs],
+            p=[*self.variant_probs.values()]
+        )
 
     """
     Each new variant will need a generation method here).
     """
-    def generate_snv(self, trinucleotide: Seq, reference_location: int) -> SingleNucleotideVariant:
+    def generate_snv(self, trinucleotide: Seq, reference_location: int, rng: Generator) -> SingleNucleotideVariant:
         """
         This takes a location on the sequence and a location within the reference and returns a new SNV
 
         :param trinucleotide: The trinuc of interest for this variant
         :param reference_location: The same position, relative to the reference,
             used to retrieve the current reference base.
+        :param rng: The random number generator for the run
         :return: A randomly generated variant
         """
         # First determine which matrix to use
@@ -121,36 +113,38 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         transition_sum = sum(transition_probs)
         transition_probs = [x/transition_sum for x in transition_probs]
         # Now pick a random alternate, weighted by the probabilities
-        alt = self.rng.choice(ALLOWED_NUCL, p=transition_probs)
+        alt = rng.choice(ALLOWED_NUCL, p=transition_probs)
         temp_snv = SingleNucleotideVariant(reference_location, alt=alt)
         self.all_ins.append(temp_snv)
         return temp_snv
 
-    def generate_insertion(self, location: int, ref: Seq) -> Insertion:
+    def generate_insertion(self, location: int, ref: Seq, rng: Generator) -> Insertion:
         """
         This method generates an insertion object, based on the insertion model
 
         :param location: The location of the variant, relative to the reference
         :param ref: The reference for which to generate the variant
+        :param rng: The random number generator for the run
         :return:
         """
         # Note that insertion length model is based on the number of bases inserted. We add 1 to the length
         # to get the length of the VCF version of the variant.
-        length = self.get_insertion_length() + 1
-        insertion_string = ''.join(self.rng.choice(ALLOWED_NUCL, size=length))
+        length = self.get_insertion_length(rng) + 1
+        insertion_string = ''.join(rng.choice(ALLOWED_NUCL, size=length))
         alt = ref + insertion_string
         return Insertion(location, length, alt)
 
-    def generate_deletion(self, location) -> Deletion:
+    def generate_deletion(self, location: int, rng: Generator) -> Deletion:
         """
         Takes a location and returns a deletion object
 
-        :param location:
-        :return:
+        :param location: The coordinate for the deletion
+        :param rng: the random number generator used for this run
+        :return: a Deletion object with the coordinate and length
         """
         # Note that the deletion length model is based on the number of bases deleted,
         # so we add 1 to account for the common base between ref and alternate.
-        length = self.get_deletion_length() + 1
+        length = self.get_deletion_length(rng) + 1
         # Plus one so we make sure to grab the first base too.
         # Note: if we happen to go past the end of the sequence, it will just be shorter.
         temp_del = Deletion(location, length)

@@ -189,12 +189,12 @@ def plot_stuff(init_q, real_q, q_range, prob_q, actual_readlen, plot_path):
     plt.rcParams.update({'font.size': 14, 'font.weight': 'bold', 'lines.linewidth': 3})
 
     plt.figure(1)
-    Z = np.array(init_q).T
-    X, Y = np.meshgrid(range(0, len(Z[0]) + 1), range(0, len(Z) + 1))
-    plt.pcolormesh(X, Y, Z, vmin=0., vmax=0.25)
-    plt.axis([0, len(Z[0]), 0, len(Z)])
-    plt.yticks(range(0, len(Z), 10), range(0, len(Z), 10))
-    plt.xticks(range(0, len(Z[0]), 10), range(0, len(Z[0]), 10))
+    z = np.array(init_q).T
+    x, y = np.meshgrid(range(0, len(z[0]) + 1), range(0, len(z) + 1))
+    plt.pcolormesh(x, Y, z, vmin=0., vmax=0.25)
+    plt.axis([0, len(z[0]), 0, len(z)])
+    plt.yticks(range(0, len(z), 10), range(0, len(z), 10))
+    plt.xticks(range(0, len(z[0]), 10), range(0, len(z[0]), 10))
     plt.xlabel('Read Position')
     plt.ylabel('Quality Score')
     plt.title('Q-Score Prior Probabilities')
@@ -233,7 +233,7 @@ def plot_stuff(init_q, real_q, q_range, prob_q, actual_readlen, plot_path):
 
         plt.figure(p + 1)
         z = np.log10(current_data)
-        x, y = np.meshgrid(range(0, len(Z[0]) + 1), range(0, len(Z) + 1))
+        x, y = np.meshgrid(range(0, len(z[0]) + 1), range(0, len(z) + 1))
         plt.pcolormesh(x, y, z[::-1, :], vmin=v_min_log[0], vmax=v_min_log[1], cmap='jet')
         plt.xlim([q_range[0], q_range[1] + 1])
         plt.ylim([real_q - q_range[1] - 1, real_q - q_range[0]])

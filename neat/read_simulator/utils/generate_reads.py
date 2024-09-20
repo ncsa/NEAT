@@ -1,14 +1,13 @@
 import logging
 import time
 import pickle
-import sys
 
 from math import ceil
 from pathlib import Path
 from Bio import SeqRecord
 from bisect import bisect_left, bisect_right
 
-from ...models import SequencingErrorModel, FragmentLengthModel, MutationModel
+from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
 from .options import Options
 from ...common import open_output
 from ...variants import ContigVariants
@@ -48,7 +47,7 @@ def cover_dataset(
     number_reads = ceil((span_length * options.coverage) / options.read_len)
 
     # We use fragments to model the DNA
-    fragment_pool = fragment_model.generate_fragments(number_reads * 3)
+    fragment_pool = fragment_model.generate_fragments(number_reads * 3, options.rng)
 
     # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
     # step 2: repeat above until number of reads exceeds number_reads * 1.5
@@ -70,7 +69,7 @@ def cover_dataset(
         temp_fragments = []
         # trying to get enough variability to harden NEAT against edge cases.
         if loop_count % 10 == 0:
-            fragment_model.rng.shuffle(fragment_pool)
+            options.rng.shuffle(fragment_pool)
         # Mapping random fragments onto genome
         i = 0
         while start < span_length:
@@ -107,7 +106,7 @@ def cover_dataset(
                 if insert_size > 2 * options.read_len:
                     # Probably an outlier fragment length. We'll just pitch one of the reads
                     # and consider it lost to the ages.
-                    if fragment_model.rng.choice((True, False)):
+                    if options.rng.choice((True, False)):
                         read1 = (0, 0)
                     else:
                         read2 = (0, 0)
@@ -119,7 +118,7 @@ def cover_dataset(
     # Convert set to final list
     final_reads = list(final_reads)
     # Now we shuffle them to add some randomness
-    fragment_model.rng.shuffle(final_reads)
+    options.rng.shuffle(final_reads)
     # And only return the number we needed
     _LOG.debug(f"Coverage required {loop_count} loops")
     if options.paired_ended:
@@ -171,20 +170,22 @@ def overlaps(test_interval: tuple[int, int], comparison_interval: tuple[int, int
            (test_interval[0] <= comparison_interval[0] and test_interval[1] >= comparison_interval[1])
 
 
-def generate_reads(reference: SeqRecord,
-                   reads_pickle: str,
-                   error_model_1: SequencingErrorModel,
-                   error_model_2: SequencingErrorModel | None,
-                   mutation_model: MutationModel,
-                   fraglen_model: FragmentLengthModel,
-                   contig_variants: ContigVariants,
-                   temporary_directory: str | Path,
-                   targeted_regions: list,
-                   discarded_regions: list,
-                   options: Options,
-                   chrom: str,
-                   ref_start: int = 0
-                   ) -> tuple:
+def generate_reads(
+        reference: SeqRecord,
+        reads_pickle: str,
+        error_model_1: SequencingErrorModel,
+        error_model_2: SequencingErrorModel | None,
+        qual_model_1: TraditionalQualityModel,
+        qual_model_2: TraditionalQualityModel | None,
+        fraglen_model: FragmentLengthModel,
+        contig_variants: ContigVariants,
+        temporary_directory: str | Path,
+        targeted_regions: list,
+        discarded_regions: list,
+        options: Options,
+        chrom: str,
+        ref_start: int = 0
+) -> tuple:
     """
     This will generate reads given a set of parameters for the run. The reads will output in a fastq.
 
@@ -192,7 +193,8 @@ def generate_reads(reference: SeqRecord,
     :param reads_pickle: The file to put the reads generated into, for bam creation.
     :param error_model_1: The error model for this run, the forward strand
     :param error_model_2: The error model for this run, reverse strand
-    :param mutation_model: The mutation model for this run
+    :param qual_model_1: The quality score model for this run, forward strand
+    :param qual_model_2: The quality score model for this run, reverse strand
     :param fraglen_model: The fragment length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
     :param temporary_directory: The directory where to store temporary files for the run
@@ -331,6 +333,7 @@ def generate_reads(reference: SeqRecord,
                     position=read1[0] + ref_start,
                     end_point=read1[1] + ref_start,
                     padding=actual_padding,
+                    run_read_len=options.read_len,
                     is_paired=is_paired
                 )
 
@@ -340,7 +343,12 @@ def generate_reads(reference: SeqRecord,
                 else:
                     handle = fq1_single
                 read_1.finalize_read_and_write(
-                    error_model_1, mutation_model, handle, options.quality_offset, options.produce_fastq
+                    error_model_1,
+                    qual_model_1,
+                    handle,
+                    options.quality_offset,
+                    options.produce_fastq,
+                    options.rng
                 )
 
             # if read1 is a sinleton then these are single-ended reads or this one was filtered out, se we skip
@@ -362,6 +370,7 @@ def generate_reads(reference: SeqRecord,
                     position=read2[0] + ref_start,
                     end_point=read2[1] + ref_start,
                     padding=actual_padding,
+                    run_read_len=options.read_len,
                     is_reverse=True,
                     is_paired=is_paired
                 )
@@ -372,7 +381,12 @@ def generate_reads(reference: SeqRecord,
                 else:
                     handle = fq2_single
                 read_2.finalize_read_and_write(
-                    error_model_2, mutation_model, handle, options.quality_offset, options.produce_fastq
+                    error_model_2,
+                    qual_model_2,
+                    handle,
+                    options.quality_offset,
+                    options.produce_fastq,
+                    options.rng
                 )
 
             if properly_paired:

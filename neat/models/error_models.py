@@ -14,13 +14,17 @@ from Bio import SeqRecord
 from neat import variants
 
 from ..common import ALLOWED_NUCL, NUC_IND
+# Default values
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
+from .default_quality_score_model import *
+
 from .variant_models import InsertionModel, DeletionModel, SnvModel
 
 __all__ = [
     "ErrorContainer",
-    "SequencingErrorModel"
+    "SequencingErrorModel",
+    "TraditionalQualityModel"
 ]
 
 _LOG = logging.getLogger(__name__)
@@ -63,22 +67,29 @@ class TraditionalQualityModel:
 
     def get_quality_scores(
             self,
-            input_read_length: int,
-            orig_read_len: int,
+            run_read_length: int,
+            model_read_length: int,
             rng
-    ) -> list:
+    ) -> np.ndarray:
         """
         Takes a read_length and rng and returns an array of quality scores
 
-        :param input_read_length: The desired length of the quality score array
-        :param orig_read_len: the original read length for the model
+        :param run_read_length: The desired length of the quality score array
+        :param model_read_length: the original read length for the model
         :param rng: random number generator.
         :return: An array of quality scores.
         """
         if self.uniform_quality_score:
-            return [self.uniform_quality_score] * input_read_length
+            return np.array([self.uniform_quality_score] * run_read_length)
         else:
-            quality_index_map = self.quality_index_remap(input_read_length, orig_read_len)
+            if run_read_length == model_read_length:
+                quality_index_map = np.arange(model_read_length)
+            else:
+                # This is basically a way to evenly spread the distribution across the number of bases in the read
+                quality_index_map = np.array(
+                    [max([0, model_read_length * n // run_read_length]) for n in range(run_read_length)]
+                )
+
             temp_qual_array = []
             for i in quality_index_map:
                 score = rng.normal(
@@ -94,22 +105,7 @@ class TraditionalQualityModel:
 
                 temp_qual_array.append(score)
 
-            return temp_qual_array
-
-    @staticmethod
-    def quality_index_remap(input_read_length, original_read_length):
-        """
-        Adjusts the quality map to the suitable read length.
-
-        :param input_read_length: The desired length for the current read.
-        :param original_read_length: The set read-length for the model.
-        :return: An index map from the default read length to the new one.
-        """
-        if input_read_length == original_read_length:
-            return np.arange(original_read_length)
-        else:
-            # This is basically a way to evenly spread the distribution across the number of bases in the read
-            return np.array([max([0, original_read_length * n // input_read_length]) for n in range(input_read_length)])
+            return np.array(temp_qual_array)
 
 
 class MarkovQualityModel:

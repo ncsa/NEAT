@@ -15,9 +15,10 @@ from typing import TextIO
 from Bio.Seq import Seq, MutableSeq
 from Bio import pairwise2
 from Bio.pairwise2 import format_alignment
+from numpy.random import Generator
 
 from ...common import ALLOWED_NUCL
-from ...models import SequencingErrorModel, ErrorContainer, MutationModel
+from ...models import SequencingErrorModel, ErrorContainer, MutationModel, TraditionalQualityModel
 from ...variants import SingleNucleotideVariant, Insertion, Deletion
 
 _LOG = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class Read:
     :param position: First position of the read, relative to the reference
     :param end_point: End point of the read, relative to the reference
     :param padding: The amount of padding we have for this read, will influence if we can add deletions
+    :param run_read_len: The final read length desired.
     :param is_reverse: Whether the read is reversed
     :param is_paired: Whether this read has a proper pair.
     """
@@ -46,6 +48,7 @@ class Read:
                  position: int,
                  end_point: int,
                  padding: int,
+                 run_read_len: int,
                  is_reverse: bool = False,
                  is_paired: bool = False):
 
@@ -57,7 +60,7 @@ class Read:
         self.position = position
         self.end_point = end_point
         self.padding = padding
-        self.length = end_point - position
+        self.run_read_length = run_read_len
         self.is_reverse = is_reverse
         self.is_paired = is_paired
 
@@ -66,7 +69,7 @@ class Read:
         self.read_sequence: Seq = Seq("")  # initialize to empty sequence
         self.errors: list[ErrorContainer] = []  # initialize
         self.mutations: dict[int: list] = {}  # initialize
-        self.quality_array: np.ndarray = np.zeros(self.length)  # this will have the correct memory length
+        self.quality_array: np.ndarray = np.zeros(self.run_read_length)  # this will have the correct memory length
         self.mapping_quality: int = 0  # initialize at 0
         self.read_quality_string: str = ""  # This will hold the read quality string
         self.num_ns = 0
@@ -114,7 +117,7 @@ class Read:
             return False
 
     def __len__(self):
-        return self.length
+        return self.run_read_length
 
     def update_quality_array(
             self,
@@ -159,11 +162,11 @@ class Read:
                             np.array(new_quality_score),
                             self.quality_array[location+ref_length:]))
 
-    def apply_errors(self, err_model: SequencingErrorModel):
+    def apply_errors(self, quality_model: TraditionalQualityModel):
         """
         This function applies errors to a sequence and calls the update_quality_array function after
 
-        :param err_model: The error model for this run,
+        :param quality_model: The error model for this run,
         :return: None, The sequence, with errors applied
         """
         mutated_sequence = MutableSeq(self.read_sequence)
@@ -177,30 +180,32 @@ class Read:
                 error.alt,
                 error.location,
                 "error",
-                list(err_model.quality_scores),
+                list(quality_model.quality_scores),
             )
 
         self.read_sequence = Seq(mutated_sequence)
 
-    def apply_mutations(self, quality_scores: list, mut_model: MutationModel):
+    def apply_mutations(self, quality_scores: list, rng: Generator):
         """
         Applying mutations involves one extra step, because of polyploidism. There may be more than one mutation
         at a given location, so it is formulated as a list. We then pick one at random for this read.
 
         :param quality_scores: The possible quality scores for this run (to update quality scores)
-        :param mut_model: The mutation model for the run, used for the zygosity and for the rng
+        :param rng: the random number generator for the run
         :return: mutated sequence, with mutations applied
         """
         mutated_sequence = MutableSeq(self.read_sequence)
         for location in self.mutations:
-            variant_to_apply = mut_model.rng.choice(self.mutations[location])
+            variant_to_apply = rng.choice(self.mutations[location])
 
             # Fetch parameters
             qual_score = variant_to_apply.get_qual_score()
             # Find the position within the read for this variant, cast as a python int, instead of a numpy int
             position = int(variant_to_apply.get_0_location() - self.position)
             # Figure out if the variant is in this read. If 'to_mutate' selects any 1, then it is mutated.
-            to_mutate = mut_model.rng.choice(variant_to_apply.genotype)
+            # For diploid animals, for example, this should result in approximately 50% of reads having a
+            # given heterozygous mutation and 100% for homozygous mutations.
+            to_mutate = rng.choice(variant_to_apply.genotype)
             # If a 1 was selected, then apply the variant, else return the original sequence
             if to_mutate:
                 if type(variant_to_apply) == Insertion or type(variant_to_apply) == SingleNucleotideVariant:
@@ -239,27 +244,27 @@ class Read:
 
     def apply_variants_for_final_output(
             self,
-            error_model: SequencingErrorModel,
-            mutation_model: MutationModel
+            quality_model: TraditionalQualityModel,
+            rng: Generator
     ):
         """
         Gets mutated sequence to output for fastq/bam
 
-        :param error_model: The error model for the run
-        :param mutation_model: The mutation model for the run
+        :param quality_model: The error model for the run
+        :param rng: the random number generator for the run
         :return: the mutated sequence
         """
         # I realize that it's a little weird to convert self.read_sequence to mutable then assign to a variable
         # instead of operating on it in place, but while it is mutable, it was easier to treat it like a variable then
         # reconvert and reassign.
         if self.mutations:
-            self.apply_mutations(list(error_model.quality_scores), mutation_model)
+            self.apply_mutations(list(quality_model.quality_scores), rng)
         if self.errors:
-            self.apply_errors(error_model)
+            self.apply_errors(quality_model)
 
         # The segments we hold off truncating because we need them for alignments,
         # but the quality array is fine to trim here.
-        self.quality_array = self.quality_array[:self.length]
+        self.quality_array = self.quality_array[:self.run_read_length]
 
     def contains(self, test_pos: int):
         return self.position <= test_pos < self.end_point
@@ -297,64 +302,66 @@ class Read:
     def finalize_read_and_write(
             self,
             err_model: SequencingErrorModel,
-            mut_model: MutationModel,
+            qual_model: TraditionalQualityModel,
             fastq_handle: TextIO,
             quality_offset: int,
             produce_fastq: bool,
+            rng: Generator
     ):
         """
         Writes the record to the temporary fastq file
 
         :param err_model: The error model for the run
-        :param mut_model: The mutation model for the run
+        :param qual_model: The quality score model for the run
         :param fastq_handle: the path to the fastq model to write the read
         :param quality_offset: the quality offset for this run
         :param produce_fastq: If true, this will write out the temp fastqs. If false, this will only write out the tsams
             to create the bam files.
+        :param rng: the random number generator for this run
         """
 
-        # Generate quality scores to cover the extended segment. We'll trim later
-        self.quality_array = err_model.get_quality_scores(len(self.reference_segment))
+        # Generate quality scores for the read
+        self.quality_array = qual_model.get_quality_scores(err_model.read_length, self.run_read_length, rng)
 
         # This replaces either hard or soft-masked reference segment with upper case or a standard repeat
         # It updates the quality array and reference segment in place, including reversing them, if appropriate
-        self.convert_masking(err_model)
+        self.convert_masking(qual_model)
 
         # set the read sequence to match the reference
         self.read_sequence = self.reference_segment
 
         # Get errors for the rea and update the quality score
         self.errors, self.padding = err_model.get_sequencing_errors(
-            self.length,
             self.padding,
             self.reference_segment,
-            self.quality_array
+            self.quality_array,
+            rng
         )
 
         # This applies any variants, updates quality score and read sequence in place
-        self.apply_variants_for_final_output(err_model, mut_model)
+        self.apply_variants_for_final_output(qual_model, rng)
 
         self.read_quality_string = "".join([chr(x + quality_offset) for x in self.quality_array])
-        # If this read isn't low quality, pick a standard mapping quality.
+        # If this read isn't low quality, pick a standard mapping quality
         # We could have this be user assigned.
         if not self.mapping_quality:
             self.mapping_quality = 70
 
         if produce_fastq:
             fastq_handle.write(f'@{self.name}\n')
-            fastq_handle.write(f'{str(self.read_sequence[:self.length])}\n')
+            fastq_handle.write(f'{str(self.read_sequence[:self.run_read_length])}\n')
             fastq_handle.write('+\n')
             fastq_handle.write(f'{self.read_quality_string}\n')
 
-    def convert_masking(self, error_model: SequencingErrorModel):
+    def convert_masking(self, quality_model: TraditionalQualityModel):
         """
         Replaces invalid characters with random valid characters drawn from a standard repeat sequence seen in a lot
         of different species (TTAGGG). If there is call for it, we can make this customizable to species.
 
-        :param error_model: The error model for this run
+        :param quality_model: The error model for this run
         :return: The modified sequence object
         """
-        bad_score = min(error_model.quality_scores)
+        bad_score = min(quality_model.quality_scores)
         # we'll use generic human repeats, as commonly found in masked regions. We may refine this to make configurable
         repeat_bases = list("TTAGGG")
         if self.is_reverse:
@@ -378,10 +385,20 @@ class Read:
 
         self.reference_segment = Seq(modified_segment)
 
-    def align_seqs(self, reverse: bool):
+    def align_seqs(self):
+        """
+        The sequence alignment. We restrict the alignment to the section of the reference where we know the read
+        came from and try to generate a minimal cigar string. The cigar string part may still need tweaking.
+        """
         raw_alignment = pairwise2.align.globalms(
-            self.reference_segment, self.read_sequence, match=10, mismatch=-10, open=-20, extend=-10,
-            penalize_extend_when_opening=True, one_alignment_only=True,
+            self.reference_segment,
+            self.read_sequence,
+            match=10,
+            mismatch=-10,
+            open=-20,
+            extend=-10,
+            penalize_extend_when_opening=True,
+            one_alignment_only=True,
         )
         alignment = format_alignment(*raw_alignment[0], full_sequences=True).split()
         aligned_template_seq = alignment[0]
@@ -421,11 +438,10 @@ class Read:
                     curr_char = 'M'
                     cig_count = 1
                     cig_length += 1
-            if cig_length == self.length:
+            if cig_length == self.run_read_length:
                 break
 
         return cig_string, cig_count, curr_char, cig_length
-
 
     def make_cigar(self):
         """
@@ -434,14 +450,13 @@ class Read:
         # These parameters were set to minimize breaks in the mutated sequence and find the best
         # alignment from there.
 
-        cig_string, cig_count, curr_char, cig_length = self.align_seqs(False)
-        if cig_length < self.length:
+        cig_string, cig_count, curr_char, cig_length = self.align_seqs()
+        if cig_length < self.run_read_length:
             _LOG.warning("Poor alignment, trying reversed")
-            cig_string2, cig_count2, curr_char2, cig_length = self.align_seqs(True)
-            if cig_length < self.length:
+            cig_string2, cig_count2, curr_char2, cig_length = self.align_seqs()
+            if cig_length < self.run_read_length:
                 _LOG.error("Alignment still not working")
                 sys.exit(1)
-
 
         # append the final section as we return
         return cig_string + str(cig_count) + curr_char
@@ -473,8 +488,3 @@ class Read:
                     return length
         else:
             return 0
-
-    def align(self):
-        """
-        Because of the way we have set up the segments, it should be easy to align these.
-        """

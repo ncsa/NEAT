@@ -42,31 +42,30 @@ class InsertionModel(VariantModel):
     an insertion length or list of insertion lengths
 
     :param insert_len_model: keys are possible lengths of inserts, values are weights of each
-    :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
-                we'll need the rng to perform certain methods.
     """
     _type = Insertion
     _description = "An insertion of N nucleotides into a chromosome."
 
-    def __init__(self,
-                 insert_len_model: dict[int: float, ...],
-                 rng: Generator = None):
+    def __init__(self, insert_len_model: dict[int: float, ...]):
         # Creating probabilities from the weights
         tot = sum(insert_len_model.values())
         self.insertion_len_model = {key: val / tot for key, val in insert_len_model.items()}
-        self.rng = rng
 
-    def get_insertion_length(self, size: int = None) -> int | list[int, ...]:
+    def get_insertion_length(self, rng: Generator, size: int = None) -> int | list[int, ...]:
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 
+        :param rng: The random number generator for the run
         :param size: Number of insert lengths to generate. Default is one, which returns an int value.
                      Greater than 1 returns a list of ints.
         :return: int or list of ints.
         """
-        return self.rng.choice(a=list(self.insertion_len_model),
-                               p=[*self.insertion_len_model.values()],
-                               size=size, shuffle=False)
+        return rng.choice(
+            a=list(self.insertion_len_model),
+            p=[*self.insertion_len_model.values()],
+            size=size,
+            shuffle=False
+        )
 
 
 class DeletionModel(VariantModel):
@@ -75,31 +74,30 @@ class DeletionModel(VariantModel):
     nucleotides is simply omitted during DNA replication.
 
     :param deletion_len_model: keys are possible lengths of deletion, values are probabilities of those values
-    :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
-            we'll need the rng to perform certain methods.
     """
     _type = Deletion
     _description = "A deletion of a random number of bases"
 
-    def __init__(self,
-                 deletion_len_model: dict[int: float, ...],
-                 rng: Generator = None):
+    def __init__(self, deletion_len_model: dict[int: float, ...]):
         # Creating probabilities from the weights
         tot = sum(deletion_len_model.values())
         self.deletion_len_model = {key: val/tot for key, val in deletion_len_model.items()}
-        self.rng = rng
 
-    def get_deletion_length(self, size: int = None) -> int | list[int, ...]:
+    def get_deletion_length(self, rng: Generator, size: int = None) -> int | list[int, ...]:
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 
+        :param rng: The random number generator for the run
         :param size: Number of insert lengths to generate. Default is one, which returns an int value.
                      Greater than 1 returns a list of ints.
         :return: int or list of ints.
         """
-        return self.rng.choice(a=[*self.deletion_len_model],
-                               p=[*self.deletion_len_model.values()],
-                               size=size, shuffle=False)
+        return rng.choice(
+            a=[*self.deletion_len_model],
+            p=[*self.deletion_len_model.values()],
+            size=size,
+            shuffle=False
+        )
 
 
 class SnvModel(VariantModel):
@@ -117,16 +115,15 @@ class SnvModel(VariantModel):
                                   where each matrix represents the probability of a particular
     :param trinuc_mutation_bias: The bias of each of the 64 possible trinucleotide combinations,
                               as derived from input data. Our base assumption will be no bias
-    :param rng: optional random number generator. For generating this model, no RNG is needed. But for a run,
-            we'll need the rng to perform certain methods.
     """
     _type = SingleNucleotideVariant
     _description = "Substitution"
 
-    def __init__(self,
-                 trinuc_trans_matrices: np.ndarray = None,
-                 trinuc_mutation_bias: np.ndarray = None,
-                 rng: Generator = None):
+    def __init__(
+            self,
+            trinuc_trans_matrices: np.ndarray = None,
+            trinuc_mutation_bias: np.ndarray = None,
+    ):
 
         self.trinuc_trans_matrices = trinuc_trans_matrices
         self.trinuc_mutation_bias = trinuc_mutation_bias
@@ -134,15 +131,16 @@ class SnvModel(VariantModel):
         if not np.any(self.trinuc_trans_matrices) and not trinuc_mutation_bias:
             self.no_bias = True
         self.trinuc_bias_map = None
-        self.rng = rng
 
         # Some local variables for modeling
         self.local_trinuc_bias: np.array = None
         self.local_sequence: Seq or None = None
 
-    def map_local_trinuc_bias(self,
-                              sequence: Seq,
-                              ngaps: np.ndarray):
+    def map_local_trinuc_bias(
+            self,
+            sequence: Seq,
+            ngaps: np.ndarray
+    ):
         """
         Create a map of a given input sequence, showing the most likely places within the sequence
         for a substitution to occur. N regions are set to 0, so no SNV will happen in those locations.
@@ -171,11 +169,12 @@ class SnvModel(VariantModel):
             self.local_trinuc_bias = self.local_trinuc_bias / sum(self.local_trinuc_bias)
             self.local_sequence = sequence
 
-    def sample_trinucs(self) -> int:
+    def sample_trinucs(self, rng: Generator) -> int:
         """
         Thus functon takes a trinuc map (as generated by map_trinuc_bias) or part of a trinuc
         map and determines a random location within that map, weighted by the bias (if any)
 
+        :param rng: The random number generator for the run
         :return: the index of the chosen position
         """
-        return int(self.rng.choice(a=np.arange(len(self.local_trinuc_bias)), p=self.local_trinuc_bias))
+        return int(rng.choice(a=np.arange(len(self.local_trinuc_bias)), p=self.local_trinuc_bias))

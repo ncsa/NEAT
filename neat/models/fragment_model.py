@@ -28,20 +28,24 @@ class FragmentLengthModel:
     :param rng: the random number generator for the run
     """
 
-    def __init__(self,
-                 fragment_mean: float,
-                 fragment_std: float,
-                 rng: Generator = None):
+    def __init__(
+            self,
+            fragment_mean: float,
+            fragment_std: float
+    ):
         self.fragment_mean = fragment_mean
         self.fragment_st_dev = fragment_std
-        self.rng = rng
 
-    def generate_fragments(self,
-                           number_of_fragments: int) -> list:
+    def generate_fragments(
+            self,
+            number_of_fragments: int,
+            rng: Generator
+    ) -> list:
         """
         Generates a number of fragments based on the total length needed, and the mean and standard deviation of the set
 
         :param number_of_fragments: The number of fragments needed.
+        :param rng: the random number generator to use
         :return: A list of fragment random fragment lengths sampled from the model.
         """
         # Due to natural variation in genome lengths, it's difficult to harden this code against all the possible
@@ -51,12 +55,12 @@ class FragmentLengthModel:
         # to create a read, so they become spacers instead.
         extra_fragments = [10, 11, 12, 13, 14, 28, 31]
         # generates a distribution, assuming normality, then rounds the result and converts to ints
-        dist = np.round(self.rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
+        dist = np.round(rng.normal(self.fragment_mean, self.fragment_st_dev, size=number_of_fragments)).astype(int)
         dist = [abs(x) for x in dist]
         # We'll append enough fragments to pad out distribution and add variability. Don't know if the cost of doing
         # this is worth it though.
         number_extra = int(number_of_fragments * 0.1)
         for i in range(number_extra):
             dist.append(extra_fragments[i % len(extra_fragments)])
-        self.rng.shuffle(dist)  # this shuffle mixes extra fragments in.
+        rng.shuffle(dist)  # this shuffle mixes extra fragments in.
         return dist[:number_of_fragments]
