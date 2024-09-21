@@ -52,12 +52,14 @@ def map_non_n_regions(sequence) -> np.ndarray:
     return base_check
 
 
-def generate_variants(reference: SeqRecord,
-                      mutation_rate_regions: list[tuple[int, int]],
-                      existing_variants: ContigVariants,
-                      mutation_model: MutationModel,
-                      options: Options,
-                      max_qual_score: int) -> ContigVariants:
+def generate_variants(
+        reference: SeqRecord,
+        mutation_rate_regions: list[tuple[int, int]],
+        existing_variants: ContigVariants,
+        mutation_model: MutationModel,
+        options: Options,
+        max_qual_score: int
+) -> ContigVariants:
     """
     This function will generate variants to add to the dataset, by writing them to the input temp vcf file.
 
@@ -181,7 +183,7 @@ def generate_variants(reference: SeqRecord,
             how_many_mutations -= 1
 
             # Now figure out the type of random mutation to insert
-            variant_type = mutation_model.get_mutation_type()
+            variant_type = mutation_model.get_mutation_type(options.rng)
 
             # Case 1: indel
             if variant_type == Insertion or variant_type == Deletion:
@@ -190,22 +192,22 @@ def generate_variants(reference: SeqRecord,
                 position = find_random_non_n(options.rng, n_gaps)  # position in slice
                 location = position + mutation_slice[0]  # location relative to reference
                 if variant_type == Insertion:
-                    temp_variant = mutation_model.generate_insertion(location, subsequence[position])
+                    temp_variant = mutation_model.generate_insertion(location, subsequence[position], options.rng)
                 else:
-                    temp_variant = mutation_model.generate_deletion(location)
+                    temp_variant = mutation_model.generate_deletion(location, options.rng)
 
             # Case 2: SNV
             elif variant_type == SingleNucleotideVariant:
                 # We'll sample for the location within this slice
                 # It's a relative location, so we add the start point of the subsequence to that.
-                position = mutation_model.sample_trinucs()  # position in slice
+                position = mutation_model.sample_trinucs(options.rng)  # position in slice
                 location = position + mutation_slice[0]  # location relative to reference
                 if location == 0:
                     continue
                 trinuc = reference[location: location+3].seq.upper()
                 if "N" in trinuc:
                     continue
-                temp_variant = mutation_model.generate_snv(trinuc, location)
+                temp_variant = mutation_model.generate_snv(trinuc, location, options.rng)
 
             else:
                 _LOG.error(f"Attempting to create an unsupported variant: {variant_type}")

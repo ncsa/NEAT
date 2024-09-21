@@ -12,7 +12,7 @@ from pathlib import Path
 from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter, \
     generate_variants, generate_reads
 from ..common import validate_input_path, validate_output_path
-from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel
+from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
 from ..models.default_cancer_mutation_model import *
 from ..variants import ContigVariants
 
@@ -49,57 +49,69 @@ def initialize_all_models(options: Options):
         cancer_model.rng = options.rng
     elif options.cancer:
         # Note all parameters not entered here use the mutation madel defaults
-        cancer_model = MutationModel(avg_mut_rate=default_cancer_avg_mut_rate,
-                                     homozygous_freq=default_cancer_homozygous_freq,
-                                     variant_probs=default_cancer_variant_probs,
-                                     insert_len_model=default_cancer_insert_len_model,
-                                     is_cancer=True,
-                                     rng=options.rng)
+        cancer_model = MutationModel(
+            avg_mut_rate=default_cancer_avg_mut_rate,
+            homozygous_freq=default_cancer_homozygous_freq,
+            variant_probs=default_cancer_variant_probs,
+            insert_len_model=default_cancer_insert_len_model,
+            is_cancer=True,
+            rng=options.rng
+        )
 
     _LOG.debug("Mutation models loaded")
 
     # We need sequencing errors to get the quality score attributes, even for the vcf
     if options.error_model:
         error_models = pickle.load(gzip.open(options.error_model))
-        error_model_1 = error_models[0]
+        error_model_1 = error_models["error_model1"]
+        quality_score_model_1 = error_models["qual_score_model1"]
         if options.paired_ended:
-            if error_models[1]:
-                error_model_2 = error_models[1]
+            if error_models["error_model2"]:
+                error_model_2 = error_models["error_model2"]
+                quality_score_model_2 = error_models["qual_score_model2"]
             else:
                 _LOG.warning('Paired ended mode declared, but input sequencing error model is single ended,'
                              'duplicating model for both ends')
-                error_model_2 = error_models[0]
+                error_model_2 = error_models["error_model1"]
+                quality_score_model_2 = error_models["qual_score_model1"]
         else:
             # ignore second model if we're in single-ended mode
             error_model_2 = None
+            quality_score_model_2 = None
     else:
         # Use all the default values
         error_model_1 = SequencingErrorModel()
+        quality_score_model_1 = TraditionalQualityModel()
         if options.paired_ended:
             error_model_2 = SequencingErrorModel()
+            quality_score_model_2 = TraditionalQualityModel()
         else:
             error_model_2 = None
-    # Set the rng for the sequencing error model
-    error_model_1.rng = options.rng
-    if error_model_2:
-        error_model_2.rng = options.rng
+            quality_score_model_2 = None
 
-    _LOG.debug('Sequencing error models loaded')
+    _LOG.debug('Sequencing error and quality score models loaded')
 
     if options.fragment_model:
         fraglen_model = pickle.load(gzip.open(options.fragment_model))
         fraglen_model.rng = options.rng
     elif options.fragment_mean:
-        fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev, rng=options.rng)
+        fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev)
     else:
         # For single ended, fragment length will be based on read length
         fragment_mean = options.read_len * 2.0
         fragment_st_dev = fragment_mean * 0.2
-        fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev, options.rng)
+        fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev)
 
     _LOG.debug("Fragment length model loaded")
 
-    return mut_model, cancer_model, error_model_1, error_model_2, fraglen_model
+    return \
+        mut_model, \
+        cancer_model, \
+        error_model_1, \
+        error_model_2, \
+        quality_score_model_1, \
+        quality_score_model_2, \
+        fraglen_model
 
 
 def read_simulator_runner(config: str, output: str):
@@ -154,6 +166,8 @@ def read_simulator_runner(config: str, output: str):
         cancer_model,
         seq_error_model_1,
         seq_error_model_2,
+        qual_score_model_1,
+        qual_score_model_2,
         fraglen_model
     ) = initialize_all_models(options)
 
@@ -176,23 +190,27 @@ def read_simulator_runner(config: str, output: str):
     if options.include_vcf:
         _LOG.info(f"Reading input VCF: {options.include_vcf}.")
         if options.cancer:
-            sample_names = parse_input_vcf(input_variants_dict,
-                                           options.include_vcf,
-                                           options.ploidy,
-                                           mut_model.homozygous_freq,
-                                           reference_index,
-                                           options,
-                                           tumor_normal=True)
+            sample_names = parse_input_vcf(
+                input_variants_dict,
+                options.include_vcf,
+                options.ploidy,
+                mut_model.homozygous_freq,
+                reference_index,
+                options,
+                tumor_normal=True
+            )
 
             tumor_ind = sample_names['tumor_sample']
             normal_ind = sample_names['normal_sample']
         else:
-            sample_names = parse_input_vcf(input_variants_dict,
-                                           options.include_vcf,
-                                           options.ploidy,
-                                           mut_model.homozygous_freq,
-                                           reference_index,
-                                           options)
+            sample_names = parse_input_vcf(
+                input_variants_dict,
+                options.include_vcf,
+                options.ploidy,
+                mut_model.homozygous_freq,
+                reference_index,
+                options
+            )
 
         _LOG.debug("Finished reading input vcf file")
 
@@ -276,34 +294,38 @@ def read_simulator_runner(config: str, output: str):
             pass
 
         if options.paired_ended:
-            max_qual_score = max(max(seq_error_model_1.quality_scores), max(seq_error_model_2.quality_scores))
+            max_qual_score = max(max(qual_score_model_1.quality_scores), max(qual_score_model_2.quality_scores))
         else:
-            max_qual_score = max(seq_error_model_1.quality_scores)
+            max_qual_score = max(qual_score_model_1.quality_scores)
 
-        local_variants = generate_variants(reference=local_reference,
-                                           mutation_rate_regions=mutation_rate_dict[contig],
-                                           existing_variants=input_variants,
-                                           mutation_model=mut_model,
-                                           max_qual_score=max_qual_score,
-                                           options=options)
+        local_variants = generate_variants(
+            reference=local_reference,
+            mutation_rate_regions=mutation_rate_dict[contig],
+            existing_variants=input_variants,
+            mutation_model=mut_model,
+            max_qual_score=max_qual_score,
+            options=options
+        )
 
         # This function saves the local variant data a dictionary. We may need to write this to file.
         local_variant_files[contig] = local_variants
 
         if options.produce_fastq or options.produce_bam:
-            read1_fastq_paired, read1_fastq_single, read2_fastq_paired, read2_fastq_single = \
-                generate_reads(local_reference,
-                               local_bam_pickle_file,
-                               seq_error_model_1,
-                               seq_error_model_2,
-                               mut_model,
-                               fraglen_model,
-                               local_variants,
-                               options.temp_dir_path,
-                               target_regions_dict[contig],
-                               discard_regions_dict[contig],
-                               options,
-                               contig)
+            read1_fastq_paired, read1_fastq_single, read2_fastq_paired, read2_fastq_single = generate_reads(
+                local_reference,
+                local_bam_pickle_file,
+                seq_error_model_1,
+                seq_error_model_2,
+                qual_score_model_1,
+                qual_score_model_2,
+                fraglen_model,
+                local_variants,
+                options.temp_dir_path,
+                target_regions_dict[contig],
+                discard_regions_dict[contig],
+                options,
+                contig,
+                )
 
             contig_temp_fastqs = ((read1_fastq_paired, read2_fastq_paired), (read1_fastq_single, read2_fastq_single))
             fastq_files.append(contig_temp_fastqs)
