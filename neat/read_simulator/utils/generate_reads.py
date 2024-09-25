@@ -8,13 +8,11 @@ from pathlib import Path
 from Bio import SeqRecord
 from bisect import bisect_left, bisect_right
 
-from ...models import SequencingErrorModel, FragmentLengthModel, MutationModel
+from ...models import SequencingErrorModel, FragmentLengthModel, MutationModel, QualityScoreModel
 from .options import Options
 from ...common import open_output
 from ...variants import ContigVariants
 from .read import Read
-
-from ...models import make_qual_score_list, apply_markov_chain
 
 __all__ = [
     'generate_reads',
@@ -246,18 +244,7 @@ def generate_reads(reference: SeqRecord,
 
         # generate a pool of quality scores - pop the first one
 
-        bam_file = "/Users/keshavgandhi/PycharmProjects/NEAT/data/real_human_subsampled.bam"
-        quality_df = make_qual_score_list(bam_file)
-        markov_preds_df = apply_markov_chain(quality_df)
-
-        # PICKLE LOAD HERE to get markov_preds_df
-
-        # 1. Test with other datasets/flag combinations (try real_human_subsampled.bam - 7/??, ?:?? ?.m.)
-        # 2. Generating fastqc reports for all of them
-        # 3. Thinking about refactoring and sequencing error object (neat/models/models.py - SequencingErrorModel)
-        # 4. Changelogs and public updates (note: NEAT 2.0 --> 3.0 does not have significant logical changes)
-        # 5. Plots/figures of base pair size of an organism's genome vs. average runtime
-        # integrate code here!
+        markov_preds_df = QualityScoreModel()
 
         for i in range(len(reads)):
             print(f'{i/len(reads):.2%}', end='\r')

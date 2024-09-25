@@ -21,12 +21,22 @@ class Command(BaseCommand):
 
         :param parser: The parser to add arguments to
         """
-        parser.add_argument('-b',
+
+        parser.add_argument('-f',
                             type=str,
                             metavar="FILE",
                             dest="input_file",
                             nargs='+',
                             required=True,
+                            help="fastq file to process. To enter a bam input, please convert to a fastq file "
+                                 "using an external tool.")
+
+        parser.add_argument('-b',
+                            type=str,
+                            metavar="FILE",
+                            dest="input_file",
+                            nargs='+',
+                            required=False,
                             help="bam file to process. To enter a sam input, please convert to a bam file "
                                  "using an external tool, such as samtools.")
 

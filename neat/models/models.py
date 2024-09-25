@@ -8,6 +8,7 @@ import re
 import logging
 import abc
 import sys
+import pickle
 
 from numpy.random import Generator
 from Bio.Seq import Seq
@@ -26,6 +27,7 @@ __all__ = [
     "InsertionModel",
     "DeletionModel",
     "SnvModel",
+    "QualityScoreModel",
     "ErrorContainer"
 ]
 
@@ -183,6 +185,26 @@ class SnvModel(VariantModel):
         :return: the index of the chosen position
         """
         return int(self.rng.choice(a=np.arange(len(self.local_trinuc_bias)), p=self.local_trinuc_bias))
+
+
+class QualityScoreModel:
+
+    def __init__(self, data_frame):
+        self.markov_preds = data_frame
+
+    def save_file(self, csv_file_path, pickle_file_path):
+        """Saves the dataframe to a CSV file and a pickle file."""
+
+        self.markov_preds.to_csv(csv_file_path, index=False)
+
+        with open(pickle_file_path, "wb") as f:
+            pickle.dump(self.markov_preds, f)
+
+        print(f"Data saved to {csv_file_path} and {pickle_file_path}")
+
+    def load_markov_predictions(self):
+        markov_preds_df = pickle.load(self.markov_preds)
+        return markov_preds_df
 
 
 class MutationModel(SnvModel, InsertionModel, DeletionModel):
