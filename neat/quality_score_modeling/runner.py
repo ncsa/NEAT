@@ -21,7 +21,8 @@ import pickle
 __all__ = [
     "make_qual_score_list",
     "apply_markov_chain",
-    "estimate_transition_probabilities"
+    "estimate_transition_probabilities",
+    "quality_score_model_runner"
 ]
 
 

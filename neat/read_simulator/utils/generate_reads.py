@@ -250,6 +250,8 @@ def generate_reads(reference: SeqRecord,
         quality_df = make_qual_score_list(bam_file)
         markov_preds_df = apply_markov_chain(quality_df)
 
+        # PICKLE LOAD HERE to get markov_preds_df
+
         # 1. Test with other datasets/flag combinations (try real_human_subsampled.bam - 7/??, ?:?? ?.m.)
         # 2. Generating fastqc reports for all of them
         # 3. Thinking about refactoring and sequencing error object (neat/models/models.py - SequencingErrorModel)

@@ -14,6 +14,8 @@ file. To do so, we have a few possible inputs the init function can accept. Inpu
 trigger quick-run mode, setting most of the parameters to defaults.
 """
 
+# Complete this -- then see if neat (running without any options) allows the Markov option
+
 import numpy as np
 import logging
 import yaml
@@ -96,6 +98,9 @@ class Options(SimpleNamespace):
         self.defs['mutation_bed'] = (str, None, 'exists', None)
         self.defs['quality_offset'] = (int, 33, 33, 64)
 
+        # self.defs['use_markov'] = (bool, False, None, None)
+        # self.defs['qual_score_model'] = (string, None, 'exists', None) QUALITY SCORE MODEL
+
         # Params for cancer (not implemented yet)
         self.defs['cancer'] = (bool, False, None, None)
         self.defs['cancer_model'] = (str, None, 'exists', None)
@@ -131,6 +136,9 @@ class Options(SimpleNamespace):
         self.mutation_rate: float | None = None
         self.mutation_bed: str | None = None
         self.quality_offset: int = 33
+
+        # self.use_markov: bool
+        # self.qual_score_model: str
 
         self.paired_ended: bool = False
         self.fragment_model: str | None = None
@@ -183,7 +191,7 @@ class Options(SimpleNamespace):
             self.log_configuration()
 
     @staticmethod
-    def check_and_log_error(keyname, value_to_check, lowval, highval):
+    def check_and_log_error(keyname, value_to_check, lowval, highval): # NOTE: checks tuple
         if value_to_check is None:
             pass
         elif lowval != "exists" and highval:
@@ -258,6 +266,12 @@ class Options(SimpleNamespace):
                 self.fragment_mean = None
                 self.fragment_st_dev = None
 
+        # If using a Markov model, make sure there's a path
+
+        # if self.paired_ended:
+        #     if self.fragment_model:
+        #         self.fragment_mean = None
+        #         self.fragment_st_dev = None
     def log_configuration(self):
         """
         Combines the relevant parts of the input args and the options file to log a
@@ -342,3 +356,5 @@ class Options(SimpleNamespace):
         if self.mutation_bed:
             _LOG.info(f'BED of mutation rates of different regions: {self.mutation_bed}')
         _LOG.info(f'RNG seed value for run: {self.rng_seed}')
+
+        # add Markov model + boolean option as well

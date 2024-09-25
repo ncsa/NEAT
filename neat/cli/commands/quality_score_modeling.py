@@ -8,7 +8,6 @@ from ...quality_score_modeling import quality_score_model_runner
 from .base import BaseCommand
 from .options import output_group
 
-
 class Command(BaseCommand):
     """
     Class that generates a model of the quality score errors, derived from a real BAM file
@@ -28,7 +27,7 @@ class Command(BaseCommand):
                             dest="input_file",
                             nargs='+',
                             required=True,
-                            help="bam file to process. To enter a sam input, please convert to a bam file"
+                            help="bam file to process. To enter a sam input, please convert to a bam file "
                                  "using an external tool, such as samtools.")
 
         parser.add_argument('-c',
@@ -45,7 +44,7 @@ class Command(BaseCommand):
                             dest="output_pickle",
                             nargs='+',
                             required=True,
-                            help="pickle file to store Markov model quality score predictions across"
+                            help="pickle file to store Markov model quality score predictions across "
                                  "all bases along the read, given user-specified read length.")
 
         parser.add_argument('--overwrite',
