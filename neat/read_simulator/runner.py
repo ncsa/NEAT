@@ -12,7 +12,7 @@ from pathlib import Path
 from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter, \
     generate_variants, generate_reads
 from ..common import validate_input_path, validate_output_path
-from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel
+from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, QualityScoreModel
 from ..models.default_cancer_mutation_model import *
 from ..variants import ContigVariants
 
@@ -38,6 +38,7 @@ def initialize_all_models(options: Options):
 
     # Set random number generator for the mutations:
     mut_model.rng = options.rng
+
     # Set custom mutation rate for the run, or set the option to the input rate so we can use it later
     if options.mutation_rate is not None:
         mut_model.avg_mut_rate = options.mutation_rate
@@ -99,7 +100,16 @@ def initialize_all_models(options: Options):
 
     _LOG.debug("Fragment length model loaded")
 
-    return mut_model, cancer_model, error_model_1, error_model_2, fraglen_model
+    if options.use_markov:
+        with open(options.qual_score_model, "rb") as f:
+            markov_data_frame = pickle.load(f)
+        markov_model = QualityScoreModel(markov_data_frame)
+    else:
+        markov_model = None  # use default model
+
+    _LOG.debug("Quality score model loaded")
+
+    return mut_model, cancer_model, error_model_1, error_model_2, fraglen_model, markov_model
 
 
 def read_simulator_runner(config: str, output: str):
@@ -154,7 +164,8 @@ def read_simulator_runner(config: str, output: str):
         cancer_model,
         seq_error_model_1,
         seq_error_model_2,
-        fraglen_model
+        fraglen_model,
+        markov_model
     ) = initialize_all_models(options)
 
     """
@@ -296,6 +307,7 @@ def read_simulator_runner(config: str, output: str):
                                local_bam_pickle_file,
                                seq_error_model_1,
                                seq_error_model_2,
+                               markov_model,
                                mut_model,
                                fraglen_model,
                                local_variants,

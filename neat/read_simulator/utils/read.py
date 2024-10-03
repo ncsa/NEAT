@@ -193,6 +193,11 @@ class Read:
         """
         mutated_sequence = MutableSeq(self.read_sequence)
         for location in self.mutations:
+
+            if location not in self.mutations or not self.mutations[location]:
+                _LOG.debug(f"No mutations found at location {location}")
+                continue
+
             variant_to_apply = mut_model.rng.choice(self.mutations[location])
 
             # Fetch parameters

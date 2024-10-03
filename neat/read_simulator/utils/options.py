@@ -14,8 +14,6 @@ file. To do so, we have a few possible inputs the init function can accept. Inpu
 trigger quick-run mode, setting most of the parameters to defaults.
 """
 
-# Complete this -- then see if neat (running without any options) allows the Markov option
-
 import numpy as np
 import logging
 import yaml
@@ -98,8 +96,8 @@ class Options(SimpleNamespace):
         self.defs['mutation_bed'] = (str, None, 'exists', None)
         self.defs['quality_offset'] = (int, 33, 33, 64)
 
-        # self.defs['use_markov'] = (bool, False, None, None)
-        # self.defs['qual_score_model'] = (string, None, 'exists', None) QUALITY SCORE MODEL
+        self.defs['use_markov'] = (bool, False, None, None)
+        self.defs['qual_score_model'] = (str, None, 'exists', None)
 
         # Params for cancer (not implemented yet)
         self.defs['cancer'] = (bool, False, None, None)
@@ -344,7 +342,7 @@ class Options(SimpleNamespace):
                 _LOG.info(f'Quality scores will be rescaled to match avg seq error rate.')
         _LOG.info(f'Ploidy value: {self.ploidy}')
         if self.include_vcf:
-            _LOG.info(f'Vcf of variants to include: {self.include_vcf}')
+            _LOG.info(f'VCF of variants to include: {self.include_vcf}')
         if self.target_bed:
             _LOG.info(f'BED of regions to target: {self.target_bed}')
         if self.discard_bed:

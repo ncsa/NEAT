@@ -171,20 +171,23 @@ def overlaps(test_interval: tuple[int, int], comparison_interval: tuple[int, int
            (test_interval[0] <= comparison_interval[0] and test_interval[1] >= comparison_interval[1])
 
 
-def generate_reads(reference: SeqRecord,
-                   reads_pickle: str,
-                   error_model_1: SequencingErrorModel,
-                   error_model_2: SequencingErrorModel | None,
-                   mutation_model: MutationModel,
-                   fraglen_model: FragmentLengthModel,
-                   contig_variants: ContigVariants,
-                   temporary_directory: str | Path,
-                   targeted_regions: list,
-                   discarded_regions: list,
-                   options: Options,
-                   chrom: str,
-                   ref_start: int = 0
-                   ) -> tuple:
+def generate_reads(
+        reference: SeqRecord,
+        reads_pickle: str,
+        error_model_1: SequencingErrorModel,
+        error_model_2: SequencingErrorModel | None,
+        qual_model_1: QualityScoreModel,
+        qual_model_2: QualityScoreModel | None,
+        fraglen_model: FragmentLengthModel,
+        contig_variants: ContigVariants,
+        temporary_directory: str | Path,
+        targeted_regions: list,
+        discarded_regions: list,
+        options: Options,
+        chrom: str,
+        mut_model: MutationModel,
+        ref_start: int = 0
+) -> tuple:
     """
     This will generate reads given a set of parameters for the run. The reads will output in a fastq.
 
@@ -192,7 +195,8 @@ def generate_reads(reference: SeqRecord,
     :param reads_pickle: The file to put the reads generated into, for bam creation.
     :param error_model_1: The error model for this run, the forward strand
     :param error_model_2: The error model for this run, reverse strand
-    :param mutation_model: The mutation model for this run
+    :param qual_model_1: The quality score model for this run, forward strand
+    :param qual_model_2: The quality score model for this run, reverse strand
     :param fraglen_model: The fragment length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
     :param temporary_directory: The directory where to store temporary files for the run
@@ -205,6 +209,14 @@ def generate_reads(reference: SeqRecord,
         implemented, to be used for parallelization.
     :return: A tuple of the filenames for the temp files created
     """
+
+    _LOG.debug(f"Generating reads for contig: {chrom}")
+    _LOG.debug(f"Mutation model: {mut_model}, Mutation model RNG: {getattr(mut_model, 'rng', None)}")
+
+    # Check if mut_model is None or doesn't have an RNG
+    assert mut_model is not None, "Mutation model is None"
+    assert mut_model.rng is not None, "Mutation model RNG is None"
+
     # Set up files for use. May not need r2, but it's there if we do.
     # We will separate the properly paired and the singletons.
     # For now, we are making an assumption that the chromosome name contains no invalid characters for bash file names
@@ -235,6 +247,13 @@ def generate_reads(reference: SeqRecord,
 
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     t = time.time()
+
+    # Generate the quality scores using Markov model or traditional model
+    if options.use_markov:
+        markov_preds_df = QualityScoreModel()
+    else:
+        markov_preds_df = None  # This is set to None and will be skipped in traditional mode
+
     with (
         open_output(chrom_fastq_r1_paired) as fq1_paired,
         open_output(chrom_fastq_r1_single) as fq1_single,
@@ -242,92 +261,60 @@ def generate_reads(reference: SeqRecord,
         open_output(chrom_fastq_r2_single) as fq2_single
     ):
 
-        # generate a pool of quality scores - pop the first one
-
-        markov_preds_df = QualityScoreModel()
-
         for i in range(len(reads)):
             print(f'{i/len(reads):.2%}', end='\r')
             # First thing we'll do is check to see if this read is filtered out by a bed file
             read1, read2 = (reads[i][0], reads[i][1]), (reads[i][2], reads[i][3])
             found_read1, found_read2 = False, False
-            # For no target bed, there wil only be one region to check and this will complete very quickly
+            # For no target bed, there will only be one region to check and this will complete very quickly
             for region in targeted_regions:
-                # If this is a false region, we can skip it
                 if not region[2]:
                     continue
-                # We need to make sure this hasn't been filtered already, so if any coordinate is nonzero (falsey)
-                if any(read1):
-                    # Check if read1 is in this targeted region (any part of it overlaps)
-                    if overlaps(read1, (region[0], region[1])):
-                        found_read1 = True
-                # Again, make sure it hasn't been filtered, or this is a single-ended read
-                if any(read2):
-                    if overlaps(read2, (region[0], region[1])):
-                        found_read2 = True
-            # This read was outside targeted regions
+                if any(read1) and overlaps(read1, (region[0], region[1])):
+                    found_read1 = True
+                if any(read2) and overlaps(read2, (region[0], region[1])):
+                    found_read2 = True
             if not found_read1:
-                # Filter out this read
                 read1 = (0, 0)
             if not found_read2:
-                # Note that for single ended reads, it will never find read2 and this does nothing (it's already (0,0))
                 read2 = (0, 0)
 
-            # If there was no discard bed, this will complete very quickly
+            # Filter out by discarded regions
             discard_read1, discard_read2 = False, False
             for region in discarded_regions:
-                # If region[2] is False then this region is not being discarded and we can skip it
                 if not region[2]:
                     continue
-                # Check to make sure the read isn't already filtered out
-                if any(read1):
-                    if overlaps(read1, (region[0], region[1])):
-                        discard_read1 = True
-                # No need to worry about already filtered reads
-                if any(read2):
-                    if overlaps(read2, (region[0], region[1])):
-                        discard_read2 = True
+                if any(read1) and overlaps(read1, (region[0], region[1])):
+                    discard_read1 = True
+                if any(read2) and overlaps(read2, (region[0], region[1])):
+                    discard_read2 = True
             if discard_read1:
                 read1 = (0, 0)
             if discard_read2:
                 read2 = (0, 0)
 
-            # This raw read will replace the original reads[i], and is the raw read with filters applied.
             raw_read = read1 + read2
-
-            # If both reads were filtered out, we can move along
             if not any(raw_read):
                 continue
-            else:
-                # We must have at least 1 read that has data
-                # If only read1 or read2 is absent, this is a singleton
-                read1_is_singleton = False
-                read2_is_singleton = False
-                properly_paired = False
-                if not any(read2):
-                    # Note that this includes all single ended reads that passed filter
-                    read1_is_singleton = True
-                elif not any(read1):
-                    # read1 got filtered out
-                    read2_is_singleton = True
-                else:
-                    properly_paired = True
+
+            read1_is_singleton = not any(read2)
+            read2_is_singleton = not any(read1)
+            properly_paired = not (read1_is_singleton or read2_is_singleton)
 
             read_name = f'{base_name}_{str(i+1)}'
 
-            # Apply Markov chain quality scores
-            pred_qualities = markov_preds_df.iloc[i % len(markov_preds_df)].values
+            # Apply Markov chain quality scores if enabled, else use traditional model
+            if options.use_markov:
+                pred_qualities = markov_preds_df.iloc[i % len(markov_preds_df)].values
+            else:
+                # Use traditional quality model here (qual_model_1 for read1, qual_model_2 for read2)
+                pred_qualities = None
 
-            # If the other read is marked as a singleton, then this one was filtered out, or these are single-ended
+            # First read (if it's not a singleton)
             if not read2_is_singleton:
-                # It's properly paired if it's not a singleton
                 is_paired = not read1_is_singleton
-                # add a small amount of padding to the end to account for deletions.
-                # Trying out this method of using the read-length, which for the default neat run gives ~30.
-                padding = options.read_len//5
+                padding = options.read_len // 5
                 segment = reference[read1[0]: read1[1] + padding].seq
-
-                # if we're at the end of the contig, this may not pick up the full padding
                 actual_padding = len(segment) - options.read_len
 
                 read_1 = Read(
@@ -341,25 +328,25 @@ def generate_reads(reference: SeqRecord,
                     is_paired=is_paired
                 )
 
-                read_1.qualities = pred_qualities[:len(segment)]
+                if options.use_markov:
+                    read_1.qualities = pred_qualities[:len(segment)]
                 read_1.mutations = find_applicable_mutations(read_1, contig_variants)
-                if is_paired:
-                    handle = fq1_paired
-                else:
-                    handle = fq1_single
+
+                handle = fq1_paired if is_paired else fq1_single
                 read_1.finalize_read_and_write(
-                    error_model_1, mutation_model, handle, options.quality_offset, options.produce_fastq
+                    error_model_1,
+                    qual_model_1 if not options.use_markov else None,
+                    handle,
+                    options.quality_offset,
+                    options.produce_fastq
                 )
 
-            # if read1 is a singleton then these are single-ended reads or this one was filtered out, se we skip
+            # Second read (if not a singleton)
             if not read1_is_singleton:
                 is_paired = not read2_is_singleton
-                # Padding, as above
-                padding = options.read_len//5
+                padding = options.read_len // 5
                 start_coordinate = max((read2[0] - padding), 0)
-                # this ensures that we get a segment with NEAT-recognized bases
                 segment = reference[start_coordinate: read2[1]].seq
-                # See note above
                 actual_padding = len(segment) - options.read_len
 
                 read_2 = Read(
@@ -374,21 +361,22 @@ def generate_reads(reference: SeqRecord,
                     is_paired=is_paired
                 )
 
-                read_2.qualities = pred_qualities[:len(segment)]
+                if options.use_markov:
+                    read_2.qualities = pred_qualities[:len(segment)]
                 read_2.mutations = find_applicable_mutations(read_2, contig_variants)
 
-                if is_paired:
-                    handle = fq2_paired
-                else:
-                    handle = fq2_single
+                handle = fq2_paired if is_paired else fq2_single
                 read_2.finalize_read_and_write(
-                    error_model_2, mutation_model, handle, options.quality_offset, options.produce_fastq
+                    error_model_2,
+                    qual_model_2 if not options.use_markov else None,
+                    handle,
+                    options.quality_offset,
+                    options.produce_fastq
                 )
 
             if properly_paired:
                 properly_paired_reads.append((read_1, read_2))
             elif read1_is_singleton:
-                # This will be the choice for all single-ended reads
                 singletons.append((read_1, None))
             else:
                 singletons.append((None, read_2))
@@ -396,7 +384,6 @@ def generate_reads(reference: SeqRecord,
     _LOG.info(f"Contig fastq(s) written in: {(time.time() - t)/60:.2f} m")
 
     if options.produce_bam:
-        # this will give us the proper read order of the elements, for the sam. They are easier to sort now
         properly_paired_reads = sorted(properly_paired_reads)
         singletons = sorted(singletons)
         sam_order = properly_paired_reads + singletons
