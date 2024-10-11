@@ -56,6 +56,18 @@ def expand_counts(count_array: list, scores: list):
     return np.array(ret_list)
 
 
+def _make_gen(reader):
+    """
+    solution from stack overflow to quickly count lines in a file.
+        https://stackoverflow.com/questions/19001402/how-to-count-the-total-number-of-lines-in-a-text-file-using-python
+
+    """
+    b = reader(1024 * 1024)
+    while b:
+        yield b
+        b = reader(1024 * 1024)
+
+
 def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int, readlen: int):
     """
     Parses an individual file for statistics
@@ -83,6 +95,13 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
                     fq_in.readline()
                 line = fq_in.readline().strip()
                 readlens.append(len(line))
+
+        # solution from stack overflow to quickly count lines in a file.
+        # https://stackoverflow.com/questions/19001402/how-to-count-the-total-number-of-lines-in-a-text-file-using-python
+        if max_reads == np.inf:
+            f = open(input_file, 'rb')
+            f_gen = _make_gen(f.raw.read)
+            max_reads = sum(buf.count(b'\n') for buf in f_gen)
 
         readlens = np.array(readlens)
 
@@ -153,8 +172,12 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
     for i in range(read_length):
         this_counts = q_count_by_pos[i]
         expanded_counts = expand_counts(this_counts, quality_scores)
-        average_q = np.average(expanded_counts)
-        st_d_q = np.std(expanded_counts)
+        if not expanded_counts:
+            average_q = 0
+            st_d_q = 0
+        else:
+            average_q = np.average(expanded_counts)
+            st_d_q = np.std(expanded_counts)
         avg_std_by_pos.append((average_q, st_d_q))
 
     # TODO In progress, working on ensuring the error model produces the right shape
@@ -191,7 +214,7 @@ def plot_stuff(init_q, real_q, q_range, prob_q, actual_readlen, plot_path):
     plt.figure(1)
     z = np.array(init_q).T
     x, y = np.meshgrid(range(0, len(z[0]) + 1), range(0, len(z) + 1))
-    plt.pcolormesh(x, Y, z, vmin=0., vmax=0.25)
+    plt.pcolormesh(x, y, z, vmin=0., vmax=0.25)
     plt.axis([0, len(z[0]), 0, len(z)])
     plt.yticks(range(0, len(z), 10), range(0, len(z), 10))
     plt.xticks(range(0, len(z[0]), 10), range(0, len(z[0]), 10))
