@@ -17,7 +17,7 @@ from Bio import pairwise2
 from Bio.pairwise2 import format_alignment
 
 from ...common import ALLOWED_NUCL
-from ...models import SequencingErrorModel, ErrorContainer, MutationModel
+from ...models import SequencingErrorModel, ErrorContainer, MutationModel, QualityScoreModel
 from ...variants import SingleNucleotideVariant, Insertion, Deletion
 
 _LOG = logging.getLogger(__name__)
@@ -303,6 +303,7 @@ class Read:
             self,
             err_model: SequencingErrorModel,
             mut_model: MutationModel,
+            qual_model: QualityScoreModel,
             fastq_handle: TextIO,
             quality_offset: int,
             produce_fastq: bool,
@@ -312,6 +313,7 @@ class Read:
 
         :param err_model: The error model for the run
         :param mut_model: The mutation model for the run
+        :param qual_model: The Markov-based quality score model for the run
         :param fastq_handle: the path to the fastq model to write the read
         :param quality_offset: the quality offset for this run
         :param produce_fastq: If true, this will write out the temp fastqs. If false, this will only write out the tsams
@@ -320,6 +322,12 @@ class Read:
 
         # Generate quality scores to cover the extended segment. We'll trim later
         self.quality_array = err_model.get_quality_scores(len(self.reference_segment))
+
+        # Check if qual_model is not None before calling load_markov_predictions
+        if qual_model is not None:
+            self.markov_preds = qual_model.load_markov_predictions(self.markov_path)
+        else:
+            self.markov_preds = None
 
         # This replaces either hard or soft-masked reference segment with upper case or a standard repeat
         # It updates the quality array and reference segment in place, including reversing them, if appropriate

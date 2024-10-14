@@ -192,6 +192,9 @@ class QualityScoreModel:
     def __init__(self, data_frame):
         self.markov_preds = data_frame
 
+    def __init__(self, path):
+        self.markov_path = path
+
     def save_file(self, csv_file_path, pickle_file_path):
         """Saves the dataframe to a CSV file and a pickle file."""
 

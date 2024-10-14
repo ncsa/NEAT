@@ -38,7 +38,6 @@ def initialize_all_models(options: Options):
 
     # Set random number generator for the mutations:
     mut_model.rng = options.rng
-
     # Set custom mutation rate for the run, or set the option to the input rate so we can use it later
     if options.mutation_rate is not None:
         mut_model.avg_mut_rate = options.mutation_rate
@@ -307,8 +306,8 @@ def read_simulator_runner(config: str, output: str):
                                local_bam_pickle_file,
                                seq_error_model_1,
                                seq_error_model_2,
-                               markov_model,
                                mut_model,
+                               markov_model,
                                fraglen_model,
                                local_variants,
                                options.temp_dir_path,

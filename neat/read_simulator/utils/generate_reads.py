@@ -176,8 +176,8 @@ def generate_reads(
         reads_pickle: str,
         error_model_1: SequencingErrorModel,
         error_model_2: SequencingErrorModel | None,
-        qual_model_1: QualityScoreModel,
-        qual_model_2: QualityScoreModel | None,
+        mut_model: MutationModel,
+        markov_model: QualityScoreModel,
         fraglen_model: FragmentLengthModel,
         contig_variants: ContigVariants,
         temporary_directory: str | Path,
@@ -185,20 +185,19 @@ def generate_reads(
         discarded_regions: list,
         options: Options,
         chrom: str,
-        mut_model: MutationModel,
         ref_start: int = 0
 ) -> tuple:
     """
     This will generate reads given a set of parameters for the run. The reads will output in a fastq.
 
-    :param reference: The reference segment that reads will be drawn from.
-    :param reads_pickle: The file to put the reads generated into, for bam creation.
+    :param reference: The reference segment that reads will be drawn from
+    :param reads_pickle: The file to put the reads generated into, for bam creation
     :param error_model_1: The error model for this run, the forward strand
     :param error_model_2: The error model for this run, reverse strand
-    :param qual_model_1: The quality score model for this run, forward strand
-    :param qual_model_2: The quality score model for this run, reverse strand
+    :param mut_model: The mutation model for this run
+    :param markov_model: The quality score model for this run
     :param fraglen_model: The fragment length model for this run
-    :param contig_variants: An object containing all input and randomly generated variants to be included.
+    :param contig_variants: An object containing all input and randomly generated variants to be included
     :param temporary_directory: The directory where to store temporary files for the run
     :param targeted_regions: A list of regions to target for the run (at a rate defined in the options
         file or 2% retained by default)
@@ -206,7 +205,7 @@ def generate_reads(
     :param options: The options entered for this run by the user
     :param chrom: The chromosome this reference segment originates from
     :param ref_start: The start point for this reference segment. Default is 0 and this is currently not fully
-        implemented, to be used for parallelization.
+        implemented, to be used for parallelization
     :return: A tuple of the filenames for the temp files created
     """
 
@@ -248,8 +247,10 @@ def generate_reads(
     _LOG.debug("Writing fastq(s) and optional tsam, if indicated")
     t = time.time()
 
+    # remove the combined model (ONLY use Markov)
+
     # Generate the quality scores using Markov model or traditional model
-    if options.use_markov:
+    if options.use_markov and markov_preds_df is not None:
         markov_preds_df = QualityScoreModel()
     else:
         markov_preds_df = None  # This is set to None and will be skipped in traditional mode
@@ -307,7 +308,6 @@ def generate_reads(
             if options.use_markov:
                 pred_qualities = markov_preds_df.iloc[i % len(markov_preds_df)].values
             else:
-                # Use traditional quality model here (qual_model_1 for read1, qual_model_2 for read2)
                 pred_qualities = None
 
             # First read (if it's not a singleton)
@@ -335,7 +335,8 @@ def generate_reads(
                 handle = fq1_paired if is_paired else fq1_single
                 read_1.finalize_read_and_write(
                     error_model_1,
-                    qual_model_1 if not options.use_markov else None,
+                    mut_model,
+                    markov_model,
                     handle,
                     options.quality_offset,
                     options.produce_fastq
@@ -368,7 +369,8 @@ def generate_reads(
                 handle = fq2_paired if is_paired else fq2_single
                 read_2.finalize_read_and_write(
                     error_model_2,
-                    qual_model_2 if not options.use_markov else None,
+                    mut_model,
+                    markov_model,
                     handle,
                     options.quality_offset,
                     options.produce_fastq
