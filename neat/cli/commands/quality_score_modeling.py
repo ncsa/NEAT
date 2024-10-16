@@ -8,6 +8,7 @@ from ...quality_score_modeling import quality_score_model_runner
 from .base import BaseCommand
 from .options import output_group
 
+
 class Command(BaseCommand):
     """
     Class that generates a model of the quality score errors, derived from a real BAM file
@@ -28,30 +29,12 @@ class Command(BaseCommand):
                             dest="input_file",
                             nargs='+',
                             required=True,
-                            help="fastq file to process. To enter a bam input, please convert to a fastq file "
-                                 "using an external tool.")
-
-        parser.add_argument('-b',
-                            type=str,
-                            metavar="FILE",
-                            dest="input_file",
-                            nargs='+',
-                            required=False,
-                            help="bam file to process. To enter a sam input, please convert to a bam file "
-                                 "using an external tool, such as samtools.")
-
-        parser.add_argument('-c',
-                            type=str,
-                            metavar="FILE",
-                            dest="output_csv",
-                            nargs='+',
-                            required=False,
-                            help="csv file that is optional to output.")
+                            help="fastq file to process, and bam inputs are also acceptable.")
 
         parser.add_argument('-p',
                             type=str,
                             metavar="FILE",
-                            dest="output_pickle",
+                            dest="output_path",
                             nargs='+',
                             required=True,
                             help="pickle file to store Markov model quality score predictions across "
@@ -72,9 +55,9 @@ class Command(BaseCommand):
 
         :param arguments: The namespace with arguments and their values.
         """
+
         quality_score_model_runner(
             arguments.input_file,
-            arguments.output_csv,
-            arguments.output_pickle,
-            arguments.overwrite,
+            arguments.output_path,
         )
+

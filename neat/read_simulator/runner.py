@@ -104,7 +104,7 @@ def initialize_all_models(options: Options):
             markov_data_frame = pickle.load(f)
         markov_model = QualityScoreModel(markov_data_frame)
     else:
-        markov_model = None  # use default model
+        markov_model = None # use default model
 
     _LOG.debug("Quality score model loaded")
 

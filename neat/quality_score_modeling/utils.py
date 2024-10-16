@@ -78,6 +78,9 @@ def make_qual_score_list(fastq_file=None, bam_file=None):
         print("Parsing FASTQ file")
 
         qual_list = []
+
+        fastq_file = fastq_file[0]
+
         for record in SeqIO.parse(fastq_file, "fastq"):
             qual_list.append(record.letter_annotations["phred_quality"])
 
@@ -206,6 +209,7 @@ def save_file(df, csv_file_path, pickle_file_path):
     """Saves the dataframe to a CSV file and a pickle file."""
 
     # df.to_csv(csv_file_path, index=False) # figure out how to turn off by default
+    pickle_file_path = pickle_file_path[0]
 
     with open(pickle_file_path, "wb") as f:
         pickle.dump(df, f)

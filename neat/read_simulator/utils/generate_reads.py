@@ -250,8 +250,8 @@ def generate_reads(
     # remove the combined model (ONLY use Markov)
 
     # Generate the quality scores using Markov model or traditional model
-    if options.use_markov and markov_preds_df is not None:
-        markov_preds_df = QualityScoreModel()
+    if options.use_markov:
+        markov_preds_df = QualityScoreModel(options.qual_score_model)
     else:
         markov_preds_df = None  # This is set to None and will be skipped in traditional mode
 
