@@ -54,8 +54,7 @@ def initialize_all_models(options: Options):
             homozygous_freq=default_cancer_homozygous_freq,
             variant_probs=default_cancer_variant_probs,
             insert_len_model=default_cancer_insert_len_model,
-            is_cancer=True,
-            rng=options.rng
+            is_cancer=True
         )
 
     _LOG.debug("Mutation models loaded")

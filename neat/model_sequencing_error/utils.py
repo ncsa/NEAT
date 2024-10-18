@@ -46,7 +46,7 @@ def expand_counts(count_array: list, scores: list):
     :return np.ndarray: a one-dimensional array reflecting the expanded count
     """
     if len(count_array) != len(scores):
-        _LOG.error("Count array and scores have different lengths.")
+        _LOG.critical("Count array and scores have different lengths.")
         sys.exit(1)
 
     ret_list = []
@@ -54,6 +54,18 @@ def expand_counts(count_array: list, scores: list):
         ret_list.extend([scores[i]] * count_array[i])
 
     return np.array(ret_list)
+
+
+def _make_gen(reader):
+    """
+    solution from stack overflow to quickly count lines in a file.
+        https://stackoverflow.com/questions/19001402/how-to-count-the-total-number-of-lines-in-a-text-file-using-python
+
+    """
+    b = reader(1024 * 1024)
+    while b:
+        yield b
+        b = reader(1024 * 1024)
 
 
 def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int, readlen: int):
@@ -84,6 +96,13 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
                 line = fq_in.readline().strip()
                 readlens.append(len(line))
 
+        # solution from stack overflow to quickly count lines in a file.
+        # https://stackoverflow.com/questions/19001402/how-to-count-the-total-number-of-lines-in-a-text-file-using-python
+        if max_reads == np.inf:
+            f = open(input_file, 'rb')
+            f_gen = _make_gen(f.raw.read)
+            max_reads = sum(buf.count(b'\n') for buf in f_gen)
+
         readlens = np.array(readlens)
 
         # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
@@ -100,18 +119,22 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 
     _LOG.debug(f'Read len of {read_length}, over {1000} samples')
 
-    _LOG.info(f"Reading {max_reads} records...")
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
-    # shape_curves = []
-    quarters = max_reads//4
+    if max_reads == np.inf:
+        _LOG.info("Reading all records...")
+        quarters = 10000
+    else:
+        _LOG.info(f"Reading {max_reads} records")
+        quarters = max_reads//4
 
     records_read = 0
     wrong_len = 0
     end_of_file = False
     # SeqIO eats up way too much memory for larger fastqs, so we're trying to read the file in line by line here
+    _LOG.info(f'Reading data...')
     with open_input(input_file) as fq_in:
-        while records_read < max_reads:
+        while records_read <= max_reads:
 
             # We throw away 3 lines and read the 4th, because that's fastq format
             for _ in (0, 1, 2, 3):
@@ -134,27 +157,32 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
             # TODO Adding this section to account for quality score "shape" in a fastq
             # shape_curves.append(qualities_to_check)
 
-            records_read += 1
-
             for j in range(read_length):
                 # The qualities of each read_position_scores
+                temp_q_count[j][qualities_to_check[j]] += 1
                 qual_score_counter[qualities_to_check[j]] += 1
+
+            records_read += 1
 
             if records_read % quarters == 0:
                 _LOG.info(f'reading data: {(records_read / max_reads) * 100:.0f}%')
 
-    _LOG.info(f'reading data: 100%')
+    _LOG.info(f'Reading data: complete')
     if end_of_file:
         _LOG.info(f'{records_read} records read before end of file.')
-    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length} ({wrong_len/max_reads:.0f}%)')
+    _LOG.debug(f'{wrong_len} total reads had a length other than {read_length} ({wrong_len/records_read:.0f}%)')
 
     avg_std_by_pos = []
     q_count_by_pos = np.asarray(temp_q_count)
     for i in range(read_length):
         this_counts = q_count_by_pos[i]
         expanded_counts = expand_counts(this_counts, quality_scores)
-        average_q = np.average(expanded_counts)
-        st_d_q = np.std(expanded_counts)
+        if len(expanded_counts) == 0:
+            _LOG.error(f"Position had no quality data: {i}")
+            sys.exit(1)
+        else:
+            average_q = np.average(expanded_counts)
+            st_d_q = np.std(expanded_counts)
         avg_std_by_pos.append((average_q, st_d_q))
 
     # TODO In progress, working on ensuring the error model produces the right shape
@@ -191,7 +219,7 @@ def plot_stuff(init_q, real_q, q_range, prob_q, actual_readlen, plot_path):
     plt.figure(1)
     z = np.array(init_q).T
     x, y = np.meshgrid(range(0, len(z[0]) + 1), range(0, len(z) + 1))
-    plt.pcolormesh(x, Y, z, vmin=0., vmax=0.25)
+    plt.pcolormesh(x, y, z, vmin=0., vmax=0.25)
     plt.axis([0, len(z[0]), 0, len(z)])
     plt.yticks(range(0, len(z), 10), range(0, len(z), 10))
     plt.xticks(range(0, len(z[0]), 10), range(0, len(z[0]), 10))
