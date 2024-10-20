@@ -215,9 +215,3 @@ def save_file(df, csv_file_path, pickle_file_path):
         pickle.dump(df, f)
 
     print(f"Data saved to {csv_file_path} and {pickle_file_path}")
-
-
-# def load_markov_predictions(pickle_file):
-#     with open(pickle_file, "rb") as f:
-#         markov_preds_df = pickle.load(f)
-#     return markov_preds_df

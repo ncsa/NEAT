@@ -251,9 +251,9 @@ def generate_reads(
 
     # Generate the quality scores using Markov model or traditional model
     if options.use_markov:
-        markov_preds_df = QualityScoreModel(options.qual_score_model)
+        markov_model = QualityScoreModel(options.qual_score_model)
     else:
-        markov_preds_df = None  # This is set to None and will be skipped in traditional mode
+        markov_model = None
 
     with (
         open_output(chrom_fastq_r1_paired) as fq1_paired,
@@ -306,8 +306,11 @@ def generate_reads(
 
             # Apply Markov chain quality scores if enabled, else use traditional model
             if options.use_markov:
+                with open(options.qual_score_model, "rb") as f:
+                    markov_preds_df = pickle.load(f)
                 pred_qualities = markov_preds_df.iloc[i % len(markov_preds_df)].values
             else:
+                markov_preds_df = None
                 pred_qualities = None
 
             # First read (if it's not a singleton)
@@ -336,7 +339,7 @@ def generate_reads(
                 read_1.finalize_read_and_write(
                     error_model_1,
                     mut_model,
-                    markov_model,
+                    markov_preds_df,
                     handle,
                     options.quality_offset,
                     options.produce_fastq
@@ -370,7 +373,7 @@ def generate_reads(
                 read_2.finalize_read_and_write(
                     error_model_2,
                     mut_model,
-                    markov_model,
+                    markov_preds_df,
                     handle,
                     options.quality_offset,
                     options.produce_fastq

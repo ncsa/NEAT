@@ -13,16 +13,20 @@ produce_fastq: .
 error_model: .
 mutation_model: .
 fragment_model: .
+qual_score_model: .
 
 avg_seq_error: .
 rescale_qualities: .
 quality_offset: .
+use_markov: .
+
 include_vcf: .
 target_bed: .
+off_target_scalar: .
 discard_bed: .
 mutation_rate: .
 mutation_bed: .
+no_coverage_bias: .
 rng_seed: .
 min_mutations: .
 overwrite_output: .
-

@@ -323,9 +323,9 @@ class Read:
         # Generate quality scores to cover the extended segment. We'll trim later
         self.quality_array = err_model.get_quality_scores(len(self.reference_segment))
 
-        # Check if qual_model is not None before calling load_markov_predictions
+        # Check if qual_model is not None
         if qual_model is not None:
-            self.markov_preds = qual_model.load_markov_predictions(self.markov_path)
+            self.markov_preds = qual_model
         else:
             self.markov_preds = None
 

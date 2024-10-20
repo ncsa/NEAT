@@ -37,6 +37,15 @@ rescale_qualities: .
 # type: int | required = no | default = 33
 quality_offset: .
 
+# Use a probabilistic Markov model to model quality scores by position along the read
+# type = boolean | required: no | default: <NEAT_DIR>/neat/models/defaults/default_error_model.pickle.gz
+use_markov: .
+
+# Absolute path to file quality score error model
+# Note: This number is REQUIRED if use_markov is set to true.
+# type = string | required: no
+qual_score_model: .
+
 # Desired ploidy
 # type = int | required = no | default = 2
 ploidy: .
@@ -139,4 +148,3 @@ min_mutations: .
 # Default is to quit if files already exist to avoid data destruction
 # type: bool | required = no | default = false
 overwrite_output: .
-
