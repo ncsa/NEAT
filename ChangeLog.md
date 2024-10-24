@@ -1,6 +1,11 @@
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
+# NEAT v4.2.X
+- Several bug fixes
+- Removed bin scoring (needs to be updated, and we didn't have time, but we'll bring it back)
+- Incremental improvements
+
 # NEAT v4.2
 - After several bug fixes that constituted release 4.1 and some minor releases, we are ready to release an overhauled vesion of NEAT 4.0.
 - Removed GC bias - it had little to no effect and made implementation nearly impossible
