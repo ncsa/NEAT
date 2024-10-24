@@ -67,27 +67,27 @@ class TraditionalQualityModel:
 
     def get_quality_scores(
             self,
-            run_read_length: int,
             model_read_length: int,
+            length: int,
             rng
     ) -> np.ndarray:
         """
-        Takes a read_length and rng and returns an array of quality scores
+        Takes a length and rng and returns an array of quality scores
 
-        :param run_read_length: The desired length of the quality score array
         :param model_read_length: the original read length for the model
+        :param length: The desired length of the quality score array
         :param rng: random number generator.
         :return: An array of quality scores.
         """
         if self.uniform_quality_score:
-            return np.array([self.uniform_quality_score] * run_read_length)
+            return np.array([self.uniform_quality_score] * length)
         else:
-            if run_read_length == model_read_length:
+            if length == model_read_length:
                 quality_index_map = np.arange(model_read_length)
             else:
                 # This is basically a way to evenly spread the distribution across the number of bases in the read
                 quality_index_map = np.array(
-                    [max([0, model_read_length * n // run_read_length]) for n in range(run_read_length)]
+                    [max([0, model_read_length * n // length]) for n in range(length)]
                 )
 
             temp_qual_array = []
@@ -206,7 +206,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # This is to prevent deletion error collisions and to keep there from being too many indel errors.
             if 0 < index < self.read_length - max(
                     self.deletion_len_model) and total_indel_length > self.read_length // 4:
-                error_type = self.rng.choice(a=list(self.variant_probs), p=list(self.variant_probs.values()))
+                error_type = rng.choice(a=list(self.variant_probs), p=list(self.variant_probs.values()))
 
             # Deletion error
             if error_type == Deletion:
@@ -227,7 +227,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             elif error_type == Insertion:
                 insertion_length = self.get_insertion_length()
                 insertion_reference = reference_segment[index]
-                insert_string = ''.join(self.rng.choice(ALLOWED_NUCL, size=insertion_length))
+                insert_string = ''.join(rng.choice(ALLOWED_NUCL, size=insertion_length))
                 insertion_alternate = insertion_reference + insert_string
                 introduced_errors.append(
                     ErrorContainer(Insertion, index, insertion_length, insertion_reference, insertion_alternate)

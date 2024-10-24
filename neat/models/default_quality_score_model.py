@@ -13,7 +13,6 @@ default_error_transition_matrix = np.array(
 # All numbers from 1-42
 default_quality_scores = np.arange(1, 43)
 
-
 default_qual_score_probs = np.array([
        [35.20551064,  5.39726466],
        [35.05310236,  5.63622973],

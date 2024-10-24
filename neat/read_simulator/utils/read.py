@@ -321,7 +321,7 @@ class Read:
         """
 
         # Generate quality scores for the read
-        self.quality_array = qual_model.get_quality_scores(err_model.read_length, self.run_read_length, rng)
+        self.quality_array = qual_model.get_quality_scores(err_model.read_length, len(self.reference_segment), rng)
 
         # This replaces either hard or soft-masked reference segment with upper case or a standard repeat
         # It updates the quality array and reference segment in place, including reversing them, if appropriate
