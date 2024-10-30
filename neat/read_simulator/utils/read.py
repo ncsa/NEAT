@@ -453,10 +453,12 @@ class Read:
         cig_string, cig_count, curr_char, cig_length = self.align_seqs()
         if cig_length < self.run_read_length:
             _LOG.warning("Poor alignment, trying reversed")
-            cig_string2, cig_count2, curr_char2, cig_length = self.align_seqs()
-            if cig_length < self.run_read_length:
-                _LOG.error("Alignment still not working")
-                sys.exit(1)
+            cig_string2, cig_count2, curr_char2, cig_length2 = self.align_seqs()
+            if cig_length2 < cig_length:
+                cig_length = cig_length2
+            while cig_length < self.run_read_length:
+                cig_string += "M"
+                cig_length += 1
 
         # append the final section as we return
         return cig_string + str(cig_count) + curr_char
