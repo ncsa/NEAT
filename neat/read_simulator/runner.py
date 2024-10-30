@@ -177,18 +177,20 @@ def read_simulator_runner(config: str, output: str):
 
     # TODO check into SeqIO.index_db()
     reference_index = SeqIO.index(str(options.reference), "fasta")
+    reference_keys_with_lens = {key: len(value) for key, value in reference_index.items()}
     _LOG.debug("Reference file indexed.")
 
     if _LOG.getEffectiveLevel() < 20:
         count = 0
-        for contig in reference_index:
-            count += len(reference_index[contig])
+        for contig in reference_keys_with_lens:
+            count += reference_keys_with_lens[contig]
         _LOG.debug(f"Length of reference: {count / 1_000_000:.2f} Mb")
 
-    input_variants_dict = {x: ContigVariants() for x in reference_index}
+    input_variants_dict = {x: ContigVariants() for x in reference_keys_with_lens}
     if options.include_vcf:
         _LOG.info(f"Reading input VCF: {options.include_vcf}.")
         if options.cancer:
+            # TODO Check if we need full ref index or just keys and lens
             sample_names = parse_input_vcf(
                 input_variants_dict,
                 options.include_vcf,
@@ -202,6 +204,7 @@ def read_simulator_runner(config: str, output: str):
             tumor_ind = sample_names['tumor_sample']
             normal_ind = sample_names['normal_sample']
         else:
+            # TODO Check if we need full ref index or just keys and lens
             sample_names = parse_input_vcf(
                 input_variants_dict,
                 options.include_vcf,
@@ -224,7 +227,7 @@ def read_simulator_runner(config: str, output: str):
         target_regions_dict,
         discard_regions_dict,
         mutation_rate_dict
-    ) = parse_beds(options, reference_index, mut_model.avg_mut_rate)
+    ) = parse_beds(options, reference_keys_with_lens, mut_model.avg_mut_rate)
 
     if any(bed_files):
         _LOG.debug("Finished reading input beds.")
@@ -234,7 +237,7 @@ def read_simulator_runner(config: str, output: str):
     if options.produce_bam:
         # This is a dictionary that is the list of the contigs and the length of each.
         # This information will be needed later to create the bam header.
-        bam_header = {key: len(reference_index[key]) for key in reference_index}
+        bam_header = reference_keys_with_lens
 
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf.
@@ -259,7 +262,7 @@ def read_simulator_runner(config: str, output: str):
     """
     _LOG.info("Beginning simulation.")
 
-    breaks = find_file_breaks(reference_index)
+    breaks = find_file_breaks(reference_keys_with_lens)
 
     _LOG.debug("Input reference partitioned for run")
 
@@ -345,20 +348,20 @@ def read_simulator_runner(config: str, output: str):
 
     if options.produce_bam:
         _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")
-        contig_list = list(reference_index)
+        contig_list = list(reference_keys_with_lens)
         contigs_by_index = {contig_list[n]: n for n in range(len(contig_list))}
         output_file_writer.output_bam_file(sam_reads_files, contigs_by_index, options.read_len)
 
 
-def find_file_breaks(reference_index: dict) -> dict:
+def find_file_breaks(reference_keys_with_lens: dict) -> dict:
     """
     Returns a dictionary with the chromosomes as keys, which is the start of building the chromosome map
 
-    :param reference_index: a dictionary with chromosome keys and sequence values
+    :param reference_keys_with_lens: a dictionary with chromosome keys and sequence values
     :return: a dictionary containing the chromosomes as keys and either "all" for values, or a list of indices
     """
     partitions = {}
-    for contig in reference_index.keys():
-        partitions[contig] = [(0, len(reference_index[contig]))]
+    for contig in reference_keys_with_lens:
+        partitions[contig] = [(0, reference_keys_with_lens[contig])]
 
     return partitions
