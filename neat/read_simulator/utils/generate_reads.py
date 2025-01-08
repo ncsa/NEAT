@@ -402,7 +402,6 @@ def generate_reads(
     if options.produce_bam:
         # this will give us the proper read order of the elements, for the sam. They are easier to sort now
         properly_paired_reads = sorted(properly_paired_reads)
-        singletons = sorted(singletons)
         sam_order = properly_paired_reads + singletons
 
         with open_output(reads_pickle) as reads:
