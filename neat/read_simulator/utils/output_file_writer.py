@@ -10,6 +10,7 @@ __all__ = [
 
 import gzip
 import re
+import shutil
 import time
 from struct import pack
 import logging
@@ -101,7 +102,7 @@ class OutputFileWriter:
             files_to_write.extend(self.fastq_fns)
         elif self.write_fastq:
             self.fastq1_fn = options.output.parent / f'{options.output.stem}.fastq.gz'
-            self.fastq2_fn = options.output.parent / "dummy.fastq.gz"
+            self.fastq2_fn = self.temporary_dir / "dummy.fastq.gz"
             self.fastq_fns = [self.fastq1_fn, self.fastq2_fn]
             files_to_write.extend(self.fastq_fns)
         if self.write_bam:
@@ -115,7 +116,7 @@ class OutputFileWriter:
         self.files_to_write = files_to_write
 
         # Create files as applicable
-        for file in [x for x in self.files_to_write if x != "dummy.fastq.gz"]:
+        for file in [x for x in self.files_to_write if x.name != "dummy.fastq.gz"]:
             validate_output_path(file, True, options.overwrite_output)
 
         mode = 'xt'
