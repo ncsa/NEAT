@@ -9,4 +9,3 @@ References:
 2.	Rhie A, Nurk S, Cechova M, et al. The complete sequence of a human Y chromosome. Nature. 2023;621(7978):344-354. doi:10.1038/s41586-023-06457-y
 3.	Lefouili M, Nam K. The evaluation of Bcftools mpileup and GATK HaplotypeCaller for variant calling in non-human species. Sci Rep. 2022;12(1). doi:10.1038/s41598-022-15563-2
 4.	Alosaimi S, Bandiang A, van Biljon N, et al. A broad survey of DNA sequence data simulation tools. Brief Funct Genomics. 2020;19(1):49-59. doi:10.1093/bfgp/elz033
-5.	Wang YC, Olson ND, Deikus G, et al. High-coverage, long-read sequencing of Han Chinese trio reference samples. Sci Data. 2019;6(1). doi:10.1038/s41597-019-0098-2
