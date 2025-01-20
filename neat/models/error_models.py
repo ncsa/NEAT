@@ -189,7 +189,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         if self.average_error == 0:
             return introduced_errors
         else:
-            for i in range(self.read_length):
+            for i in range(len(quality_scores)):
                 if rng.random() < quality_score_error_rate[quality_scores[i]]:
                     error_indexes.append(i)
 
