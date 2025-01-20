@@ -1,8 +1,8 @@
 name: neat
 channels:
-  - bioconda
-  - conda-forge
-  - defaults
+    - conda-forge
+    - bioconda
+
 dependencies:
   - python=3.10.*
   - biopython=1.79
