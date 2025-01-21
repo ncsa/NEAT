@@ -232,6 +232,7 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                 else:
                     # If there was no format column, there's no sample column, so we'll generate one
                     format_column = "GT"
+                    alt_count = len(record[4].split(';'))
                     genotype = pick_ploids(ploidy, homozygous_frequency, alt_count, options.rng)
                     normal_sample_field = get_genotype_string(genotype)
 
