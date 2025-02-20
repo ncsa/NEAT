@@ -26,4 +26,14 @@ jobs:
           # This is the output path where Pandoc will write the compiled
           # PDF. Note, this should be the same directory as the input
           # paper.md
+
+      - name: Debug list files
+        run: ls -R
+
+      # Try to find the actual path of the generated PDF
+      - name: Upload PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          path: "**/*.pdf"  # Upload any PDF found in the repo
           path: paper.pdf
