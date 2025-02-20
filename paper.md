@@ -21,9 +21,9 @@ authors:
     affiliation: 1
 
 affiliations:
- - name: National Center for Supercomputing Applications, Genomics Group 
+ - name: National Center for Supercomputing Applications, Genomics Group, Urbana, IL, USA, 61801 
    index: 1
- - name: University of Illinois at Chicago
+ - name: University of Illinois at Chicago, Chicago, IL, USA, 60607
    index: 2
 
 date: 20 February 2025
@@ -33,7 +33,7 @@ bibliography: paper.bib
 
 # Summary
 
-While the field of genomics has advanced significantly with the advent of high-throughput sequencing technologies, challenges related to the proprietary access, availability, complexity, and variability of this data can introduce difficulty in the development and validation of computational tools. Simulated datasets provide ground-truth estimates and reproducible scalability that are important in testing algorithms and benchmarking software. Ideally, these datasets mimic the properties of real sequencing datasets—from introducing specific patterns of sequencing errors to localized regions of mutations that often characterize cancer genomes.
+While the field of genomics has advanced significantly with the advent of high-throughput sequencing technologies, challenges related to the availability, complexity, and variability of this data can introduce difficulty in the development and validation of computational tools. Simulated deoxyribonucleic acid (DNA) sequencing datasets provide ground-truth estimates and reproducible scalability that are important in testing algorithms and benchmarking software. Ideally, these datasets mimic the properties of real sequencing datasets—from introducing specific patterns of sequencing errors to modeling localized regions of mutations.
 
 # Statement of need
 
@@ -63,7 +63,7 @@ NEAT can integrate seamlessly with existing bioinformatics workflows, providing 
 |---|-------------|------------------------------|--------------------------------|
 | 7 | **Variant Handling** | The code structure limited the introduction of new variant types | A modular design supports generic variant handling and the separation of insertions and deletions |
 
-The prior implementation of **1** tightly integrated BAM creation with all NEAT functions, leading to inefficiencies. The new update isolates BAM creation, allowing it to be toggled independently, improving runtime and modularity. **2** was removed due to redundancy, as advancements in sequencing technology rendered the custom script unnecessary. Its removal reduced runtime while eliminating associated bugs. **3** has been extended to allow accurate simulation of tumor genomes and polyploid organisms (e.g., plants), with inputs of ploidy greater than two and fractional ploidies now correctly simulating reads. **4** previously introduced artificial read gaps (~50 base pairs) due to a sliding-window approach. The updated coordinate-based selection eliminates these gaps, yielding a dataset that more accurately reflects real sequencing patterns. **5** initially did not achieve a tapering effect on a simulated read's edges. By incorporating a revised Markov model alongside the binning method, the tapering effect was successfully implemented. **6** suffered from loss of genotype data and an arbitrary restriction on certain valid variants. The updated version preserves genotype data in the final VCF file, improving accuracy and giving users greater control over insertions. **7** has been modularized to support structural and copy number variants, increasing flexibility and ensuring future extensibility for handling more complex variants.
+The creation of simulated Binary Alignment Map (BAM) files (**1**) in NEAT 2.0 was tightly integrated with all NEAT functions. The new update isolates BAM creation, improving runtime and modularity. Guanine-cytosine (GC) bias computation (**2**) was removed due to redundancy, and its removal reduced runtime. Ploidy simulation (**3**) has been extended to improve accurate simulation of tumor genomes and polyploid organisms (e.g., plants), and ploidy inputs greater than two and fractional ploidies are now handled. Previously, NEAT 2.0's read generation (**4**) algorithm introduced read gaps (~50 base pairs) due to its sliding-window approach. The updated coordinate-based selection eliminates these gaps. Modeling of sequencing quality scores for each nucleotide base (**5**) was updated by incorporating a revised Markov model alongside a binning method. We accurately account for a tapering effect that reduces sequencing quality scores along a simulated sequence's edges. Variant insertion (**6**) was updated to preserve genotype data in the final simulated Variant Call Format (VCF) file, improving accuracy and giving users greater control over the insertion of variants. Finally, variant handling (**7**) has been modularized to support structural and copy number variants, increasing flexibility and ensuring future extensibility for handling more complex variants.
 
 \newpage
 
@@ -79,7 +79,7 @@ The prior implementation of **1** tightly integrated BAM creation with all NEAT 
 |---|-------------|------------------------------|--------------------------------|
 | 4 | **Refactored Unit Testing** | Not originally present | Rewritten with testable, discrete functions |
 
-**1** was implemented to address the lack of a formal testing structure. The new continuous integration (CI) pipeline detects bugs early, streamlining development and enhancing error detection (e.g., handling of BED files and other inputs). **2** improved usability, debugging, and reproducibility by replacing cumbersome command-line flags with structured configuration files. **3** was introduced to address the previous lack of package installation support, making NEAT 4.X modular and pip-installable via Poetry, which enhances portability and development ease. Lastly, **4** improved debugging and maintenance by transitioning from a monolithic structure to a modular approach with testable, discrete functions, enhancing code integrity and collaboration.
+Our new continuous integration pipeline (**1**) detects bugs early, streamlining development and enhancing error detection (e.g., handling of multiple genomic file formats as inputs and outputs). Configuration files in NEAT v4.X (**2**) and package installation (**3**) facilitate user friendliness and portability. NEAT v4.X features testable, discrete functions (**4**) that allows users to debug more easily. Parallelization of NEAT v4.X is in progress.
 
 \newpage
 
