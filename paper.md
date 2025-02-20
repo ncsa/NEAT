@@ -47,14 +47,6 @@ NEAT can integrate seamlessly with existing bioinformatics workflows, providing 
 
 ## Algorithmic Improvements and Methodological Changes
 
-# Tables
-
-## Algorithmic Improvements and Methodological Changes
-
-# Tables
-
-## Algorithmic Improvements and Methodological Changes
-
 ### Table 1. Enhancements in Algorithmic Performance
 
 | # | Feature Name | Prior Implementation (v2.0) | Updated Implementation (v4.X) |
@@ -78,7 +70,7 @@ The prior implementation of **1** tightly integrated BAM creation with all NEAT 
 | # | Feature Name | Prior Implementation (v2.0) | Updated Implementation (v4.X) |
 |---|-------------|------------------------------|--------------------------------|
 | 1 | **Automated Testing** | No formal testing framework | Implemented continuous integration with GitHub-based automated tests |
-| 2 | **Refactoring & Unit Testing** | Monolithic, unstructured codebase | Rewritten with testable, discrete functions |
+| 2 | **Refactored Unit Testing** | Monolithic, unstructured codebase | Rewritten with testable, discrete functions |
 | 3 | **Friendly Installation** | Not installable as a package | Fully modular and pip-installable via Poetry |
 | 4 | **Configuration Files** | Required explicit command-line flags | Introduced structured configuration files |
 
