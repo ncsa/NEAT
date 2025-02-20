@@ -29,6 +29,7 @@ affiliations:
 date: XYZ February 2025
 
 bibliography: paper.bib
+---
 
 # Summary
 
