@@ -45,9 +45,7 @@ NEAT can integrate seamlessly with existing bioinformatics workflows, providing 
 
 # Tables
 
-## Algorithmic Improvements and Methodological Changes
-
-### Table 1. Enhancements in Algorithmic Performance
+### Table 1. Algorithmic Improvements and Methodological Changes
 
 | # | Feature Name | Prior Implementation (v2.0) | Updated Implementation (v4.X) |
 |---|-------------|------------------------------|--------------------------------|
@@ -69,27 +67,27 @@ The prior implementation of **1** tightly integrated BAM creation with all NEAT 
 
 \newpage
 
-## Performance Enhancements and User-Centric Modifications
-
-### Table 2. Performance and User Experience Improvements
+### Table 2. Improvements in User Experience
 
 | # | Feature Name | Prior Implementation (v2.0) | Updated Implementation (v4.X) |
 |---|-------------|------------------------------|--------------------------------|
 | 1 | **Automated Testing** | No formal testing framework | Implemented continuous integration with GitHub-based automated tests |
 |---|-------------|------------------------------|--------------------------------|
-| 2 | **Refactored Unit Testing** | Monolithic, unstructured codebase | Rewritten with testable, discrete functions |
+| 2 | **Configuration Files** | Required explicit command-line flags | Introduced structured configuration files |
 |---|-------------|------------------------------|--------------------------------|
 | 3 | **Friendly Installation** | Not installable as a package | Fully modular and pip-installable via Poetry |
 |---|-------------|------------------------------|--------------------------------|
-| 4 | **Configuration Files** | Required explicit command-line flags | Introduced structured configuration files |
+| 4 | **Refactored Unit Testing** | Not originally present | Rewritten with testable, discrete functions |
 
-**1** was implemented to address the lack of a formal testing structure. The new continuous integration (CI) pipeline detects bugs early, streamlining development and enhancing error detection (e.g., handling of BED files and other inputs). **2** improved debugging and maintenance by transitioning from a monolithic structure to a modular approach with testable, discrete functions, enhancing code integrity and collaboration. **3** was introduced to address the previous lack of package installation support, making NEAT 4.X modular and pip-installable via Poetry, which enhances portability and development ease. Lastly, **4** improved usability, debugging, and reproducibility by replacing cumbersome command-line flags with structured configuration files.
+**1** was implemented to address the lack of a formal testing structure. The new continuous integration (CI) pipeline detects bugs early, streamlining development and enhancing error detection (e.g., handling of BED files and other inputs). **2** improved usability, debugging, and reproducibility by replacing cumbersome command-line flags with structured configuration files. **3** was introduced to address the previous lack of package installation support, making NEAT 4.X modular and pip-installable via Poetry, which enhances portability and development ease. Lastly, **4** improved debugging and maintenance by transitioning from a monolithic structure to a modular approach with testable, discrete functions, enhancing code integrity and collaboration.
 
 \newpage
 
 # Acknowledgements
 
-We thank the original creators of NEAT. We also thank Raghid, Yash, Varenya, and Karen.
+We thank the original creators of NEAT: Zachary D. Stephens, Matthew E. Hudson, Liudmila S. Mainzer, Morgan Taschuk, Matthew R. Weber, and Ravishankar K. Iyer. 
+
+We also thank Raghid Alhamzy, Yash Wasnik, Varenya Jain, and Karen H. Xiong.
 
 # References
 1.	Stephens ZD, Hudson ME, Mainzer LS, Taschuk M, Weber MR, Iyer RK. Simulating Next-Generation Sequencing Datasets from Empirical Mutation and Sequencing Models. PLOS ONE. 2016;11(11). doi:10.1371/journal.pone.0167047
