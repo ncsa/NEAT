@@ -30,9 +30,4 @@ jobs:
 
       - name: Debug list files
         run: ls -R
-      # Try to find the actual path of the generated PDF
-      - name: Upload PDF
-        uses: actions/upload-artifact@v4
-        with:
-          name: paper
-          path: paper.pdf
+      # Double-check to find the actual path of the generated PDF
