@@ -35,5 +35,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: paper
-          path: "**/*.pdf"  # Upload any PDF found in the repo
           path: paper.pdf
