@@ -21,9 +21,9 @@ authors:
     affiliation: 1
 
 affiliations:
- - name: National Center for Supercomputing Applications, Genomics Group, 
+ - name: National Center for Supercomputing Applications, Genomics Group 
    index: 1
- - name: University of Illinois at Chicago, 
+ - name: University of Illinois at Chicago
    index: 2
 
 date: XYZ February 2025
@@ -41,6 +41,8 @@ The NExt-generation sequencing Analysis Toolkit (NEAT) is an open-source Python 
 
 NEAT can integrate seamlessly with existing bioinformatics workflows, providing outputs in several common file formats. The toolkit’s ability to simulate gold-standard synthetic datasets with ground truth annotations is useful for testing bioinformatics pipelines. Uses of NEAT continue to be prominently featured—from scientists who have comprehensively sequenced the human Y chromosome<sup>2</sup> to researchers who use NEAT to evaluate and validate the performance of other high-profile bioinformatics tools.<sup>3, 4</sup> Earlier versions of NEAT have also demonstrated utility when benchmarked in comparison to similar tools.<sup>5</sup> The source code for both original and updated versions of NEAT is freely available on GitHub.<sup>1</sup>
 
+\newpage
+
 # Tables
 
 ## Algorithmic Improvements and Methodological Changes
@@ -57,6 +59,8 @@ NEAT can integrate seamlessly with existing bioinformatics workflows, providing 
 | **Variant Type Handling** | The code structure limited the introduction of new variant types | A modular design supports generic variant handling and the separation of insertions and deletions | Paves the way for structural and copy number variant support | More flexible insertion handling and future extensibility |
 | **Binary Alignment Map (BAM) File Generation** | File generation was tightly integrated with all NEAT processes | BAM creation was isolated from core functions | Improves runtime and modularity | BAM generation can now be toggled independently |
 
+\newpage
+
 ## Table 2. Performance Enhancements and User-Centric Modifications
 
 | Feature | Prior Implementation (v2.0) | Updated Implementation (v4.X) | Rationale for Change | Demonstrated Improvement |
@@ -67,6 +71,8 @@ NEAT can integrate seamlessly with existing bioinformatics workflows, providing 
 | **Automated Testing Framework** | No formal testing framework | Implemented continuous integration with GitHub-based automated tests | Improves development efficiency and debugging capabilities | Enhanced detection of random bugs and user issues (e.g., file handling) |
 
 Parallelization and memory profiling tools will be updated shortly.
+
+\newpage
 
 # Acknowledgements
 
