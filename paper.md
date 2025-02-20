@@ -47,30 +47,38 @@ NEAT can integrate seamlessly with existing bioinformatics workflows, providing 
 
 ## Algorithmic Improvements and Methodological Changes
 
-## Table 1. Enhancements in Algorithmic Performance
+# Tables
 
-| Feature | Prior Implementation (v2.0) | Updated Implementation (v4.X) | Rationale for Change | Demonstrated Improvement |
-|---------|------------------------------|--------------------------------|----------------------|-------------------------|
-| **Read Quality Modeling** | Markov-based model | Binning method with an option to also implement a revised Markov-based model | Did not achieve a tapering effect on a simulated read's edges | The tapering effect was achieved with the revised Markov model |
-| **Guanine-Cytosine (GC) Bias Computation** | Used a custom script for GC bias calculation | Feature deprecated | The script has decreased relevance due to advances in sequencing technology | Reduced runtime and absence of reported bugs |
-| **Ploidy Simulation** | Limited to diploid organisms in practice | Supports unbounded ploidy levels | This is essential for the accurate modeling of tumors or polyploid organisms, such as plants | Inputs of ploidy greater than two and fractional ploidies will correctly simulate reads |
-| **Variant Insertion** | Issues with inserted variants (loss of genotype data, prevented certain valid variants from insertion) | Preserves genotype data in the final variant call format (VCF) file | Allows greater flexibility and user control over variant inclusion | Improved accuracy of inserted variants (long variant support still in progress) |
-| **Read Generation** | The sliding-window approach to generate reads resulted in artificial gaps in sequencing reads (~50 base pairs) | A new form of coordinate-based read selection eliminates these gaps | Aimed to produce datasets more representative of real sequencing patterns | Elimination of artificial gaps |
-| **Variant Type Handling** | The code structure limited the introduction of new variant types | A modular design supports generic variant handling and the separation of insertions and deletions | Paves the way for structural and copy number variant support | More flexible insertion handling and future extensibility |
-| **Binary Alignment Map (BAM) File Generation** | File generation was tightly integrated with all NEAT processes | BAM creation was isolated from core functions | Improves runtime and modularity | BAM generation can now be toggled independently |
+## Algorithmic Improvements and Methodological Changes
+
+### Table 1. Enhancements in Algorithmic Performance
+
+| # | Feature Name | Prior Implementation (v2.0) | Updated Implementation (v4.X) |
+|---|-------------|------------------------------|--------------------------------|
+| 1 | **Binary Alignment Map (BAM) File Generation** | File generation was tightly integrated with all NEAT processes | BAM creation was isolated from core functions |
+| 2 | **Guanine-Cytosine (GC) Bias Computation** | Used a custom script for GC bias calculation | Feature deprecated |
+| 3 | **Ploidy Simulation** | Limited to diploid organisms in practice | Supports unbounded ploidy levels |
+| 4 | **Read Generation** | The sliding-window approach to generate reads resulted in artificial gaps in sequencing reads (~50 base pairs) | A new form of coordinate-based read selection eliminates these gaps |
+| 5 | **Read Quality Modeling** | Markov-based model | Binning method with an option to also implement a revised Markov-based model |
+| 6 | **Variant Insertion** | Issues with inserted variants (loss of genotype data, prevented certain valid variants from insertion) | Preserves genotype data in the final variant call format (VCF) file |
+| 7 | **Variant Type Handling** | The code structure limited the introduction of new variant types | A modular design supports generic variant handling and the separation of insertions and deletions |
+
+The prior implementation of **Binary Alignment Map (BAM) File Generation** tightly integrated BAM creation with all NEAT functions, leading to inefficiencies. The new update isolates BAM creation, allowing it to be toggled independently, improving runtime and modularity. **Guanine-Cytosine (GC) Bias Computation** was removed due to redundancy, as advancements in sequencing technology rendered the custom script unnecessary. Its removal reduced runtime while eliminating associated bugs. **Ploidy Simulation** has been extended to allow accurate simulation of tumor genomes and polyploid organisms (e.g., plants), with inputs of ploidy greater than two and fractional ploidies now correctly simulating reads. **Read Generation** previously introduced artificial read gaps (~50 base pairs) due to a sliding-window approach. The updated coordinate-based selection eliminates these gaps, yielding a dataset that more accurately reflects real sequencing patterns. **Read Quality Modeling** initially did not achieve a tapering effect on a simulated read's edges. By incorporating a revised Markov model alongside the binning method, the tapering effect was successfully implemented. **Variant Insertion** suffered from loss of genotype data and an arbitrary restriction on certain valid variants. The updated version preserves genotype data in the final VCF file, improving accuracy and giving users greater control over insertions. **Variant Type Handling** has been modularized to support structural and copy number variants, increasing flexibility and ensuring future extensibility for handling more complex variants.
 
 \newpage
 
-## Table 2. Performance Enhancements and User-Centric Modifications
+## Performance Enhancements and User-Centric Modifications
 
-| Feature | Prior Implementation (v2.0) | Updated Implementation (v4.X) | Rationale for Change | Demonstrated Improvement |
-|---------|------------------------------|--------------------------------|----------------------|-------------------------|
-| **Modular Codebase & Installation** | Not installable as a package | Fully modular and pip-installable via Poetry | Facilitates ease of development, portability, and deployment | Reduced dependencies, improved maintainability |
-| **Code Refactoring & Unit Testing** | Monolithic, unstructured codebase | Rewritten with testable, discrete functions | Enhances maintainability and collaborative development | Improved code readability and integrity |
-| **User Experience: Configuration Management** | Required explicit command-line flags | Introduced structured configuration files | Improves usability, debugging, and reproducibility | Simplified interface, increased accessibility |
-| **Automated Testing Framework** | No formal testing framework | Implemented continuous integration with GitHub-based automated tests | Improves development efficiency and debugging capabilities | Enhanced detection of random bugs and user issues (e.g., file handling) |
+### Table 2. Performance and User Experience Improvements
 
-Parallelization and memory profiling tools will be updated shortly.
+| # | Feature Name | Prior Implementation (v2.0) | Updated Implementation (v4.X) |
+|---|-------------|------------------------------|--------------------------------|
+| 1 | **Automated Testing Framework** | No formal testing framework | Implemented continuous integration with GitHub-based automated tests |
+| 2 | **Code Refactoring & Unit Testing** | Monolithic, unstructured codebase | Rewritten with testable, discrete functions |
+| 3 | **Modular Codebase & Installation** | Not installable as a package | Fully modular and pip-installable via Poetry |
+| 4 | **User Experience: Configuration Management** | Required explicit command-line flags | Introduced structured configuration files |
+
+**Automated Testing Framework** was implemented to address the lack of a formal testing structure. The new continuous integration (CI) pipeline detects bugs early, streamlining development and enhancing error detection (e.g., handling of BED files and other inputs). **Code Refactoring & Unit Testing** improved debugging and maintenance by transitioning from a monolithic structure to a modular approach with testable, discrete functions, enhancing code integrity and collaboration. **Modular Codebase & Installation** was introduced to address the previous lack of package installation support, making NEAT 4.X modular and pip-installable via Poetry, which enhances portability and development ease. Lastly, **User Experience: Configuration Management** improved usability, debugging, and reproducibility by replacing cumbersome command-line flags with structured configuration files. Parallelization and memory profiling tools will be updated shortly.
 
 \newpage
 
