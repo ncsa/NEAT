@@ -48,7 +48,7 @@ NEAT can integrate seamlessly with existing bioinformatics workflows, providing 
 
 ### Table 1. Algorithmic Improvements and Methodological Changes
 
-| # | Feature Name | Prior Implementation (v2.0) | Updated Implementation (v4.X) |
+| # | Feature Name | Prior Implementation (2.0) | Updated Implementation (4.X) |
 |---|-------------|------------------------------|--------------------------------|
 | 1 | **BAM File Generation** | File generation was tightly integrated with all NEAT processes | BAM creation was isolated from core functions |
 |---|-------------|------------------------------|--------------------------------|
@@ -70,7 +70,7 @@ The creation of simulated Binary Alignment Map (BAM) files (**1**) in NEAT 2.0 w
 
 ### Table 2. Improvements in User Experience
 
-| # | Feature Name | Prior Implementation (v2.0) | Updated Implementation (v4.X) |
+| # | Feature Name | Prior Implementation (2.0) | Updated Implementation (4.X) |
 |---|-------------|------------------------------|--------------------------------|
 | 1 | **Automated Testing** | No formal testing framework | Implemented continuous integration with GitHub-based automated tests |
 |---|-------------|------------------------------|--------------------------------|
@@ -80,7 +80,7 @@ The creation of simulated Binary Alignment Map (BAM) files (**1**) in NEAT 2.0 w
 |---|-------------|------------------------------|--------------------------------|
 | 4 | **Refactored Unit Testing** | Not originally present | Rewritten with testable, discrete functions |
 
-Our new continuous integration pipeline (**1**) detects bugs early, streamlining development and enhancing error detection (e.g., handling of multiple genomic file formats as inputs and outputs). Configuration files in NEAT v4.X (**2**) and package installation (**3**) facilitate user friendliness and portability. NEAT v4.X features testable, discrete functions (**4**) that allows users to debug more easily. Parallelization of NEAT v4.X is in progress.
+Our new continuous integration pipeline (**1**) detects bugs early, streamlining development and enhancing error detection (e.g., handling of multiple genomic file formats as inputs and outputs). Configuration files in NEAT 4.X (**2**) and package installation (**3**) facilitate user friendliness and portability. NEAT 4.X features testable, discrete functions (**4**) that allows users to debug more easily. Parallelization of NEAT 4.X is in progress.
 
 # Acknowledgements
 
