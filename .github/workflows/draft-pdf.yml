@@ -22,14 +22,14 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: .
+          name: paper
           # This is the output path where Pandoc will write the compiled
           # PDF. Note, this should be the same directory as the input
           # paper.md
+          path: paper
 
       - name: Debug list files
         run: ls -R
-
       # Try to find the actual path of the generated PDF
       - name: Upload PDF
         uses: actions/upload-artifact@v4
