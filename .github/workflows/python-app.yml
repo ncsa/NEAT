@@ -19,6 +19,7 @@ jobs:
         with:
           conda-channels: bioconda, conda-forge
           activate-conda: true
+          conda-update: true
       - name: Environment Setup
         run: |
           conda env create -f environment.yml -n test_neat
