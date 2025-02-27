@@ -18,8 +18,8 @@ jobs:
       - uses: s-weigand/setup-conda@v1.1.1
         with:
           conda-channels: bioconda, conda-forge
-          activate-conda: false
-          conda-update: true
+          activate-conda: true
+          update-conda: true
       - name: Environment Setup
         run: |
           conda env create -f environment.yml -n test_neat
