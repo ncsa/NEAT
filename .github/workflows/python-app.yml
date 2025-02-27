@@ -23,7 +23,6 @@ jobs:
       - name: Environment Setup
         run: |
           conda env create -f environment.yml -n test_neat
-          source activate test_neat
           poetry install
 
       - name: Run NEAT Simulation for config_test1
