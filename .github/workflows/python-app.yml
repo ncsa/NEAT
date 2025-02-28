@@ -1,7 +1,3 @@
-# This workflow configures the environment and executes NEAT read-simulator tests using relative paths for a series of configuration files individually
-# For more information on using Python with GitHub Actions, refer to:
-# https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
-
 name: NEAT Unit Tests
 
 on:
@@ -23,59 +19,10 @@ jobs:
       - name: Environment Setup
         run: |
           conda env create -f environment.yml -n test_neat
-          poetry install
+          echo "Conda environment created."
 
-      - name: Run NEAT Simulation for config_test1
+      - name: Run NEAT Simulations
         run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test1.yml -o ../outputs/test1_read-simulator
-
-      - name: Run NEAT Simulation for config_test2
-        run: |
-          source activate test_neat 
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test2.yml -o ../outputs/test2_read-simulator
-
-      - name: Run NEAT Simulation for config_test3
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test3.yml -o ../outputs/test3_read-simulator
-
-      - name: Run NEAT Simulation for config_test4
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test4.yml -o ../outputs/test4_read-simulator
-
-      - name: Run NEAT Simulation for config_test5
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test5.yml -o ../outputs/test5_read-simulator
-
-      - name: Run NEAT Simulation for config_test6
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test6.yml -o ../outputs/test6_read-simulator
-
-      - name: Run NEAT Simulation for config_test7
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test7.yml -o ../outputs/test7_read-simulator
-
-      - name: Run NEAT Simulation for config_test8
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test8.yml -o ../outputs/test8_read-simulator
-
-      - name: Run NEAT Simulation for config_test9
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test9.yml -o ../outputs/test9_read-simulator
-
-      - name: Run NEAT Simulation for config_test10
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test10.yml -o ../outputs/test10_read-simulator
-
-      - name: Run NEAT Simulation for config_test11
-        run: |
-          source activate test_neat
-          python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test11.yml -o ../outputs/test11_read-simulator
+          for i in {1..11}; do
+            conda run -n test_neat python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test$i.yml -o ../outputs/test${i}_read-simulator;
+          done
