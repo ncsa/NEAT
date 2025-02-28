@@ -19,12 +19,6 @@ jobs:
           environment-name: test_neat
           cache-environment: true
 
-      - name: Debug Conda Paths
-        run: |
-          which conda
-          conda info
-          conda list
-
       - name: Run NEAT Simulations
         run: |
           micromamba run -n test_neat python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test1.yml -o ../outputs/test1_read-simulator
