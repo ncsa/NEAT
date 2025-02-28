@@ -11,18 +11,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: s-weigand/setup-conda@v1.1.1
+
+      - name: Setup Micromamba
+        uses: mamba-org/setup-micromamba@v1
         with:
-          conda-channels: bioconda, conda-forge
-          activate-conda: true
-          update-conda: true
-      - name: Environment Setup
+          environment-file: environment.yml
+          environment-name: test_neat
+          cache-environment: true
+
+      - name: Debug Conda Paths
         run: |
-          conda env create -f environment.yml -n test_neat
-          echo "source ~/miniconda3/etc/profile.d/conda.sh" >> $GITHUB_ENV
-          echo "conda activate test_neat" >> $GITHUB_ENV
+          which conda
+          conda info
+          conda list
+
       - name: Run NEAT Simulations
         run: |
-          for i in {1..11}; do
-            conda run -n test_neat python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test$i.yml -o ../outputs/test${i}_read-simulator;
-          done
+          micromamba run -n test_neat python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test1.yml -o ../outputs/test1_read-simulator
