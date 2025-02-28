@@ -21,4 +21,6 @@ jobs:
 
       - name: Run NEAT Simulations
         run: |
-          micromamba run -n test_neat python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test1.yml -o ../outputs/test1_read-simulator
+          for i in {1..11}; do
+            micromamba run -n test_neat python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test$i.yml -o ../outputs/test${i}_read-simulator;
+          done
