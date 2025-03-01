@@ -395,7 +395,7 @@ def generate_reads(
                 # This will be the choice for all single-ended reads
                 singletons.append((read_1, None))
             else:
-                singletons.append((None, read_2))
+                singletons.append((read_2, None))
 
     _LOG.info(f"Contig fastq(s) written in: {(time.time() - t)/60:.2f} m")
 
