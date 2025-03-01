@@ -9,7 +9,6 @@ both the reference sequence and the read and the actual read sequence.
 """
 import logging
 import numpy as np
-import sys
 
 from typing import TextIO
 from Bio.Seq import Seq, MutableSeq
