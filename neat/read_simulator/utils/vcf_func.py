@@ -232,6 +232,7 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                 else:
                     # If there was no format column, there's no sample column, so we'll generate one
                     format_column = "GT"
+                    alt_count = len(record[4].split(';'))
                     genotype = pick_ploids(ploidy, homozygous_frequency, alt_count, options.rng)
                     normal_sample_field = get_genotype_string(genotype)
 
@@ -260,16 +261,17 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                         temp_variant = SingleNucleotideVariant(
                             location, alt, temp_genotype, record[5], is_input=True, kwargs=data
                         )
-                    elif len(ref) == 1 and len(ref) > len(alt):
+                    elif len(ref) > len(alt) and ref.startswith(alt):
                         # type = deletion
                         temp_variant = Deletion(
                             location, len(alt), temp_genotype, record[5], is_input=True, kwargs=data
                         )
-                    elif len(alt) == 1 and len(ref) < len(alt):
+                    elif len(alt) > len(ref) and alt.startswith(ref):
                         # type = insertion
                         temp_variant = Insertion(
                             location, len(alt), alt, temp_genotype, record[5], is_input=True, kwargs=data)
                     else:
+                        # Unknown variant type.
                         # We'll need the alternate, so we'll add it to data.
                         data["ALT"] = alt
                         temp_variant = UnknownVariant(location, temp_genotype, record[5], is_input=True, kwargs=data
