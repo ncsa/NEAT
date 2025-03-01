@@ -28,7 +28,6 @@ class ContigVariants:
 
     Using init here resets all parameters for each contig, even though there is no input.
     """
-
     def __init__(self):
         self.variant_locations: list[int] = []
         self.contig_variants: dict[int: list[VariantTypes]] = {}

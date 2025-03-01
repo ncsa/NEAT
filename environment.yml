@@ -1,22 +1,20 @@
 name: neat
 channels:
-  - bioconda
-  - conda-forge
-  - defaults
+    - conda-forge
+    - bioconda
+
 dependencies:
   - python=3.10.*
   - biopython=1.79
   - pkginfo
   - matplotlib
   - numpy
-  - seaborn
   - pyyaml
   - pip
   - scipy
-  - pytest
-  - bedtools
+  - libgcc=5.2.0
   - htslib
   - pip:
     - pysam
     - frozendict
-    - poetry>=1.3.*
+    - poetry==1.3.*

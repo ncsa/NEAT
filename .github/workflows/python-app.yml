@@ -1,53 +1,24 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
-
-name: NEAT unit tests
+name: NEAT Unit Tests
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [develop, main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
 
 jobs:
-  build:
+  detailed_test_execution:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
-      - uses: s-weigand/setup-conda@v1.1.1
+      - uses: mamba-org/setup-micromamba@v1
         with:
-          conda-channels: bioconda, conda-forge
-          activate-conda: true
-          repository: NCSA/NEAT
-      - name: basic test
-        run: |
-          conda env create -f environment.yml -n test_neat
-          conda activate test_neat
-          poetry install
-          neat
+          environment-file: environment.yml
+          environment-name: test_neat
+          cache-environment: true
 
-      - name: run coverage tests
+      - name: Run NEAT Simulations
         run: |
-          conda activate test_neat
-          python tests/coverage_tests.py
-      
-#       - name: lint with flake8
-#         run: |
-#           conda activate neat
-#           # stop the build if there are Python syntax errors or undefined names
-#           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-#           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-#           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-#       - name: Execute test_gen_reads
-#         run: |
-#           conda activate neat
-#           cd ${{ github.workspace }}
-#           poetry install
-#           neat --log-level ERROR --no-log read-simulator -c data/test_config.yml -o test
-#       - run: echo "This job's status is ${{ job.status }}."
-#       - name: Execute seq_err_model_test
-#         run: |
-#           cd ${{ github.workspace }}
-#           neat --log-level ERROR --no-log model-seq-err -i data/baby.fastq
-#       - run: echo "This job's status is ${{ job.status }}." 
+          for i in {1..11}; do
+            micromamba run -n test_neat python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test$i.yml -o ../outputs/test${i}_read-simulator;
+          done

@@ -5,10 +5,10 @@ Creates a mutation model
 import os.path
 import pathlib
 import pickle
+import sys
 
 import numpy as np
 from Bio import SeqIO
-
 
 from pathlib import Path
 import logging
@@ -81,26 +81,31 @@ def runner(reference_index,
 
     if len(ignore) == len(reference_index):
         _LOG.error("No valid human chromosome names detected. Check contig names reference.")
-        raise ValueError
+        sys.exit(1)
 
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     _LOG.info('Processing VCF file...')
-    matching_variants, matching_chromosomes = read_and_filter_variants(vcf_to_process,
-                                                                       reference_index,
-                                                                       ignore)
+    matching_variants, matching_chromosomes = read_and_filter_variants(
+        vcf_to_process,
+        reference_index,
+        ignore
+    )
 
     if not matching_variants or not matching_chromosomes:
         _LOG.error("No valid variants detected. Check names in vcf versus reference and/or bed.")
-        raise ValueError
+        sys.exit(1)
 
-    trinuc_ref_count, bed_track_length = count_trinucleotides(reference_index,
-                                                              bed,
-                                                              outcounts_file,
-                                                              matching_chromosomes)
+    trinuc_ref_count, bed_track_length = count_trinucleotides(
+        reference_index,
+        bed,
+        outcounts_file,
+        matching_chromosomes,
+        save_trinuc
+    )
 
     if not trinuc_ref_count:
         _LOG.error("No valid trinucleotides detected in reference.")
-        raise ValueError
+        sys.exit(1)
 
     """
     Collect and analyze the data in the VCF file
@@ -155,7 +160,7 @@ def runner(reference_index,
 
                 else:
                     _LOG.error(f'Ref allele in variant call does not match reference: {variant}')
-                    raise ValueError
+                    sys.exit(1)
 
             else:
                 indel_len = len(variant[3]) - len(variant[2])
@@ -214,7 +219,7 @@ def runner(reference_index,
     if not total_var:
         _LOG.error('Error: No valid variants were found, model could not be created. '
                    'Check that names are compatible.')
-        raise ValueError
+        sys.exit(1)
 
     # COMPUTE PROBABILITIES
 
@@ -296,47 +301,6 @@ def runner(reference_index,
         for k in sorted(snp_trans_freq):
             _LOG.info(f'p({k[0]} --> {k[1]} | SNP occurs) = {snp_trans_freq[k]}')
 
-    # Save counts, if requested
-    if save_trinuc:
-        trinuc_output_data = {
-            'p(snp)': average_snp_freq,
-            'p(insertion)': average_insertion_frequency,
-            'p(deletion)': average_deletion_frequency,
-            'overall average mut rate': avg_mut_rate,
-            'total variants processed': total_var,
-            'homozygous probability': homozygous_frequency
-        }
-
-        for k in sorted(trinuc_mut_prob):
-            trinuc_output_data[f'p({k} mutates)'] = trinuc_mut_prob[k]
-
-        for k in sorted(trinuc_trans_probs):
-            trinuc_output_data[f'p({k[0]} --> {k[1]} | {k[0]} mutates)'] = trinuc_trans_probs[k]
-
-        for k in sorted(deletion_counts):
-            trinuc_output_data[f'p(del length = {abs(k)} | deletion occurs)'] = deletion_frequency[k]
-
-        for k in sorted(insertion_counts):
-            trinuc_output_data[f'p(insert length = {abs(k)} | insertion occurs)'] = insertion_freqency[k]
-
-        for k in sorted(snp_trans_freq):
-            trinuc_output_data[f'p({k[0]} --> {k[1]} | SNP occurs)'] = snp_trans_freq[k]
-
-        trinuc_output_path = Path(output)
-        trinuc_output_path = trinuc_output_path.with_suffix('')
-        trinuc_output_path = trinuc_output_path.with_suffix('.trinuc.pickle.gz')
-        _LOG.info(f'Saving trinucleotide counts to: {trinuc_output_path}')
-
-        with open_output(trinuc_output_path, 'w+') as trinuc_outfile:
-
-            pickle.dump(trinuc_output_data, trinuc_outfile)
-
-            # Human-readable content of file below
-            trinuc_outfile.write('\n')
-
-            for key, value in trinuc_output_data.items():
-                trinuc_outfile.write(f'{key}: {value}\n')
-
     _LOG.info(f'p(snp)   = {average_snp_freq}')
     _LOG.info(f'p(insertion) = {average_insertion_frequency}')
     _LOG.info(f'p(deletion) = {average_deletion_frequency}')
@@ -360,8 +324,8 @@ def runner(reference_index,
         transition_matrix=snp_transition_bias,
         trinuc_trans_matrices=trinuc_transition_bias,
         trinuc_mut_bias=trinuc_mutation_probs,
-        insert_len_model=insertion_counts,
-        deletion_len_model=deletion_counts
+        insert_len_model=insertion_freqency,
+        deletion_len_model=deletion_frequency
     )
 
     print('\nSaving model...')
@@ -405,6 +369,8 @@ def compute_mut_runner(reference,
     if outcounts:
         validate_input_path(outcounts)
         outcounts = Path(outcounts)
+    elif save_trinuc:
+        outcounts = Path(output + '.trinuc.pickle.gz')
 
     print('Processing reference...')
     reference_index = SeqIO.index(reference, 'fasta')
@@ -477,8 +443,18 @@ def compute_mut_runner(reference,
     output = Path(output + '.pickle.gz')
     validate_output_path(output, overwrite=overwrite_output)
 
-    runner(reference_index, vcf_to_process, vcf_columns, outcounts, show_trinuc, save_trinuc,
-           output, bed, human_sample, skip_common)
+    runner(
+        reference_index,
+        vcf_to_process,
+        vcf_columns,
+        outcounts,
+        show_trinuc,
+        save_trinuc,
+        output,
+        bed,
+        human_sample,
+        skip_common
+    )
 
     if os.path.exists('temp.vcf'):
         os.remove('temp.vcf')

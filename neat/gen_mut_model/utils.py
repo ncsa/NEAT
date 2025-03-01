@@ -3,17 +3,11 @@ Utilities used by the generate mutation model function
 """
 
 import json
-import os.path
-import pathlib
-import pickle
-import math
 import sys
+import pickle
+import gzip
 
 import numpy as np
-from numpy import genfromtxt
-import pybedtools
-from Bio import SeqIO
-
 
 from pathlib import Path
 import logging
@@ -173,7 +167,8 @@ def cluster_list(list_to_cluster, delta):
 def count_trinucleotides(reference_index,
                          bed,
                          trinuc_counts,
-                         matching_chroms):
+                         matching_chroms,
+                         save_trinuc_file):
     """
     Counts the frequency of the various trinucleotide combinations in the dataset
 
@@ -181,6 +176,7 @@ def count_trinucleotides(reference_index,
     :param Path bed: Full path to bed file, if using
     :param Path trinuc_counts: Full path to existing trinculeotide counts file, if input, or the output path
     :param list matching_chroms: List of matching chromosomes
+    :param save_trinuc_file: Boolean determines whether to save trinucleotide counts file.
     :return dict, int: A dictionary of trinculeotides and counts, the number of bases spanned
     """
     # Data format: TRINUC: COUNT (e.g., "AAA": 12), where COUNT is the number of times trinuc was observed
@@ -191,11 +187,11 @@ def count_trinucleotides(reference_index,
     track_len = 0
 
     trinuc_counts_exists = False
-    save_trinuc_file = False
     if trinuc_counts:
         if trinuc_counts.is_file():
+            _LOG.info("Trinucleotide counts file exists, skipping save to avoid overwriting data.")
             trinuc_counts_exists = True
-        save_trinuc_file = True
+            save_trinuc_file = False
 
     if bed:
         _LOG.info("Counting trinucleotide combinations in bed regions")
@@ -215,7 +211,6 @@ def count_trinucleotides(reference_index,
                         trinuc_ref_count = count_trinuc(trinuc, trinuc_ref_count)
 
     # Solution to attribute error (needs to be checked)
-    # TODO remove ref_name from this dict
     elif not trinuc_counts_exists:
         _LOG.info("Counting trinucleotide combinations in reference.")
         for ref_name in matching_chroms:
@@ -228,13 +223,12 @@ def count_trinucleotides(reference_index,
             with open_output(trinuc_counts, 'w') as countfile:
                 _LOG.info('Saving trinuc counts to file...')
                 # Convert all values to writable formats
-                trinuc_ref_count = {str(x): int(y) for x, y in trinuc_ref_count.items()}
-                countfile.write(json.dumps(trinuc_ref_count))
+                pickle.dump(trinuc_ref_count, countfile)
 
     else:
         _LOG.info(f'Loading file: {trinuc_counts}.')
-        with open_input(trinuc_counts) as counts:
-            trinuc_ref_count = json.load(counts)
+        with gzip.open(trinuc_counts, 'rb') as counts:
+            trinuc_ref_count = pickle.load(counts)
         if save_trinuc_file:
             _LOG.warning('Existing trinucelotide file will not be changed.')
 
@@ -323,7 +317,7 @@ def convert_trinuc_transition_matrix(trans_probs):
             _LOG.error("Repeat Trinuc detected.")
             _LOG.debug(f'Error on {ALL_CONTEXTS[context]}: '
                        f'{ALLOWED_NUCL[mutation_ref]} -> {ALLOWED_NUCL[mutation_alt]}')
-            raise ValueError
+            sys.exit(1)
 
     return ret_matrix
 

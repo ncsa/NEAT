@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .utils import parse_file
 from ..common import validate_output_path, validate_input_path
-from ..models import SequencingErrorModel
+from ..models import SequencingErrorModel, TraditionalQualityModel
 from ..variants import Insertion, Deletion, SingleNucleotideVariant
 
 __all__ = [
@@ -62,9 +62,11 @@ def model_seq_err_runner(
     _LOG.debug(f"Quality offset: {offset}")
 
     final_quality_scores: list
+    binned_scores = False
     if len(qual_scores) == 1:
         final_quality_scores = list(range(1, qual_scores[0] + 1))
     else:
+        binned_scores = True
         final_quality_scores = sorted(qual_scores)
 
     _LOG.debug(f'Quality scores: {final_quality_scores}')
@@ -87,17 +89,7 @@ def model_seq_err_runner(
     validate_output_path(output_prefix, is_file=False)
     output_prefix = Path(output_prefix)
 
-    """
-    Previously, this was
-    
-    output_file = Path(output_prefix).with_suffix('.p.gz')
-    
-    But this tended to drop parts of the name, if they included dots: 
-    e.g., output_prefix = "/path/to/samplename.testrun" outputted to /path/to/samplename.p.gz
-    
-    This way avoids that issue and outputs to /path/to/samplename.testrun.p.gz, 
-    even though it is a little more cumbersome
-    """
+    # used string logic instead of pathlib here bc pathlib was cutting off extensions.
     output_file = output_prefix.parent / f'{output_prefix.name}.p.gz'
     validate_output_path(output_file, overwrite=overwrite)
     _LOG.info(f'Writing output to: {output_file}')
@@ -109,11 +101,13 @@ def model_seq_err_runner(
     for file in files:
         file_num += 1
         _LOG.info(f'Reading file {file_num} of {len(files)}')
-        parameters_by_position, file_avg_error, read_length = parse_file(file,
-                                                                         final_quality_scores,
-                                                                         num_records_to_process,
-                                                                         offset,
-                                                                         read_length)
+        parameters_by_position, file_avg_error, read_length = parse_file(
+            file,
+            final_quality_scores,
+            num_records_to_process,
+            offset,
+            read_length
+        )
 
         read_parameters.append(parameters_by_position)
         average_errors.append(file_avg_error)
@@ -152,23 +146,42 @@ def model_seq_err_runner(
     seq_err_model = SequencingErrorModel(
         avg_seq_error=average_error,
         read_length=read_length,
+    )
+
+    # Just the default model
+    qual_score_model = TraditionalQualityModel(
+        average_error=average_error,
         quality_scores=np.array(final_quality_scores),
         qual_score_probs=read_parameters[0],
     )
 
     if len(files) == 1:
         with gzip.open(output_file, 'w') as out_model:
-            pickle.dump([seq_err_model, None], out_model)
+            pickle.dump({
+                "error_model1": seq_err_model,
+                "error_model2": None,
+                "qual_score_model1": qual_score_model,
+                "qual_score_model2": None
+            }, out_model)
 
     else:
         # Second model if a second input was given
         seq_err_model_r2 = SequencingErrorModel(
             avg_seq_error=average_error,
             read_length=read_length,
+        )
+
+        qual_score_model_r2 = TraditionalQualityModel(
+            average_error=average_error,
             quality_scores=np.array(final_quality_scores),
             qual_score_probs=read_parameters[1]
         )
         with gzip.open(output_file, 'w') as out_model:
-            pickle.dump([seq_err_model, seq_err_model_r2], out_model)
+            pickle.dump({
+                "error_model1": seq_err_model,
+                "error_model2": seq_err_model_r2,
+                "qual_score_model1": qual_score_model,
+                "qual_score_model2": qual_score_model_r2
+            }, out_model)
 
     _LOG.info("Modeling sequencing errors is complete, have a nice day.")

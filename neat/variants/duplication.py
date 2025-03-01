@@ -2,8 +2,12 @@
 A class describing one type of variant for NEAT.
 """
 import numpy as np
+import logging
+import sys
 
 from .base_variant import BaseVariant
+
+_LOG = logging.getLogger(__name__)
 
 
 class Duplication(BaseVariant):
@@ -39,7 +43,8 @@ class Duplication(BaseVariant):
         if self.position2 == position1 - length:
             self.stream = -1
         elif not self.position2 == position1 + length:
-            raise ValueError("Second position of a dup must = first position - length or first position + length")
+            _LOG.error("Second position of a dup must = first position - length or first position + length")
+            sys.exit(1)
         self.genotype = genotype
         self.qual_score = qual_score
         self.is_input = is_input

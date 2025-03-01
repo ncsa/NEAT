@@ -14,7 +14,6 @@ pkginfo = "^1.8.3"
 numpy = "^1.23"
 PyYAML = "^6.0"
 pysam = "^0.19.1"
-pybedtools = "^0.9.0"
 
 [tool.poetry.dev-dependencies]
 poetry = "^1.1.13"

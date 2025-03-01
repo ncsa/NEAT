@@ -6,19 +6,17 @@ of the NEAT generate_reads task and will always be run in a NEAT generate_reads 
 
 import logging
 import time
-import bisect
 import numpy as np
 import re
+import sys
 
-from copy import deepcopy
 from Bio import SeqRecord
 from numpy.random import Generator
-from pathlib import Path
 
-from ...models import MutationModel, InsertionModel, DeletionModel, SnvModel
+from ...models import MutationModel
 from ...variants import Insertion, Deletion, SingleNucleotideVariant, ContigVariants
 from ..utils import Options
-from ...common import ALLOWED_NUCL, pick_ploids, NUC_IND, DINUC_IND, open_input, open_output
+from ...common import ALLOWED_NUCL, pick_ploids
 
 _LOG = logging.getLogger(__name__)
 
@@ -54,12 +52,14 @@ def map_non_n_regions(sequence) -> np.ndarray:
     return base_check
 
 
-def generate_variants(reference: SeqRecord,
-                      mutation_rate_regions: list[tuple[int, int]],
-                      existing_variants: ContigVariants,
-                      mutation_model: MutationModel,
-                      options: Options,
-                      max_qual_score: int):
+def generate_variants(
+        reference: SeqRecord,
+        mutation_rate_regions: list[tuple[int, int]],
+        existing_variants: ContigVariants,
+        mutation_model: MutationModel,
+        options: Options,
+        max_qual_score: int
+) -> ContigVariants:
     """
     This function will generate variants to add to the dataset, by writing them to the input temp vcf file.
 
@@ -183,7 +183,7 @@ def generate_variants(reference: SeqRecord,
             how_many_mutations -= 1
 
             # Now figure out the type of random mutation to insert
-            variant_type = mutation_model.get_mutation_type()
+            variant_type = mutation_model.get_mutation_type(options.rng)
 
             # Case 1: indel
             if variant_type == Insertion or variant_type == Deletion:
@@ -192,25 +192,26 @@ def generate_variants(reference: SeqRecord,
                 position = find_random_non_n(options.rng, n_gaps)  # position in slice
                 location = position + mutation_slice[0]  # location relative to reference
                 if variant_type == Insertion:
-                    temp_variant = mutation_model.generate_insertion(location, subsequence[position])
+                    temp_variant = mutation_model.generate_insertion(location, subsequence[position], options.rng)
                 else:
-                    temp_variant = mutation_model.generate_deletion(location)
+                    temp_variant = mutation_model.generate_deletion(location, options.rng)
 
             # Case 2: SNV
             elif variant_type == SingleNucleotideVariant:
                 # We'll sample for the location within this slice
                 # It's a relative location, so we add the start point of the subsequence to that.
-                position = mutation_model.sample_trinucs()  # position in slice
+                position = mutation_model.sample_trinucs(options.rng)  # position in slice
                 location = position + mutation_slice[0]  # location relative to reference
                 if location == 0:
                     continue
                 trinuc = reference[location: location+3].seq.upper()
                 if "N" in trinuc:
                     continue
-                temp_variant = mutation_model.generate_snv(trinuc, location)
+                temp_variant = mutation_model.generate_snv(trinuc, location, options.rng)
 
             else:
-                raise ValueError(f"Attempting to create an unsupported variant: {variant_type}")
+                _LOG.error(f"Attempting to create an unsupported variant: {variant_type}")
+                sys.exit(1)
 
             # pick which ploid is mutated
             temp_variant.genotype = pick_ploids(options.ploidy, mutation_model.homozygous_freq, 1, options.rng)
@@ -229,7 +230,8 @@ def generate_variants(reference: SeqRecord,
                         # Here's a counter to make sure we're not getting stuck on a single location
                         debug += 1
                         if debug > 1000000:
-                            raise RuntimeError("Check this if, as it may be causing an infinite loop.")
+                            _LOG.error("Check this if, as it may be causing an infinite loop.")
+                            sys.exit(999)
                         # No suitable place to put this, so we skip.
                         continue
                     # This sets up a probability array with weights 1 for open spots (x==0) and 0 elsewhere

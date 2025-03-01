@@ -1,7 +1,7 @@
 """
 Runner for generate_reads task
 """
-import copy
+import time
 import logging
 import pickle
 import gzip
@@ -9,13 +9,12 @@ import gzip
 from Bio import SeqIO
 from pathlib import Path
 
-from .utils import Options, parse_input_vcf, parse_beds, fill_out_bed_dict, OutputFileWriter, find_file_breaks, \
-    map_chromosome, generate_variants, write_local_file, generate_reads
+from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter, \
+    generate_variants, generate_reads
 from ..common import validate_input_path, validate_output_path
-from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, GcModel
+from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
 from ..models.default_cancer_mutation_model import *
 from ..variants import ContigVariants
-
 
 __all__ = ["read_simulator_runner"]
 
@@ -40,77 +39,78 @@ def initialize_all_models(options: Options):
     # Set random number generator for the mutations:
     mut_model.rng = options.rng
     # Set custom mutation rate for the run, or set the option to the input rate so we can use it later
-    if options.mutation_rate:
+    if options.mutation_rate is not None:
         mut_model.avg_mut_rate = options.mutation_rate
 
     cancer_model = None
     if options.cancer and options.cancer_model:
-        cancer_model = pickle.load(gzip.open(options.cancer_model))
+        # cancer_model = pickle.load(gzip.open(options.cancer_model))
         # Set the rng for the cancer mutation model
         cancer_model.rng = options.rng
     elif options.cancer:
         # Note all parameters not entered here use the mutation madel defaults
-        cancer_model = MutationModel(avg_mut_rate=default_cancer_avg_mut_rate,
-                                     homozygous_freq=default_cancer_homozygous_freq,
-                                     variant_probs=default_cancer_variant_probs,
-                                     insert_len_model=default_cancer_insert_len_model,
-                                     is_cancer=True,
-                                     rng=options.rng)
+        cancer_model = MutationModel(
+            avg_mut_rate=default_cancer_avg_mut_rate,
+            homozygous_freq=default_cancer_homozygous_freq,
+            variant_probs=default_cancer_variant_probs,
+            insert_len_model=default_cancer_insert_len_model,
+            is_cancer=True
+        )
 
     _LOG.debug("Mutation models loaded")
 
     # We need sequencing errors to get the quality score attributes, even for the vcf
     if options.error_model:
         error_models = pickle.load(gzip.open(options.error_model))
-        error_model_1 = error_models[0]
+        error_model_1 = error_models["error_model1"]
+        quality_score_model_1 = error_models["qual_score_model1"]
         if options.paired_ended:
-            if error_models[1]:
-                error_model_2 = error_models[1]
+            if error_models["error_model2"]:
+                error_model_2 = error_models["error_model2"]
+                quality_score_model_2 = error_models["qual_score_model2"]
             else:
                 _LOG.warning('Paired ended mode declared, but input sequencing error model is single ended,'
                              'duplicating model for both ends')
-                error_model_2 = error_models[0]
+                error_model_2 = error_models["error_model1"]
+                quality_score_model_2 = error_models["qual_score_model1"]
         else:
             # ignore second model if we're in single-ended mode
             error_model_2 = None
+            quality_score_model_2 = None
     else:
         # Use all the default values
         error_model_1 = SequencingErrorModel()
+        quality_score_model_1 = TraditionalQualityModel()
         if options.paired_ended:
             error_model_2 = SequencingErrorModel()
+            quality_score_model_2 = TraditionalQualityModel()
         else:
             error_model_2 = None
-    # Set the rng for the sequencing error model
-    error_model_1.rng = options.rng
-    if error_model_2:
-        error_model_2.rng = options.rng
+            quality_score_model_2 = None
 
-    _LOG.debug('Sequencing error models loaded')
+    _LOG.debug('Sequencing error and quality score models loaded')
 
-    # initialize gc_model
-    if options.gc_model:
-        gc_model = pickle.load(gzip.open(options.gc_model))
-    else:
-        # Creates a default model
-        gc_model = GcModel()
-    # Set the coverage target for the GC bias model
-    gc_model.coverage = options.coverage
-
-    _LOG.debug('GC Bias model loaded')
-
-    fraglen_model = None
-    if options.paired_ended:
-        if options.fragment_model:
-            fraglen_model = pickle.load(gzip.open(options.fragment_model))
-        else:
-            fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev)
-
-        # Set the rng for the fragment length model
+    if options.fragment_model:
+        fraglen_model = pickle.load(gzip.open(options.fragment_model))
         fraglen_model.rng = options.rng
+    elif options.fragment_mean:
+        fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev)
+    else:
+        # For single ended, fragment length will be based on read length
+        fragment_mean = options.read_len * 2.0
+        fragment_st_dev = fragment_mean * 0.2
+        fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev)
 
     _LOG.debug("Fragment length model loaded")
 
-    return mut_model, cancer_model, error_model_1, error_model_2, gc_model, fraglen_model
+    return \
+        mut_model, \
+        cancer_model, \
+        error_model_1, \
+        error_model_2, \
+        quality_score_model_1, \
+        quality_score_model_2, \
+        fraglen_model
 
 
 def read_simulator_runner(config: str, output: str):
@@ -165,7 +165,8 @@ def read_simulator_runner(config: str, output: str):
         cancer_model,
         seq_error_model_1,
         seq_error_model_2,
-        gc_bias_model,
+        qual_score_model_1,
+        qual_score_model_2,
         fraglen_model
     ) = initialize_all_models(options)
 
@@ -174,36 +175,44 @@ def read_simulator_runner(config: str, output: str):
     """
     _LOG.info(f'Reading {options.reference}.')
 
+    # TODO check into SeqIO.index_db()
     reference_index = SeqIO.index(str(options.reference), "fasta")
+    reference_keys_with_lens = {key: len(value) for key, value in reference_index.items()}
     _LOG.debug("Reference file indexed.")
 
     if _LOG.getEffectiveLevel() < 20:
         count = 0
-        for contig in reference_index:
-            count += len(reference_index[contig])
-        _LOG.debug(f"Length of reference: {count/1_000_000:.2f} Mb")
+        for contig in reference_keys_with_lens:
+            count += reference_keys_with_lens[contig]
+        _LOG.debug(f"Length of reference: {count / 1_000_000:.2f} Mb")
 
-    input_variants_dict = {x: ContigVariants() for x in reference_index}
+    input_variants_dict = {x: ContigVariants() for x in reference_keys_with_lens}
     if options.include_vcf:
         _LOG.info(f"Reading input VCF: {options.include_vcf}.")
         if options.cancer:
-            sample_names = parse_input_vcf(input_variants_dict,
-                                           options.include_vcf,
-                                           options.ploidy,
-                                           mut_model.homozygous_freq,
-                                           reference_index,
-                                           options,
-                                           tumor_normal=True)
+            # TODO Check if we need full ref index or just keys and lens
+            sample_names = parse_input_vcf(
+                input_variants_dict,
+                options.include_vcf,
+                options.ploidy,
+                mut_model.homozygous_freq,
+                reference_index,
+                options,
+                tumor_normal=True
+            )
 
             tumor_ind = sample_names['tumor_sample']
             normal_ind = sample_names['normal_sample']
         else:
-            sample_names = parse_input_vcf(input_variants_dict,
-                                           options.include_vcf,
-                                           options.ploidy,
-                                           mut_model.homozygous_freq,
-                                           reference_index,
-                                           options)
+            # TODO Check if we need full ref index or just keys and lens
+            sample_names = parse_input_vcf(
+                input_variants_dict,
+                options.include_vcf,
+                options.ploidy,
+                mut_model.homozygous_freq,
+                reference_index,
+                options
+            )
 
         _LOG.debug("Finished reading input vcf file")
 
@@ -218,7 +227,7 @@ def read_simulator_runner(config: str, output: str):
         target_regions_dict,
         discard_regions_dict,
         mutation_rate_dict
-    ) = parse_beds(options, reference_index, mut_model.avg_mut_rate)
+    ) = parse_beds(options, reference_keys_with_lens, mut_model.avg_mut_rate)
 
     if any(bed_files):
         _LOG.debug("Finished reading input beds.")
@@ -228,7 +237,7 @@ def read_simulator_runner(config: str, output: str):
     if options.produce_bam:
         # This is a dictionary that is the list of the contigs and the length of each.
         # This information will be needed later to create the bam header.
-        bam_header = {key: len(reference_index[key]) for key in reference_index}
+        bam_header = reference_keys_with_lens
 
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf.
@@ -253,43 +262,30 @@ def read_simulator_runner(config: str, output: str):
     """
     _LOG.info("Beginning simulation.")
 
-    breaks = find_file_breaks(options.threads, options.partition_mode, reference_index)
+    breaks = find_file_breaks(reference_keys_with_lens)
 
     _LOG.debug("Input reference partitioned for run")
 
     # these will be the features common to each contig, for multiprocessing
     common_features = {}
 
-    all_variants = {}  # dict of all ContigVariants objects, indexed by contig, which we will collect at the end.
-    vcf_files = []
-    fasta_files = []
+    local_variant_files = {}
     fastq_files = []
 
     sam_reads_files = []
 
     for contig in breaks:
+        local_variant_files[contig] = None
 
         _LOG.info(f"Generating variants for {contig}")
-
-        # Todo genericize breaks
 
         input_variants = input_variants_dict[contig]
         # TODO: add the ability to pick up input variants here from previous loop
 
         local_reference = reference_index[contig]
 
-        # _LOG.info(f'Creating trinucleotide map for {contig}...')
-        # local_trinuc_map = map_chromosome(local_reference, mut_model)
-
         # Since we're only running single threaded for now:
         threadidx = 1
-
-        local_variant_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.vcf.gz'
-        local_fasta_file = None
-        if options.produce_fasta:
-            local_fasta_file = options.temp_dir_path / f'{options.output.stem}_tmp_{contig}_{threadidx}.fasta'
-
-        _LOG.debug(f'local vcf filename = {local_variant_file}')
 
         local_bam_pickle_file = None
         if options.produce_bam:
@@ -300,60 +296,47 @@ def read_simulator_runner(config: str, output: str):
             pass
 
         if options.paired_ended:
-            max_qual_score = max(seq_error_model_1.quality_scores + seq_error_model_2.quality_scores)
+            max_qual_score = max(max(qual_score_model_1.quality_scores), max(qual_score_model_2.quality_scores))
         else:
-            max_qual_score = max(seq_error_model_1.quality_scores)
+            max_qual_score = max(qual_score_model_1.quality_scores)
 
-        local_variants = generate_variants(reference=local_reference,
-                                           mutation_rate_regions=mutation_rate_dict[contig],
-                                           existing_variants=input_variants,
-                                           mutation_model=mut_model,
-                                           max_qual_score=max_qual_score,
-                                           options=options)
+        local_variants = generate_variants(
+            reference=local_reference,
+            mutation_rate_regions=mutation_rate_dict[contig],
+            existing_variants=input_variants,
+            mutation_model=mut_model,
+            max_qual_score=max_qual_score,
+            options=options
+        )
 
-        _LOG.info(f'Outputting temp vcf for {contig} for later use')
-        if options.produce_fasta:
-            _LOG.info(f'Outputting temp fasta for {contig} for later use')
-        # This function produces the variant file and the fasta file, if requested
-        # TODO pickle dump the ContigVariants object instead. Combine them into one fasta/vcf
-        #     at the end.
-        local_fasta_file = write_local_file(local_variant_file,
-                                            local_variants,
-                                            local_reference,
-                                            target_regions_dict[contig],
-                                            discard_regions_dict[contig],
-                                            options,
-                                            local_fasta_file)
-        vcf_files.append(local_variant_file)
-        if options.produce_fasta:
-            fasta_files.extend(local_fasta_file)
+        # This function saves the local variant data a dictionary. We may need to write this to file.
+        local_variant_files[contig] = local_variants
 
         if options.produce_fastq or options.produce_bam:
-            read1_fastq, read2_fastq = \
-                generate_reads(local_reference,
-                               local_bam_pickle_file,
-                               seq_error_model_1,
-                               seq_error_model_2,
-                               gc_bias_model,
-                               fraglen_model,
-                               local_variants,
-                               options.temp_dir_path,
-                               target_regions_dict[contig],
-                               discard_regions_dict[contig],
-                               options,
-                               contig)
+            read1_fastq_paired, read1_fastq_single, read2_fastq_paired, read2_fastq_single = generate_reads(
+                local_reference,
+                local_bam_pickle_file,
+                seq_error_model_1,
+                seq_error_model_2,
+                qual_score_model_1,
+                qual_score_model_2,
+                fraglen_model,
+                local_variants,
+                options.temp_dir_path,
+                target_regions_dict[contig],
+                discard_regions_dict[contig],
+                options,
+                contig,
+                )
 
-            fastq_files.append((read1_fastq, read2_fastq))
+            contig_temp_fastqs = ((read1_fastq_paired, read2_fastq_paired), (read1_fastq_single, read2_fastq_single))
+            fastq_files.append(contig_temp_fastqs)
             if options.produce_bam:
                 sam_reads_files.append(local_bam_pickle_file)
 
     if options.produce_vcf:
         _LOG.info(f"Outputting golden vcf: {str(output_file_writer.vcf_fn)}")
-        output_file_writer.merge_temp_vcfs(vcf_files)
-
-    if options.produce_fasta:
-        _LOG.info(f"Outputting fasta file(s): {', '.join([str(x) for x in output_file_writer.fasta_fns]).strip(', ')}")
-        output_file_writer.merge_temp_fastas(fasta_files)
+        output_file_writer.write_final_vcf(local_variant_files, reference_index)
 
     if options.produce_fastq:
         if options.paired_ended:
@@ -361,10 +344,24 @@ def read_simulator_runner(config: str, output: str):
                       f"{', '.join([str(x) for x in output_file_writer.fastq_fns]).strip(', ')}")
         else:
             _LOG.info(f"Outputting fastq file: {output_file_writer.fastq_fns[0]}")
-        output_file_writer.merge_temp_fastqs(fastq_files, options.paired_ended, options.rng)
+        output_file_writer.merge_temp_fastqs(fastq_files, options.rng)
 
     if options.produce_bam:
         _LOG.info(f"Outputting golden bam file: {str(output_file_writer.bam_fn)}")
-        contig_list = list(reference_index)
+        contig_list = list(reference_keys_with_lens)
         contigs_by_index = {contig_list[n]: n for n in range(len(contig_list))}
-        output_file_writer.output_bam_file(sam_reads_files, contigs_by_index)
+        output_file_writer.output_bam_file(sam_reads_files, contigs_by_index, options.read_len)
+
+
+def find_file_breaks(reference_keys_with_lens: dict) -> dict:
+    """
+    Returns a dictionary with the chromosomes as keys, which is the start of building the chromosome map
+
+    :param reference_keys_with_lens: a dictionary with chromosome keys and sequence values
+    :return: a dictionary containing the chromosomes as keys and either "all" for values, or a list of indices
+    """
+    partitions = {}
+    for contig in reference_keys_with_lens:
+        partitions[contig] = [(0, reference_keys_with_lens[contig])]
+
+    return partitions
