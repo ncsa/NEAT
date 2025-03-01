@@ -9,7 +9,6 @@ both the reference sequence and the read and the actual read sequence.
 """
 import logging
 import numpy as np
-import sys
 
 from typing import TextIO
 from Bio.Seq import Seq, MutableSeq
@@ -340,7 +339,6 @@ class Read:
 
         # This applies any variants, updates quality score and read sequence in place
         self.apply_variants_for_final_output(qual_model, rng)
-
         self.read_quality_string = "".join([chr(x + quality_offset) for x in self.quality_array])
         # If this read isn't low quality, pick a standard mapping quality
         # We could have this be user assigned.
