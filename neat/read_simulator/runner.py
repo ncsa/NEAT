@@ -1,6 +1,7 @@
 """
 Runner for generate_reads task
 """
+import tempfile
 import time
 import logging
 import pickle
@@ -176,7 +177,9 @@ def read_simulator_runner(config: str, output: str):
     _LOG.info(f'Reading {options.reference}.')
 
     # TODO check into SeqIO.index_db()
-    reference_index = SeqIO.index(str(options.reference), "fasta")
+    temp_dir = tempfile.TemporaryDirectory()
+    idx_name = temp_dir.name + "database_db"
+    reference_index = SeqIO.index_db(idx_name, str(options.reference), "fasta")
     reference_keys_with_lens = {key: len(value) for key, value in reference_index.items()}
     _LOG.debug("Reference file indexed.")
 
