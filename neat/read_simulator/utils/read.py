@@ -406,8 +406,8 @@ class Read:
         cig_length = 0
         curr_char = ''
         cig_string = ''
-        # Find first match
-        for char in range(len(self.read_sequence)):
+        # Find first match. Added a +1 because all my matches were coming up short.
+        for char in range(len(self.read_sequence) + 1):
             if aligned_template_seq[char] == '-':  # insertion
                 if curr_char == 'I':  # more insertions
                     cig_count += 1
