@@ -248,7 +248,9 @@ def count_trinucleotides(
             )
         if save_trinuc_file:
             _LOG.warning("Using bed input, no trinuc counts file will be saved.")
+        current_line = 0
         with open_input(bed) as f:
+            print("line ", current_line, " of ", len(matching_chroms))
             for line in f:
                 if line.startswith("#"):
                     continue
@@ -258,6 +260,7 @@ def count_trinucleotides(
                     for i in range(int(record[1]), int(record[2]) - 1):
                         trinuc = reference_index[record[0]][i : i + 3].seq
                         trinuc_ref_count = count_trinuc(trinuc, trinuc_ref_count)
+                current_line += 1
 
     # Solution to attribute error (needs to be checked)
     elif not trinuc_counts_exists:
@@ -309,28 +312,11 @@ def find_caf(candidate_field):
     :param str candidate_field: The vcf info to parse
     :return float: The given allele frequency
     """
-    # Minimal overhead, timing might not be very informative unless called extremely often
-    # start_time = time.time()
     info_split = [a.split("=") for a in candidate_field.split(";")]
     for item in info_split:
         if item[0].upper() == "CAF":
-            # Handle cases where CAF might have multiple values or non-numeric values
-            try:
-                if "," in item[1]:
-                    # Attempt to convert the second value after splitting by comma
-                    return float(item[1].split(",")[1])
-                else:
-                    # Attempt to convert the single value
-                    return float(item[1])
-            except (ValueError, IndexError):
-                # If conversion fails or index is out of bounds, return default
-                _LOG.debug(
-                    f"Could not parse CAF value '{item[1]}' in field: {candidate_field}. Using default."
-                )
-                return VCF_DEFAULT_POP_FREQ
-    # end_time = time.time()
-    # _LOG.debug(f"find_caf execution time: {end_time - start_time:.8f} seconds") # Use higher precision if needed
-    return VCF_DEFAULT_POP_FREQ
+            if "," in item[1]:
+                return float(item[1].split(",")[1])
 
 
 def check_homozygous(info_field):
@@ -345,28 +331,24 @@ def check_homozygous(info_field):
     fields = info_field.strip().split(":")
     genotype = None
     for item in fields:
-        # Check for genotype field format (e.g., 0/1 or 0|1)
-        if "/" in item or "|" in item:
-            separator = "/" if "/" in item else "|"
-            try:
-                genotype = [int(x) for x in item.split(separator)]
-                break  # Found genotype field
-            except ValueError:
-                # Handle cases where the field looks like a genotype but isn't numeric (e.g., './.')
-                _LOG.debug(f"Non-numeric genotype field encountered: {item}")
-                genotype = None  # Reset genotype if parsing fails
-                continue  # Check next field
+        if len(item.split("/")) == 1:
+            if len(item.split("|")) == 1:
+                continue
+            else:
+                genotype = [int(x) for x in item.split("|")]
+                break
+        else:
+            genotype = [int(x) for x in item.split("/")]
+            break
 
     if genotype:
-        # Check if all alleles in the genotype are the same
-        if len(set(genotype)) == 1:
-            # end_time = time.time()
-            # _LOG.debug(f"check_homozygous execution time: {end_time - start_time:.8f} seconds")
-            return 1  # Homozygous
+        gt = genotype[0]
+        for allele in genotype[1:]:
+            if allele != gt:
+                return 0
+        return 1
 
-    # end_time = time.time()
-    # _LOG.debug(f"check_homozygous execution time: {end_time - start_time:.8f} seconds")
-    return 0  # Not homozygous or genotype not found/parsed
+    return 0
 
 
 def convert_trinuc_transition_matrix(trans_probs):

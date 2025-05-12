@@ -4,9 +4,9 @@ Command line interface for NEAT's compute mutation function
 
 import argparse
 
-from ...gen_mut_model import compute_mut_runner
-from .base import BaseCommand
-from .options import output_group
+from neat.gen_mut_model import compute_mut_runner
+from neat.cli.commands.base import BaseCommand
+from neat.cli.commands.options import output_group
 
 
 class Command(BaseCommand):

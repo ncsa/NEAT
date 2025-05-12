@@ -4,3 +4,5 @@
 /.ipynb_checkpoints/
 /.vscode/
 /.idea/
+*.log
+*gz

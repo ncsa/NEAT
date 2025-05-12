@@ -13,7 +13,8 @@ from Bio import SeqRecord
 
 from neat import variants
 
-from ..common import ALLOWED_NUCL, NUC_IND
+from ..common import ALLOWED_NUCL, NUC_IND, REF_LETTERS
+
 # Default values
 from .default_mutation_model import *
 from .default_sequencing_error_model import *
@@ -21,11 +22,7 @@ from .default_quality_score_model import *
 
 from .variant_models import InsertionModel, DeletionModel, SnvModel
 
-__all__ = [
-    "ErrorContainer",
-    "SequencingErrorModel",
-    "TraditionalQualityModel"
-]
+__all__ = ["ErrorContainer", "SequencingErrorModel", "TraditionalQualityModel"]
 
 _LOG = logging.getLogger(__name__)
 
@@ -43,12 +40,12 @@ class TraditionalQualityModel:
     """
 
     def __init__(
-            self,
-            average_error: float = default_avg_seq_error,
-            transition_matrix: np.ndarray = default_error_transition_matrix,
-            quality_scores: np.ndarray = default_quality_scores,
-            qual_score_probs: np.ndarray = default_qual_score_probs,
-            is_uniform: bool = False
+        self,
+        average_error: float = default_avg_seq_error,
+        transition_matrix: np.ndarray = default_error_transition_matrix,
+        quality_scores: np.ndarray = default_quality_scores,
+        qual_score_probs: np.ndarray = default_qual_score_probs,
+        is_uniform: bool = False,
     ):
 
         self.transition_matrix = transition_matrix
@@ -58,18 +55,22 @@ class TraditionalQualityModel:
         self.average_error = average_error
 
         # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
-        self.quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in self.quality_scores}
+        self.quality_score_error_rate: dict[int, float] = {
+            x: 10.0 ** (-x / 10) for x in self.quality_scores
+        }
 
         self.uniform_quality_score = None
         if self.is_uniform:
             # Set score to the lowest of the max of the quality scores and the input avg error.
-            self.uniform_quality_score = min([max(self.quality_scores), int(-10. * np.log10(self.average_error) + 0.5)])
+            self.uniform_quality_score = min(
+                [
+                    max(self.quality_scores),
+                    int(-10.0 * np.log10(self.average_error) + 0.5),
+                ]
+            )
 
     def get_quality_scores(
-            self,
-            model_read_length: int,
-            length: int,
-            rng
+        self, model_read_length: int, length: int, rng
     ) -> np.ndarray:
         """
         Takes a length and rng and returns an array of quality scores
@@ -94,7 +95,7 @@ class TraditionalQualityModel:
             for i in quality_index_map:
                 score = rng.normal(
                     self.quality_score_probabilities[i][0],
-                    scale=self.quality_score_probabilities[i][1]
+                    scale=self.quality_score_probabilities[i][1],
                 )
                 # make sure score is in range and an int
                 score = round(score)
@@ -140,14 +141,14 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     """
 
     def __init__(
-            self,
-            read_length: int = default_read_length,
-            variant_probs: dict[variants: float] = default_error_variant_probs,
-            indel_len_model: dict[int: float] = default_indel_len_model,
-            insertion_model: np.ndarray = default_insertion_model,
-            transition_matrix: np.ndarray = default_error_transition_matrix,
-            rescale_qualities: bool = False,
-            avg_seq_error: float = default_avg_seq_error,
+        self,
+        read_length: int = default_read_length,
+        variant_probs: dict[variants:float] = default_error_variant_probs,
+        indel_len_model: dict[int:float] = default_indel_len_model,
+        insertion_model: np.ndarray = default_insertion_model,
+        transition_matrix: np.ndarray = default_error_transition_matrix,
+        rescale_qualities: bool = False,
+        avg_seq_error: float = default_avg_seq_error,
     ):
 
         SnvModel.__init__(self)
@@ -163,11 +164,11 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         self.average_error = avg_seq_error
 
     def get_sequencing_errors(
-            self,
-            padding: int,
-            reference_segment: SeqRecord,
-            quality_scores: np.ndarray,
-            rng
+        self,
+        padding: int,
+        reference_segment: SeqRecord,
+        quality_scores: np.ndarray,
+        rng,
     ):
         """
         Inserts errors of type substitution, insertion, or deletion into read_data, and assigns a quality score
@@ -182,7 +183,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         error_indexes = []
         introduced_errors = []
         # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
-        quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in quality_scores}
+        quality_score_error_rate: dict[int, float] = {
+            x: 10.0 ** (-x / 10) for x in quality_scores
+        }
 
         # The use case here would be someone running a simulation where they want no sequencing errors.
         # No need to run any loops in this case.
@@ -204,9 +207,13 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # Not too sure about how realistic it is to model errors as indels, but I'm leaving the code in for now.
 
             # This is to prevent deletion error collisions and to keep there from being too many indel errors.
-            if 0 < index < self.read_length - max(
-                    self.deletion_len_model) and total_indel_length > self.read_length // 4:
-                error_type = rng.choice(a=list(self.variant_probs), p=list(self.variant_probs.values()))
+            if (
+                0 < index < self.read_length - max(self.deletion_len_model)
+                and total_indel_length > self.read_length // 4
+            ):
+                error_type = rng.choice(
+                    a=list(self.variant_probs), p=list(self.variant_probs.values())
+                )
 
             # Deletion error
             if error_type == Deletion:
@@ -214,10 +221,18 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                 if padding - deletion_length < 0:
                     # No space in this read to add this deletion
                     continue
-                deletion_reference = reference_segment.seq[index: index + deletion_length + 1]
+                deletion_reference = reference_segment.seq[
+                    index : index + deletion_length + 1
+                ]
                 deletion_alternate = deletion_reference[0]
                 introduced_errors.append(
-                    ErrorContainer(Deletion, index, deletion_length, deletion_reference, deletion_alternate)
+                    ErrorContainer(
+                        Deletion,
+                        index,
+                        deletion_length,
+                        deletion_reference,
+                        deletion_alternate,
+                    )
                 )
                 total_indel_length += deletion_length
 
@@ -227,10 +242,16 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             elif error_type == Insertion:
                 insertion_length = self.get_insertion_length()
                 insertion_reference = reference_segment[index]
-                insert_string = ''.join(rng.choice(ALLOWED_NUCL, size=insertion_length))
+                insert_string = "".join(rng.choice(ALLOWED_NUCL, size=insertion_length))
                 insertion_alternate = insertion_reference + insert_string
                 introduced_errors.append(
-                    ErrorContainer(Insertion, index, insertion_length, insertion_reference, insertion_alternate)
+                    ErrorContainer(
+                        Insertion,
+                        index,
+                        insertion_length,
+                        insertion_reference,
+                        insertion_alternate,
+                    )
                 )
                 total_indel_length += insertion_length
 
@@ -239,11 +260,15 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # else dedicated to SNVs.
             else:
                 snv_reference = reference_segment[index]
+                if snv_reference in REF_LETTERS.keys():
+                    snv_reference = rng.choice(REF_LETTERS[snv_reference])
                 nuc_index = NUC_IND[snv_reference]
                 # take the zero index because this returns a list of length 1.
                 snv_alt = rng.choice(ALLOWED_NUCL, p=self.transition_matrix[nuc_index])
                 introduced_errors.append(
-                    ErrorContainer(SingleNucleotideVariant, index, 1, snv_reference, snv_alt)
+                    ErrorContainer(
+                        SingleNucleotideVariant, index, 1, snv_reference, snv_alt
+                    )
                 )
 
         # Remove blacklisted errors
@@ -265,12 +290,15 @@ class ErrorContainer:
         which is the same notation used in a VCF file.
     :param alt - the alternate sequence of the error (i.e., the error itself)
     """
-    def __init__(self,
-                 error_type: VariantTypes,
-                 location: int,
-                 length: int,
-                 ref: str or Seq,
-                 alt: str or Seq):
+
+    def __init__(
+        self,
+        error_type: VariantTypes,
+        location: int,
+        length: int,
+        ref: str or Seq,
+        alt: str or Seq,
+    ):
         self.error_type = error_type
         self.location = location
         self.length = length

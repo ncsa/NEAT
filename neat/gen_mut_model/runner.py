@@ -228,21 +228,20 @@ def runner(
         _LOG.info(
             f"    Total time in check_homozygous for {contig}: {check_homozygous_total_time:.4f} seconds"
         )
-
         # identify common mutations
-        common_mut_start_time = time.time()
-        percentile_var = 95
-        if vcf_common:  # Check if vcf_common is not empty
-            min_value = np.percentile(
-                [vcf_common[n] for n in vcf_common], percentile_var
-            )
-            for variant, allele_freq in sorted(vcf_common.items()):
-                if allele_freq >= min_value:
-                    common_variants.append(variant)
-                    # TODO figure out what to do with these common variants
-        _LOG.info(
-            f"  Common mutation identification for {contig} took {time.time() - common_mut_start_time:.4f} seconds"
-        )
+        # common_mut_start_time = time.time()
+        # percentile_var = 95
+        # if vcf_common:  # Check if vcf_common is not empty
+        #     min_value = np.percentile(
+        #         [vcf_common[n] for n in vcf_common], percentile_var
+        #     )
+        #     for variant, allele_freq in sorted(vcf_common.items()):
+        #         if allele_freq >= min_value:
+        #             common_variants.append(variant)
+        #             # TODO figure out what to do with these common variants
+        # _LOG.info(
+        #     f"  Common mutation identification for {contig} took {time.time() - common_mut_start_time:.4f} seconds"
+        # )
 
         # Identify areas that have contained significantly higher random mutation rates.
         high_mut_start_time = time.time()
@@ -625,15 +624,57 @@ def compute_mut_runner(
 
     vcf_processing_start = time.time()
     if bed:
-        # ... (existing bed processing code) ...
-        # No specific timing added inside this block unless needed later
+        vcf_columns = ["bed_chr", "bed_pos1", "bed_pos2"] + vcf_columns
+        _LOG.info("Intersecting bed and vcf.")
+
+        # create a dictionary to store the bed ranges
+        bed_ranges = {}
+
+        with open(bed, "r") as bed_file:
+            for line in bed_file:
+                parts = line.strip().split("\t")
+                chrom = parts[0]
+                start = int(parts[1])
+                end = int(parts[2])
+
+                if len(parts) > 3:
+                    mut_rate = parts[3]
+                else:
+                    mut_rate = "."
+
+                if chrom not in bed_ranges:
+                    bed_ranges[chrom] = []
+
+                bed_ranges[chrom].append((start, end, mut_rate))
+
         # make a temporary VCF file for processing
         temp_vcf_lines = []
         temp_vcf_creation_start = time.time()
 
         with open(mutations, "r") as vcf_file:
-            # ... (existing code to read VCF and filter by BED) ...
-            pass  # Keep existing logic
+            for line in vcf_file:
+
+                if line.startswith("#CHROM"):
+                    temp_vcf_lines.append(
+                        line.rstrip() + "\tMUTATION_RATES\n"
+                    )  # add column
+
+                elif line.startswith("#"):
+                    temp_vcf_lines.append(line)  # preserve header lines
+
+                else:
+                    parts = line.strip().split("\t")
+                    chrom = parts[0]
+                    pos = int(parts[1])
+
+                    if chrom in bed_ranges:
+                        # check if the VCF record position is within any of the bed ranges
+                        for start, end, mut_rate in bed_ranges[chrom]:
+
+                            if start <= pos <= end:
+                                parts.append(mut_rate)
+                                temp_vcf_lines.append("\t".join(parts) + "\n")
+                                break
 
         # write the selected VCF lines to the temporary file
         with open("temp.vcf", "w") as temp_vcf_file:
