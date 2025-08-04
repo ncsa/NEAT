@@ -60,6 +60,7 @@ def merge_bam(bams: List[Path], dest: Path, samtools: str):
     if not bams:
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
+    samtools = samtools if Path(samtools).exists() else shutil.which(samtools) or samtools
     unsorted = dest.with_suffix(".unsorted.bam")
     cmd_merge = [samtools, "merge", "--no-PG", "-f", str(unsorted), *map(str, bams)]
     subprocess.check_call(cmd_merge)

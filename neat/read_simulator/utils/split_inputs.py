@@ -3,14 +3,60 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
-from pathlib import Path
-from typing import Iterator, List
-
 import yaml
-from Bio import SeqIO
-from Bio.SeqRecord import SeqRecord
+
+from itertools import islice
+from pathlib import Path
+from textwrap import wrap
+from typing import Iterator, List, Tuple
 
 __all__ = ["main"]
+
+
+class SimpleRecord:
+    """Basic stand-in for Bio.SeqRecord.SeqRecord."""
+    __slots__ = ("id", "seq")
+
+    def __init__(self, id_: str, seq: str):
+        self.id: str = id_
+        self.seq: str = seq
+
+    def __len__(self) -> int: # len(record)
+        return len(self.seq)
+
+    def __iter__(self): # for id_, seq in record
+        yield self.id
+        yield self.seq
+
+
+# FASTA helpers
+def parse_fasta(path: Path) -> Iterator[SimpleRecord]:
+    """Stream FASTA records from a file path."""
+    with path.open() as fh:
+        header: str | None = None
+        seq_chunks: list[str] = []
+        for line in fh:
+            line = line.rstrip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                if header:
+                    yield SimpleRecord(header, "".join(seq_chunks))
+                header = line[1:].split(maxsplit=1)[0]
+                seq_chunks = []
+            else:
+                seq_chunks.append(line)
+        if header:
+            yield SimpleRecord(header, "".join(seq_chunks))
+
+
+def write_fasta(rec: SimpleRecord, out_fa: Path, width: int = 60) -> None:
+    """Write the record to a FASTA output."""
+    out_fa.parent.mkdir(parents=True, exist_ok=True)
+    with out_fa.open("w") as fh:
+        fh.write(f">{rec.id}\n")
+        for chunk in wrap(rec.seq, width):
+            fh.write(chunk + "\n")
 
 
 # Utility helpers
@@ -27,40 +73,25 @@ def disk_bytes_free(path: Path) -> int:
 
 
 # Chunk generators
-def chunk_record(
-    record: SeqRecord,
-    chunk_len: int,
-    overlap: int,
-) -> Iterator[SeqRecord]:
-    """
-    Yield chunk_len-bp overlapping slices of record.
-    Each chunk overlaps the previous to allow downstream stitching of reads.
-    """
+def chunk_record(record: SimpleRecord, chunk_len: int, overlap: int,) -> Iterator[SimpleRecord]:
+    """Yield overlapping chunk_len slices."""
     seq_len = len(record)
     start = 0
     chunk_id = 1
     while start < seq_len:
         end = min(start + chunk_len, seq_len)
-        chunk_seq = record.seq[start:end]
+        sub_seq = record.seq[start:end]
         new_id = f"{record.id}_chunk{chunk_id}"
-        yield SeqRecord(chunk_seq, id=new_id, description="")
+        yield SimpleRecord(new_id, sub_seq)
         if end == seq_len:
             break
         start = end - overlap
         chunk_id += 1
 
 
-# File writers
-def write_fasta(rec: SeqRecord, out_fa: Path):
-    out_fa.parent.mkdir(parents=True, exist_ok=True)
-    with out_fa.open("w") as fh:
-        SeqIO.write(rec, fh, "fasta")
-
-
 def write_config(template_cfg: dict, out_fa: Path, out_yml: Path):
     cfg_copy = template_cfg.copy()
-    cfg_copy["reference"] = str(out_fa)
-    # Optional: set "name" to the FASTA stem if present in template
+    cfg_copy["reference"] = str(out_fa.resolve())
     if "name" in cfg_copy:
         cfg_copy["name"] = out_fa.stem
     out_yml.write_text(yaml.safe_dump(cfg_copy, sort_keys=False))
@@ -69,30 +100,16 @@ def write_config(template_cfg: dict, out_fa: Path, out_yml: Path):
 # Argument parsing
 def parse_args(argv: List[str] | None = None):
     p = argparse.ArgumentParser(
-        description="Split a FASTA and NEAT config into per-contig or "
-        "fixed-size chunks ready for neat read‑simulator."
+        description=(
+            "Split a FASTA and NEAT config into per-contig or fixed-size chunks ready for neat read-simulator."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("fasta", type=Path, help="Input multi‑contig FASTA")
-    p.add_argument("config", type=Path, help="Original NEAT YAML config")
-    p.add_argument(
-        "--outdir",
-        type=Path,
-        required=True,
-        help="Directory to write split FASTAs + configs",
-    )
-    p.add_argument(
-        "--by",
-        choices=["contig", "size"],
-        default="contig",
-        help="Mode for splitting is either whole contigs (default) or size‑based chunks",
-    )
-    p.add_argument(
-        "--size",
-        type=int,
-        default=1_000_000,
-        metavar="N",
-        help="Target chunk size",
-    )
+    p.add_argument("fasta", type=Path, help="Input multi-contig FASTA")
+    p.add_argument("config", type=Path, help="Original NEAT YAML/YML config")
+    p.add_argument("--outdir", type=Path, required=True, help="Directory to write split FASTAs + configs",)
+    p.add_argument("--by", choices=["contig", "size"], default="contig", help="Split whole contigs (default) or fixed-size chunks",)
+    p.add_argument("--size", type=int, default=1_000_000, help="Target chunk size when --by size is chosen",)
     return p.parse_args(argv)
 
 
@@ -100,38 +117,33 @@ def parse_args(argv: List[str] | None = None):
 def main(argv: List[str] | None = None):
     args = parse_args(argv)
 
-    # Load template config
     template_cfg = yaml.safe_load(args.config.read_text())
     read_len = int(template_cfg.get("read_len", 150))
     overlap = read_len * 2
 
-    # Disk‑space sanity check
     approx_out_bytes = int(args.fasta.stat().st_size * 1.1)
     if disk_bytes_free(args.outdir) < approx_out_bytes:
         print_stderr(
-            f"Not enough free space in {args.outdir} "
-            f"(need ≈ {approx_out_bytes/1e9:.2f} GB)",
-            exit_=True,
+            f"Not enough free space in {args.outdir} (need about {approx_out_bytes/1e9:.2f} GB)", exit_=True
         )
 
     written = 0
-    mode = args.by
     outdir = args.outdir
+    mode = args.by
 
-    # Iterate FASTA records
-    for rec in SeqIO.parse(args.fasta, "fasta"):
+    for rec in parse_fasta(args.fasta):
         if mode == "contig":
-            fasta_path = outdir / f"{rec.id}.fa"
-            yaml_path = fasta_path.with_suffix(".yaml")
-            write_fasta(rec, fasta_path)
-            write_config(template_cfg, fasta_path, yaml_path)
+            fa = outdir / f"{rec.id}.fa"
+            yml = fa.with_suffix(".yaml")
+            write_fasta(rec, fa)
+            write_config(template_cfg, fa, yml)
             written += 1
-        else:  # fixed size mode
+        else:  # --by size
             for subrec in chunk_record(rec, args.size, overlap):
-                fasta_path = outdir / f"{subrec.id}.fa"
-                yaml_path = fasta_path.with_suffix(".yaml")
-                write_fasta(subrec, fasta_path)
-                write_config(template_cfg, fasta_path, yaml_path)
+                fa = outdir / f"{subrec.id}.fa"
+                yml = fa.with_suffix(".yaml")
+                write_fasta(subrec, fa)
+                write_config(template_cfg, fa, yml)
                 written += 1
 
     print_stderr(f"Generated {written} FASTA/YAML pair(s) in {outdir}")
