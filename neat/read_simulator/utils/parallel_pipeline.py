@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import List
@@ -11,22 +13,15 @@ from typing import List
 
 # Parallelization worker
 def worker(args: tuple[List[str], Path]):
-    """Process‑pool target to run one NEAT simulation.
-
-    Parameters:
-    args[0]: full command list for subprocess
-    args[1]: working directory to run in (created beforehand)
-    """
+    """Run one NEAT simulation in its own working directory."""
     cmd, workdir = args
     workdir.mkdir(parents=True, exist_ok=True)
-
     try:
         subprocess.check_call(cmd, cwd=workdir)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"NEAT job failed (exit {e.returncode}) in {workdir.name}: {' '.join(cmd)}"
         ) from e
-
     return workdir
 
 
@@ -38,43 +33,20 @@ def parse_args(argv: List[str] | None = None):
     )
 
     p.add_argument("config", type=Path, help="NEAT YAML/YML config containing the 'reference:' field")
-
-    p.add_argument(
-        "--outdir",
-        type=Path,
-        required=True,
-        help="Top‑level directory to hold splits, per‑chunk outputs, and final stitched results",
-    )
+    p.add_argument("--outdir", type=Path, required=True, help="Top‑level directory to hold splits, per‑chunk outputs, and final stitched results",)
 
     split = p.add_argument_group("splitting options")
     split.add_argument("--by", choices=["contig", "size"], default="contig", help="Split mode")
     split.add_argument("--size", type=int, default=1_000_000, help="Target chunk size when --by size")
+    split.add_argument("--cleanup-splits", action="store_true", help="Delete the 'splits' directory after stitching completes")  # NEW
 
     sim = p.add_argument_group("simulation options")
-    sim.add_argument(
-        "--jobs",
-        type=int,
-        default=os.cpu_count() or 2,
-        help="Maximum number of parallel NEAT jobs to run",
-    )
-    sim.add_argument(
-        "--neat-cmd",
-        default="python -m neat.read_simulator.run",
-        help="Command used to launch the read simulator (will be split on whitespace)",
-    )
+    sim.add_argument("--jobs", type=int, default=os.cpu_count() or 2, help="Maximum number of parallel NEAT jobs to run",)
+    sim.add_argument("--neat-cmd", default="python -m neat.read_simulator.run", help="Command used to launch the read simulator (will be split on whitespace)",)
 
     stitch = p.add_argument_group("stitching options")
-    stitch.add_argument(
-        "--samtools",
-        default="samtools",
-        help="Path to samtools executable used by stitch_outputs.py",
-    )
-    stitch.add_argument(
-        "--final-prefix",
-        type=Path,
-        default=Path("stitched/final"),
-        help="Prefix (no extension) for the stitched outputs",
-    )
+    stitch.add_argument("--samtools", default="samtools", help="Path to samtools executable used by stitch_outputs.py",)
+    stitch.add_argument("--final-prefix", type=Path, default=Path("stitched/final"), help="Prefix (no extension) for the stitched outputs",)
 
     return p.parse_args(argv)
 
@@ -88,11 +60,7 @@ def main(argv: List[str] | None = None):
     splits_dir.mkdir(parents=True, exist_ok=True)
     sims_dir.mkdir(parents=True, exist_ok=True)
 
-    final_prefix = (
-        args.final_prefix
-        if args.final_prefix.is_absolute()
-        else args.outdir / args.final_prefix
-    )
+    final_prefix = args.final_prefix if args.final_prefix.is_absolute() else args.outdir / args.final_prefix
 
     try:
         import yaml
@@ -113,16 +81,13 @@ def main(argv: List[str] | None = None):
         str(Path(__file__).with_name("split_inputs.py")),
         str(ref_path),
         str(args.config),
-        "--outdir",
-        str(splits_dir),
-        "--by",
-        args.by,
+        "--outdir", str(splits_dir),
+        "--by", args.by,
     ]
 
     if args.by == "size":
-        split_cmd.extend(["--size", str(args.size)])
+        split_cmd += ["--size", str(args.size)]
 
-    import time
     t0 = time.time()
     print("[parallel] Splitting reference...")
 
@@ -132,7 +97,7 @@ def main(argv: List[str] | None = None):
         print(f"Split step failed (exit {e.returncode})")
         sys.exit(1)
 
-    # 2. Launch NEAT simulations in parallel
+    # 2. Run NEAT simulations in parallel
     split_sec = time.time() - t0
     yaml_files = sorted(list(splits_dir.glob("*.yaml")) + list(splits_dir.glob("*.yml")))
 
@@ -167,14 +132,10 @@ def main(argv: List[str] | None = None):
     stitch_cmd = [
         sys.executable,
         str(Path(__file__).with_name("stitch_outputs.py")),
-        "-i",
-        *map(str, sims_dir.iterdir()),
-        "-o",
-        str(final_prefix),
-        "-c",
-        str(args.config),
-        "--samtools",
-        args.samtools,
+        "-i", *map(str, sims_dir.iterdir()),
+        "-o", str(final_prefix),
+        "-c", str(args.config),
+        "--samtools", args.samtools,
     ]
 
     print("[parallel] Stitching per‑chunk outputs...")
@@ -190,6 +151,10 @@ def main(argv: List[str] | None = None):
 
     stitch_sec = time.time() - t2
     total_sec = time.time() - t0
+
+    if args.cleanup_splits:
+        print("[parallel] Cleaning up split FASTA/configs...")
+        shutil.rmtree(splits_dir, ignore_errors=True)
 
     print(f"[parallel] Pipeline complete — stitched files under {final_prefix.parent}\n"
           f"Timings:\n"
