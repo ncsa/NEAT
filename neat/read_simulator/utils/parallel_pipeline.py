@@ -38,7 +38,8 @@ def parse_args(argv: List[str] | None = None):
     split = p.add_argument_group("splitting options")
     split.add_argument("--by", choices=["contig", "size"], default="contig", help="Split mode")
     split.add_argument("--size", type=int, default=1_000_000, help="Target chunk size when --by size")
-    split.add_argument("--cleanup-splits", action="store_true", help="Delete the 'splits' directory after stitching completes")  # NEW
+    split.add_argument("--cleanup-splits", action="store_true", help="Delete the 'splits' directory after stitching completes")
+    split.add_argument("--reuse-splits", action="store_true", help="Skip the splitting step and reuse any YAML/FASTA files already present in the 'splits' folder")
 
     sim = p.add_argument_group("simulation options")
     sim.add_argument("--jobs", type=int, default=os.cpu_count() or 2, help="Maximum number of parallel NEAT jobs to run",)
@@ -76,29 +77,34 @@ def main(argv: List[str] | None = None):
         sys.exit(1)
 
     # 1. Split the input reference
-    split_cmd = [
-        sys.executable,
-        str(Path(__file__).with_name("split_inputs.py")),
-        str(ref_path),
-        str(args.config),
-        "--outdir", str(splits_dir),
-        "--by", args.by,
-    ]
+
+    need_split = not args.reuse_splits
+
+    if args.reuse_splits and list((args.outdir / "splits").glob("*.y*ml")):
+        print("[parallel] Recycling existing split FASTA/YAML files – skipping split step")
+    else:
+        need_split = True
+
+    if need_split:
+        split_cmd = [
+            sys.executable,
+            str(Path(__file__).with_name("split_inputs.py")),
+            str(ref_path),
+            str(args.config),
+            "--outdir", str(splits_dir),
+            "--by", args.by,
+        ]
 
     if args.by == "size":
         split_cmd += ["--size", str(args.size)]
 
     t0 = time.time()
     print("[parallel] Splitting reference...")
-
-    try:
-        subprocess.check_call(split_cmd)
-    except subprocess.CalledProcessError as e:
-        print(f"Split step failed (exit {e.returncode})")
-        sys.exit(1)
+    subprocess.check_call(split_cmd)
+    split_sec = time.time() - t0
 
     # 2. Run NEAT simulations in parallel
-    split_sec = time.time() - t0
+
     yaml_files = sorted(list(splits_dir.glob("*.yaml")) + list(splits_dir.glob("*.yml")))
 
     if not yaml_files:
