@@ -353,6 +353,7 @@ def read_simulator_runner(config: str, output: str):
         output_file_writer.output_bam_file(sam_reads_files, contigs_by_index, options.read_len)
 
 
+# Initial implementation of parallelization
 def find_file_breaks(reference_keys_with_lens: dict) -> dict:
     """
     Returns a dictionary with the chromosomes as keys, which is the start of building the chromosome map
@@ -365,3 +366,5 @@ def find_file_breaks(reference_keys_with_lens: dict) -> dict:
         partitions[contig] = [(0, reference_keys_with_lens[contig])]
 
     return partitions
+
+# TO DO: Add function to read in parallelization from config
