@@ -1,4 +1,6 @@
-from __future__ import annotations
+"""
+Description.
+"""
 
 import argparse
 import gzip
@@ -66,6 +68,7 @@ def merge_bam(bams: List[Path], dest: Path, samtools: str):
     subprocess.check_call([samtools, "index", str(dest)])
     unsorted.unlink(missing_ok=True)
     normalize_bam_header(dest, samtools)
+
 
 def merge_vcf(vcfs: List[Path], dest: Path):
     if not vcfs:

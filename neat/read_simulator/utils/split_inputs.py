@@ -1,4 +1,6 @@
-from __future__ import annotations
+"""
+Description.
+"""
 
 import argparse
 import shutil
@@ -22,6 +24,17 @@ class SimpleRecord:
 
     def __len__(self) -> int:
         return len(self.seq)
+
+
+# Utility helpers
+def print_stderr(msg: str, *, exit_: bool = False):
+    print(msg, file=sys.stderr)
+    if exit_:
+        sys.exit(1)
+
+
+def disk_bytes_free(path: Path) -> int:
+    return shutil.disk_usage(path).free
 
 
 # FASTA helpers
@@ -50,17 +63,6 @@ def write_fasta(rec: SimpleRecord, out_fa: Path, width: int = 60) -> None:
         fh.write(f">{rec.id}\n")
         for chunk in wrap(rec.seq, width):
             fh.write(chunk + "\n")
-
-
-# Utility helpers
-def print_stderr(msg: str, *, exit_: bool = False):
-    print(msg, file=sys.stderr)
-    if exit_:
-        sys.exit(1)
-
-
-def disk_bytes_free(path: Path) -> int:
-    return shutil.disk_usage(path).free
 
 
 # Chunk generators

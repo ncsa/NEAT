@@ -1,7 +1,6 @@
-# TO DO: Sub-command in neat/cli/commands (make new file - move argparse there) - run as a separate command
-# TO DO: Try using a separate parallelization config
-
-from __future__ import annotations
+"""
+Description.
+"""
 
 import argparse
 import os
@@ -179,11 +178,6 @@ def main(argv: List[str] | None = None):
           f"  sim   : {sim_sec:6.1f} s\n"
           f"  stitch: {stitch_sec:6.1f} s\n"
           f"  total : {split_sec + sim_sec + stitch_sec:6.1f} s")
-
-
-# Re-export to use in NEAT's top-level CLI
-def build_arg_parser() -> argparse.ArgumentParser:
-    return parse_args([])
 
 
 if __name__ == "__main__":
