@@ -35,43 +35,31 @@ def parse_args(argv: List[str] | None = None):
     )
 
     p.add_argument("config", type=Path, help="NEAT YAML/YML config containing the 'reference:' field")
-    p.add_argument("--outdir", type=Path, required=True,
-                   help="Top-level directory to hold splits, per-chunk outputs, and final stitched results",)
+    p.add_argument("--outdir", type=Path, required=False, default=None,
+                   help="Top-level directory for splits and stitched results (optional)")
 
     split = p.add_argument_group("splitting options")
-    split.add_argument("--by", choices=["contig", "size"], default="contig", help="Split mode")
-    split.add_argument("--size", type=int, default=1_000_000, help="Target chunk size when --by size")
-    split.add_argument("--cleanup-splits", action="store_true",
+    split.add_argument("--by", choices=["contig", "size"], default=None, help="Split mode")
+    split.add_argument("--size", type=int, default=None, help="Target chunk size when --by size")
+    split.add_argument("--cleanup-splits", action=argparse.BooleanOptionalAction, default=None,
                        help="Delete the 'splits' directory after stitching completes")
-    split.add_argument("--reuse-splits", action="store_true",
-                       help="Skip the splitting step and reuse any YAML/FASTA files already present in the 'splits' folder")
+    split.add_argument("--reuse-splits", action=argparse.BooleanOptionalAction, default=None,
+                       help="Skip the splitting step and reuse any YAML/FASTA files already present")
 
     sim = p.add_argument_group("simulation options")
-    sim.add_argument("--jobs", type=int, default=os.cpu_count() or 2,
-                     help="Maximum number of parallel NEAT jobs to run",)
-    sim.add_argument("--neat-cmd", default="python -m neat.read_simulator.run",
-                     help="Command used to launch the read simulator (will be split on whitespace)",)
+    sim.add_argument("--jobs", type=int, default=None, help="Maximum number of parallel NEAT jobs to run")
+    sim.add_argument("--neat-cmd", default=None, help="Command to launch the read simulator")
 
     stitch = p.add_argument_group("stitching options")
-    stitch.add_argument("--samtools", default="samtools",
-                        help="Path to samtools executable used by stitch_outputs.py",)
-    stitch.add_argument("--final-prefix", type=Path, default=Path("stitched/final"),
-                        help="Prefix (no extension) for the stitched outputs",)
+    stitch.add_argument("--samtools", default=None, help="Path to samtools executable used by stitch_outputs.py")
+    stitch.add_argument("--final-prefix", type=Path, default=None, help="Prefix for stitched outputs")
 
     return p.parse_args(argv)
 
 
 def main(argv: List[str] | None = None):
+
     args = parse_args(argv)
-
-    args.outdir.mkdir(parents=True, exist_ok=True)
-    splits_dir = args.outdir / "splits"
-    sims_dir = args.outdir / "sim_runs"
-    splits_dir.mkdir(parents=True, exist_ok=True)
-    sims_dir.mkdir(parents=True, exist_ok=True)
-
-    final_prefix = args.final_prefix if args.final_prefix.is_absolute() else args.outdir / args.final_prefix
-
     try:
         import yaml
     except ModuleNotFoundError:
@@ -79,11 +67,119 @@ def main(argv: List[str] | None = None):
         sys.exit(1)
 
     cfg_dict = yaml.safe_load(args.config.read_text())
-    ref_path = Path(cfg_dict.get("reference", "")).expanduser().resolve()
 
-    if not ref_path.is_file():
-        print(f"'reference:' not found or file does not exist: {ref_path}", file=sys.stderr)
-        sys.exit(1)
+    # Helper functions: treat '.' as unset and cast values
+    sentinel = {None, "."}
+
+    def yaml_val(key):
+        v = cfg_dict.get(key)
+        return None if v in sentinel else v
+
+    def cfg_val(key, typ=None):
+        v = yaml_val(key)
+        if v is None:
+            return None
+        if typ is Path:
+            return Path(str(v))
+        if typ and not isinstance(v, typ):
+            return typ(v)
+        return v
+
+    def coalesce(cli_val, key, typ, default):
+        if cli_val is not None:
+            return cli_val
+        y = cfg_val(key, typ)
+        return y if y is not None else default
+
+    def coalesce_bool(cli_val, key, default=False):
+        if cli_val is not None:
+            return cli_val
+        y = yaml_val(key)
+        if isinstance(y, bool):
+            return y
+        if isinstance(y, str):
+            s = y.strip().lower()
+            if s in {"1", "true", "t", "yes", "y", "on"}:
+                return True
+            if s in {"0", "false", "f", "no", "n", "off"}:
+                return False
+        return default
+
+    # Merge config values
+
+    # Splitting
+    args.by = coalesce(args.by, "by", str, "contig")
+    args.size = coalesce(args.size, "size", int, 500000 if args.by == "size" else None)
+
+    # Simulate
+    args.jobs = coalesce(args.jobs, "jobs", int, os.cpu_count() or 2)
+    args.neat_cmd = coalesce(args.neat_cmd, "neat_cmd", str, "neat read-simulator")
+
+    # Stitching
+    args.samtools = coalesce(args.samtools, "samtools", str, "samtools")
+    args.final_prefix = coalesce(args.final_prefix, "final_prefix", Path, Path("stitched/final"))
+
+    # Outputs
+    default_outdir = (Path(args.config).parent / f"{Path(args.config).stem}_parallel").resolve()
+    args.outdir = coalesce(args.outdir, "outdir", Path, default_outdir)
+    if not args.outdir.is_absolute():
+        args.outdir = (Path(args.config).parent / args.outdir).resolve()
+
+    # Boolean toggles
+    args.cleanup_splits = coalesce_bool(args.cleanup_splits, "cleanup_splits", False)
+    args.reuse_splits = coalesce_bool(args.reuse_splits, "reuse_splits", False)
+
+    # Normalize final_prefix to absolute
+    if not args.final_prefix.is_absolute():
+        args.final_prefix = (args.outdir / args.final_prefix).resolve()
+
+    # Create directories after resolution
+    args.outdir.mkdir(parents=True, exist_ok=True)
+    splits_dir = args.outdir / "splits"
+    sims_dir = args.outdir / "sim_runs"
+    splits_dir.mkdir(parents=True, exist_ok=True)
+    sims_dir.mkdir(parents=True, exist_ok=True)
+
+    # Fill missing CLI args from YAML or defaults
+    #
+    # if args.outdir is None:
+    #     # Take YAML 'outdir' or default to <config_stem>_parallel in same directory
+    #     out_from_cfg = cfg_val("outdir", Path)
+    #     if out_from_cfg:
+    #         args.outdir = out_from_cfg
+    #     else:
+    #         args.outdir = args.config.parent / f"{args.config.stem}_parallel"
+    #
+    # if args.final_prefix is None:
+    #     v = cfg_val("final_prefix", Path)
+    #     args.final_prefix = v if v else Path("stitched/final")
+    #
+    # if args.by is None:
+    #     args.by = cfg_val("by", str) or "contig"
+    #
+    # if args.size is None:
+    #     args.size = cfg_val("size", int) or 500000
+    #
+    # if args.jobs is None:
+    #     args.jobs = cfg_val("jobs", int) or (os.cpu_count() - 1 or 2)
+    #
+    # if args.neat_cmd is None:
+    #     args.neat_cmd = cfg_val("neat_cmd", str) or "neat read-simulator"
+    #
+    # if args.samtools is None:
+    #     args.samtools = cfg_val("samtools", str) or "samtools"
+    #
+    # if not args.cleanup_splits:
+    #     if cfg_bool("cleanup_splits"):
+    #         args.cleanup_splits = True
+    #
+    # if not args.reuse_splits:
+    #     if cfg_bool("reuse_splits"):
+    #         args.reuse_splits = True
+    #
+    # if not ref_path.is_file():
+    #     print(f"'reference:' not found or file does not exist: {ref_path}", file=sys.stderr)
+    #     sys.exit(1)
 
     # 1) Split (or reuse)
     need_split = not args.reuse_splits
@@ -130,7 +226,7 @@ def main(argv: List[str] | None = None):
             stem = yaml_path.stem
             workdir = sims_dir / stem
             neat_cmd = args.neat_cmd.split()
-            # Use a plain stem output prefix; cwd=workdir ensures files land under workdir
+            # Launch NEAT via CLI (default 'neat read-simulator')
             cmd = [*neat_cmd, "-c", str(yaml_path.resolve()), "-o", stem]
             futures.append(pool.submit(worker, (cmd, workdir)))
 
@@ -165,13 +261,11 @@ def main(argv: List[str] | None = None):
         sys.exit(1)
 
     stitch_sec = time.time() - t2
-    total_sec = (t1 if need_split else time.time()) - (t1 if not need_split else t1)  # not used, preserved formatting
 
     if args.cleanup_splits:
         print("[parallel] Cleaning up split FASTA/configs...")
         shutil.rmtree(splits_dir, ignore_errors=True)
 
-    total_wall = (t2 + stitch_sec) - (t1 - sim_sec if need_split else t1 - sim_sec)
     print(f"[parallel] Pipeline complete — stitched files under {final_prefix.parent}\n"
           f"Timings:\n"
           f"  split : {split_sec:6.1f} s\n"

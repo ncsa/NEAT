@@ -28,34 +28,42 @@ class Command(BaseCommand):
                             type=Path,
                             required=True,
                             help="NEAT YAML/YML config containing the 'reference:' field")
+
         parser.add_argument("--outdir",
                             type=Path,
-                            required=True,
-                            help="Top-level directory to hold splits, per-chunk outputs, and final stitched results")
+                            required=False,
+                            default=None,
+                            help="Top-level directory for splits and stitched results (optional)")
 
         split = parser.add_argument_group("splitting options")
-        split.add_argument("--by", choices=["contig", "size"], default="contig", help="Split mode")
-        split.add_argument("--size", type=int, default=1000000, help="Target chunk size when --by size")
-        split.add_argument("--cleanup-splits", action="store_true", help="Delete the 'splits' directory after stitching completes")
-        split.add_argument("--reuse-splits", action="store_true", help="Skip splitting and reuse existing YAML/FASTA files in 'splits'")
+        split.add_argument("--by", choices=["contig", "size"], default=None,
+                           help="Split mode")
+        split.add_argument("--size", type=int, default=None,
+                           help="Target chunk size when --by size")
+        split.add_argument("--cleanup-splits", action=argparse.BooleanOptionalAction, default=None,
+                           help="Delete the 'splits' directory after stitching completes")
+        split.add_argument("--reuse-splits", action=argparse.BooleanOptionalAction, default=None,
+                           help="Skip splitting and reuse existing YAML/FASTA files in 'splits'")
 
         sim = parser.add_argument_group("simulation options")
-        sim.add_argument("--jobs", type=int, default=2, help="Maximum number of parallel NEAT jobs")
-        sim.add_argument("--neat-cmd", default="neat read-simulator", help="Command used to launch the read simulator")
+        sim.add_argument("--jobs", type=int, default=None,
+                         help="Maximum number of parallel NEAT jobs")
+        sim.add_argument("--neat-cmd", default=None,
+                         help="Command used to launch the read simulator (e.g., 'neat read-simulator')")
 
         stitch = parser.add_argument_group("stitching options")
-        stitch.add_argument("--samtools", default="samtools", help="Path to samtools executable used by stitch_outputs.py")
-        stitch.add_argument("--final-prefix", type=Path, default=Path("stitched/final"), help="Prefix (no extension) for stitched outputs")
+        stitch.add_argument("--samtools", default=None,
+                            help="Path to samtools executable used by stitch_outputs.py")
+        stitch.add_argument("--final-prefix", type=Path, default=None,
+                            help="Prefix (no extension) for stitched outputs")
 
-        parser.add_argument("--parallel-config",
-                            type=Path,
+        parser.add_argument("--parallel-config", type=Path,
                             help="Optional YAML/JSON file with parallelization settings (jobs, by, size, etc.)")
 
     def execute(self, arguments: argparse.Namespace) -> None:
         # Optionally overlay values from a parallel-config file
         if arguments.parallel_config and arguments.parallel_config.is_file():
-            import json
-            import yaml
+            import json, yaml
             ext = arguments.parallel_config.suffix.lower()
             with open(arguments.parallel_config, "r") as fh:
                 overrides = yaml.safe_load(fh) if ext in (".yml", ".yaml") else json.load(fh)
@@ -63,25 +71,30 @@ class Command(BaseCommand):
                 if hasattr(arguments, k):
                     setattr(arguments, k, v)
 
-        # Build argv for your pipeline's main()
-        argv: List[str] = [
-            str(arguments.config),
-            "--outdir", str(arguments.outdir),
-            "--by", arguments.by,
-        ]
+        argv: List[str] = [str(arguments.config)]
 
-        if arguments.by == "size":
+        # Only forward flags the user actually set
+        if arguments.outdir is not None:
+            argv += ["--outdir", str(arguments.outdir)]
+        if arguments.by is not None:
+            argv += ["--by", arguments.by]
+        if arguments.size is not None and arguments.by == "size":
             argv += ["--size", str(arguments.size)]
-        if arguments.cleanup_splits:
-            argv += ["--cleanup-splits"]
-        if arguments.reuse_splits:
-            argv += ["--reuse-splits"]
 
-        argv += [
-            "--jobs", str(arguments.jobs),
-            "--neat-cmd", arguments.neat_cmd,
-            "--samtools", arguments.samtools,
-            "--final-prefix", str(arguments.final_prefix),
-        ]
+        # Handle booleans
+        if arguments.cleanup_splits is not None:
+            argv += ["--cleanup-splits"] if arguments.cleanup_splits else ["--no-cleanup-splits"]
+        if arguments.reuse_splits is not None:
+            argv += ["--reuse-splits"] if arguments.reuse_splits else ["--no-reuse-splits"]
+
+        # Other parameters
+        if arguments.jobs is not None:
+            argv += ["--jobs", str(arguments.jobs)]
+        if arguments.neat_cmd is not None:
+            argv += ["--neat-cmd", arguments.neat_cmd]
+        if arguments.samtools is not None:
+            argv += ["--samtools", arguments.samtools]
+        if arguments.final_prefix is not None:
+            argv += ["--final-prefix", str(arguments.final_prefix)]
 
         pipeline_main(argv)
