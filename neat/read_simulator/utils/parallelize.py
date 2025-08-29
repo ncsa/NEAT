@@ -105,6 +105,18 @@ def main(argv: List[str] | None = None):
                 return False
         return default
 
+    # Resolve reference path issues early
+
+    ref_path = cfg_val("reference", Path)
+    if not ref_path:
+        print("'reference:' missing in config", file=sys.stderr)
+        sys.exit(1)
+
+    ref_path = ref_path.expanduser().resolve()
+    if not ref_path.is_file():
+        print(f"'reference:' not found or file does not exist: {ref_path}", file=sys.stderr)
+        sys.exit(1)
+
     # Merge config values
 
     # Splitting
@@ -120,10 +132,11 @@ def main(argv: List[str] | None = None):
     args.final_prefix = coalesce(args.final_prefix, "final_prefix", Path, Path("stitched/final"))
 
     # Outputs
-    default_outdir = (Path(args.config).parent / f"{Path(args.config).stem}_parallel").resolve()
+    cwd = Path.cwd()
+    default_outdir = (cwd / f"{Path(args.config).stem}_parallel").resolve()
     args.outdir = coalesce(args.outdir, "outdir", Path, default_outdir)
     if not args.outdir.is_absolute():
-        args.outdir = (Path(args.config).parent / args.outdir).resolve()
+        args.outdir = (cwd / args.outdir).resolve()
 
     # Boolean toggles
     args.cleanup_splits = coalesce_bool(args.cleanup_splits, "cleanup_splits", False)
@@ -139,47 +152,6 @@ def main(argv: List[str] | None = None):
     sims_dir = args.outdir / "sim_runs"
     splits_dir.mkdir(parents=True, exist_ok=True)
     sims_dir.mkdir(parents=True, exist_ok=True)
-
-    # Fill missing CLI args from YAML or defaults
-    #
-    # if args.outdir is None:
-    #     # Take YAML 'outdir' or default to <config_stem>_parallel in same directory
-    #     out_from_cfg = cfg_val("outdir", Path)
-    #     if out_from_cfg:
-    #         args.outdir = out_from_cfg
-    #     else:
-    #         args.outdir = args.config.parent / f"{args.config.stem}_parallel"
-    #
-    # if args.final_prefix is None:
-    #     v = cfg_val("final_prefix", Path)
-    #     args.final_prefix = v if v else Path("stitched/final")
-    #
-    # if args.by is None:
-    #     args.by = cfg_val("by", str) or "contig"
-    #
-    # if args.size is None:
-    #     args.size = cfg_val("size", int) or 500000
-    #
-    # if args.jobs is None:
-    #     args.jobs = cfg_val("jobs", int) or (os.cpu_count() - 1 or 2)
-    #
-    # if args.neat_cmd is None:
-    #     args.neat_cmd = cfg_val("neat_cmd", str) or "neat read-simulator"
-    #
-    # if args.samtools is None:
-    #     args.samtools = cfg_val("samtools", str) or "samtools"
-    #
-    # if not args.cleanup_splits:
-    #     if cfg_bool("cleanup_splits"):
-    #         args.cleanup_splits = True
-    #
-    # if not args.reuse_splits:
-    #     if cfg_bool("reuse_splits"):
-    #         args.reuse_splits = True
-    #
-    # if not ref_path.is_file():
-    #     print(f"'reference:' not found or file does not exist: {ref_path}", file=sys.stderr)
-    #     sys.exit(1)
 
     # 1) Split (or reuse)
     need_split = not args.reuse_splits
@@ -245,7 +217,7 @@ def main(argv: List[str] | None = None):
         sys.executable,
         str(Path(__file__).with_name("stitch_outputs.py")),
         "-i", str(sims_dir),
-        "-o", str(final_prefix),
+        "-o", str(args.final_prefix),
         "-c", str(args.config),
         "--samtools", args.samtools,
     ]
@@ -266,7 +238,7 @@ def main(argv: List[str] | None = None):
         print("[parallel] Cleaning up split FASTA/configs...")
         shutil.rmtree(splits_dir, ignore_errors=True)
 
-    print(f"[parallel] Pipeline complete — stitched files under {final_prefix.parent}\n"
+    print(f"[parallel] Pipeline complete — stitched files under {args.final_prefix.parent}\n"
           f"Timings:\n"
           f"  split : {split_sec:6.1f} s\n"
           f"  sim   : {sim_sec:6.1f} s\n"

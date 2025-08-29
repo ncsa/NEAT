@@ -1,9 +1,0 @@
-outdir: REQUIRED
-final_prefix: .
-by: .
-size: .
-jobs: .
-neat_cmd: .
-samtools: .
-cleanup_splits: .
-reuse_splits: .

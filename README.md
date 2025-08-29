@@ -1,7 +1,8 @@
-# The NEAT Project v4.2
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.2. This release of NEAT includes several fixes and a little bit of restructuring. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes. We have discarded the fasta file writing for now and removed that code. We may add that in as a feature in the future, if users call for it. We also removed GC bias for now. It severely complicated implementation, and had very few noticeable effects. After discussing with some people at the Illinois Institute for Genomic Biology, it sounded like GC bias may be a bit of a non-factor with improved chemistries. These will be reintroduced if needed/called for. 
+# The NEAT Project v4.2 - BETA
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.2. This beta release of NEAT 4.0 includes several fixes and a little bit of restructuring. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes. We may add that in as a feature in the future, if users call for it. We also removed GC bias for now. It severely complicated implementation, and had very few noticeable effects. After discussing with some people at the Illinois Institute for Genomic Biology, it sounded like GC bias may be a bit of a non-factor with improved chemistries. NEAT 4.0 represents the direction we would like to move the code, but unfortunately we ran into several issues in production, notably the very long processing times, that make it unviable for general use. If you would like to try NEAT 4.0, please do! If you run into issues, please post them on our issues page.
 
-We are also working on redeveloping NEAT in Rust, a memory and thread safe language that will lend itself well to the way NEAT works, check that out here: https://github.com/ncsa/rusty-neat
+# NEAT 3.4 - Stable
+NEAT 3.4 under "releases" is the stable version of NEAT, most closely following the original NEAT genReads 2.0. NEAT 4.0 ran into several production problems, including very slow runtimes on larger genomes, so we have decided to switch back to NEAT 3.4 as the default release while we try to improve NEAT 4.0. If you are cloning the repo, you can checkout tag 3.4 `git checkout 3.4` within the NEAT repo. We are also working on redeveloping NEAT in Rust, a memory and thread safe language that will lend itself well to the way NEAT works, check that out here: https://github.com/ncsa/rusty-neat
 
 Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
 
@@ -20,7 +21,7 @@ Table of Contents
   * [neat-genreads](#neat-genreads)
   * [Table of Contents](#table-of-contents)
     * [Requirements](#requirements)
-    * [Installation] (#installation)
+    * [Installation](#installation)
     * [Usage](#usage)
     * [Functionality](#functionality)
     * [Examples](#examples)
@@ -31,11 +32,11 @@ Table of Contents
       * [Large single end reads](#large-single-end-reads)
       * [Parallelizing simulation](#parallelizing-simulation)
   * [Utilities](#utilities)
+    * [Parallelization](#parallelization)
     * [model_fragment_lengths](#modelfraglen)
     * [gen_mut_model](#genmutmodel)
     * [model_sequencing_error](#modelseqerror)
-      * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
-
+    * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
 
 ## Requirements (the most up-to-date requirements are found in the environment.yml file)
 
@@ -43,6 +44,7 @@ Table of Contents
 * Python == 3.10.*
 * poetry == 1.3.*
 * biopython == 1.79
+* samtools == 1.20
 * pkginfo
 * matplotlib
 * numpy
@@ -101,6 +103,8 @@ as these will be appended by NEAT.
 A config file is required. The config is a yml file specifying the input parameters. The following is a brief
 description of the potential inputs in the config file. See NEAT/config_template/template_neat_config.yml for a
 template config file to copy and use for your runs.
+
+To run the simulator in parallel with the same config file and significantly speed up runtime, please see the [Parallelization](#parallelization) section.
 
 reference: full path to a fasta file to generate reads from
 read_len: The length of the reads for the fastq (if using). Integer value, default 101.
@@ -282,6 +286,51 @@ neat read-simulator                 \
 # Utilities	
 Several scripts are distributed with gen_reads that are used to generate the models used for simulation.
 
+## neat parallel
+
+Runs NEAT’s read simulator across a split reference (by contig or by fixed chunk size), in parallel, and stitches the outputs into final FASTQ/BAM/VCF.
+
+### Commands:
+
+Minimal: all settings come from a single YAML config
+```
+neat parallel -c /path/to/config.yml
+```
+
+Override or supplement a few options on the CLI
+```
+neat parallel -c /path/to/config.yml \
+  --outdir run1 --by size --size 500000 --jobs 8
+```
+
+neat parallel reads the same config you use for neat read-simulator and also looks for these parallelization keys at the top level:
+
+```
+# required unless you pass --outdir on the CLI
+outdir: /absolute/or/relative/path/for/this_run
+
+# stitched outputs live under outdir; relative values are resolved under outdir
+final_prefix: stitched/final         # default if omitted: stitched/final
+
+# how to split the reference (size recommended)
+by: contig                           # values: contig | size
+size: 1000000                        # used only when by: size
+
+# parallel execution
+jobs: 8                              # default: CPU count
+
+# how to invoke the simulator
+neat_cmd: neat read-simulator        # default
+
+# external tool for stitching BAMs
+samtools: samtools                   # default, must be on PATH
+
+# organization
+cleanup_splits: false                # delete outdir/splits after stitch
+reuse_splits: false                  # reuse existing splits if present
+```
+
+
 ## neat model-fraglen
 
 Computes empirical fragment length distribution from sample data.
@@ -342,17 +391,6 @@ neat model-seq-err                                    \
 ```
 
 Please note that -i2 can be used in place of -i to produce paired data.
-
-## neat plot_mutation_model
-
-Performs plotting and comparison of mutation models generated from genMutModel.py (Not yet implemented in NEAT 4.0).
-
-```
-neat plot_mutation_model                                                \
-        -i model1.pickle.gz [model2.pickle.gz] [model3.pickle.gz]...    \
-        -l legend_label1 [legend_label2] [legend_label3]...             \
-        -o path/to/pdf_plot_prefix
-```
 
 ## neat vcf_compare
 
