@@ -82,7 +82,7 @@ The creation of simulated Binary Alignment Map (BAM) files (**1**) in NEAT 2.0 w
 |---|-------------|------------------------------|--------------------------------|
 | 4 | **Refactored Unit Testing** | Not originally present | Rewritten with testable, discrete functions |
 
-Our new continuous integration pipeline (**1**) detects bugs early, streamlining development and enhancing error detection (e.g., handling of multiple genomic file formats as inputs and outputs). Configuration files in NEAT 4.2 (**2**) and package installation (**3**) facilitate user friendliness and portability. NEAT 4.2 features testable, discrete functions (**4**) that allows users to debug more easily. Parallelization of NEAT 4.2 is in progress.
+Our new continuous integration pipeline (**1**) detects bugs early, streamlining development and enhancing error detection (e.g., handling of multiple genomic file formats as inputs and outputs). Configuration files in NEAT 4.2 (**2**) and package installation (**3**) facilitate user friendliness and portability. NEAT 4.2 features testable, discrete functions (**4**) that allows users to debug more easily. NEAT 4.2's read simulator is also parallelized, facilitating faster runtimes and ease of use. Quality-of-life development continues into the present.
 
 # Acknowledgements
 
