@@ -140,3 +140,43 @@ min_mutations: .
 # type: bool | required = no | default = false
 overwrite_output: .
 
+# Top-level output directory for splits, per-chunk outputs, and stitched results.
+# Relative paths are interpreted against the CURRENT WORKING DIRECTORY.
+# If omitted (or set to .), it defaults to: <cwd>/<config_stem>_parallel
+# type = string | required: no
+outdir: .
+
+# Location (prefix, no extension) for stitched outputs.
+# If relative, it is resolved under outdir (i.e., <outdir>/<final_prefix>*).
+# Default is "stitched/final".
+# type = string | required: no | default = stitched/final
+final_prefix: .
+
+# How to split the input reference for parallelization
+# type = string | required: no | default = contig | values: contig, size
+by: .
+
+# Target chunk size if by = size (overlap = read_len * 2).
+# Default is 500000 when by = size.
+# type = int | required: no | default = 500000 (when by=size)
+size: .
+
+# Maximum number of concurrent NEAT jobs
+# type = int | required: no | default = (CPU count)
+jobs: .
+
+# Command used to launch the simulator (CLI mode)
+# type = string | required: no | default = "neat read-simulator"
+neat_cmd: .
+
+# Path to samtools (binary name if on PATH)
+# type = string | required: no | default = samtools
+samtools: .
+
+# Delete the 'splits' directory after stitching completes
+# type = bool | required: no | default = false
+cleanup_splits: .
+
+# Reuse existing files in 'splits' and skip the split step
+# type = bool | required: no | default = false
+reuse_splits: .
