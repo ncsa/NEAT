@@ -7,58 +7,100 @@ from pathlib import Path
 from typing import List
 
 from .base import BaseCommand
-from ...read_simulator.utils.parallelize import main as pipeline_main
+from ...parallel_read_simulator.parallelize import parallelize_main as pipeline_main
 
 
 class Command(BaseCommand):
     """
-    Split the reference, run read-simulator, and stitch outputs together.
+    Split the reference, run read simulator, and stitch outputs together.
     """
     name = "parallel"
-    description = "Split the reference, run read-simulator, and stitch outputs together."
+    description = (
+        "Split the reference, run read-simulator in parallel, and stitch outputs together."
+    )
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         """
-        Add the command's arguments to its parser
-
-        :param parser: The parser to add arguments to
+        Register CLI arguments for the parallel read simulator.
         """
-        parser.add_argument("-c",
-                            "--config",
-                            type=Path,
-                            required=True,
-                            help="NEAT YAML/YML config containing the 'reference:' field")
 
-        parser.add_argument("--outdir",
-                            type=Path,
-                            required=False,
-                            default=None,
-                            help="Top-level directory for splits and stitched results (optional)")
+        parser.add_argument(
+            "-c",
+            "--config",
+            type=Path,
+            required=True,
+            help="NEAT YAML/YML config containing the 'reference:' field",
+        )
 
+        parser.add_argument(
+            "--outdir",
+            type=Path,
+            required=False,
+            default=None,
+            help="Top-level directory for splits and stitched results (optional)",
+        )
+
+        # Splitting options
         split = parser.add_argument_group("splitting options")
-        split.add_argument("--by", choices=["contig", "size"], default=None,
-                           help="Split mode")
-        split.add_argument("--size", type=int, default=None,
-                           help="Target chunk size when --by size")
-        split.add_argument("--cleanup-splits", action=argparse.BooleanOptionalAction, default=None,
-                           help="Delete the 'splits' directory after stitching completes")
-        split.add_argument("--reuse-splits", action=argparse.BooleanOptionalAction, default=None,
-                           help="Skip splitting and reuse existing YAML/FASTA files in 'splits'")
+        split.add_argument(
+            "--by",
+            choices=["contig", "size"],
+            default=None,
+            help="Split mode",
+        )
+        split.add_argument(
+            "--size",
+            type=int,
+            default=None,
+            help="Target chunk size when --by size",
+        )
+        split.add_argument(
+            "--cleanup-splits",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Delete the 'splits' directory after stitching completes",
+        )
+        split.add_argument(
+            "--reuse-splits",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Skip splitting and reuse existing YAML/FASTA files in 'splits'",
+        )
 
+        # Simulation options
         sim = parser.add_argument_group("simulation options")
-        sim.add_argument("--jobs", type=int, default=None,
-                         help="Maximum number of parallel NEAT jobs")
-        sim.add_argument("--neat-cmd", default=None,
-                         help="Command used to launch the read simulator (e.g., 'neat read-simulator')")
+        sim.add_argument(
+            "--jobs",
+            type=int,
+            default=None,
+            help="Maximum number of parallel NEAT jobs",
+        )
+        sim.add_argument(
+            "--neat-cmd",
+            default=None,
+            help="Command used to launch the read simulator (e.g. 'neat read-simulator')",
+        )
 
+        # Stitching options
         stitch = parser.add_argument_group("stitching options")
-        stitch.add_argument("--samtools", default=None,
-                            help="Path to samtools executable used by stitch_outputs.py")
-        stitch.add_argument("--final-prefix", type=Path, default=None,
-                            help="Prefix (no extension) for stitched outputs")
+        stitch.add_argument(
+            "--samtools",
+            default=None,
+            help="Path to samtools executable used by stitch_outputs.py",
+        )
+        stitch.add_argument(
+            "--final-prefix",
+            type=Path,
+            default=None,
+            help="Prefix (no extension) for stitched outputs",
+        )
 
-        parser.add_argument("--parallel-config", type=Path,
-                            help="Optional YAML/JSON file with parallelization settings (jobs, by, size, etc.)")
+        # Optional YAML/JSON describing parallel settings
+        parser.add_argument(
+            "--parallel-config",
+            type=Path,
+            help="Optional YAML/JSON file with parallelization settings (jobs, by, size, etc.)",
+        )
 
     def execute(self, arguments: argparse.Namespace) -> None:
         # Optionally overlay values from a parallel-config file

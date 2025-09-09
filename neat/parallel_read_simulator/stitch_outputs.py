@@ -1,5 +1,5 @@
 """
-Description.
+Stitch NEAT split‑run outputs into one dataset.
 """
 
 import argparse
@@ -9,19 +9,24 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Tuple
 import yaml
+
+import logging
 
 __all__ = ["main"]
 
+_LOG = logging.getLogger(__name__)
 
-def print_stderr(msg: str, *, exit_: bool = False):
-    print(msg, file=sys.stderr)
+
+def print_stderr(msg: str, *, exit_: bool = False) -> None:
+    """Log an error message and optionally terminate the program."""
+    _LOG.error(msg)
     if exit_:
         sys.exit(1)
 
 
-def gather(paths: Iterable[Path], suffixes: tuple[str, ...]) -> List[Path]:
+def gather(paths: Iterable[Path], suffixes: Tuple[str, ...]) -> List[Path]:
     out: list[Path] = []
     for p in paths:
         if p.is_file() and p.name.endswith(suffixes):
@@ -36,7 +41,7 @@ def is_gzipped(file: Path) -> bool:
     return file.suffix in {".gz", ".bgz"}
 
 
-def concat(files: List[Path], dest: Path, keep_compression: bool):
+def concat(files: List[Path], dest: Path, keep_compression: bool) -> None:
     if not files:
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -56,7 +61,7 @@ def concat(files: List[Path], dest: Path, keep_compression: bool):
                     shutil.copyfileobj(in_f, out_f)
 
 
-def merge_bam(bams: List[Path], dest: Path, samtools: str):
+def merge_bam(bams: List[Path], dest: Path, samtools: str) -> None:
     if not bams:
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -70,7 +75,7 @@ def merge_bam(bams: List[Path], dest: Path, samtools: str):
     normalize_bam_header(dest, samtools)
 
 
-def merge_vcf(vcfs: List[Path], dest: Path):
+def merge_vcf(vcfs: List[Path], dest: Path) -> None:
     if not vcfs:
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -84,14 +89,14 @@ def merge_vcf(vcfs: List[Path], dest: Path):
                         out_f.write(line)
 
 
-def normalize_bam_header(bam: Path, samtools: str):
+def normalize_bam_header(bam: Path, samtools: str) -> None:
     """Make BAM header deterministic: drop @PG, sort @SQ/@RG."""
     hdr_text = subprocess.check_output([samtools, "view", "-H", str(bam)], text=True)
 
-    hd = []
-    sq = []
-    rg = []
-    other = []
+    hd: list[str] = []
+    sq: list[str] = []
+    rg: list[str] = []
+    other: list[str] = []
     for line in hdr_text.splitlines():
         if line.startswith("@PG"):
             continue
@@ -100,20 +105,19 @@ def normalize_bam_header(bam: Path, samtools: str):
         elif line.startswith("@SQ"):
             sq.append(line)
         elif line.startswith("@RG"):
-            # optional: drop volatile CL: field
             parts = [t for t in line.split("\t") if not t.startswith("CL:")]
             line = "\t".join(parts)
             rg.append(line)
         else:
             other.append(line)
 
-    def sn(x):
+    def sn(x: str) -> str:
         for t in x.split("\t"):
             if t.startswith("SN:"):
                 return t[3:]
         return x
 
-    def rgid(x):
+    def rgid(x: str) -> str:
         for t in x.split("\t"):
             if t.startswith("ID:"):
                 return t[3:]
@@ -122,7 +126,13 @@ def normalize_bam_header(bam: Path, samtools: str):
     sq.sort(key=sn)
     rg.sort(key=rgid)
 
-    new_hdr = "\n".join([*(hd or ["@HD\tVN:1.6\tSO:coordinate"]), *sq, *rg, *other]) + "\n"
+    new_hdr = "\n".join([
+        *(hd or ["@HD\tVN:1.6\tSO:coordinate"]),
+        *sq,
+        *rg,
+        *other,
+    ]) + "\n"
+
     hdr_tmp = bam.with_suffix(".reheader.sam")
     out_tmp = bam.with_suffix(".reheader.bam")
     hdr_tmp.write_text(new_hdr)
@@ -135,16 +145,14 @@ def normalize_bam_header(bam: Path, samtools: str):
     subprocess.check_call([samtools, "index", str(bam)])
 
 
-def natural_key(path: Path):
+def natural_key(path: Path) -> List[object]:
     s = path.name
     parts = re.split(r"(\d+)", s)
     return [int(p) if p.isdigit() else p for p in parts]
 
 
-def order_by_manifest(files: List[Path], manifest_path: Path, suffixes: tuple[str, ...]) -> List[Path]:
-    """
-    Order files according to entry stems, matched by stem either in the file basename or in its parent directory name.
-    """
+def order_by_manifest(files: List[Path], manifest_path: Path, suffixes: Tuple[str, ...]) -> List[Path]:
+    """Order files according to entry stems listed in a manifest."""
     m = yaml.safe_load(manifest_path.read_text())
     stems = [Path(e["stem"]).name for e in m.get("entries", [])]
 
@@ -155,11 +163,12 @@ def order_by_manifest(files: List[Path], manifest_path: Path, suffixes: tuple[st
         parent = f.parent.name
 
         # Try to find a matching stem token in either
-        key = None
+        key: str | None = None
         for s in stems:
             if name.startswith(s) or parent == s:
                 key = s
                 break
+
         if key is None:
 
             # Strip known suffix and use basename as key
@@ -167,6 +176,7 @@ def order_by_manifest(files: List[Path], manifest_path: Path, suffixes: tuple[st
                 if name.endswith(suf):
                     key = name[: -len(suf)]
                     break
+
         by_stem.setdefault(key or name, []).append(f)
 
     ordered: list[Path] = []
@@ -179,29 +189,67 @@ def order_by_manifest(files: List[Path], manifest_path: Path, suffixes: tuple[st
     return ordered
 
 
-def parse_args(argv: list[str] | None = None):
+def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Stitch NEAT split-run outputs into one dataset.")
-    p.add_argument("-i", "--inputs", nargs="+", type=Path, required=True,
-                   help="Input split-run directories or file prefixes")
-    p.add_argument("-o", "--output-prefix", type=Path, required=True,
-                   help="Prefix for stitched outputs (no extension)")
-    p.add_argument("-c", "--config", type=Path, required=True,
-                   help="Original NEAT YAML config to detect paired-ended, etc.")
-    p.add_argument("--samtools", default="samtools", help="Path to samtools binary")
-    p.add_argument("--manifest", type=Path, help="Optional manifest.yaml from split step to enforce ordering")
+    p.add_argument(
+        "-i",
+        "--inputs",
+        nargs="+",
+        type=Path,
+        required=True,
+        help="Input split-run directories or file prefixes",
+    )
+    p.add_argument(
+        "-o",
+        "--output-prefix",
+        type=Path,
+        required=True,
+        help="Prefix for stitched outputs (no extension)",
+    )
+    p.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        required=True,
+        help="Original NEAT YAML config to detect paired-ended, etc.",
+    )
+    p.add_argument(
+        "--samtools",
+        default="samtools",
+        help="Path to samtools binary",
+    )
+    p.add_argument(
+        "--manifest",
+        type=Path,
+        help="Optional manifest.yaml from split step to enforce ordering",
+    )
     return p.parse_args(argv)
 
 
-def main(argv: list[str] | None = None):
+def main(argv: List[str] | None = None) -> None:
     args = parse_args(argv)
 
     cfg = yaml.safe_load(args.config.read_text())
     paired = bool(cfg.get("paired_ended", False))
 
     # These cover both NEAT internal naming (_r1_paired.fq.bgz) and CLI naming (_r1.fastq.gz)
-    r1_suffixes = ("_r1_paired.fq", "_r1_paired.fq.gz", "_r1_paired.fq.bgz", "_r1.fastq.gz")
-    r2_suffixes = ("_r2_paired.fq", "_r2_paired.fq.gz", "_r2_paired.fq.bgz", "_r2.fastq.gz")
-    s1_suffixes = ("_r1_single.fq", "_r1_single.fq.gz", "_r1_single.fq.bgz")  # single-end lane
+    r1_suffixes = (
+        "_r1_paired.fq",
+        "_r1_paired.fq.gz",
+        "_r1_paired.fq.bgz",
+        "_r1.fastq.gz",
+    )
+    r2_suffixes = (
+        "_r2_paired.fq",
+        "_r2_paired.fq.gz",
+        "_r2_paired.fq.bgz",
+        "_r2.fastq.gz",
+    )
+    s1_suffixes = (
+        "_r1_single.fq",
+        "_r1_single.fq.gz",
+        "_r1_single.fq.bgz",
+    )  # single-end lane
 
     fq_r1 = gather(args.inputs, r1_suffixes)
     fq_r2 = gather(args.inputs, r2_suffixes) if paired else []
@@ -235,15 +283,12 @@ def main(argv: list[str] | None = None):
 
     prefix = args.output_prefix
     concat(fq_r1, prefix.with_name(prefix.name + "_read1.fq"), keep_comp)
+
     if paired:
         concat(fq_r2, prefix.with_name(prefix.name + "_read2.fq"), keep_comp)
     concat(fq_single, prefix.with_name(prefix.name + "_readSingle.fq"), keep_comp)
-
     merge_bam(bams, prefix.with_name(prefix.name + "_golden.bam"), args.samtools)
     merge_vcf(vcfs, prefix.with_name(prefix.name + "_golden.vcf"))
 
-    print_stderr("Stitching complete!")
-
-
-if __name__ == "__main__":
-    main()
+    # Final success message via logging
+    _LOG.info("Stitching complete!")
