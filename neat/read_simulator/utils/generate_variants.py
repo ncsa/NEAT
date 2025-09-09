@@ -205,7 +205,12 @@ def generate_variants(
                 if location == 0:
                     continue
                 trinuc = reference[location: location+3].seq.upper()
-                if "N" in trinuc:
+                disallowed_chars = False
+                for letter in trinuc:
+                    if letter not in ALLOWED_NUCL:
+                        disallowed_chars = True
+                        break
+                if disallowed_chars:
                     continue
                 temp_variant = mutation_model.generate_snv(trinuc, location, options.rng)
 
