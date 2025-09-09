@@ -1,6 +1,9 @@
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
+# NEAT v4.3
+- Added a parallelization module to run NEAT in parallel. We expect this to speed up times. Please let us know if it works for you!
+
 # NEAT v4.2.X
 - Several bug fixes
 - Removed bin scoring (needs to be updated, and we didn't have time, but we'll bring it back)
@@ -52,3 +55,4 @@ For improvements, we have a lot of great ideas for general improvements aimed at
 - Structural Variants - model large scale structural variants with an eye toward intergenic SVs.
 - Transposable Elements - model transposons within the sequence
 - Repeat regions - will bring a variety of interesting applications
+
