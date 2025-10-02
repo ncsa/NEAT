@@ -232,7 +232,7 @@ class Read:
                 self.update_quality_array(
                     reference_length,
                     alternate,
-                    location,
+                    position,
                     "mutation",
                     quality_scores,
                     qual_score
