@@ -205,7 +205,7 @@ def parallelize_main(argv: List[str] | None = None) -> None:
 
     # Outputs
     cwd = Path.cwd()
-    default_outdir = (cwd / f"{Path(args.config).stem}_parallel").resolve()
+    default_outdir = (cwd / f"neat_parallel_output").resolve()
     args.outdir = coalesce(args.outdir, "outdir", Path, default_outdir)
     if not args.outdir.is_absolute():
         args.outdir = (cwd / args.outdir).resolve()
