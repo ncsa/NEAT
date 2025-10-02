@@ -164,6 +164,11 @@ def parse_input_vcf(input_dict: dict[str: ContigVariants],
                                  f'{reference_string}')
                     continue
 
+                # Quality score could be missing, in this case, we treat it as ground truth and assign a default score
+                default_qual = "42"
+                if record[5] == ".":
+                    record[5] = default_qual
+
                 # We'll need the genotype when we generate reads, and output the records, if applicable
                 genotype = None
                 normal_sample_field = None
