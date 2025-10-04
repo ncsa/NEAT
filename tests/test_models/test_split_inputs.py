@@ -2,7 +2,7 @@
 Unit tests for the split_inputs module of the parallel read simulator
 """
 
-from neat.parallel_read_simulator.split_inputs import SimpleRecord, chunk_record
+from neat.read_simulator.utils.split_inputs import SimpleRecord, chunk_record
 
 
 def test_chunk_record_overlaps() -> None:

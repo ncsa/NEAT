@@ -259,7 +259,6 @@ class OutputFileWriter:
             # First we add all properly paired reads
             num_reads = len(shuffled_paired_keys)
             for i in range(num_reads):
-                print(f'{i/num_reads:.2%}', end='\r')
                 current_key = shuffled_paired_keys[i]
                 # reconstruct tho chromosome name
                 chrom_name_with_rdnm = current_key[0].removeprefix("NEAT-generated_").split('/')[0]

@@ -82,7 +82,6 @@ class Options(SimpleNamespace):
 
         self.defs['reference'] = (str, reference, 'exists', None)
         self.defs['read_len'] = (int, 151, 10, inf)
-        self.defs['threads'] = (int, 1, 1, inf)
         self.defs['coverage'] = (int, 10, 1, inf)
         self.defs['error_model'] = (str, None, 'exists', None)
         self.defs['avg_seq_error'] = (float, None, 0, 0.3)
@@ -114,6 +113,14 @@ class Options(SimpleNamespace):
         self.defs['rng_seed'] = (int, None, None, None)
         self.defs['min_mutations'] = (int, 0, None, None)
         self.defs['overwrite_output'] = (bool, False, None, None)
+
+        # These parameters relate to parallelization
+        self.defs['parallel_mode'] = (bool, False, None, None)
+        self.defs['mode'] = (str, 'size', 'choice', ['size', 'contig'])
+        self.defs['size'] = (int, 500000, None, None)
+        self.defs['threads'] = (int, 999, 1, 1000)
+        self.defs['cleanup_splits'] = (bool, False, None, None)
+        self.defs['reuse_splits'] = (str, None, 'exists', None)
 
         # Create base variables, for update by the config
         self.reference: str | Path = reference
@@ -151,6 +158,16 @@ class Options(SimpleNamespace):
         self.cancer_model: bool
         self.cancer_purity: float
 
+        # These parameters relate to parallelization
+        self.parallel_mode: bool = False
+        self.mode: str = 'size'
+        self.size: int = 500000
+        self.threads: int = 1
+        self.cleanup_splits: bool = False
+        self.splits_dir: Path | None = None
+        self.reuse_splits: bool | str = False
+        self.existing_splits_dir: Path | None = None
+
         self.args = {}
         # Set up the dictionary
         for key, (_, default, _, _) in self.defs.items():
@@ -183,16 +200,19 @@ class Options(SimpleNamespace):
             self.log_configuration()
 
     @staticmethod
-    def check_and_log_error(keyname, value_to_check, lowval, highval):
+    def check_and_log_error(keyname, value_to_check, crit1, crit2):
         if value_to_check is None:
             pass
-        elif lowval != "exists" and highval:
-            if not (lowval <= value_to_check <= highval):
-                _LOG.error(f'`{keyname}` must be between {lowval} and {highval} (input: {value_to_check}).')
-                sys.exit(1)
-
-        elif lowval == "exists" and value_to_check:
+        elif crit1 == "exists" and value_to_check:
             validate_input_path(value_to_check)
+        elif crit1 == "choice" and crit2:
+            if value_to_check not in crit2:
+                _LOG.error(f"Must choose one of {crit2}")
+                sys.exit(1)
+        elif crit1.isdigit() and crit2.isdigit():
+            if not (crit1 <= value_to_check <= crit2):
+                _LOG.error(f'`{keyname}` must be between {crit1} and {crit2} (input: {value_to_check}).')
+                sys.exit(1)
 
     def read(self):
         """
@@ -213,7 +233,7 @@ class Options(SimpleNamespace):
                         _LOG.error("Must entered a value for `reference` in config")
                         sys.exit(1)
                     else:
-                        _LOG.warning(f"No value entered for `{key}`, skipping.")
+                        _LOG.debug(f"No value entered for `{key}`, skipping.")
                         continue
 
                 # Now we check that the type is correct, and it is in range, depending on the type defined for it
@@ -289,13 +309,34 @@ class Options(SimpleNamespace):
 
         _LOG.info(files_to_produce)
 
-        if self.threads == 1:
-            _LOG.info(f"Single threading - 1 thread.")
+        if self.parallel_mode:
+            _LOG.info(f'Running read simulator in parallel mode.')
+            if self.threads == 1:
+                _LOG.info(f"Single threading - 1 thread.")
+                self.parallel_mode = False
+            else:
+                _LOG.info(f'Multithreading - {self.threads} threads (or CPU Max)')
+                if self.mode == 'size':
+                    _LOG.info(f'Running read simulator in \'size\' mode.')
+                    _LOG.info(f'  - splitting input into size {self.size}')
+                elif self.mode == 'contig':
+                    _LOG.info(f'Running read simulator in \'contig\' mode.')
+                if not self.cleanup_splits:
+                    self.splits_dir = f'{self.output}/splits/'
+                    _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
+                else:
+                    self.splits_dir = f'{self.temporary_dir}/splits/'
+                if self.reuse_splits:
+                    existing_splits_path = Path(self.reuse_splits)
+                    if existing_splits_path.is_dir():
+                        self.existing_splits_dir = existing_splits_path
+                        _LOG.info(f'Reusing existing splits {self.existing_splits}.')
+                        self.reuse_splits = True
+                    else:
+                        _LOG.error(f'Supplied splits directory is not a directory: {existing_splits_path}.')
+                        sys.exit(1)
         else:
-            _LOG.warning(f'Multithreading coming soon!!')
             _LOG.info(f"Single threading - 1 thread.")
-            # We'll work on multithreading later...
-            # _LOG.info(f'Multithreading - {options.threads} threads')
         _LOG.info(f'Using a read length of {self.read_len}')
         if self.fragment_mean:
             if self.fragment_mean < self.read_len:

@@ -138,7 +138,10 @@ def main(parser: argparse.ArgumentParser, arguments: list[str]) -> int:
         else:
             end = time.time()
             log.info(
-                f"command finished successfully; execution took {(end - start)/60:.2f} m"
+                f"command finished successfully; execution took {(end - start)*1000:.2f} ms\nd"
+            )
+            log.info(
+                f"command finished successfully; execution took {(end - start) / 60:.2f} m"
             )
         return 0
 

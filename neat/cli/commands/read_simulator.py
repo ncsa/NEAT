@@ -44,4 +44,4 @@ class Command(BaseCommand):
 
         :param arguments: The namespace with arguments and their values.
         """
-        read_simulator_runner(arguments.config, arguments.output)
+        read_simulator_runner(arguments.config, arguments.output_dir, arguments.prefix)
