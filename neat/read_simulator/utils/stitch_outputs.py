@@ -16,6 +16,8 @@ import logging
 
 __all__ = ["main"]
 
+from neat.read_simulator.utils import Options
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -41,25 +43,17 @@ def is_gzipped(file: Path) -> bool:
     return file.suffix in {".gz", ".bgz"}
 
 
-def concat(files: List[Path], dest: Path, keep_compression: bool) -> None:
+def concat(files: List[Path], dest: Path) -> None:
     if not files:
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    if keep_compression:
-        if not dest.suffix.endswith("gz"):
-            dest = dest.with_suffix(dest.suffix + ".gz")
-        with dest.open("wb") as out_f:
-            for f in files:
-                with f.open("rb") as in_f:
-                    shutil.copyfileobj(in_f, out_f)
-    else:
-        with dest.open("wb") as out_f:
-            for f in files:
-                opener = gzip.open if is_gzipped(f) else open
-                with opener(f, "rb") as in_f:
-                    shutil.copyfileobj(in_f, out_f)
-
+    if not dest.suffix.endswith("gz"):
+        dest = dest.with_suffix(dest.suffix + ".gz")
+    with dest.open("wb") as out_f:
+        for f in files:
+            with f.open("rb") as in_f:
+                shutil.copyfileobj(in_f, out_f)
 
 def merge_bam(bams: List[Path], dest: Path, samtools: str) -> None:
     if not bams:
@@ -188,100 +182,13 @@ def order_by_manifest(files: List[Path], manifest_path: Path, suffixes: Tuple[st
     ordered.extend(sorted(remaining, key=natural_key))
     return ordered
 
+def main(options: Options, thread_option: list[Path]) -> None:
+    fq1_list = []
+    fq2_list = []
+    vcf_list = []
+    bam_list = []
+    for local_ops in thread_option:
 
-def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Stitch NEAT split-run outputs into one dataset.")
-    p.add_argument(
-        "-i",
-        "--inputs",
-        nargs="+",
-        type=Path,
-        required=True,
-        help="Input split-run directories or file prefixes",
-    )
-    p.add_argument(
-        "-o",
-        "--output-prefix",
-        type=Path,
-        required=True,
-        help="Prefix for stitched outputs (no extension)",
-    )
-    p.add_argument(
-        "-c",
-        "--config",
-        type=Path,
-        required=True,
-        help="Original NEAT YAML config to detect paired-ended, etc.",
-    )
-    p.add_argument(
-        "--samtools",
-        default="samtools",
-        help="Path to samtools binary",
-    )
-    p.add_argument(
-        "--manifest",
-        type=Path,
-        help="Optional manifest.yaml from split step to enforce ordering",
-    )
-    return p.parse_args(argv)
-
-
-def main(argv: List[str] | None = None) -> None:
-    args = parse_args(argv)
-
-    cfg = yaml.safe_load(args.config.read_text())
-    paired = bool(cfg.get("paired_ended", False))
-
-    # These cover both NEAT internal naming (_r1_paired.fq.bgz) and CLI naming (_r1.fastq.gz)
-    r1_suffixes = (
-        "_r1_paired.fq",
-        "_r1_paired.fq.gz",
-        "_r1_paired.fq.bgz",
-        "_r1.fastq.gz",
-    )
-    r2_suffixes = (
-        "_r2_paired.fq",
-        "_r2_paired.fq.gz",
-        "_r2_paired.fq.bgz",
-        "_r2.fastq.gz",
-    )
-    s1_suffixes = (
-        "_r1_single.fq",
-        "_r1_single.fq.gz",
-        "_r1_single.fq.bgz",
-    )  # single-end lane
-
-    fq_r1 = gather(args.inputs, r1_suffixes)
-    fq_r2 = gather(args.inputs, r2_suffixes) if paired else []
-    fq_single = gather(args.inputs, s1_suffixes)
-    bams = gather(args.inputs, ("_golden.bam",))
-    vcfs = gather(args.inputs, ("_golden.vcf",))
-
-    if not any((fq_r1, fq_r2, fq_single, bams, vcfs)):
-        print_stderr("No NEAT output files found under supplied inputs", exit_=True)
-
-    for lane in (fq_r1, fq_r2):
-        if lane:
-            gz = [is_gzipped(f) for f in lane]
-            if any(gz) and not all(gz):
-                print_stderr("Mixing compressed & uncompressed FASTQs; aborting stitching", exit_=True)
-    keep_comp = fq_r1 and all(is_gzipped(f) for f in fq_r1)
-
-    # Enforce stable ordering
-    if args.manifest and args.manifest.exists():
-        fq_r1 = order_by_manifest(fq_r1, args.manifest, r1_suffixes)
-        fq_r2 = order_by_manifest(fq_r2, args.manifest, r2_suffixes) if paired else []
-        fq_single = order_by_manifest(fq_single, args.manifest, s1_suffixes)
-        bams = order_by_manifest(bams, args.manifest, ("_golden.bam",))
-        vcfs = order_by_manifest(vcfs, args.manifest, ("_golden.vcf",))
-    else:
-        fq_r1.sort(key=natural_key)
-        fq_r2.sort(key=natural_key)
-        fq_single.sort(key=natural_key)
-        bams.sort(key=natural_key)
-        vcfs.sort(key=natural_key)
-
-    prefix = args.output_prefix
     concat(fq_r1, prefix.with_name(prefix.name + "_read1.fq"), keep_comp)
 
     if paired:

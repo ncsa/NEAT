@@ -147,6 +147,12 @@ class Options(SimpleNamespace):
         self.produce_vcf: bool = False
         self.produce_fastq: bool = True
 
+        # Actual output files
+        self.fq1 = None,
+        self.fq2 = None,
+        self.vcf = None,
+        self.bam = None,
+
         # These are primarily debug options.
         self.min_mutations: int = 0
         self.overwrite_output: bool = False
@@ -294,16 +300,21 @@ class Options(SimpleNamespace):
                 validate_output_path(fq2, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
                 files_to_produce += f'\t- {fq2}\n'
+                self.fq1 = Path(fq1)
+                self.fq2 = Path(fq2)
             else:
                 fq1 = f'{self.output}.fastq.gz'
+                self.fq1 = Path(fq1)
                 validate_output_path(fq1, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
         if self.produce_bam:
             bam = f'{self.output}_golden.bam'
+            self.bam = Path(bam)
             validate_output_path(bam, True, self.overwrite_output)
             files_to_produce += f'\t- {bam}\n'
         if self.produce_vcf:
             vcf = f'{self.output}_golden.vcf.gz'
+            self.vcf = Path(vcf)
             validate_output_path(vcf, True, self.overwrite_output)
             files_to_produce += f'\t- {vcf}\n'
 

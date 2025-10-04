@@ -68,12 +68,24 @@ def main(options: Options) -> None:
     _LOG.info(f"[parallel] Launching {len(splits_files)} NEAT job(s) (max {options.threads} in parallel)...")
     t1 = time.time()
     futures = []
+    output_opts = []
     with ProcessPoolExecutor(max_workers=options.threads) as pool:
         for splits_file in splits_files:
             current_options = options.deep_copy()
             current_options.reference = splits_file
             current_output_dir = options.temp_dir / splits_file.stem
             current_output_dir.mkdir(parents=True, exist_ok=True)
+            # Create local filenames based on fasta indexing scheme.
+            if options.produce_fastq:
+                current_options.fq1 = make_new_name(options.fq1, splits_file, current_output_dir)
+                if options.paired_ended:
+                    # if paired ended, there must be an fq2
+                    current_options.fq2 = make_new_name(options.fq2, splits_file, current_output_dir)
+            if options.produce_bam:
+                current_options.bam = make_new_name(options.bam, splits_file, current_output_dir)
+            if options.produce_vcf:
+                current_options.vcf = make_new_name(options.vcf, splits_file, current_output_dir)
+            output_opts.append(current_options)
             current_options.output_dir = current_output_dir
             futures.append(pool.submit(worker, read_simulator_single(current_options)))
 
@@ -86,22 +98,11 @@ def main(options: Options) -> None:
                 sys.exit(1)
     sim_sec = time.time() - t1
 
-    # 3) Stitch (also in deterministic order, via --manifest when available)
-
+    # 3) Stitch
     _LOG.info("[parallel] Stitching per-chunk outputs...")
     t2 = time.time()
 
-    stitch_argv = [
-        "-i", str(sims_dir),
-        "-o", str(args.final_prefix),
-        "-c", str(args.config),
-        "--samtools", args.samtools,
-    ]
-
-    if manifest_path.exists():
-        stitch_argv += ["--manifest", str(manifest_path)]
-
-    stitch_main(stitch_argv)
+    stitch_main(options, output_opts)
     stitch_sec = time.time() - t2
 
     if args.cleanup_splits:
@@ -116,3 +117,19 @@ def main(options: Options) -> None:
         f"  stitch: {stitch_sec:6.1f} s\n"
         f"  total : {split_sec + sim_sec + stitch_sec:6.1f} s"
     )
+
+EXTENSIONS = ["fastq", "bam", "vcf", "gz"]
+
+def make_new_name(file_path: Path, ref_path: Path, output_dir) -> Path | None:
+    name_parts = file_path.name.split('.')
+    for index in range(len(name_parts), 0, -1):
+        if name_parts[index] in EXTENSIONS:
+            continue
+        else:
+            last_name = name_parts[index]
+            last_name += f"_{ref_path.stem}"
+            name_parts[index] = last_name
+            return Path(output_dir / ".".join(name_parts))
+    # If we reach this point, then our file name was empty
+    _LOG.error("Error renaming file, bad file name")
+    sys.exit(1)
