@@ -2,20 +2,16 @@
 Split a FASTA and NEAT config into per‑contig or fixed‑size chunks ready for simulation.
 """
 
-import argparse
 import shutil
 import sys
 import yaml
-import time
 from pathlib import Path
 from textwrap import wrap
-from typing import Iterator, List, Tuple
+from typing import Iterator, Tuple
 
 import logging
 
 __all__ = ["main"]
-
-from numpy.lib.twodim_base import fliplr
 
 from neat.read_simulator.utils import Options
 
@@ -107,10 +103,10 @@ def main(options: Options) -> list:
     """Perform the splitting of a FASTA and NEAT configuration."""
     overlap = options.read_len * 2
 
-    approx_out_bytes = int(options.fasta.stat().st_size * 1.1)
-    if disk_bytes_free(options.output) < approx_out_bytes:
+    approx_out_bytes = int(options.reference.stat().st_size * 1.1)
+    if disk_bytes_free(options.output_dir) < approx_out_bytes:
         print_stderr(
-            f"Not enough free space in {options.output} (need about {approx_out_bytes/1e9:.2f} GB)",
+            f"Not enough free space in {options.output_dir} (need about {approx_out_bytes/1e9:.2f} GB)",
             exit_=True,
         )
 
@@ -119,7 +115,7 @@ def main(options: Options) -> list:
 
     written = 0
     fasta_files = []
-    for rec in parse_fasta(options.fasta):
+    for rec in parse_fasta(options.reference):
         if options.mode == "contig":
             stem = f"{idx:0{pad}d}__{rec.id}"
             fa = options.splits_dir / f"{stem}.fa"
@@ -138,6 +134,6 @@ def main(options: Options) -> list:
 
     # Report success via the logger instead of printing to stderr
     _LOG.info(f"Generated {written} FASTAs in {options.splits_dir}")
-    files_written_string = "\n\t".join(fasta_files)
+    files_written_string = "\n\t".join([str(x) for x in fasta_files])
     _LOG.debug(f'Splits files written: \n\t{files_written_string}')
-    return files_written_string
+    return fasta_files

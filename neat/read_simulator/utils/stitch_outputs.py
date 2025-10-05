@@ -20,72 +20,27 @@ from neat.read_simulator.utils import Options
 
 _LOG = logging.getLogger(__name__)
 
-
-def print_stderr(msg: str, *, exit_: bool = False) -> None:
-    """Log an error message and optionally terminate the program."""
-    _LOG.error(msg)
-    if exit_:
-        sys.exit(1)
-
-
-def gather(paths: Iterable[Path], suffixes: Tuple[str, ...]) -> List[Path]:
-    out: list[Path] = []
-    for p in paths:
-        if p.is_file() and p.name.endswith(suffixes):
-            out.append(p)
-        elif p.is_dir():
-            for suf in suffixes:
-                out.extend(p.rglob(f"*{suf}"))
-    return sorted(set(out))
-
-
-def is_gzipped(file: Path) -> bool:
-    return file.suffix in {".gz", ".bgz"}
-
-
-def concat(files: List[Path], dest: Path) -> None:
-    if not files:
+def concat(files_to_join: List[(Path,)], dest: Path) -> None:
+    if not files_to_join:
+        # Nothing to do, and no error to throw
         return
-    dest.parent.mkdir(parents=True, exist_ok=True)
 
-    if not dest.suffix.endswith("gz"):
-        dest = dest.with_suffix(dest.suffix + ".gz")
     with dest.open("wb") as out_f:
-        for f in files:
+        for f in files_to_join:
             with f.open("rb") as in_f:
                 shutil.copyfileobj(in_f, out_f)
 
-def merge_bam(bams: List[Path], dest: Path, samtools: str) -> None:
+def merge_bam(bams: List[Path], dest: Path) -> None:
     if not bams:
         return
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    samtools = samtools if Path(samtools).exists() else shutil.which(samtools) or samtools
+
+    import pysam
     unsorted = dest.with_suffix(".unsorted.bam")
-    cmd_merge = [samtools, "merge", "--no-PG", "-f", str(unsorted), *map(str, bams)]
-    subprocess.check_call(cmd_merge)
-    subprocess.check_call([samtools, "sort", "-o", str(dest), str(unsorted)])
-    subprocess.check_call([samtools, "index", str(dest)])
+    pysam.merge("--no-PG", "-f", str(unsorted), *map(str, bams))
+    pysam.sort("-o", str(dest), str(unsorted))
     unsorted.unlink(missing_ok=True)
-    normalize_bam_header(dest, samtools)
-
-
-def merge_vcf(vcfs: List[Path], dest: Path) -> None:
-    if not vcfs:
-        return
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    first, *rest = vcfs
-    shutil.copy(first, dest)
-    with dest.open("ab") as out_f:
-        for vcf in rest:
-            with vcf.open("rb") as fh:
-                for line in fh:
-                    if not line.startswith(b"#"):
-                        out_f.write(line)
-
-
-def normalize_bam_header(bam: Path, samtools: str) -> None:
     """Make BAM header deterministic: drop @PG, sort @SQ/@RG."""
-    hdr_text = subprocess.check_output([samtools, "view", "-H", str(bam)], text=True)
+    hdr_text = pysam.view("-H", str(dest), text=True)
 
     hd: list[str] = []
     sq: list[str] = []
@@ -127,75 +82,49 @@ def normalize_bam_header(bam: Path, samtools: str) -> None:
         *other,
     ]) + "\n"
 
-    hdr_tmp = bam.with_suffix(".reheader.sam")
-    out_tmp = bam.with_suffix(".reheader.bam")
+    hdr_tmp = dest.with_suffix(".reheader.sam")
+    out_tmp = dest.with_suffix(".reheader.bam")
     hdr_tmp.write_text(new_hdr)
 
-    with out_tmp.open("wb") as out_f:
-        subprocess.check_call([samtools, "reheader", str(hdr_tmp), str(bam)], stdout=out_f)
+    with open(out_tmp, 'wb') as out_f:
+        data = pysam.reheader(str(hdr_tmp), str(dest))
+        out_f.write(data)
 
-    out_tmp.replace(bam)
+    out_tmp.replace(dest)
     hdr_tmp.unlink(missing_ok=True)
-    subprocess.check_call([samtools, "index", str(bam)])
 
+def merge_vcf(vcfs: List[Path], dest: Path) -> None:
+    if not vcfs:
+        return
+    first, *rest = vcfs
+    shutil.copy(first, dest)
+    with dest.open("ab") as out_f:
+        for vcf in rest:
+            with vcf.open("rb") as fh:
+                for line in fh:
+                    if not line.startswith(b"#"):
+                        out_f.write(line)
 
-def natural_key(path: Path) -> List[object]:
-    s = path.name
-    parts = re.split(r"(\d+)", s)
-    return [int(p) if p.isdigit() else p for p in parts]
-
-
-def order_by_manifest(files: List[Path], manifest_path: Path, suffixes: Tuple[str, ...]) -> List[Path]:
-    """Order files according to entry stems listed in a manifest."""
-    m = yaml.safe_load(manifest_path.read_text())
-    stems = [Path(e["stem"]).name for e in m.get("entries", [])]
-
-    # Group incoming files by a detected stem token
-    by_stem: dict[str, list[Path]] = {}
-    for f in files:
-        name = f.name
-        parent = f.parent.name
-
-        # Try to find a matching stem token in either
-        key: str | None = None
-        for s in stems:
-            if name.startswith(s) or parent == s:
-                key = s
-                break
-
-        if key is None:
-
-            # Strip known suffix and use basename as key
-            for suf in suffixes:
-                if name.endswith(suf):
-                    key = name[: -len(suf)]
-                    break
-
-        by_stem.setdefault(key or name, []).append(f)
-
-    ordered: list[Path] = []
-    for s in stems:
-        ordered.extend(sorted(by_stem.get(s, []), key=natural_key))
-
-    # Include remaining items in a stable order
-    remaining = [f for k, v in by_stem.items() if k not in stems for f in v]
-    ordered.extend(sorted(remaining, key=natural_key))
-    return ordered
-
-def main(options: Options, thread_option: list[Path]) -> None:
+def main(options: Options, thread_options: list[Options]) -> None:
     fq1_list = []
     fq2_list = []
     vcf_list = []
     bam_list = []
-    for local_ops in thread_option:
-
-    concat(fq_r1, prefix.with_name(prefix.name + "_read1.fq"), keep_comp)
-
-    if paired:
-        concat(fq_r2, prefix.with_name(prefix.name + "_read2.fq"), keep_comp)
-    concat(fq_single, prefix.with_name(prefix.name + "_readSingle.fq"), keep_comp)
-    merge_bam(bams, prefix.with_name(prefix.name + "_golden.bam"), args.samtools)
-    merge_vcf(vcfs, prefix.with_name(prefix.name + "_golden.vcf"))
+    # Gather all output files from the ops objects
+    for local_ops in thread_options:
+        if local_ops.fq1:
+            fq1_list.append(local_ops.fq1)
+        if local_ops.fq2:
+            fq2_list.append(local_ops.fq2)
+        if local_ops.vcf:
+            vcf_list.append(local_ops.vcf)
+        if local_ops.bam:
+            bam_list.append(local_ops.bam)
+    # concatenate all files of each type. An empty list will result in no action
+    concat(fq1_list, options.fq1)
+    concat(fq2_list, options.fq2)
+    merge_bam(bam_list, options.bam)
+    merge_vcf(vcf_list, options.vcf)
 
     # Final success message via logging
     _LOG.info("Stitching complete!")

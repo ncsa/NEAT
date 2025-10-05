@@ -2,39 +2,32 @@
 Runner for read-simulator in single-ended mode
 """
 from Bio import SeqIO
-import time
 import logging
 import pickle
 import gzip
 
-from pathlib import Path
-
-from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter, \
-    generate_variants, generate_reads
+from .utils import parse_input_vcf, parse_beds, OutputFileWriter, \
+    generate_variants, generate_reads, OptionsPerThread
 from ..common import validate_output_path
 from ..variants import ContigVariants
 
 from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
-from ..models.default_cancer_mutation_model import *
 
 __all__ = ["read_simulator_single"]
 
 _LOG = logging.getLogger(__name__)
 
-def read_simulator_single(options: Options):
-    # Validate output
-    validate_output_path(options.output, False, options.overwrite_output)
-
+def read_simulator_single(options: OptionsPerThread):
     """
     Model preparation
 
     Read input models or default models, as specified by user.
     """
-    _LOG.info("Reading Models...")
+
+    _LOG.info(f"Reading Models...")
 
     (
         mut_model,
-        cancer_model,
         seq_error_model_1,
         seq_error_model_2,
         qual_score_model_1,
@@ -61,30 +54,15 @@ def read_simulator_single(options: Options):
     input_variants_dict = {x: ContigVariants() for x in reference_keys_with_lens}
     if options.include_vcf:
         _LOG.info(f"Reading input VCF: {options.include_vcf}.")
-        if options.cancer:
-            # TODO Check if we need full ref index or just keys and lens
-            sample_names = parse_input_vcf(
-                input_variants_dict,
-                options.include_vcf,
-                options.ploidy,
-                mut_model.homozygous_freq,
-                reference_index,
-                options,
-                tumor_normal=True
-            )
-
-            tumor_ind = sample_names['tumor_sample']
-            normal_ind = sample_names['normal_sample']
-        else:
-            # TODO Check if we need full ref index or just keys and lens
-            sample_names = parse_input_vcf(
-                input_variants_dict,
-                options.include_vcf,
-                options.ploidy,
-                mut_model.homozygous_freq,
-                reference_index,
-                options
-            )
+        # TODO Check if we need full ref index or just keys and lens
+        sample_names = parse_input_vcf(
+            input_variants_dict,
+            options.include_vcf,
+            options.ploidy,
+            mut_model.homozygous_freq,
+            reference_index,
+            options
+        )
 
         _LOG.debug("Finished reading input vcf file")
 
@@ -114,18 +92,7 @@ def read_simulator_single(options: Options):
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf.
     # We'll also keep track here of what files we are producing.
-    if options.cancer:
-        output_normal = options.output.parent / f'{options.output.name}_normal'
-        output_tumor = options.output.parent / f'{options.output.name}_tumor'
-        output_file_writer = OutputFileWriter(options=options,
-                                              bam_header=bam_header)
-        output_file_writer_cancer = OutputFileWriter(options=options,
-                                                     bam_header=bam_header)
-    else:
-        outfile = options.output.parent / options.output.name
-        output_file_writer = OutputFileWriter(options=options,
-                                              bam_header=bam_header)
-        output_file_writer_cancer = None
+    output_file_writer = OutputFileWriter(options=options, bam_header=bam_header)
 
     _LOG.debug(f'Output files ready for writing.')
 
@@ -226,7 +193,7 @@ def read_simulator_single(options: Options):
 
 
 
-def initialize_all_models(options: Options):
+def initialize_all_models(options: OptionsPerThread):
     """
     Helper function that initializes models for use in the rest of the program.
     This includes loading the model and attaching the rng for this run
@@ -246,21 +213,6 @@ def initialize_all_models(options: Options):
     # Set custom mutation rate for the run, or set the option to the input rate so we can use it later
     if options.mutation_rate is not None:
         mut_model.avg_mut_rate = options.mutation_rate
-
-    cancer_model = None
-    if options.cancer and options.cancer_model:
-        # cancer_model = pickle.load(gzip.open(options.cancer_model))
-        # Set the rng for the cancer mutation model
-        cancer_model.rng = options.rng
-    elif options.cancer:
-        # Note all parameters not entered here use the mutation madel defaults
-        cancer_model = MutationModel(
-            avg_mut_rate=default_cancer_avg_mut_rate,
-            homozygous_freq=default_cancer_homozygous_freq,
-            variant_probs=default_cancer_variant_probs,
-            insert_len_model=default_cancer_insert_len_model,
-            is_cancer=True
-        )
 
     _LOG.debug("Mutation models loaded")
 
@@ -310,7 +262,6 @@ def initialize_all_models(options: Options):
 
     return \
         mut_model, \
-        cancer_model, \
         error_model_1, \
         error_model_2, \
         quality_score_model_1, \

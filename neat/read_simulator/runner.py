@@ -5,10 +5,10 @@ import logging
 
 from pathlib import Path
 
-from .utils import Options
+from .utils import Options, OptionsPerThread
 from ..common import validate_input_path
 from .parallel_runner import main as parallel_runner
-from .single_runner import read_simulator_single as single_runner
+from .single_runner import read_simulator_single
 
 __all__ = ["read_simulator_runner"]
 
@@ -50,13 +50,21 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         _LOG.info('Creating output dir')
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    # set the output dir plus file prefix for writing files.
-    output = output_dir / file_prefix
-
     # Read options file
-    options = Options(output, config)
+    options = Options(output_dir, file_prefix, config)
 
     if options.parallel_mode:
-        parallel_runner(options, output)
+        parallel_runner(options)
     else:
-        single_runner(options, output)
+        # This is probably overkill
+        # needed is some adjustments to Options
+        local_options = OptionsPerThread(
+            options.reference,
+            options.output_dir,
+            options.fq1,
+            options.fq2,
+            options.vcf,
+            options.bam,
+            options,
+        )
+        read_simulator_single(0, local_options)

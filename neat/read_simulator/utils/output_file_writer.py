@@ -21,9 +21,9 @@ from Bio import SeqIO
 from pathlib import Path
 from numpy.random import Generator
 
-from ...common import validate_output_path, open_output, open_input
+from .options import OptionsPerThread
+from ...common import validate_output_path, open_output
 from .read import Read
-from .options import Options
 
 _LOG = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class OutputFileWriter:
     :param bam_header: A dictionary of lengths of each contig from the reference, keyed by contig id.
     """
     def __init__(self,
-                 options: Options,
+                 options: OptionsPerThread,
                  bam_header: dict = None):
 
         # set the booleans

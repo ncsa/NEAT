@@ -182,4 +182,4 @@ def validate_output_path(path: str | Path, is_file: bool = True, overwrite: bool
                 _LOG.error(f"cannot write to '{path}', access denied")
                 sys.exit(11)
         else:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            path.mkdir(parents=True, exist_ok=True)

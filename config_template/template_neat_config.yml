@@ -140,15 +140,10 @@ min_mutations: .
 # type: bool | required = no | default = false
 overwrite_output: .
 
-# Controls whether parallel mode is activated. The following parameters all are used in parallel mode, but not
-# otherwise.
-# type = bool | required: no | default = false
-parallel_mode: .
-
 # How to split the input reference for parallelization
 # If parallel_mode = false, this option has no effect.
 # type = string | required: no | default = contig | values: contig, size
-by: .
+mode: .
 
 # Target chunk size if by = size (overlap = read_len * 2).
 # Default is 500000 when by = size. Not used for by = contig.
@@ -172,3 +167,11 @@ cleanup_splits: .
 # Note if parallel_mode = None, this option has no effect.
 # type = str | required: no | default = None
 reuse_splits: .
+
+# For recombining bams, you will need to have samtools installed
+# if no installation path is specified here, Python will check
+# for an installation of samtools in PATH. If Python can't
+# find it, it will throw an error and exit.
+# Note if parallel_mode = None, or produce_bam = false, this option has no effect,
+#   and will not be checked
+samtools: .
