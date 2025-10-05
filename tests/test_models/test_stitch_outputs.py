@@ -3,7 +3,7 @@ Unit tests for helper functions in the stitch_outputs module
 """
 
 from pathlib import Path
-from neat.parallel_read_simulator.stitch_outputs import natural_key
+from neat.read_simulator.utils.stitch_outputs import natural_key
 
 
 def test_natural_key_sorting() -> None:

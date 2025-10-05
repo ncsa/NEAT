@@ -35,7 +35,6 @@ from ...common import validate_input_path, validate_output_path
 
 _LOG = logging.getLogger(__name__)
 
-
 class Options(SimpleNamespace):
     """
     class representing the options
@@ -47,7 +46,8 @@ class Options(SimpleNamespace):
     :param rng_seed: A seed to use for a test run (for reproducible tests)
     """
     def __init__(self,
-                 output_path: Path = None,
+                 output_path: Path,
+                 output_prefix: str,
                  config_file: Path = None,
                  reference: Path = None,
                  rng_seed: int = None
@@ -78,11 +78,12 @@ class Options(SimpleNamespace):
         # TODO maybe redo as a dataclass?
         self.defs = {}
         self.config_file = config_file
-        self.output = output_path
+        self.output_dir = output_path
+        self.output_prefix = output_prefix
+        self.output = self.output_dir / self.output_prefix
 
         self.defs['reference'] = (str, reference, 'exists', None)
         self.defs['read_len'] = (int, 151, 10, inf)
-        self.defs['threads'] = (int, 1, 1, inf)
         self.defs['coverage'] = (int, 10, 1, inf)
         self.defs['error_model'] = (str, None, 'exists', None)
         self.defs['avg_seq_error'] = (float, None, 0, 0.3)
@@ -95,11 +96,6 @@ class Options(SimpleNamespace):
         self.defs['mutation_rate'] = (float, None, 0, 0.3)
         self.defs['mutation_bed'] = (str, None, 'exists', None)
         self.defs['quality_offset'] = (int, 33, 33, 64)
-
-        # Params for cancer (not implemented yet)
-        self.defs['cancer'] = (bool, False, None, None)
-        self.defs['cancer_model'] = (str, None, 'exists', None)
-        self.defs['cancer_purity'] = (float, 0.8, 0.0, 1.0)
 
         self.defs['paired_ended'] = (bool, False, None, None)
         self.defs['fragment_model'] = (str, None, 'exists', None)
@@ -115,8 +111,16 @@ class Options(SimpleNamespace):
         self.defs['min_mutations'] = (int, 0, None, None)
         self.defs['overwrite_output'] = (bool, False, None, None)
 
+        # These parameters relate to parallelization
+        self.defs['parallel_mode'] = (bool, False, None, None)
+        self.defs['mode'] = (str, 'size', 'choice', ['size', 'contig'])
+        self.defs['size'] = (int, 500000, None, None)
+        self.defs['threads'] = (int, 1, 1, 1000)
+        self.defs['cleanup_splits'] = (bool, False, None, None)
+        self.defs['reuse_splits'] = (str, None, 'exists', None)
+
         # Create base variables, for update by the config
-        self.reference: str | Path = reference
+        self.reference: Path | None = reference
         self.read_len: int = 151
         self.threads: int = 1
         self.coverage: int = 10
@@ -140,16 +144,27 @@ class Options(SimpleNamespace):
         self.produce_vcf: bool = False
         self.produce_fastq: bool = True
 
+        # Actual output files
+        self.fq1 = None,
+        self.fq2 = None,
+        self.vcf = None,
+        self.bam = None,
+
         # These are primarily debug options.
         self.min_mutations: int = 0
         self.overwrite_output: bool = False
         self.rng_seed: int | None = None
         self.rng: Generator | None = None
 
-        # Cancer options (not yet implemented)
-        self.cancer: str | Path
-        self.cancer_model: bool
-        self.cancer_purity: float
+        # These parameters relate to parallelization
+        self.parallel_mode: bool = False
+        self.mode: str = 'size'
+        self.size: int = 500000
+        self.threads: int = 1
+        self.cleanup_splits: bool = False
+        self.splits_dir: Path | None = None
+        self.reuse_splits: bool | str = False
+        self.existing_splits_dir: Path | None = None
 
         self.args = {}
         # Set up the dictionary
@@ -183,23 +198,25 @@ class Options(SimpleNamespace):
             self.log_configuration()
 
     @staticmethod
-    def check_and_log_error(keyname, value_to_check, lowval, highval):
+    def check_and_log_error(keyname, value_to_check, crit1, crit2):
         if value_to_check is None:
             pass
-        elif lowval != "exists" and highval:
-            if not (lowval <= value_to_check <= highval):
-                _LOG.error(f'`{keyname}` must be between {lowval} and {highval} (input: {value_to_check}).')
-                sys.exit(1)
-
-        elif lowval == "exists" and value_to_check:
+        elif crit1 == "exists" and value_to_check:
             validate_input_path(value_to_check)
+        elif crit1 == "choice" and crit2:
+            if value_to_check not in crit2:
+                _LOG.error(f"Must choose one of {crit2}")
+                sys.exit(1)
+        elif isinstance(crit1, int) and isinstance(crit2, int):
+            if not (crit1 <= value_to_check <= crit2):
+                _LOG.error(f'`{keyname}` must be between {crit1} and {crit2} (input: {value_to_check}).')
+                sys.exit(1)
 
     def read(self):
         """
         This sets up the option attributes. It's not perfect, because it sort of kills type hints.
         But I'm not sure how else to accomplish this.
         """
-        # Skip trying to read the config for a test run
         config = yaml.load(open(self.config_file, 'r'), Loader=Loader)
         for key, value in config.items():
             if key in self.defs:
@@ -213,7 +230,7 @@ class Options(SimpleNamespace):
                         _LOG.error("Must entered a value for `reference` in config")
                         sys.exit(1)
                     else:
-                        _LOG.warning(f"No value entered for `{key}`, skipping.")
+                        _LOG.debug(f"No value entered for `{key}`, skipping.")
                         continue
 
                 # Now we check that the type is correct, and it is in range, depending on the type defined for it
@@ -223,6 +240,9 @@ class Options(SimpleNamespace):
                     sys.exit(1)
 
                 self.check_and_log_error(key, value, criteria1, criteria2)
+                # Force reference to be a Path.
+                if key == "reference":
+                    value = Path(value)
                 self.args[key] = value
 
     def set_random_seed(self):
@@ -265,37 +285,71 @@ class Options(SimpleNamespace):
         """
         _LOG.info(f'Run Configuration...')
         _LOG.info(f'Input fasta: {self.reference}')
+        _LOG.info(f'Outputting files to {self.output_dir}')
         files_to_produce = f'Producing the following files:\n'
         if self.produce_fastq:
             if self.paired_ended:
-                fq1 = f'{self.output}_r1.fastq.gz'
-                fq2 = f'{self.output}_r2.fastq.gz'
+                fq1 = f'{str(self.output)}_r1.fastq.gz'
+                fq2 = f'{str(self.output)}_r2.fastq.gz'
                 validate_output_path(fq1, True, self.overwrite_output)
                 validate_output_path(fq2, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
                 files_to_produce += f'\t- {fq2}\n'
+                self.fq1 = Path(fq1)
+                self.fq2 = Path(fq2)
             else:
-                fq1 = f'{self.output}.fastq.gz'
+                fq1 = f'{str(self.output)}.fastq.gz'
                 validate_output_path(fq1, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
+                self.fq1 = Path(fq1)
         if self.produce_bam:
             bam = f'{self.output}_golden.bam'
             validate_output_path(bam, True, self.overwrite_output)
             files_to_produce += f'\t- {bam}\n'
+            self.bam = Path(bam)
         if self.produce_vcf:
             vcf = f'{self.output}_golden.vcf.gz'
             validate_output_path(vcf, True, self.overwrite_output)
             files_to_produce += f'\t- {vcf}\n'
+            self.vcf = Path(vcf)
 
         _LOG.info(files_to_produce)
 
-        if self.threads == 1:
-            _LOG.info(f"Single threading - 1 thread.")
+        if self.threads > 1:
+            _LOG.info(f'Running read simulator in parallel mode.')
+            self.parallel_mode = True
+            _LOG.info(f'Multithreading - {self.threads} threads (or CPU Max)')
+            if self.mode == 'size':
+                _LOG.info(f'Running read simulator in \'size\' mode.')
+                _LOG.info(f'  - splitting input into size {self.size}')
+            elif self.mode == 'contig':
+                _LOG.info(f'Running read simulator in \'contig\' mode.')
+            if not self.cleanup_splits:
+                splits_dir = Path(f'{self.output_dir}/splits/')
+                _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
+            else:
+                splits_dir = self.temp_dir_path / "splits"
+            validate_output_path(splits_dir, False)
+            self.splits_dir = splits_dir
+            if self.reuse_splits:
+                existing_splits_path = Path(self.reuse_splits)
+                if existing_splits_path.is_dir():
+                    self.existing_splits_dir = existing_splits_path
+                    _LOG.info(f'Reusing existing splits {self.existing_splits}.')
+                    self.reuse_splits = True
+                else:
+                    _LOG.error(f'Supplied splits directory is not a directory: {existing_splits_path}.')
+                    sys.exit(1)
+            if self.produce_bam:
+                try:
+                    import pysam
+                    _LOG.info(f"Using pysam: {pysam.__version__}")
+                except ImportError:
+                    raise ImportError (
+                        "Parallel NEAT requires pysam to be installed when produce_bam is set to true."
+                    )
         else:
-            _LOG.warning(f'Multithreading coming soon!!')
             _LOG.info(f"Single threading - 1 thread.")
-            # We'll work on multithreading later...
-            # _LOG.info(f'Multithreading - {options.threads} threads')
         _LOG.info(f'Using a read length of {self.read_len}')
         if self.fragment_mean:
             if self.fragment_mean < self.read_len:
@@ -342,3 +396,55 @@ class Options(SimpleNamespace):
         if self.mutation_bed:
             _LOG.info(f'BED of mutation rates of different regions: {self.mutation_bed}')
         _LOG.info(f'RNG seed value for run: {self.rng_seed}')
+
+class OptionsPerThread:
+    # This is used by the parallel script to construct per-block configs
+    def __init__(
+            self,
+            reference: Path,
+            output_dir: Path,
+            fq1: Path | None,
+            fq2: Path | None,
+            vcf: Path | None,
+            bam: Path | None,
+            options: Options,
+    ):
+        # Create base variables, for update by the config
+        self.reference: Path = reference
+        self.output_dir: Path = output_dir
+        self.output = self.output_dir / options.output_prefix
+        self.overwrite_output = options.overwrite_output
+        self.rng_seed = options.rng_seed
+        self.read_len: int = options.read_len
+        self.threads: int = options.threads
+        self.coverage: int = options.coverage
+        self.error_model: Path | None = options.error_model
+        self.avg_seq_error: float | None = options.avg_seq_error
+        self.rescale_qualities: bool = options.rescale_qualities
+        self.ploidy: int = options.ploidy
+        self.include_vcf: Path | None = options.include_vcf
+        self.target_bed: Path | None = options.target_bed
+        self.discard_bed: Path | None = options.discard_bed
+        self.mutation_model: Path | None = options.mutation_model
+        self.mutation_rate: float | None = options.mutation_rate
+        self.mutation_bed: str | None = options.mutation_bed
+        self.quality_offset: int = options.quality_offset
+
+        self.paired_ended: bool = options.paired_ended
+        self.fragment_model: str | None = options.fragment_model
+        self.fragment_mean: float | None = options.fragment_mean
+        self.fragment_st_dev: float | None = options.fragment_st_dev
+        self.produce_bam: bool = options.produce_bam
+        self.produce_vcf: bool = options.produce_vcf
+        self.produce_fastq: bool = options.produce_fastq
+        self.min_mutations: int = options.min_mutations
+
+        # Actual output files
+        self.fq1: Path | None = fq1
+        self.fq2: Path | None = fq2
+        self.vcf: Path | None = vcf
+        self.bam: Path | None = bam
+
+        self.rng: Generator | None = options.rng
+
+        self.temp_dir_path = options.temp_dir_path

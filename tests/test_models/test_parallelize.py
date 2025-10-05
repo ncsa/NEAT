@@ -3,7 +3,7 @@ Unit tests for the argument parsing in the parallelize module
 """
 
 from pathlib import Path
-from neat.parallel_read_simulator.parallelize import parse_args
+from neat.read_simulator.parallel_runner import parse_args
 
 
 def test_parse_args_defaults() -> None:
