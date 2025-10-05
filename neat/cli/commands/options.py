@@ -8,7 +8,7 @@ import os
 
 from .base import Group
 
-output_group = Group("output", is_mutually_exclusive=True, required=True)
+output_group = Group("output", required=True)
 output_group.add_argument(
     "-o",
     "--output_dir",
