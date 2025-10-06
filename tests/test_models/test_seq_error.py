@@ -1,18 +1,13 @@
 """
 Tests for sequencing error model in models
 """
-
-import pytest
 import numpy as np
-import Bio
 
 from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
-from importlib import resources
 
 from neat.models import SequencingErrorModel
-from neat.variants import SingleNucleotideVariant
-
+from neat.variants import SingleNucleotideVariant, Insertion, Deletion
 
 def test_get_seq_error_snv_only():
     """With SNV-only probabilities, produced errors should be SNVs."""
