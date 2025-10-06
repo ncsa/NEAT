@@ -26,12 +26,8 @@ rng_seed: .
 min_mutations: .
 overwrite_output: .
 
-outdir: .
-final_prefix: .
-by: .
+mode: .
 size: .
 jobs: .
-neat_cmd: .
-samtools: .
 cleanup_splits: .
 reuse_splits: .

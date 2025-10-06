@@ -21,9 +21,9 @@ from Bio import SeqIO
 from pathlib import Path
 from numpy.random import Generator
 
-from ...common import validate_output_path, open_output, open_input
-from .read import Read
 from .options import Options
+from ...common import validate_output_path, open_output
+from .read import Read
 
 _LOG = logging.getLogger(__name__)
 
@@ -96,21 +96,21 @@ class OutputFileWriter:
         # Set up filenames based on booleans
         files_to_write = []
         if self.paired and self.write_fastq:
-            self.fastq1_fn = options.output.parent / f'{options.output.stem}_r1.fastq.gz'
-            self.fastq2_fn = options.output.parent / f'{options.output.stem}_r2.fastq.gz'
+            self.fastq1_fn = options.fq1
+            self.fastq2_fn = options.fq2
             self.fastq_fns = [self.fastq1_fn, self.fastq2_fn]
             files_to_write.extend(self.fastq_fns)
         elif self.write_fastq:
-            self.fastq1_fn = options.output.parent / f'{options.output.stem}.fastq.gz'
+            self.fastq1_fn = options.fq1
             self.fastq2_fn = self.temporary_dir / "dummy.fastq.gz"
             self.fastq_fns = [self.fastq1_fn, self.fastq2_fn]
             files_to_write.extend(self.fastq_fns)
         if self.write_bam:
-            self.bam_fn = options.output.parent / f'{options.output.stem}_golden.bam'
+            self.bam_fn = options.bam
             self.bam_keys = list(bam_header)
             files_to_write.append(self.bam_fn)
         if self.write_vcf:
-            self.vcf_fn = options.output.parent / f'{options.output.stem}_golden.vcf.gz'
+            self.vcf_fn = options.vcf
             files_to_write.append(self.vcf_fn)
 
         self.files_to_write = files_to_write
@@ -259,7 +259,6 @@ class OutputFileWriter:
             # First we add all properly paired reads
             num_reads = len(shuffled_paired_keys)
             for i in range(num_reads):
-                print(f'{i/num_reads:.2%}', end='\r')
                 current_key = shuffled_paired_keys[i]
                 # reconstruct tho chromosome name
                 chrom_name_with_rdnm = current_key[0].removeprefix("NEAT-generated_").split('/')[0]

@@ -245,7 +245,6 @@ def generate_reads(
     ):
 
         for i in range(len(reads)):
-            print(f'{i/len(reads):.2%}', end='\r')
             # First thing we'll do is check to see if this read is filtered out by a bed file
             read1, read2 = (reads[i][0], reads[i][1]), (reads[i][2], reads[i][3])
             found_read1, found_read2 = False, False

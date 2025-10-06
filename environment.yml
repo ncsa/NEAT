@@ -18,3 +18,5 @@ dependencies:
     - pysam
     - frozendict
     - poetry==1.3.*
+
+  - pytest
