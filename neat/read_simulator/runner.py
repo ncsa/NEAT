@@ -53,7 +53,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # Read options file
     options = Options.from_cli(
         output_dir,
-        file_prefix,
+        str(file_prefix),
         config,
 
     )

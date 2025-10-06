@@ -3,6 +3,7 @@ Command line interface for NEAT's generate reads function
 """
 
 import argparse
+from pathlib import Path
 
 from ...read_simulator import read_simulator_runner
 from .base import BaseCommand

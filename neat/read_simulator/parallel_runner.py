@@ -87,7 +87,7 @@ def main(options: Options) -> None:
         if options.produce_vcf:
             vcf = current_output_dir / options.vcf.name
 
-        current_options = Options(reference, current_output_dir, fq1, fq2, vcf, bam, options)
+        current_options = options.copy_with_changes(reference, current_output_dir, fq1, fq2, vcf, bam)
         output_opts.append(current_options)
 
     pool = Pool()

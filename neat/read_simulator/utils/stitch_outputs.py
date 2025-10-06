@@ -20,7 +20,7 @@ from neat.read_simulator.utils import Options
 
 _LOG = logging.getLogger(__name__)
 
-def concat(files_to_join: List[(Path,)], dest: Path) -> None:
+def concat(files_to_join: List[Path], dest: Path) -> None:
     if not files_to_join:
         # Nothing to do, and no error to throw
         return

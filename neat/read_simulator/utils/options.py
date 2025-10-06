@@ -14,6 +14,7 @@ file. To do so, we have a few possible inputs the init function can accept. Inpu
 trigger quick-run mode, setting most of the parameters to defaults.
 """
 import os
+from copy import deepcopy
 from typing import Any
 
 import numpy as np
@@ -50,7 +51,7 @@ class Options(SimpleNamespace):
 
     def __init__(self,
                  reference: Path | None = None,
-                 output_dir: Path | None = Path(os.getcwd()),
+                 output_dir: Path | None = Path.cwd(),
                  fq1: Path | None = None,
                  fq2: Path | None = None,
                  vcf: Path | None = None,
@@ -139,7 +140,7 @@ class Options(SimpleNamespace):
         super().__init__(**kwargs)
         self.reference: Path = reference
         self.output_dir: Path = output_dir
-        self.output = self.output_dir / output_prefix
+        self.output_prefix: str = output_prefix
         self.overwrite_output = overwrite_output
         self.rng_seed = rng_seed
         self.read_len: int = read_len
@@ -206,9 +207,6 @@ class Options(SimpleNamespace):
         should be the highest acceptable value (inclusive).
         (type, default, criteria1 (low/'exists'), criteria2 (high/None)
         """
-        # TODO maybe redo as a dataclass?
-        output = output_dir / output_prefix
-
         # These are for checking
         defs = {
             'reference': (Path, None, 'exists', None),
@@ -331,6 +329,29 @@ class Options(SimpleNamespace):
                     value = Path(value)
                 args[key] = value
 
+    def copy_with_changes(self,
+                          reference: Path | None = None,
+                          current_output_dir: Path | None = None,
+                          fq1: Path | None = None,
+                          fq2: Path | None = None,
+                          vcf: Path | None = None,
+                          bam: Path | None = None,
+                          ):
+        return_options = deepcopy(self)
+        if reference is not None:
+            return_options.reference = reference
+        if current_output_dir is not None:
+            return_options.current_output_dir = current_output_dir
+        if fq1 is not None:
+            return_options.fq1 = fq1
+        if fq2 is not None:
+            return_options.fq2 = fq2
+        if vcf is not None:
+            return_options.vcf = vcf
+        if bam is not None:
+            return_options.bam = bam
+        return return_options
+
     def set_random_seed(self) -> Generator:
         """
         Sets up random number generator, which will be used for the run.
@@ -376,8 +397,8 @@ class Options(SimpleNamespace):
         files_to_produce = f'Producing the following files:\n'
         if self.produce_fastq:
             if self.paired_ended:
-                fq1 = f'{str(self.output)}_r1.fastq.gz'
-                fq2 = f'{str(self.output)}_r2.fastq.gz'
+                fq1 = f'{str(self.output_dir)}/{self.output_prefix}_r1.fastq.gz'
+                fq2 = f'{str(self.output_dir)}/{self.output_prefix}_r2.fastq.gz'
                 validate_output_path(fq1, True, self.overwrite_output)
                 validate_output_path(fq2, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
@@ -385,17 +406,17 @@ class Options(SimpleNamespace):
                 self.fq1 = Path(fq1)
                 self.fq2 = Path(fq2)
             else:
-                fq1 = f'{str(self.output)}.fastq.gz'
+                fq1 = f'{str(self.output_dir)}/{self.output_prefix}.fastq.gz'
                 validate_output_path(fq1, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
                 self.fq1 = Path(fq1)
         if self.produce_bam:
-            bam = f'{self.output}_golden.bam'
+            bam = f'{str(self.output_dir)}/{self.output_prefix}_golden.bam'
             validate_output_path(bam, True, self.overwrite_output)
             files_to_produce += f'\t- {bam}\n'
             self.bam = Path(bam)
         if self.produce_vcf:
-            vcf = f'{self.output}_golden.vcf.gz'
+            vcf = f'{str(self.output_dir)}/{self.output_prefix}_golden.vcf.gz'
             validate_output_path(vcf, True, self.overwrite_output)
             files_to_produce += f'\t- {vcf}\n'
             self.vcf = Path(vcf)
@@ -420,8 +441,7 @@ class Options(SimpleNamespace):
                 if splits_dir.is_dir():
                     _LOG.info(f'Reusing existing splits {splits_dir}.')
                 else:
-                    _LOG.error(f'Reused splits set to True, but splits dir not found: {splits_dir}.')
-                    sys.exit(1)
+                    _LOG.warning(f'Reused splits set to True, but splits dir not found: {splits_dir}. Creating new splits')
 
             validate_output_path(splits_dir, False)
             self.splits_dir = splits_dir
