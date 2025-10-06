@@ -5,7 +5,7 @@ import logging
 
 from pathlib import Path
 
-from .utils import Options, OptionsPerThread
+from .utils import Options
 from ..common import validate_input_path
 from .parallel_runner import main as parallel_runner
 from .single_runner import read_simulator_single
@@ -51,20 +51,15 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         output_dir.mkdir(parents=True, exist_ok=True)
 
     # Read options file
-    options = Options(output_dir, file_prefix, config)
+    options = Options.from_cli(
+        output_dir,
+        file_prefix,
+        config,
 
-    if options.parallel_mode:
+    )
+
+    if options.threads > 1:
         parallel_runner(options)
     else:
-        # This is probably overkill
-        # needed is some adjustments to Options
-        local_options = OptionsPerThread(
-            options.reference,
-            options.output_dir,
-            options.fq1,
-            options.fq2,
-            options.vcf,
-            options.bam,
-            options,
-        )
-        read_simulator_single(0, local_options)
+        # Single-threaded path uses the options as-is
+        read_simulator_single(options)

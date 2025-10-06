@@ -43,12 +43,15 @@ def pick_ploids(ploidy: int,
 
     # wp is just the temporary genotype list, a hat tip to the old version of NEAT
     wp = np.zeros(ploidy)
-    while how_many > 0:
-        x = rng.choice(range(ploidy))
+    pool = list(range(ploidy))
+    while how_many > 0 and len(pool) > 0:
+        x = rng.choice(range(len(pool)))
+        idx = pool[x]
         # pick a random alternate. in VCF terminology, 0 = REF, 1 = ALT1, 2 = ALT2, etc
-        wp[x] = rng.choice(range(1, number_alts + 1))
+        wp[idx] = rng.choice(range(1, number_alts + 1))
         how_many -= 1
-
+        # We only want to pick a given copy once
+        pool.pop(x)
     return np.array(wp)
 
 

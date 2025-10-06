@@ -7,7 +7,7 @@ import pickle
 import gzip
 
 from .utils import parse_input_vcf, parse_beds, OutputFileWriter, \
-    generate_variants, generate_reads, OptionsPerThread
+    generate_variants, generate_reads, Options
 from ..common import validate_output_path
 from ..variants import ContigVariants
 
@@ -17,7 +17,7 @@ __all__ = ["read_simulator_single"]
 
 _LOG = logging.getLogger(__name__)
 
-def read_simulator_single(options: OptionsPerThread):
+def read_simulator_single(options: Options):
     """
     Model preparation
 
@@ -193,7 +193,7 @@ def read_simulator_single(options: OptionsPerThread):
 
 
 
-def initialize_all_models(options: OptionsPerThread):
+def initialize_all_models(options: Options):
     """
     Helper function that initializes models for use in the rest of the program.
     This includes loading the model and attaching the rng for this run
