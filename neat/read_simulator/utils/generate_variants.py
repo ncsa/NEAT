@@ -13,7 +13,6 @@ import sys
 from Bio import SeqRecord
 from numpy.random import Generator
 
-from . import OptionsPerThread
 from ...models import MutationModel
 from ...variants import Insertion, Deletion, SingleNucleotideVariant, ContigVariants
 from ..utils import Options
@@ -58,7 +57,7 @@ def generate_variants(
         mutation_rate_regions: list[tuple[int, int]],
         existing_variants: ContigVariants,
         mutation_model: MutationModel,
-        options: OptionsPerThread,
+        options: Options,
         max_qual_score: int
 ) -> ContigVariants:
     """

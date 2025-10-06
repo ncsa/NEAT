@@ -12,7 +12,7 @@ import sys
 from Bio import SeqIO
 from Bio.File import _IndexedSeqFileDict
 
-from .options import OptionsPerThread
+from .options import Options
 from ...common import open_input, pick_ploids, get_genotype_string
 from ...variants import ContigVariants, SingleNucleotideVariant, Insertion, Deletion, UnknownVariant
 
@@ -46,7 +46,7 @@ def parse_input_vcf(
         ploidy: int,
         homozygous_frequency: float,
         reference: _IndexedSeqFileDict,
-        options: OptionsPerThread
+        options: Options
 ) -> dict:
     """
     key to input_dict:

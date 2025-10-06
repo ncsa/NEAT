@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Tuple
 from multiprocessing import Pool
 
-from .utils import Options, OptionsPerThread
+from .utils import Options, Options
 from .utils.split_inputs import main as split_main
 from .utils.stitch_outputs import main as stitch_main
 from .single_runner import read_simulator_single
@@ -87,7 +87,7 @@ def main(options: Options) -> None:
         if options.produce_vcf:
             vcf = current_output_dir / options.vcf.name
 
-        current_options = OptionsPerThread(reference, current_output_dir, fq1, fq2, vcf, bam, options)
+        current_options = Options(reference, current_output_dir, fq1, fq2, vcf, bam, options)
         output_opts.append(current_options)
 
     pool = Pool()

@@ -61,15 +61,5 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     if options.threads > 1:
         parallel_runner(options)
     else:
-        # This is probably overkill
-        # needed is some adjustments to Options
-        local_options = OptionsPerThread(
-            options.reference,
-            options.output_dir,
-            options.fq1,
-            options.fq2,
-            options.vcf,
-            options.bam,
-            options,
-        )
-        read_simulator_single(0, local_options)
+        # Single-threaded path uses the options as-is
+        read_simulator_single(options)

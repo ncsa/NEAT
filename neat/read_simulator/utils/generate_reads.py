@@ -8,7 +8,7 @@ from Bio import SeqRecord
 from bisect import bisect_left, bisect_right
 
 from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
-from .options import OptionsPerThread
+from .options import Options
 from ...common import open_output
 from ...variants import ContigVariants
 from .read import Read
@@ -24,7 +24,7 @@ _LOG = logging.getLogger(__name__)
 
 def cover_dataset(
         span_length: int,
-        options: OptionsPerThread,
+        options: Options,
         fragment_model: FragmentLengthModel | None,
 ) -> list:
     """
@@ -182,7 +182,7 @@ def generate_reads(
         temporary_directory: str | Path,
         targeted_regions: list,
         discarded_regions: list,
-        options: OptionsPerThread,
+        options: Options,
         chrom: str,
         ref_start: int = 0
 ) -> tuple:
