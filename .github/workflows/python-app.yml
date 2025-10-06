@@ -20,4 +20,4 @@ jobs:
       - name: Run unit tests (pytest)
         run: |
           micromamba run -n test_neat poetry install
-          micromamba run -n test_neat python -m neat pytest -q tests
+          micromamba run -n test_neat pytest -q tests
