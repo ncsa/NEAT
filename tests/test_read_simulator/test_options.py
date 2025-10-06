@@ -21,7 +21,8 @@ def test_basic_options():
 def test_output_prefix_and_paths_single_end(tmp_path: _PathAlias):
     ref = _project_root() / "data" / "H1N1.fa"
     opts = Options(reference=ref, output_dir=tmp_path, output_prefix="neat_unit", overwrite_output=True)
-    assert opts.output == tmp_path / "neat_unit"
+    assert opts.output_dir == tmp_path
+    assert opts.output_prefix == "neat_unit"
     opts.paired_ended = False
     opts.produce_fastq = True
     opts.produce_bam = False
@@ -99,7 +100,8 @@ def test_from_cli_single_end_with_threads_and_splits(tmp_path: _PathAlias):
     assert opts.rng_seed == 42
 
     # Output construction via log_configuration() inside from_cli
-    assert opts.output == outdir / "fromcli"
+    assert opts.output_dir == outdir
+    assert opts.output_prefix == "fromcli"
     assert opts.fq1 == outdir / "fromcli.fastq.gz"
     assert opts.fq2 is None
     assert opts.bam is None
@@ -172,7 +174,6 @@ def test_from_cli_reuse_splits_missing_dir_raises(tmp_path: _PathAlias):
     outdir = tmp_path / "out"
     outdir.mkdir(parents=True, exist_ok=True)
 
-    with _pytest.raises(SystemExit) as exc:
-        _ = Options.from_cli(outdir, "reuse", yml_path)
-    # Should exit with code 1 when reuse_splits is True but missing
-    assert exc.value.code == 1
+    options = Options.from_cli(outdir, "reuse", yml_path)
+    # should issue a warning but continue in this case
+    assert options.reuse_splits == True
