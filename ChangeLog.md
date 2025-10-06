@@ -1,6 +1,9 @@
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
+# NEAT v4.3.1
+- Updated parallel module to integrate it into the code more fluidly. We also updated the options section to revise the process and allow for copying of options objects for parallelism run.
+
 # NEAT v4.3
 - Added a parallelization module to run NEAT in parallel. We expect this to speed up times. Please let us know if it works for you!
 

@@ -1,17 +1,14 @@
-# The NEAT Project v4.3
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.2. This beta release of NEAT 4.0 includes several fixes and a little bit of restructuring. There is still lots of work to be done. See the [ChangeLog](ChangeLog.md) for notes. We may add that in as a feature in the future, if users call for it. We also removed GC bias for now. It severely complicated implementation, and had very few noticeable effects. After discussing with some people at the Illinois Institute for Genomic Biology, it sounded like GC bias may be a bit of a non-factor with improved chemistries. NEAT 4.0 represents the direction we would like to move the code, but unfortunately we ran into several issues in production, notably the very long processing times, that make it unviable for general use. If you would like to try NEAT 4.0, please do! If you run into issues, please post them on our issues page.
+# The NEAT Project v4.3.1
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.1. This release of NEAT 4.3.1 includes several fixes and a little bit of restructuring, including a parallel process for running NEAT read-simulator. Our tests show much improved performance. If the logs seem execssive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.1 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatability, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X
 
 # NEAT v4.3
-If you would like to try our newest features in NEAT, we have now added a parallelization module that will allow you to run NEAT in a parrallel process that will split your chromosome up by contig or by blocks of sequence. This code still may have bugs, for which we apologize, but the more people who try it out, the more we can improve the software. If you need worry-free operation, then please try NEAT 3.4.
+Neat 4.3.1 servel as the officially 'complete' version of NEAT 4.3, implementing parallelization. To add parallelization to you run, simply add the "threads" parameter in your configuration and run read-simulator as normal. NEAT will take care of the rest. You can customize the parameters in you configuration file, as needed.
 
-# NEAT 3.4 - Stable
-NEAT 3.4 under "releases" is the stable version of NEAT, most closely following the original NEAT genReads 2.0. NEAT 4.0 ran into several production problems, including very slow runtimes on larger genomes, so we have decided to switch back to NEAT 3.4 as the default release while we try to improve NEAT 4.0. If you are cloning the repo, you can checkout tag 3.4 `git checkout 3.4` within the NEAT repo. We are also working on redeveloping NEAT in Rust, a memory and thread safe language that will lend itself well to the way NEAT works, check that out here: https://github.com/ncsa/rusty-neat
-
-Stay tuned over the coming weeks for exciting updates to NEAT, and learn how to [contribute](CONTRIBUTING.md) yourself. If you'd like to use some of our code, no problem! Just review the [license](LICENSE.md), first.
+We have completed major revisions on NEAT since 3.4 and consider NEAT 4.3.1 to be a stable release. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 
 NEAT's read-simulator is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
 
-This is release v4.2 of the software. While it has been tested, it does represent a shift in the software with the introduction of a configuration file. For a stable release using the old command line interface, please see: [NEAT 3.0](https://github.com/ncsa/NEAT/releases/tag/3.3) (or check out older tagged releases)
+We've deprecated NEAT's command-line interface options for the most part, opting to simplify things with configuration files. If you require the CLI for legacy purposes, NEAT 3.4 was our last release to be fully command-line interface. Please convert your CLI commands to the corresponding yaml configuration for future runs.
 
 To cite this work, please use:
 
@@ -62,30 +59,33 @@ use the poetry module in build a wheel file, which can then be pip installed. Yo
 commands from within the NEAT directory.
 
 ```
-> conda env create -f environment.yml -n neat
-> conda activate neat
-> poetry build
-> pip install dist/neat*whl
+$ conda env create -f environment.yml -n neat
+$ conda activate neat
+$ poetry build
+$ pip install dist/neat*whl
 ```
+
+This allows you to run NEAT as a command line tool directly:
+`neat --help`
 
 Alternatively, if you wish to work with NEAT in the development environment, you can use poetry install within
 the NEAT repo, after creating the conda environment:
 ```
-> conda env create -f environment.yml -n neat
-> conda activate neat
-> poetry install
+$ conda env create -f environment.yml -n neat
+$ conda activate neat
+$ poetry install
 ```
 
 Notes: If any packages are struggling to resolve, check the channels and try to manually pip install the package to see if that helps (but note that NEAT is not tested on the pip versions.)
 
 Test your install by running:
 ```
-> neat --help
+$ neat --help
 ```
 
 You can also try running it using the python command directly:
 ```
-> python -m neat --help
+$ python -m neat --help
 ```
 
 ## Usage
@@ -138,6 +138,11 @@ The default is given:
 `mutation_bed`: full path to a list of regions with a column describing the mutation rate of that region, as a float with values between 0 and 0.3. The mutation rate must be in the third column as, e.g., mut_rate=0.00.    
 `rng_seed`: Manually enter a seed for the random number generator. Used for repeating runs. _Must be an integer._    
 `min_mutations`: Set the minimum number of mutations that NEAT should add, per contig. _Default is 0._ We recommend setting this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.
+'threads': Number of threads to use. More than 1 will activate parallel mode and perform part of the calclutations in parallel then recombine into the desired output files.
+'parallel_mode': 'size' or 'contig' whether to divide the contigs into blocks or just by contig. By contig is the default, try by size. Varying the parallel_block_size parameter may help if default values are not sufficient.
+'parallel_block_size': Default value of 500,000.
+'cleanup_splits': If running more than one simulation on the same input fasta, you can reuse splits files. By default, this will be set to False, and splits files will be deleted at the end of the run.
+'reuse_splits': If an existing splits file exists in the output folder, it will use those splits, if this value is set to True.
 
 The command line options for NEAT are as follows:
 
@@ -155,7 +160,8 @@ read-simulator command line options
 | Option              | Description                         |
 |---------------------|-------------------------------------|
 | -c VALUE, --config VALUE | The VALUE should be the name of the config file to use for this run |
-| -o OUTPUT, --output OUTPUT | The path, including filename prefix, to use to write the output files |
+| -o OUTPUT_DIR, --output_dir OUTPUT_DIR | The path to the directory to write the output files |
+| -p PREFIX, --prefix PREFIX | The prefix for file names |
 
 ## Functionality
 
@@ -199,7 +205,7 @@ fragment_st_dev: 30
 
 neat read-simulator                  \
         -c neat_config.yml          \
-        -o /home/me/simulated_reads
+        -o /home/me/simulated_reads/
 ```
 
 ### Targeted region simulation
@@ -218,7 +224,7 @@ targed_bed: hg19_exome.bed
 
 neat read-simulator                 \
         -c neat_config              \
-        -o /home/me/simulated_reads
+        -o /home/me/simulated_reads/
 
 ```
 
@@ -239,7 +245,7 @@ mutation_rate: 0
 
 neat read-simulator                 \
         -c neat_config.yml          \
-        -o /home/me/simulated_reads
+        -o /home/me/simulated_reads/
 ```
 
 ### Single end reads
@@ -254,7 +260,8 @@ produce_vcf: True
 
 neat read-simulator                 \
         -c neat_config.yml          \
-        -o /home/me/simulated_reads
+        -o /home/me/simulated_read/
+        -p 126_frags
 ```
 
 ### Large single end reads
@@ -278,48 +285,8 @@ Several scripts are distributed with gen_reads that are used to generate the mod
 
 ## neat parallel
 
-Runs NEAT’s read simulator across a split reference (by contig or by fixed chunk size), in parallel, and stitches the outputs into final FASTQ/BAM/VCF.
-
-### Commands:
-
-Minimal: all settings come from a single YAML config
-```
-neat parallel -c /path/to/config.yml
-```
-
-Override or supplement a few options on the CLI
-```
-neat parallel -c /path/to/config.yml \
-  --outdir run1 --by size --size 500000 --jobs 8
-```
-
-neat parallel reads the same config you use for neat read-simulator and also looks for these parallelization keys at the top level:
-
-```
-# required unless you pass --outdir on the CLI
-outdir: /absolute/or/relative/path/for/this_run
-
-# stitched outputs live under outdir; relative values are resolved under outdir
-final_prefix: stitched/final         # default if omitted: stitched/final
-
-# how to split the reference (size recommended)
-by: contig                           # values: contig | size
-size: 1000000                        # used only when by: size
-
-# parallel execution
-jobs: 8                              # default: CPU count
-
-# how to invoke the simulator
-neat_cmd: neat read-simulator        # default
-
-# external tool for stitching BAMs
-samtools: samtools                   # default, must be on PATH
-
-# organization
-cleanup_splits: false                # delete outdir/splits after stitch
-reuse_splits: false                  # reuse existing splits if present
-```
-
+Runs `neat read-simulator` across a split reference (by contig or by fixed chunk size), in parallel, and stitches the outputs into final FASTQ/BAM/VCF.
+To activate parallelism, set threads to a number greater than 1. By default, NEAT will parallelize across contigs. If you have many small contigs, this should bring good results. If you have imbalanced or smaller numbers of larger contigs, then try by block. The default size of 500000 gives good results on a variety of sets, but you can fine tune to your situation.
 
 ## neat model-fraglen
 
