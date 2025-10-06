@@ -13,6 +13,7 @@ We want to introduce a quick-run option as well that will allow command line onl
 file. To do so, we have a few possible inputs the init function can accept. Inputting any of these will
 trigger quick-run mode, setting most of the parameters to defaults.
 """
+from typing import Any
 
 import numpy as np
 import logging
@@ -45,20 +46,99 @@ class Options(SimpleNamespace):
     :param reference: Path to a reference for a test run
     :param rng_seed: A seed to use for a test run (for reproducible tests)
     """
+
     def __init__(self,
-                 output_path: Path,
+                 reference: Path | None = None,
+                 output_dir: Path | None = None,
+                 fq1: Path | None = None,
+                 fq2: Path | None = None,
+                 vcf: Path | None = None,
+                 bam: Path | None = None,
+                 output_prefix: str = "neat_sim",
+                 overwrite_output: bool = False,
+                 rng_seed: int | None = None,
+                 read_len: int = 101,
+                 threads: int = 1,
+                 coverage: int = 10,
+                 error_model: Path | None = None,
+                 avg_seq_error: float | None = None,
+                 rescale_qualities: bool = False,
+                 ploidy: int = 2,
+                 include_vcf: Path | None = None,
+                 target_bed: Path | None = None,
+                 discard_bed: Path | None = None,
+                 mutation_model: Path | None = None,
+                 mutation_rate: float | None = None,
+                 mutation_bed: Path | None = None,
+                 quality_offset: int = 33,
+                 paired_ended: bool = False,
+                 fragment_model: Path | None = None,
+                 fragment_mean: float | None = None,
+                 fragment_st_dev: float | None = None,
+                 produce_bam: bool = False,
+                 produce_vcf: bool = False,
+                 produce_fastq: bool = True,
+                 min_mutations: int = 0,
+                 parallel_mode: str = "contig",
+                 parallel_block_size: int = 500000,
+                 cleanup_splits: bool = True,
+                 splits_dir: Path | None = None,
+                 reuse_splits: bool = False,
+                 **kwargs: Any):
+        super().__init__(**kwargs)
+        self.reference: Path = reference
+        self.output_dir: Path = output_dir
+        self.output = self.output_dir / output_prefix
+        self.overwrite_output = overwrite_output
+        self.rng_seed = rng_seed
+        self.read_len: int = read_len
+        self.threads: int = threads
+        self.coverage: int = coverage
+        self.error_model: Path | None = error_model
+        self.avg_seq_error: float | None = avg_seq_error
+        self.rescale_qualities: bool = rescale_qualities
+        self.ploidy: int = ploidy
+        self.include_vcf: Path | None = include_vcf
+        self.target_bed: Path | None = target_bed
+        self.discard_bed: Path | None = discard_bed
+        self.mutation_model: Path | None = mutation_model
+        self.mutation_rate: float | None = mutation_rate
+        self.mutation_bed: str | None = mutation_bed
+        self.quality_offset: int = quality_offset
+
+        self.paired_ended: bool = paired_ended
+        self.fragment_model: str | None = fragment_model
+        self.fragment_mean: float | None = fragment_mean
+        self.fragment_st_dev: float | None = fragment_st_dev
+        self.produce_bam: bool = produce_bam
+        self.produce_vcf: bool = produce_vcf
+        self.produce_fastq: bool = produce_fastq
+        self.min_mutations: int = min_mutations
+
+        # Parallel features
+        self.parallel_mode: str = parallel_mode
+        self.parallel_block_size: int = parallel_block_size
+        self.cleanup_splits: bool = cleanup_splits
+        self.splits_dir: Path | None = splits_dir
+        self.reuse_splits: bool = reuse_splits
+
+        # Actual output files
+        self.fq1: Path | None = fq1
+        self.fq2: Path | None = fq2
+        self.vcf: Path | None = vcf
+        self.bam: Path | None = bam
+
+        # Set the rng for the run
+        self.rng = self.set_random_seed()
+
+        self.temporary_dir = TemporaryDirectory()
+        self.temp_dir_path = Path(self.temporary_dir.name)
+
+    @staticmethod
+    def from_cli(output_dir: Path,
                  output_prefix: str,
-                 config_file: Path = None,
-                 reference: Path = None,
-                 rng_seed: int = None
+                 config_file: Path,
                  ):
-
-        SimpleNamespace.__init__(self)
-
-        self.test_run = False
-        if not output_path or not config_file:
-            self.test_run = True
-
         """
         Options definitions for gen_reads. This metadata dict gives the type of variable (matching the python types)
         the default value ('.' means no default), and checks. There are four fields: option type (corresponding to
@@ -76,123 +156,146 @@ class Options(SimpleNamespace):
         (type, default, criteria1 (low/'exists'), criteria2 (high/None)
         """
         # TODO maybe redo as a dataclass?
-        self.defs = {}
-        self.config_file = config_file
-        self.output_dir = output_path
-        self.output_prefix = output_prefix
-        self.output = self.output_dir / self.output_prefix
+        output = output_dir / output_prefix
 
-        self.defs['reference'] = (str, reference, 'exists', None)
-        self.defs['read_len'] = (int, 151, 10, inf)
-        self.defs['coverage'] = (int, 10, 1, inf)
-        self.defs['error_model'] = (str, None, 'exists', None)
-        self.defs['avg_seq_error'] = (float, None, 0, 0.3)
-        self.defs['rescale_qualities'] = (bool, False, None, None)
-        self.defs['ploidy'] = (int, 2, 1, 100)
-        self.defs['include_vcf'] = (str, None, 'exists', None)
-        self.defs['target_bed'] = (str, None, 'exists', None)
-        self.defs['discard_bed'] = (str, None, 'exists', None)
-        self.defs['mutation_model'] = (str, None, 'exists', None)
-        self.defs['mutation_rate'] = (float, None, 0, 0.3)
-        self.defs['mutation_bed'] = (str, None, 'exists', None)
-        self.defs['quality_offset'] = (int, 33, 33, 64)
+        # These are for checking
+        defs = {
+            'reference': (Path, None, 'exists', None),
+            'read_len': (int, 151, 10, 1000000),
+            'coverage': (int, 10, 1, 1000000),
+            'error_model': (Path, None, 'exists', None),
+            'avg_seq_error': (float, None, 0, 0.3),
+            'rescale_qualities': (bool, False, None, None),
+            'ploidy': (int, 2, 1, 100),
+            'include_vcf': (Path, None, 'exists', None),
+            'target_bed': (Path, None, 'exists', None),
+            'discard_bed': (Path, None, 'exists', None),
+            'mutation_model': (Path, None, 'exists', None),
+            'mutation_rate': (float, None, 0, 0.3),
+            'mutation_bed': (Path, None, 'exists', None),
+            'quality_offset': (int, 33, 33, 64),
+            'paired_ended': (bool, False, None, None),
+            'fragment_model': (Path, None, 'exists', None),
+            'fragment_mean': (float, None, 10, inf),
+            'fragment_st_dev': (float, None, 1e-10, inf),
+            'produce_bam': (bool, False, None, None),
+            'produce_vcf': (bool, False, None, None),
+            'produce_fastq': (bool, True, None, None),
+            'no_coverage_bias': (bool, False, None, None),
+            'rng_seed': (int, None, None, None),
+            'min_mutations': (int, 0, None, None),
+            'overwrite_output': (bool, False, None, None),
+            'parallel_mode': (bool, False, None, None),
+            'mode': (str, 'size', 'choice', ['size', 'contig']),
+            'size': (int, 500000, None, None),
+            'threads': (int, 1, 1, 1000),
+            'cleanup_splits': (bool, True, None, None),
+            'reuse_splits': (bool, False, None, None)
+        }
 
-        self.defs['paired_ended'] = (bool, False, None, None)
-        self.defs['fragment_model'] = (str, None, 'exists', None)
-        self.defs['fragment_mean'] = (float, None, 10, inf)
-        self.defs['fragment_st_dev'] = (float, None, 1e-10, inf)
-        self.defs['produce_bam'] = (bool, False, None, None)
-        self.defs['produce_vcf'] = (bool, False, None, None)
-        self.defs['produce_fastq'] = (bool, True, None, None)
-        self.defs['no_coverage_bias'] = (bool, False, None, None)
-
-        # These are primarily debug options
-        self.defs['rng_seed'] = (int, None, None, None)
-        self.defs['min_mutations'] = (int, 0, None, None)
-        self.defs['overwrite_output'] = (bool, False, None, None)
-
-        # These parameters relate to parallelization
-        self.defs['parallel_mode'] = (bool, False, None, None)
-        self.defs['mode'] = (str, 'size', 'choice', ['size', 'contig'])
-        self.defs['size'] = (int, 500000, None, None)
-        self.defs['threads'] = (int, 1, 1, 1000)
-        self.defs['cleanup_splits'] = (bool, False, None, None)
-        self.defs['reuse_splits'] = (str, None, 'exists', None)
-
-        # Create base variables, for update by the config
-        self.reference: Path | None = reference
-        self.read_len: int = 151
-        self.threads: int = 1
-        self.coverage: int = 10
-        self.error_model: str | None = None
-        self.avg_seq_error: float | None = None
-        self.rescale_qualities: bool = False
-        self.ploidy: int = 2
-        self.include_vcf: str | None = None
-        self.target_bed: str | None = None
-        self.discard_bed: str | None = None
-        self.mutation_model: str | None = None
-        self.mutation_rate: float | None = None
-        self.mutation_bed: str | None = None
-        self.quality_offset: int = 33
-
-        self.paired_ended: bool = False
-        self.fragment_model: str | None = None
-        self.fragment_mean: float | None = None
-        self.fragment_st_dev: float | None = None
-        self.produce_bam: bool = False
-        self.produce_vcf: bool = False
-        self.produce_fastq: bool = True
-
-        # Actual output files
-        self.fq1 = None,
-        self.fq2 = None,
-        self.vcf = None,
-        self.bam = None,
-
-        # These are primarily debug options.
-        self.min_mutations: int = 0
-        self.overwrite_output: bool = False
-        self.rng_seed: int | None = None
-        self.rng: Generator | None = None
-
-        # These parameters relate to parallelization
-        self.parallel_mode: bool = False
-        self.mode: str = 'size'
-        self.size: int = 500000
-        self.threads: int = 1
-        self.cleanup_splits: bool = False
-        self.splits_dir: Path | None = None
-        self.reuse_splits: bool | str = False
-        self.existing_splits_dir: Path | None = None
-
-        self.args = {}
+        args = {}
         # Set up the dictionary
-        for key, (_, default, _, _) in self.defs.items():
-            if key not in self.args:
-                self.args[key] = default
+        for key, (_, default, _, _) in defs.items():
+            if key not in args:
+                args[key] = default
 
         # Read the config file
-        if not self.test_run:
-            self.read()
+        self.read()
 
         # Update items to config or default values
         self.__dict__.update(self.args)
 
-        if self.test_run:
-            self.rng_seed = rng_seed
+        # Create base variables, for update by the config
+        reference: Path | None = reference
+        read_len: int = 151
+        threads: int = 1
+        coverage: int = 10
+        error_model: str | None = None
+        avg_seq_error: float | None = None
+        rescale_qualities: bool = False
+        ploidy: int = 2
+        include_vcf: str | None = None
+        target_bed: str | None = None
+        discard_bed: str | None = None
+        mutation_model: str | None = None
+        mutation_rate: float | None = None
+        mutation_bed: str | None = None
+        quality_offset: int = 33
+
+        paired_ended: bool = False
+        fragment_model: str | None = None
+        fragment_mean: float | None = None
+        fragment_st_dev: float | None = None
+        produce_bam: bool = False
+        produce_vcf: bool = False
+        produce_fastq: bool = True
+
+        # Actual output files
+        fq1 = None
+        fq2 = None
+        vcf = None
+        bam = None
+
+        # These are primarily debug options.
+        min_mutations: int = 0
+        overwrite_output: bool = False
+        rng: Generator | None = None
+
+        # These parameters relate to parallelization
+        parallel_mode: str = 'size'
+        parallel_block_size: int = 500000
+        cleanup_splits: bool = False
+        splits_dir: Path | None = None
+        reuse_splits: bool | str = False
+
+        base_options = Options(
+            reference,
+            output_dir,
+            fq1,
+            fq2,
+            vcf,
+            bam,
+            output_prefix,
+            overwrite_output,
+            rng_seed,
+            read_len,
+            threads,
+            coverage,
+            error_model,
+            avg_seq_error,
+            rescale_qualities,
+            ploidy,
+            include_vcf,
+            target_bed,
+            discard_bed,
+            mutation_model,
+            mutation_rate,
+            mutation_bed,
+            quality_offset,
+            paired_ended,
+            fragment_model,
+            fragment_mean,
+            fragment_st_dev,
+            produce_bam,
+            produce_vcf,
+            produce_fastq,
+            min_mutations,
+            parallel_mode,
+            parallel_block_size,
+            cleanup_splits,
+            splits_dir,
+            reuse_splits,
+        )
+
         # Set the rng for the run
         self.set_random_seed()
 
         # Some options checking to clean up the args dict
-        if not self.test_run:
-            self.check_options()
+        self.check_options()
 
         # Options not set by the config
         self.temporary_dir = TemporaryDirectory()
         self.temp_dir_path = Path(self.temporary_dir.name)
-        # Set later after reference processing
-        self.reference_contigs = None
 
         if not self.test_run:
             self.log_configuration()
@@ -235,17 +338,22 @@ class Options(SimpleNamespace):
 
                 # Now we check that the type is correct, and it is in range, depending on the type defined for it
                 # If it passes that it gets put into the args dictionary.
-                if value != type_of_var(value):
-                    _LOG.error(f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})")
-                    sys.exit(1)
+                if type_of_var == Path:
+                    if value != str(value):
+                        _LOG.error(f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})")
+                        sys.exit(1)
+                else:
+                    if value != type_of_var(value):
+                        _LOG.error(f"Incorrect type for value entered for {key}: {type_of_var} (found: {value})")
+                        sys.exit(1)
 
                 self.check_and_log_error(key, value, criteria1, criteria2)
                 # Force reference to be a Path.
-                if key == "reference":
+                if type_of_var == Path:
                     value = Path(value)
                 self.args[key] = value
 
-    def set_random_seed(self):
+    def set_random_seed(self) -> Generator:
         """
         Sets up random number generator, which will be used for the run.
         """
@@ -262,7 +370,7 @@ class Options(SimpleNamespace):
             self.rng_seed = seed_rng.integers(2 ** 52, 2 ** 53, dtype=int)
 
         # Create the rng for this run
-        self.rng = np.random.default_rng(self.rng_seed)
+        return np.random.default_rng(self.rng_seed)
 
     def check_options(self):
         """
@@ -275,6 +383,7 @@ class Options(SimpleNamespace):
         # This next section just checks all the paired ended stuff
         if self.paired_ended:
             if self.fragment_model:
+                # Just turn these off so we don't try to load conflicting models
                 self.fragment_mean = None
                 self.fragment_st_dev = None
 
@@ -317,29 +426,28 @@ class Options(SimpleNamespace):
 
         if self.threads > 1:
             _LOG.info(f'Running read simulator in parallel mode.')
-            self.parallel_mode = True
             _LOG.info(f'Multithreading - {self.threads} threads (or CPU Max)')
-            if self.mode == 'size':
+            if self.parallel_mode == 'size':
                 _LOG.info(f'Running read simulator in \'size\' mode.')
                 _LOG.info(f'  - splitting input into size {self.size}')
-            elif self.mode == 'contig':
+            elif self.parallel_mode == 'contig':
                 _LOG.info(f'Running read simulator in \'contig\' mode.')
             if not self.cleanup_splits:
                 splits_dir = Path(f'{self.output_dir}/splits/')
                 _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
             else:
                 splits_dir = self.temp_dir_path / "splits"
+
+            if self.reuse_splits:
+                if splits_dir.is_dir():
+                    _LOG.info(f'Reusing existing splits {splits_dir}.')
+                else:
+                    _LOG.error(f'Reused splits set to True, but splits dir not found: {splits_dir}.')
+                    sys.exit(1)
+
             validate_output_path(splits_dir, False)
             self.splits_dir = splits_dir
-            if self.reuse_splits:
-                existing_splits_path = Path(self.reuse_splits)
-                if existing_splits_path.is_dir():
-                    self.existing_splits_dir = existing_splits_path
-                    _LOG.info(f'Reusing existing splits {self.existing_splits}.')
-                    self.reuse_splits = True
-                else:
-                    _LOG.error(f'Supplied splits directory is not a directory: {existing_splits_path}.')
-                    sys.exit(1)
+
             if self.produce_bam:
                 try:
                     import pysam
@@ -396,55 +504,3 @@ class Options(SimpleNamespace):
         if self.mutation_bed:
             _LOG.info(f'BED of mutation rates of different regions: {self.mutation_bed}')
         _LOG.info(f'RNG seed value for run: {self.rng_seed}')
-
-class OptionsPerThread:
-    # This is used by the parallel script to construct per-block configs
-    def __init__(
-            self,
-            reference: Path,
-            output_dir: Path,
-            fq1: Path | None,
-            fq2: Path | None,
-            vcf: Path | None,
-            bam: Path | None,
-            options: Options,
-    ):
-        # Create base variables, for update by the config
-        self.reference: Path = reference
-        self.output_dir: Path = output_dir
-        self.output = self.output_dir / options.output_prefix
-        self.overwrite_output = options.overwrite_output
-        self.rng_seed = options.rng_seed
-        self.read_len: int = options.read_len
-        self.threads: int = options.threads
-        self.coverage: int = options.coverage
-        self.error_model: Path | None = options.error_model
-        self.avg_seq_error: float | None = options.avg_seq_error
-        self.rescale_qualities: bool = options.rescale_qualities
-        self.ploidy: int = options.ploidy
-        self.include_vcf: Path | None = options.include_vcf
-        self.target_bed: Path | None = options.target_bed
-        self.discard_bed: Path | None = options.discard_bed
-        self.mutation_model: Path | None = options.mutation_model
-        self.mutation_rate: float | None = options.mutation_rate
-        self.mutation_bed: str | None = options.mutation_bed
-        self.quality_offset: int = options.quality_offset
-
-        self.paired_ended: bool = options.paired_ended
-        self.fragment_model: str | None = options.fragment_model
-        self.fragment_mean: float | None = options.fragment_mean
-        self.fragment_st_dev: float | None = options.fragment_st_dev
-        self.produce_bam: bool = options.produce_bam
-        self.produce_vcf: bool = options.produce_vcf
-        self.produce_fastq: bool = options.produce_fastq
-        self.min_mutations: int = options.min_mutations
-
-        # Actual output files
-        self.fq1: Path | None = fq1
-        self.fq2: Path | None = fq2
-        self.vcf: Path | None = vcf
-        self.bam: Path | None = bam
-
-        self.rng: Generator | None = options.rng
-
-        self.temp_dir_path = options.temp_dir_path

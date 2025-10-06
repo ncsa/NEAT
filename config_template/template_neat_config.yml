@@ -141,37 +141,26 @@ min_mutations: .
 overwrite_output: .
 
 # How to split the input reference for parallelization
-# If parallel_mode = false, this option has no effect.
+# Note if threads == 1, this option has no effect.
 # type = string | required: no | default = contig | values: contig, size
-mode: .
+parallel_mode: .
 
-# Target chunk size if by = size (overlap = read_len * 2).
+# Target block size if by = size (overlap = read_len * 2).
 # Default is 500000 when by = size. Not used for by = contig.
 # type = int | required: no | default = 500000 (when by=size)
-size: .
+parallel_block_size: .
 
 # Maximum number of concurrent NEAT jobs (threads or hyperthreads) to run.
-# Note that assigning a value higher than your available number of threads
-# could result in performance issues in the computer running the job.
-# If parallel_mode = false, this option has no effect.
 # type = int | required: no | default = all available.
 threads: .
 
 # Delete the 'splits' directory after stitching completes
-# Note if parallel_mode = false, this option has no effect.
-# type = bool | required: no | default = false
+# Note if threads == 1, this option has no effect.
+# type = bool | required: no | default = true
 cleanup_splits: .
 
-# Reuse existing files in 'splits' and skip the split step. This
-# option should be a path to the directory containing the splits.
-# Note if parallel_mode = None, this option has no effect.
-# type = str | required: no | default = None
+# Reuse existing files in '<out_dir>/splits' and skip the split step.
+# The directory must contain neat-generated files and must be in the output dir within "splits"
+# Note if threads == 1, this option has no effect.
+# type = bool | required: no | default = False
 reuse_splits: .
-
-# For recombining bams, you will need to have samtools installed
-# if no installation path is specified here, Python will check
-# for an installation of samtools in PATH. If Python can't
-# find it, it will throw an error and exit.
-# Note if parallel_mode = None, or produce_bam = false, this option has no effect,
-#   and will not be checked
-samtools: .

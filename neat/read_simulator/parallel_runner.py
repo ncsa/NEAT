@@ -52,11 +52,11 @@ def main(options: Options) -> None:
     3. Stitch the resulting outputs back into a single dataset
     """
     # 1) Split (or reuse)
-    need_split = not options.reuse_splits
     splits_files = []
-    if not need_split and list(options.existing_splits_dir.glob("*.y*ml")):
-        _LOG.info("[parallel] Recycling existing split FASTA/YAML files – skipping split step")
-        split_sec = 0.0
+    if options.reuse_splits:
+        if list(options.splits_dir.glob("*.y*ml")):
+            _LOG.info("[parallel] Recycling existing split FASTA/YAML files – skipping split step")
+            split_sec = 0.0
     else:
         t0 = time.time()
         _LOG.info("[parallel] Splitting reference...")
