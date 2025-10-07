@@ -128,7 +128,7 @@ def read_simulator_single(options: Options):
 
         local_bam_pickle_file = None
         if options.produce_bam:
-            local_bam_pickle_file = options.temp_dir_path / f'{options.output_dir}/{options.output_prefix}_tmp_{contig}_{threadidx}.p.gz'
+            local_bam_pickle_file = options.temp_dir_path / f'{options.output_prefix}_tmp_{contig}_{threadidx}.p.gz'
 
         if threadidx == 1:
             # init_progress_info()
