@@ -204,16 +204,20 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     if options.threads > 1:
         pool = ThreadPool(options.threads)
-        (thread_idx, contig_name, files_written, local_variants) = pool.starmap(read_simulator_single, output_opts)
-        all_variants[contig_name][thread_idx] = local_variants
-        output_files.append((thread_idx, files_written))
+        results = pool.starmap(read_simulator_single, output_opts)
+        for (thread_idx, contig_name, files_written, local_variants) in results:
+            all_variants[contig_name][thread_idx] = local_variants
+            output_files.append((thread_idx, files_written))
 
+    _LOG.info("Processing complete, writing output")
     # stitch fastq and bams
-    stitch_main(options, output_files)
+    stitch_main(output_file_writer, output_files)
 
     # sort all variants and write out final VCF
     if options.produce_vcf:
         write_final_vcf(all_variants, reference_index, output_file_writer)
+
+    output_file_writer.close_files()
 
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
 

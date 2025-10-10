@@ -11,12 +11,12 @@ __all__ = [
 import re
 from struct import pack
 import logging
+import gzip
 
 from Bio import bgzf
 from pathlib import Path
 
 from Bio.Seq import Seq
-from numpy import ndarray
 
 from .options import Options
 
@@ -78,17 +78,17 @@ class OutputFileWriter:
         # Set up filenames based on booleans
         if options.fq1 is not None:
             fq1 = options.fq1
-            file_handles[fq1] = bgzf.open(fq1, 'wt')
+            file_handles[fq1] = bgzf.BgzfWriter(fq1)
         else:
             fq1 = None
         if options.fq2 is not None:
             fq2 = options.fq2
-            file_handles[fq2] = bgzf.open(fq2, 'wt')
+            file_handles[fq2] = bgzf.BgzfWriter(fq2)
         else:
             fq2 = None
         if options.vcf is not None:
             vcf = options.vcf
-            file_handles[vcf] = bgzf.open(vcf, 'wt')
+            file_handles[vcf] = bgzf.BgzfWriter(vcf)
         else:
             vcf = None
         if options.bam is not None:

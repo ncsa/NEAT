@@ -94,16 +94,16 @@ def main(options: Options, frag_mean: float, reference_index: dict) -> dict:
     written = 0
     # We'll keep track of chunks by contig, to help us out later
     split_fasta_dict = {key: [] for key in reference_index.keys()}
-    for contig, sequence in reference_index.items():
+    for contig, seq_record in reference_index.items():
         if options.mode == "contig":
             stem = f"{idx:0{pad}d}__{contig}"
             fa = options.splits_dir / f"{stem}.fa"
-            write_fasta(contig, sequence, fa)
+            write_fasta(contig, seq_record.seq, fa)
             split_fasta_dict[contig].append(fa)
             idx += 1
             written += 1
         else:
-            for subseq in chunk_record(sequence, options.size, overlap):
+            for subseq in chunk_record(seq_record.seq, options.size, overlap):
                 stem = f"{idx:0{pad}d}__{contig}"
                 fa = options.splits_dir / f"{stem}.fa"
                 write_fasta(contig, subseq, fa)

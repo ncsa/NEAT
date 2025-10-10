@@ -5,10 +5,9 @@ from turtledemo.chaos import coosys
 
 from Bio import SeqIO
 import logging
-import pickle
-import gzip
+from pathlib import Path
 
-from .utils import parse_input_vcf, parse_beds, OutputFileWriter, \
+from .utils import OutputFileWriter, \
     generate_variants, generate_reads, Options
 from ..variants import ContigVariants
 
@@ -31,12 +30,13 @@ def read_simulator_single(
         target_regions: list,
         discard_regions: list,
         mutation_rate_regions: list,
-) -> tuple[int, str, list[str], ContigVariants]:
+) -> tuple[int, str, dict[str, Path], ContigVariants]:
     """
     inputs:
     :param thread_idx: index of current thread
     :param local_options: options for current thread and reference chunk
     :param contig_name: The original list of contig names.
+    :param contig_index: The index of the contig which this chunk comes from
     :param mut_model: The mutation model for the run
     :param seq_error_model: Sequencing error model for run
     :param qual_score_model: Quality score model for run
@@ -103,9 +103,15 @@ def read_simulator_single(
         )
 
     local_output_file_writer.close_files()
+    file_dict = {
+        "fq1": local_output_file_writer.fq1,
+        "fq2": local_output_file_writer.fq2,
+        "bam": local_output_file_writer.bam,
+        "vcf": local_output_file_writer.vcf
+    }
     return (
         thread_idx,
         contig_name,
-        list(local_output_file_writer.files_to_write.keys()),
+        file_dict,
         local_variants
     )

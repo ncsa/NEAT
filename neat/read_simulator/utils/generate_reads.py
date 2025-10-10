@@ -15,7 +15,6 @@ from Bio.Seq import Seq
 from . import OutputFileWriter
 from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
 from .options import Options
-from ...common import open_output
 from ...variants import ContigVariants
 from .read import Read
 
@@ -181,14 +180,14 @@ def generate_reads(
         file or 2% retained by default)
     :param discarded_regions: A list of regions to discard for the run
     :param options: The options entered for this run by the user
-    :param contig_name: The name of the chromsome this ref segment originates from
+    :param contig_name: The name of the chromosome this ref segment originates from
     :param contig_index: The index of the above chromosome within the overall bam header
     :param output_file_writer: The file writer for this segment.
     :param ref_start: The start point for this reference segment. Default is 0 and this is currently not fully
         implemented, to be used for parallelization.
     :return: A tuple of the filenames for the temp files created
     """
-    _LOG.info(f'Sampling reads...')
+    _LOG.info(f'Sampling reads for thread {thread_index}...')
     start_time = time.time()
 
     _LOG.debug("Covering dataset.")
@@ -254,7 +253,7 @@ def generate_reads(
         # add a small amount of padding to the end to account for deletions.
         # Trying out this method of using the read-length, which for the default neat run gives ~30.
         padding = options.read_len//5
-        segment = reference[read1[0]: read1[1] + padding].seq
+        segment = reference[read1[0]: read1[1] + padding]
 
         # if we're at the end of the contig, this may not pick up the full padding
         actual_padding = len(segment) - options.read_len
@@ -320,4 +319,4 @@ def generate_reads(
     if options.produce_bam:
         _LOG.info(f"Chunk bam(s) written.")
 
-    _LOG.info(f"Finished sampling reads in {(time.time() - start_time)/60:.2f} m")
+    _LOG.info(f"Finished sampling reads for thread {thread_index} in {(time.time() - start_time)/60:.2f} m")

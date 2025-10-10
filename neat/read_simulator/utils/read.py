@@ -8,6 +8,8 @@ Methods allow comparisons between reads, based on chromosome, start and end. Als
 both the reference sequence and the read and the actual read sequence.
 """
 import logging
+from copy import deepcopy
+
 import numpy as np
 
 from typing import TextIO
