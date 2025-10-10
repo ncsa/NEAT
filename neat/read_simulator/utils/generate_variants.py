@@ -269,8 +269,7 @@ def generate_variants(
             # The count will tell us how many we actually added v how many we were trying to add
             n_added += 1
 
-    _LOG.debug(f'Finished generating random mutations in {(time.time() - start)/60:.2f} minutes')
-    _LOG.debug(f'Added {n_added} mutations to {reference.id}')
+    _LOG.debug(f'Finished generating chunk random mutations in {(time.time() - start)/60:.2f} minutes')
 
     return return_variants
 

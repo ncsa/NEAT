@@ -15,9 +15,10 @@ import logging
 from Bio import bgzf
 from pathlib import Path
 
+from Bio.Seq import Seq
+from numpy import ndarray
+
 from .options import Options
-from ...common import validate_output_path
-from .read import Read
 
 _LOG = logging.getLogger(__name__)
 
@@ -105,10 +106,6 @@ class OutputFileWriter:
             _LOG.error("output_file_writer received no files!")
             raise ValueError
 
-        # Create files as applicable, also just to check for data collisions
-        for file in file_handles.keys():
-            validate_output_path(file, True, options.overwrite_output)
-
         self.files_to_write = file_handles
 
         # Initialize the vcf and write the header, if applicable
@@ -124,12 +121,11 @@ class OutputFileWriter:
                          f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n'
             self.files_to_write[self.vcf].write(vcf_header)
 
-        if options.produce_bam:
+        if options.produce_bam and self.bam_header:
             # bam header
             bam_handle = self.files_to_write[self.bam]
             bam_handle.write("BAM\1")
             # Without a header, we can't write these as bams.
-            # TODO check if making this conditional on self.bam_header existing breaks this
             bam_header = "@HD\tVN:1.4\tSO:coordinate\n"
             for item in self.bam_header:
                 bam_header += f'@SQ\tSN:{item}\tLN:{str(self.bam_header[item])}\n'
@@ -159,7 +155,7 @@ class OutputFileWriter:
             file_handle = self.files_to_write[file_name]
             file_handle.close()
 
-    def write_vcf_record(self, line: str,):
+    def write_vcf_record(self, line: str):
         """
         This function takes in a list of temporary vcf files and combines them into a final output
 
@@ -173,54 +169,72 @@ class OutputFileWriter:
             _LOG.error(f"Tried to write to unknown vcf file {line}")
             raise ValueError
 
-    def write_bam_record(self, read: Read, contig_id: int, read_length: int):
+    def write_bam_record(
+            self,
+            read_name: str,
+            read_position: int,
+            read_end: int,
+            read_mpos: int,
+            read_tlen: int,
+            read_flags: int,
+            read_alt_seq: Seq,
+            read_cigar: str,
+            read_qual_string: str,
+            read_map_qual: int,
+            contig_id: int,
+            read_length: int
+    ):
         """
         Takes a read object and writes it out as a bam record
 
-        :param read: a read object containing everything we need to write it out.
+        :param read_name: the name assigned to the read
+        :param read_position: position of the read.
+        :param read_end: end point of the read
+        :param read_mpos: mate position for the read
+        :param read_tlen: template length for read
+        :param read_flags: the number representing the flags for this read
+        :param read_alt_seq: The sequence to write
+        :param read_cigar: the cigar string for this read
+        :param read_qual_string: The quality array string for this read
+        :param read_map_qual: The quality score of this mapping
         :param contig_id: the index of the reference for this
         :param read_length: the length of the read to output
         """
         if self.bam in self.files_to_write:
-            read_bin = reg2bin(read.position, read.end_point)
+            read_bin = reg2bin(read_position, read_end)
 
-            mate_position = read.get_mpos()
-            flag = read.calculate_flags(self.paired_ended)
-            template_length = read.get_tlen()
-            alt_sequence = read.read_sequence
-
-            cigar = read.make_cigar()
-
-            cig_letters = re.split(r"\d+", cigar)[1:]
-            cig_numbers = [int(n) for n in re.findall(r"\d+", cigar)]
+            cig_letters = re.split(r"\d+", read_cigar)[1:]
+            cig_numbers = [int(n) for n in re.findall(r"\d+", read_cigar)]
             cig_ops = len(cig_letters)
 
             next_ref_id = contig_id
 
-            if not mate_position:
+            if not read_mpos:
                 next_pos = 0
-                template_length = 0
+                read_tlen = 0
             else:
-                next_pos = mate_position
+                next_pos = read_mpos
 
             encoded_cig = bytearray()
+
             for i in range(cig_ops):
                 encoded_cig.extend(pack('<I', (cig_numbers[i] << 4) + CIGAR_PACKED[cig_letters[i]]))
+
             encoded_seq = bytearray()
             encoded_len = (read_length + 1) // 2
             seq_len = read_length
             if seq_len & 1:
-                alt_sequence += '='
+                read_alt_seq += '='
             for i in range(encoded_len):
                 # if self.debug:
                 #     # Note: trying to remove all this part
                 encoded_seq.extend(
                     pack('<B',
-                         (SEQ_PACKED[alt_sequence[2 * i].capitalize()] << 4) +
-                         SEQ_PACKED[alt_sequence[2 * i + 1].capitalize()]))
+                         (SEQ_PACKED[read_alt_seq[2 * i].capitalize()] << 4) +
+                         SEQ_PACKED[read_alt_seq[2 * i + 1].capitalize()]))
 
             # apparently samtools automatically adds 33 to the quality score string...
-            encoded_qual = ''.join([chr(ord(n) - 33) for n in read.read_quality_string[:read_length]])
+            encoded_qual = ''.join([chr(ord(n) - 33) for n in read_qual_string[:read_length]])
 
             """
             block_size = 4 +		# refID 		int32
@@ -237,24 +251,24 @@ class OutputFileWriter:
                          len(seq)
             """
 
-            block_size = 32 + len(read.name) + 1 + len(encoded_cig) + len(encoded_seq) + len(read.read_quality_string)
+            block_size = 32 + len(read_name) + 1 + len(encoded_cig) + len(encoded_seq) + len(encoded_qual)
 
             self.files_to_write[self.bam].write((pack('<i', block_size) +
                               pack('<i', contig_id) +
-                              pack('<i', read.position + 1) +
+                              pack('<i', read_position + 1) +
                               pack('<I', (read_bin << 16)
-                                   + (read.mapping_quality << 8)
-                                   + len(read.name)
+                                   + (read_map_qual << 8)
+                                   + len(read_name)
                                    + 1) +
-                              pack('<I', (flag << 16) + cig_ops) +
+                              pack('<I', (read_flags << 16) + cig_ops) +
                               pack('<i', seq_len) +
                               pack('<i', next_ref_id) +
                               pack('<i', next_pos) +
-                              pack('<i', template_length) +
-                              read.name.encode('utf-8') + b'\0' +
+                              pack('<i', read_tlen) +
+                              read_name.encode('utf-8') + b'\0' +
                               encoded_cig +
                               encoded_seq +
                               encoded_qual.encode('utf-8')))
         else:
-            _LOG.error(f"Tried to write bam record to unknown file {read}")
+            _LOG.error(f"Tried to write bam record to unknown file")
             raise ValueError

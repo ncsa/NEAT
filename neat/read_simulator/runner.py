@@ -4,6 +4,7 @@ Runner for generate_reads task
 import gzip
 import logging
 import pickle
+import time
 from multiprocessing import Pool
 from multiprocessing.pool import ThreadPool
 
@@ -12,7 +13,7 @@ from pathlib import Path
 from Bio import SeqIO
 
 from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter
-from ..common import validate_input_path
+from ..common import validate_input_path, validate_output_path
 from .single_runner import read_simulator_single
 from ..models import MutationModel, SequencingErrorModel, TraditionalQualityModel, FragmentLengthModel
 from ..variants import ContigVariants
@@ -46,6 +47,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     FileExistsError
         If the output file already exists.
     """
+    analysis_start = time.time()
     _LOG.debug(f'config = {config}')
     _LOG.debug(f'output_dir = {output_dir}')
 
@@ -141,6 +143,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # a dict with contig keys, then the thread index, and finally the applicable contig variants as the value
     all_variants: dict[str, dict[int, ContigVariants]] = {chrom: {} for chrom in reference_index.keys()}
     for contig in splits_files_dict:
+        contig_index = list(reference_keys_with_lens.keys()).index(contig)
         for (thread_idx, splits_file) in enumerate(splits_files_dict[contig]):
             current_output_dir = options.temp_dir_path / splits_file.stem
             current_output_dir.mkdir(parents=True, exist_ok=True)
@@ -151,13 +154,18 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             vcf = None
             if options.produce_fastq:
                 fq1 = current_output_dir / options.fq1.name
+                # validate to double-check we don't have name collisions
+                validate_output_path(fq1, True, False)
                 if options.paired_ended:
                     # if paired ended, there must be a fq2
                     fq2 = current_output_dir / options.fq2.name
+                    validate_output_path(fq2, True, False)
             if options.produce_bam:
                 bam = current_output_dir / options.bam.name
+                validate_output_path(bam, True, False)
             if options.produce_vcf:
                 vcf = current_output_dir / options.vcf.name
+                validate_output_path(vcf, True, False)
 
             current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, vcf, bam)
             if options.threads == 1:
@@ -165,6 +173,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     1,
                     current_options,
                     contig,
+                    contig_index,
                     mut_model,
                     seq_error_model,
                     qual_score_model,
@@ -176,12 +185,13 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                 )
                 _LOG.info(f"Completed simulating contig {contig}.")
                 all_variants[contig][idx] = local_variants
-                output_files.append(files_written)
+                output_files.append((thread_idx, files_written))
             else:
                 output_opts.append((
                     thread_idx,
                     current_options,
                     contig,
+                    contig_index,
                     mut_model,
                     seq_error_model,
                     qual_score_model,
@@ -194,15 +204,50 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     if options.threads > 1:
         pool = ThreadPool(options.threads)
-        thread_idx, contig, files_written, local_variants = pool.starmap(read_simulator_single, output_opts)
-        all_variants[contig][thread_idx] = local_variants
-        output_files.append(files_written)
+        (thread_idx, contig_name, files_written, local_variants) = pool.starmap(read_simulator_single, output_opts)
+        all_variants[contig_name][thread_idx] = local_variants
+        output_files.append((thread_idx, files_written))
 
     # stitch fastq and bams
+    stitch_main(options, output_files)
 
     # sort all variants and write out final VCF
+    if options.produce_vcf:
+        write_final_vcf(all_variants, reference_index, output_file_writer)
 
+    _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
 
+def write_final_vcf(
+        all_variants: dict[str, dict[int, ContigVariants]],
+        ref_index: dict,
+        ofw: OutputFileWriter,
+):
+    # take contig name from ref index because we know it is in the proper order
+    for contig in ref_index.keys():
+        block_vars_dict = all_variants[contig]
+        # Ensuring these are put together in the right order, given that they might have
+        #    been written out of order, due to race conditions.
+        sorted_keys = sorted(block_vars_dict.keys())
+        for block in sorted_keys:
+            local_variants = block_vars_dict[block]
+            locations = sorted(local_variants.variant_locations)
+            for location in locations:
+                for variant in local_variants[location]:
+                    ref, alt = local_variants.get_ref_alt(variant, ref_index[contig])
+                    sample = local_variants.get_sample_info(variant)
+                    # +1 to position because the VCF uses 1-based coordinates
+                    #          .id should give the more complete name
+                    line = f"{ref_index[contig].id}\t" \
+                           f"{variant.position1 + 1}\t" \
+                           f"{local_variants.generate_field(variant, 'ID')}\t" \
+                           f"{ref}\t" \
+                           f"{alt}\t" \
+                           f"{variant.qual_score}\t" \
+                           f"{local_variants.generate_field(variant, 'FILTER')}\t" \
+                           f"{local_variants.generate_field(variant, 'INFO')}\t" \
+                           f"{local_variants.generate_field(variant, 'FORMAT')}\t" \
+                           f"{sample}\n"
+                    ofw.write_vcf_record(line)
 
 def initialize_all_models(options: Options):
     """

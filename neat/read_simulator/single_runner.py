@@ -22,6 +22,7 @@ def read_simulator_single(
         thread_idx: int,
         local_options: Options,
         contig_name: str,
+        contig_index: int,
         mut_model: MutationModel,
         seq_error_model: SequencingErrorModel,
         qual_score_model: TraditionalQualityModel,
@@ -30,7 +31,7 @@ def read_simulator_single(
         target_regions: list,
         discard_regions: list,
         mutation_rate_regions: list,
-) -> tuple[]:
+) -> tuple[int, str, list[str], ContigVariants]:
     """
     inputs:
     :param thread_idx: index of current thread
@@ -97,6 +98,7 @@ def read_simulator_single(
             discard_regions,
             local_options,
             contig_name,
+            contig_index,
             local_output_file_writer,
         )
 
@@ -104,6 +106,6 @@ def read_simulator_single(
     return (
         thread_idx,
         contig_name,
-        local_output_file_writer.files_to_write.keys(),
+        list(local_output_file_writer.files_to_write.keys()),
         local_variants
     )

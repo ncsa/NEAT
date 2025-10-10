@@ -17,8 +17,9 @@ from Bio.pairwise2 import format_alignment
 from numpy.random import Generator
 
 from . import Options
+from . import OutputFileWriter
 from ...common import ALLOWED_NUCL
-from ...models import SequencingErrorModel, ErrorContainer, MutationModel, TraditionalQualityModel
+from ...models import SequencingErrorModel, ErrorContainer, TraditionalQualityModel
 from ...variants import SingleNucleotideVariant, Insertion, Deletion
 
 _LOG = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ class Read:
                  raw_read: tuple,
                  reference_segment: Seq,
                  reference_id: str,
+                 ref_id_index: int,
                  position: int,
                  end_point: int,
                  padding: int,
@@ -57,6 +59,7 @@ class Read:
         # This segment will gold the raw read and be untouched.
         self.reference_segment = reference_segment
         self.reference_id = reference_id
+        self.ref_id_index = ref_id_index
         self.position = position
         self.end_point = end_point
         self.padding = padding
@@ -305,8 +308,7 @@ class Read:
             err_model: SequencingErrorModel,
             qual_model: TraditionalQualityModel,
             options: Options,
-            contig_name,
-            output_file_writer,
+            output_file_writer: OutputFileWriter,
     ):
         """
         Writes the record to the temporary fastq file
@@ -315,7 +317,6 @@ class Read:
         :param err_model: The error model for the run
         :param qual_model: The quality score model for the run
         :param options: The options for this section
-        :param contig_name: The name of the contig these read comes from
         :param output_file_writer: for writing files
         """
 
@@ -355,8 +356,17 @@ class Read:
 
         if options.produce_bam:
             output_file_writer.write_bam_record(
-                self,
-                contig_name,
+                self.name,
+                self.position,
+                self.end_point,
+                self.get_mpos(),
+                self.get_tlen(),
+                self.calculate_flags(options.paired_ended),
+                self.read_sequence,
+                self.make_cigar(),
+                self.read_quality_string,
+                self.mapping_quality,
+                self.ref_id_index,
                 options.read_len
             )
 
@@ -373,10 +383,10 @@ class Read:
         # we'll use generic human repeats, as commonly found in masked regions. We may refine this to make configurable
         repeat_bases = list("TTAGGG")
         if self.is_reverse:
-            raw_sequence = self.reference_segment.reverse_complement().upper()
+            raw_sequence = self.reference_segment.reverse_complement().upper().seq
             self.quality_array = self.quality_array[::-1]
         else:
-            raw_sequence = self.reference_segment.upper()
+            raw_sequence = self.reference_segment.upper().seq
 
         start = raw_sequence.find('N')
         if start != -1:

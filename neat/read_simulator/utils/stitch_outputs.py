@@ -96,22 +96,9 @@ def merge_bam(bams: List[Path], dest: Path) -> None:
     out_tmp.replace(dest)
     hdr_tmp.unlink(missing_ok=True)
 
-def merge_vcf(vcfs: List[Path], dest: Path) -> None:
-    if not vcfs:
-        return
-    first, *rest = vcfs
-    shutil.copy(first, dest)
-    with open_output(dest, "ab") as out_f:
-        for vcf in rest:
-            with open_input(vcf) as fh:
-                for line in fh:
-                    if not line.startswith("#"):
-                        out_f.write(line.encode('utf-8'))
-
-def main(options: Options, thread_tuple: list[tuple[int, Options]]) -> None:
+def main(main_options: Options, thread_tuple: list[tuple[int, Options]]) -> None:
     fq1_list = []
     fq2_list = []
-    vcf_list = []
     bam_list = []
     # Gather all output files from the ops objects
     for (thread_idx, thread_options) in thread_tuple:
@@ -119,15 +106,12 @@ def main(options: Options, thread_tuple: list[tuple[int, Options]]) -> None:
             fq1_list.append(thread_options.fq1)
         if thread_options.fq2:
             fq2_list.append(thread_options.fq2)
-        if thread_options.vcf:
-            vcf_list.append(thread_options.vcf)
         if thread_options.bam:
             bam_list.append(thread_options.bam)
     # concatenate all files of each type. An empty list will result in no action
-    concat(fq1_list, options.fq1)
-    concat(fq2_list, options.fq2)
-    merge_bam(bam_list, options.bam)
-    merge_vcf(vcf_list, options.vcf)
+    concat(fq1_list, main_options.fq1)
+    concat(fq2_list, main_options.fq2)
+    merge_bam(bam_list, main_options.bam)
 
     # Final success message via logging
     _LOG.info("Stitching complete!")

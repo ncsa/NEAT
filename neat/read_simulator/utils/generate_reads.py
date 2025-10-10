@@ -5,6 +5,8 @@ import re
 
 from math import ceil
 from pathlib import Path
+
+import Bio
 from Bio import SeqRecord
 from bisect import bisect_left, bisect_right
 
@@ -153,7 +155,7 @@ def overlaps(test_interval: tuple[int, int], comparison_interval: tuple[int, int
 
 def generate_reads(
         thread_index: int,
-        reference: Seq,
+        reference: SeqRecord,
         error_model: SequencingErrorModel,
         qual_model: TraditionalQualityModel,
         fraglen_model: FragmentLengthModel,
@@ -162,6 +164,7 @@ def generate_reads(
         discarded_regions: list,
         options: Options,
         contig_name: str,
+        contig_index: int,
         output_file_writer: OutputFileWriter,
         ref_start: int = 0
 ):
@@ -178,7 +181,8 @@ def generate_reads(
         file or 2% retained by default)
     :param discarded_regions: A list of regions to discard for the run
     :param options: The options entered for this run by the user
-    :param contig_name: The chromosome this reference segment originates from
+    :param contig_name: The name of the chromsome this ref segment originates from
+    :param contig_index: The index of the above chromosome within the overall bam header
     :param output_file_writer: The file writer for this segment.
     :param ref_start: The start point for this reference segment. Default is 0 and this is currently not fully
         implemented, to be used for parallelization.
@@ -245,12 +249,12 @@ def generate_reads(
             continue
         raw_read = read1 + read2
 
-        read_name = f'{contig_name}_{thread_index}_{str(i+1)}'
+        read_name = f'{contig_index:010d}_{thread_index}_{str(i+1)}'
 
         # add a small amount of padding to the end to account for deletions.
         # Trying out this method of using the read-length, which for the default neat run gives ~30.
         padding = options.read_len//5
-        segment = reference[read1[0]: read1[1] + padding]
+        segment = reference[read1[0]: read1[1] + padding].seq
 
         # if we're at the end of the contig, this may not pick up the full padding
         actual_padding = len(segment) - options.read_len
@@ -260,6 +264,7 @@ def generate_reads(
             raw_read=raw_read,
             reference_segment=segment,
             reference_id=contig_name,
+            ref_id_index=contig_index,
             position=read1[0] + ref_start,
             end_point=read1[1] + ref_start,
             padding=actual_padding,
@@ -273,7 +278,6 @@ def generate_reads(
             error_model,
             qual_model,
             options,
-            contig_name,
             output_file_writer,
         )
 
@@ -292,6 +296,7 @@ def generate_reads(
                 raw_read=reads[i],
                 reference_segment=segment,
                 reference_id=contig_name,
+                ref_id_index=contig_index,
                 position=read2[0] + ref_start,
                 end_point=read2[1] + ref_start,
                 padding=actual_padding,
@@ -307,7 +312,6 @@ def generate_reads(
                 error_model,
                 qual_model,
                 options,
-                contig_name,
                 output_file_writer,
             )
 
