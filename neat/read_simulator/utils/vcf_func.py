@@ -65,7 +65,6 @@ def parse_input_vcf(
     :param homozygous_frequency: Chance of an allele appearing on more than one ploid
     :param reference: The reference index object for this run.
     :param options: Options for this run
-    :param tumor_normal: Whether the sample is cancer (note, cancer models not yet implemented)
     :return: A dictionary with sample name data read from the vcf
     """
 

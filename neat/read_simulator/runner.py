@@ -1,16 +1,27 @@
 """
 Runner for generate_reads task
 """
+import gzip
 import logging
+import pickle
+from multiprocessing import Pool
+from multiprocessing.pool import ThreadPool
 
 from pathlib import Path
 
-from .utils import Options
+from Bio import SeqIO
+
+from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter
 from ..common import validate_input_path
-from .parallel_runner import main as parallel_runner
 from .single_runner import read_simulator_single
+from ..models import MutationModel, SequencingErrorModel, TraditionalQualityModel, FragmentLengthModel
+from ..variants import ContigVariants
+from .utils.split_inputs import main as split_main
+from .utils.stitch_outputs import main as stitch_main
 
 __all__ = ["read_simulator_runner"]
+
+EXTENSIONS = ["gz", "fastq", "bam", "vcf"]
 
 _LOG = logging.getLogger(__name__)
 
@@ -58,8 +69,191 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     )
 
+    # Set up the recombination later
+    reference_index = SeqIO.index(str(options.reference), "fasta")
+    reference_keys_with_lens = {key: len(value) for key, value in reference_index.items()}
+
+    count = 0
+    for contig in reference_keys_with_lens:
+        count += reference_keys_with_lens[contig]
+    _LOG.debug(f"Length of total reference: {count / 1_000_000:.2f} Mb")
+
+    # initialize models for run
+    (
+        mut_model,
+        seq_error_model,
+        qual_score_model,
+        fraglen_model
+    ) = initialize_all_models(options)
+
+    input_variants_dict = {x: ContigVariants() for x in reference_keys_with_lens}
+    if options.include_vcf:
+        _LOG.info(f"Reading input VCF: {options.include_vcf}.")
+        parse_input_vcf(
+            input_variants_dict,
+            options.include_vcf,
+            options.ploidy,
+            mut_model.homozygous_freq,
+            reference_index,
+            options
+        )
+
+        _LOG.debug("Finished reading input vcf file")
+
+    # Note that parse_beds will return None for any empty or non-input files
+    bed_files = (options.target_bed, options.discard_bed, options.mutation_bed)
+
+    # parse input targeted regions, if present.
+    if any(bed_files):
+        _LOG.info(f"Reading input bed files.")
+
+    (
+        target_regions_dict,
+        discard_regions_dict,
+        mutation_rate_dict
+    ) = parse_beds(options, reference_keys_with_lens, mut_model.avg_mut_rate)
+
+    # Prepare headers for final vcf
+    bam_header = None
+    if options.produce_bam:
+        # This is a dictionary that is the list of the contigs and the length of each.
+        # This information will be needed later to create the bam header.
+        bam_header = reference_keys_with_lens
+
+    if any(bed_files):
+        _LOG.debug("Finished reading input beds.")
+
+    # Creates files and sets up objects for files that can be written to as needed.
+    # Also creates headers for bam and vcf.
+    output_file_writer = OutputFileWriter(options=options, bam_header=bam_header)
+
+    # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
+    _LOG.info("Splitting reference...")
+    splits_files_dict = split_main(options, fraglen_model.fragment_mean, reference_index)
+
     if options.threads > 1:
-        parallel_runner(options)
+        _LOG.info(f"[parallel] Launching {len(splits_files_dict)} NEAT job(s) (max {options.threads} in parallel)...")
     else:
-        # Single-threaded path uses the options as-is
-        read_simulator_single(options)
+        _LOG.info(f"Launching NEAT!")
+
+    output_opts: list = []
+    output_files: list = []
+    # a dict with contig keys, then the thread index, and finally the applicable contig variants as the value
+    all_variants: dict[str, dict[int, ContigVariants]] = {chrom: {} for chrom in reference_index.keys()}
+    for contig in splits_files_dict:
+        for (thread_idx, splits_file) in enumerate(splits_files_dict[contig]):
+            current_output_dir = options.temp_dir_path / splits_file.stem
+            current_output_dir.mkdir(parents=True, exist_ok=True)
+            # Create local filenames based on fasta indexing scheme.
+            fq1 = None
+            fq2 = None
+            bam = None
+            vcf = None
+            if options.produce_fastq:
+                fq1 = current_output_dir / options.fq1.name
+                if options.paired_ended:
+                    # if paired ended, there must be a fq2
+                    fq2 = current_output_dir / options.fq2.name
+            if options.produce_bam:
+                bam = current_output_dir / options.bam.name
+            if options.produce_vcf:
+                vcf = current_output_dir / options.vcf.name
+
+            current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, vcf, bam)
+            if options.threads == 1:
+                idx, contig, files_written, local_variants = read_simulator_single(
+                    1,
+                    current_options,
+                    contig,
+                    mut_model,
+                    seq_error_model,
+                    qual_score_model,
+                    fraglen_model,
+                    input_variants_dict[contig],
+                    target_regions_dict[contig],
+                    discard_regions_dict[contig],
+                    mutation_rate_dict[contig],
+                )
+                _LOG.info(f"Completed simulating contig {contig}.")
+                all_variants[contig][idx] = local_variants
+                output_files.append(files_written)
+            else:
+                output_opts.append((
+                    thread_idx,
+                    current_options,
+                    contig,
+                    mut_model,
+                    seq_error_model,
+                    qual_score_model,
+                    fraglen_model,
+                    input_variants_dict[contig],
+                    target_regions_dict[contig],
+                    discard_regions_dict[contig],
+                    mutation_rate_dict[contig],
+                ))
+
+    if options.threads > 1:
+        pool = ThreadPool(options.threads)
+        thread_idx, contig, files_written, local_variants = pool.starmap(read_simulator_single, output_opts)
+        all_variants[contig][thread_idx] = local_variants
+        output_files.append(files_written)
+
+    # stitch fastq and bams
+
+    # sort all variants and write out final VCF
+
+
+
+def initialize_all_models(options: Options):
+    """
+    Helper function that initializes models for use in the rest of the program.
+    This includes loading the model and attaching the rng for this run
+    to each model, so we can perform the various methods.
+
+    :param options: the options for this run
+    """
+
+    # Load mutation model or instantiate default
+    if options.mutation_model:
+        mut_model = pickle.load(gzip.open(options.mutation_model))
+    else:
+        mut_model = MutationModel()
+
+    # Set random number generator for the mutations:
+    mut_model.rng = options.rng
+    # Set custom mutation rate for the run, or set the option to the input rate so we can use it later
+    if options.mutation_rate is not None:
+        mut_model.avg_mut_rate = options.mutation_rate
+
+    _LOG.debug("Mutation models loaded")
+
+    # We need sequencing errors to get the quality score attributes, even for the vcf
+    if options.error_model:
+        error_models = pickle.load(gzip.open(options.error_model))
+        error_model = error_models["error_model1"]
+        quality_score_model = error_models["qual_score_model1"]
+    else:
+        # Use all the default values
+        error_model = SequencingErrorModel()
+        quality_score_model = TraditionalQualityModel()
+
+    _LOG.debug('Sequencing error and quality score models loaded')
+
+    if options.fragment_model:
+        fraglen_model = pickle.load(gzip.open(options.fragment_model))
+        fraglen_model.rng = options.rng
+    elif options.fragment_mean:
+        fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev)
+    else:
+        # For single ended, fragment length will be based on read length
+        fragment_mean = options.read_len * 2.0
+        fragment_st_dev = fragment_mean * 0.2
+        fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev)
+
+    _LOG.debug("Fragment length model loaded")
+
+    return \
+        mut_model, \
+        error_model, \
+        quality_score_model, \
+        fraglen_model

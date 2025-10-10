@@ -426,36 +426,37 @@ class Options(SimpleNamespace):
         if self.threads > 1:
             _LOG.info(f'Running read simulator in parallel mode.')
             _LOG.info(f'Multithreading - {self.threads} threads (or CPU Max)')
-            if self.parallel_mode == 'size':
-                _LOG.info(f'Running read simulator in \'size\' mode.')
-                _LOG.info(f'  - splitting input into size {self.size}')
-            elif self.parallel_mode == 'contig':
-                _LOG.info(f'Running read simulator in \'contig\' mode.')
-            if not self.cleanup_splits:
-                splits_dir = Path(f'{self.output_dir}/splits/')
-                _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
-            else:
-                splits_dir = self.temp_dir_path / "splits"
-
-            if self.reuse_splits:
-                if splits_dir.is_dir():
-                    _LOG.info(f'Reusing existing splits {splits_dir}.')
-                else:
-                    _LOG.warning(f'Reused splits set to True, but splits dir not found: {splits_dir}. Creating new splits')
-
-            validate_output_path(splits_dir, False)
-            self.splits_dir = splits_dir
-
-            if self.produce_bam:
-                try:
-                    import pysam
-                    _LOG.info(f"Using pysam: {pysam.__version__}")
-                except ImportError:
-                    raise ImportError (
-                        "Parallel NEAT requires pysam to be installed when produce_bam is set to true."
-                    )
         else:
             _LOG.info(f"Single threading - 1 thread.")
+            self.parallel_mode = 'contig'
+
+        if self.parallel_mode == 'size':
+            _LOG.info(f'Splitting reference into chunks.')
+            _LOG.info(f'  - splitting input into size {self.size}')
+        elif self.parallel_mode == 'contig':
+            _LOG.info(f'Splitting input by contig.')
+        if not self.cleanup_splits or self.reuse_splits:
+            splits_dir = Path(f'{self.output_dir}/splits/')
+            if splits_dir.is_dir():
+                _LOG.info(f'Reusing existing splits {splits_dir}.')
+            else:
+                _LOG.warning(f'Reused splits set to True, but splits dir not found: {splits_dir}. Creating new splits')
+            _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
+        else:
+            splits_dir = self.temp_dir_path / "splits"
+
+        validate_output_path(splits_dir, False)
+        self.splits_dir = splits_dir
+
+        if self.produce_bam:
+            try:
+                import pysam
+                _LOG.info(f"Using pysam: {pysam.__version__}")
+            except ImportError:
+                raise ImportError (
+                    "Parallel NEAT requires pysam to be installed when produce_bam is set to true."
+                )
+
         _LOG.info(f'Using a read length of {self.read_len}')
         if self.fragment_mean:
             if self.fragment_mean < self.read_len:

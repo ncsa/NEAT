@@ -16,6 +16,9 @@ import logging
 
 __all__ = ["main"]
 
+from Bio import SeqIO
+
+from neat.common import open_output, open_input
 from neat.read_simulator.utils import Options
 
 _LOG = logging.getLogger(__name__)
@@ -25,10 +28,10 @@ def concat(files_to_join: List[Path], dest: Path) -> None:
         # Nothing to do, and no error to throw
         return
 
-    with dest.open("wb") as out_f:
+    with open_output(dest, "wb") as out_f:
         for f in files_to_join:
-            with f.open("rb") as in_f:
-                shutil.copyfileobj(in_f, out_f)
+            with open_input(f) as in_f:
+                shutil.copyfileobj(in_f.encode('utf-8'), out_f)
 
 def merge_bam(bams: List[Path], dest: Path) -> None:
     if not bams:
@@ -98,28 +101,28 @@ def merge_vcf(vcfs: List[Path], dest: Path) -> None:
         return
     first, *rest = vcfs
     shutil.copy(first, dest)
-    with dest.open("ab") as out_f:
+    with open_output(dest, "ab") as out_f:
         for vcf in rest:
-            with vcf.open("rb") as fh:
+            with open_input(vcf) as fh:
                 for line in fh:
-                    if not line.startswith(b"#"):
-                        out_f.write(line)
+                    if not line.startswith("#"):
+                        out_f.write(line.encode('utf-8'))
 
-def main(options: Options, thread_options: list[Options]) -> None:
+def main(options: Options, thread_tuple: list[tuple[int, Options]]) -> None:
     fq1_list = []
     fq2_list = []
     vcf_list = []
     bam_list = []
     # Gather all output files from the ops objects
-    for local_ops in thread_options:
-        if local_ops.fq1:
-            fq1_list.append(local_ops.fq1)
-        if local_ops.fq2:
-            fq2_list.append(local_ops.fq2)
-        if local_ops.vcf:
-            vcf_list.append(local_ops.vcf)
-        if local_ops.bam:
-            bam_list.append(local_ops.bam)
+    for (thread_idx, thread_options) in thread_tuple:
+        if thread_options.fq1:
+            fq1_list.append(thread_options.fq1)
+        if thread_options.fq2:
+            fq2_list.append(thread_options.fq2)
+        if thread_options.vcf:
+            vcf_list.append(thread_options.vcf)
+        if thread_options.bam:
+            bam_list.append(thread_options.bam)
     # concatenate all files of each type. An empty list will result in no action
     concat(fq1_list, options.fq1)
     concat(fq2_list, options.fq2)

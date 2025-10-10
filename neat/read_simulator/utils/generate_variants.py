@@ -10,9 +10,10 @@ import numpy as np
 import re
 import sys
 
-from Bio import SeqRecord
+from Bio.Seq import Seq
 from numpy.random import Generator
 
+from . import OutputFileWriter
 from ...models import MutationModel
 from ...variants import Insertion, Deletion, SingleNucleotideVariant, ContigVariants
 from ..utils import Options
@@ -53,18 +54,15 @@ def map_non_n_regions(sequence) -> np.ndarray:
 
 
 def generate_variants(
-        reference: SeqRecord,
-        mutation_rate_regions: list[tuple[int, int]],
+        reference: Seq,
+        mutation_rate_regions: list[tuple[int, int, float]],
         existing_variants: ContigVariants,
         mutation_model: MutationModel,
         options: Options,
-        max_qual_score: int
+        max_qual_score: int,
 ) -> ContigVariants:
     """
     This function will generate variants to add to the dataset, by writing them to the input temp vcf file.
-
-    TODO: need to add cancer logic to this section
-
     :param reference: The reference to generate variants off of. This should be a SeqRecord object
     :param mutation_rate_regions: Genome segments with associated mutation rates
     :param existing_variants: Any input variants or overlaps to pick up from the previous contig
@@ -271,8 +269,8 @@ def generate_variants(
             # The count will tell us how many we actually added v how many we were trying to add
             n_added += 1
 
-    _LOG.info(f'Finished generating random mutations in {(time.time() - start)/60:.2f} minutes')
-    _LOG.info(f'Added {n_added} mutations to {reference.id}')
+    _LOG.debug(f'Finished generating random mutations in {(time.time() - start)/60:.2f} minutes')
+    _LOG.debug(f'Added {n_added} mutations to {reference.id}')
 
     return return_variants
 

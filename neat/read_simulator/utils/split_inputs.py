@@ -13,26 +13,12 @@ import logging
 
 __all__ = ["main"]
 
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+
 from neat.read_simulator.utils import Options
 
 _LOG = logging.getLogger(__name__)
-
-
-class SimpleRecord:
-    """
-    Basic stand‑in for Bio.SeqRecord.SeqRecord.
-    This lightweight class stores an identifier and a sequence and
-    implements ``__len__`` so that sequence length can be computed.
-    """
-
-    __slots__ = ("id", "seq")
-
-    def __init__(self, id_: str, seq: str):
-        self.id: str = id_
-        self.seq: str = seq
-
-    def __len__(self) -> int:
-        return len(self.seq)
 
 
 # Utility helpers
@@ -46,7 +32,7 @@ def disk_bytes_free(path: Path) -> int:
     return shutil.disk_usage(path).free
 
 # FASTA helpers
-def parse_fasta(path: Path) -> Iterator[SimpleRecord]:
+def parse_fasta(path: Path) -> Iterator[SeqRecord]:
     """Parse a FASTA file into SimpleRecord objects."""
     with path.open() as fh:
         header: str | None = None
@@ -57,51 +43,43 @@ def parse_fasta(path: Path) -> Iterator[SimpleRecord]:
                 continue
             if line.startswith(">"):
                 if header:
-                    yield SimpleRecord(header, "".join(seq_chunks))
+                    yield SeqRecord(Seq("".join(seq_chunks)), header)
                 header = line[1:].split(maxsplit=1)[0]
                 seq_chunks = []
             else:
                 seq_chunks.append(line)
         if header:
-            yield SimpleRecord(header, "".join(seq_chunks))
+            yield SeqRecord(Seq("".join(seq_chunks)), header)
 
 
-def write_fasta(rec: SimpleRecord, out_fa: Path, width: int = 60) -> None:
+def write_fasta(contig: str, rec: Seq, out_fa: Path, width: int = 60) -> None:
     """Write a sequence record to a FASTA file, wrapping lines at a given width."""
     with out_fa.open("w") as fh:
-        fh.write(f">{rec.id}\n")
-        for chunk in wrap(rec.seq, width):
+        fh.write(f">{contig}\n")
+        for chunk in wrap(str(rec), width):
             fh.write(chunk + "\n")
 
 # Chunk generators
-def chunk_record(record: SimpleRecord, chunk_len: int, overlap: int) -> Iterator[Tuple[SimpleRecord, int]]:
+def chunk_record(record: SeqRecord, chunk_len: int, overlap: int) -> Iterator[Seq]:
     """
     Yield overlapping slices of a record.
     """
     seq_len = len(record)
     start = 0
-    chunk_id = 1
+    chunkid = 0
     while start < seq_len:
         end = min(start + chunk_len, seq_len)
         sub_seq = record.seq[start:end]
-        new_id = f"{record.id}_chunk{chunk_id}"
-        yield SimpleRecord(new_id, sub_seq), chunk_id
+        yield sub_seq
         if end == seq_len:
             break
         start = end - overlap
-        chunk_id += 1
+        chunkid += 1
 
-def write_config(template_cfg: dict, out_fa: Path, out_yml: Path) -> None:
-    """Write a per‑fragment configuration derived from the template config."""
-    cfg_copy = template_cfg.copy()
-    cfg_copy["reference"] = str(out_fa.resolve())
-    if "name" in cfg_copy:
-        cfg_copy["name"] = out_fa.stem
-    out_yml.write_text(yaml.safe_dump(cfg_copy, sort_keys=False))
-
-def main(options: Options) -> list:
+def main(options: Options, frag_mean: float, reference_index: dict) -> dict:
     """Perform the splitting of a FASTA and NEAT configuration."""
-    overlap = options.read_len * 2
+
+    overlap = int(frag_mean) * 2
 
     approx_out_bytes = int(options.reference.stat().st_size * 1.1)
     if disk_bytes_free(options.output_dir) < approx_out_bytes:
@@ -111,29 +89,28 @@ def main(options: Options) -> list:
         )
 
     idx = 1
-    pad = 6  # zero-pad width for global indices
+    pad = 10  # zero-pad width for global indices
 
     written = 0
-    fasta_files = []
-    for rec in parse_fasta(options.reference):
+    # We'll keep track of chunks by contig, to help us out later
+    split_fasta_dict = {key: [] for key in reference_index.keys()}
+    for contig, sequence in reference_index.items():
         if options.mode == "contig":
-            stem = f"{idx:0{pad}d}__{rec.id}"
+            stem = f"{idx:0{pad}d}__{contig}"
             fa = options.splits_dir / f"{stem}.fa"
-            write_fasta(rec, fa)
-            fasta_files.append(fa)
+            write_fasta(contig, sequence, fa)
+            split_fasta_dict[contig].append(fa)
             idx += 1
             written += 1
         else:
-            for subrec, chunk_id in chunk_record(rec, options.size, overlap):
-                stem = f"{idx:0{pad}d}__{subrec.id}"
+            for subseq in chunk_record(sequence, options.size, overlap):
+                stem = f"{idx:0{pad}d}__{contig}"
                 fa = options.splits_dir / f"{stem}.fa"
-                write_fasta(subrec, fa)
-                fasta_files.append(fa)
+                write_fasta(contig, subseq, fa)
+                split_fasta_dict[contig].append(fa)
                 idx += 1
                 written += 1
 
     # Report success via the logger instead of printing to stderr
     _LOG.info(f"Generated {written} FASTAs in {options.splits_dir}")
-    files_written_string = "\n\t".join([str(x) for x in fasta_files])
-    _LOG.debug(f'Splits files written: \n\t{files_written_string}')
-    return fasta_files
+    return split_fasta_dict

@@ -30,7 +30,7 @@ class ContigVariants:
     """
     def __init__(self):
         self.variant_locations: list[int] = []
-        self.contig_variants: dict[int: list[VariantTypes]] = {}
+        self.contig_variants: dict[int, list] = {}
         self.default_dict = {
             "ID": '.',
             "FILTER": "PASS",
