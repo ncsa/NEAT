@@ -27,7 +27,7 @@ def read_simulator_single(
         target_regions: list,
         discard_regions: list,
         mutation_regions: list,
-) -> tuple[int, str, dict[str, Path], ContigVariants]:
+) -> tuple[int, str, ContigVariants, dict[str, Path], ]:
     """
     inputs:
     :param thread_idx: index of current thread
@@ -128,8 +128,8 @@ def read_simulator_single(
     return (
         thread_idx,
         contig_name,
+        local_variants,
         file_dict,
-        local_variants
     )
 
 def initialize_all_models(options: Options):

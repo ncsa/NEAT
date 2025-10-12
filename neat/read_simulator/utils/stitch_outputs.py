@@ -51,7 +51,7 @@ def main(ofw: OutputFileWriter, output_files: list[tuple[int, str, dict[str, Pat
     fq2_list = []
     bam_list = []
     # Gather all output files from the ops objects
-    for (thread_idx, contig_name, file_dict) in output_files:
+    for (thread_idx,file_dict) in output_files:
         if file_dict["fq1"]:
             fq1_list.append(file_dict["fq1"])
         if file_dict["fq2"]:

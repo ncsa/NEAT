@@ -158,7 +158,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
             current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, vcf, bam)
             if options.threads == 1:
-                idx, contig, files_written, local_variants = read_simulator_single(
+                idx, contig, local_variants, files_written = read_simulator_single(
                     1,
                     start,
                     current_options,
@@ -199,11 +199,11 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         pool.close()
         pool.join()
         _LOG.info(f"Completed mutiprocess simulation, recording results.")
-        results = [r.get() for r in output_files]
+        results = [r.get() for r in results]
         # Need to organize the results, as above
-        for idx, contig, files_written, local_variants in results:
+        for idx, contig, local_variants, files_written in results:
             all_variants[contig][idx] = local_variants
-            output_files.append((thread_idx, files_written))
+            output_files.append((idx, files_written))
 
     _LOG.info("Processing complete, writing output")
 
