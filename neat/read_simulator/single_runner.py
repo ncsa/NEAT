@@ -123,7 +123,6 @@ def read_simulator_single(
         "fq1": local_output_file_writer.fq1,
         "fq2": local_output_file_writer.fq2,
         "bam": local_output_file_writer.bam,
-        "vcf": local_output_file_writer.vcf
     }
     return (
         thread_idx,
