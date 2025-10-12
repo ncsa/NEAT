@@ -1,21 +1,18 @@
 """
 Runner for generate_reads task
 """
-import gzip
 import logging
-import pickle
 import time
-from multiprocessing import Pool
+from multiprocessing import set_start_method
 from multiprocessing.pool import ThreadPool
 
 from pathlib import Path
 
 from Bio import SeqIO
 
-from .utils import Options, parse_input_vcf, parse_beds, OutputFileWriter
+from .utils import Options, OutputFileWriter, parse_beds, parse_input_vcf
 from ..common import validate_input_path, validate_output_path
 from .single_runner import read_simulator_single
-from ..models import MutationModel, SequencingErrorModel, TraditionalQualityModel, FragmentLengthModel
 from ..variants import ContigVariants
 from .utils.split_inputs import main as split_main
 from .utils.stitch_outputs import main as stitch_main
@@ -68,7 +65,6 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         output_dir,
         str(file_prefix),
         config,
-
     )
 
     # Set up the recombination later
@@ -80,13 +76,16 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         count += reference_keys_with_lens[contig]
     _LOG.debug(f"Length of total reference: {count / 1_000_000:.2f} Mb")
 
-    # initialize models for run
+    # Note that parse_beds will return None for any empty or non-input files
+    # parse input targeted regions, if present.
+    if any((options.target_bed, options.discard_bed, options.mutation_bed)):
+        _LOG.info(f"Reading input bed files.")
+
     (
-        mut_model,
-        seq_error_model,
-        qual_score_model,
-        fraglen_model
-    ) = initialize_all_models(options)
+        target_regions_dict,
+        discard_regions_dict,
+        mutation_rate_dict
+    ) = parse_beds(options, reference_keys_with_lens)
 
     input_variants_dict = {x: ContigVariants() for x in reference_keys_with_lens}
     if options.include_vcf:
@@ -95,25 +94,14 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             input_variants_dict,
             options.include_vcf,
             options.ploidy,
-            mut_model.homozygous_freq,
-            reference_index,
+            options,
             options
         )
 
         _LOG.debug("Finished reading input vcf file")
 
-    # Note that parse_beds will return None for any empty or non-input files
-    bed_files = (options.target_bed, options.discard_bed, options.mutation_bed)
-
-    # parse input targeted regions, if present.
-    if any(bed_files):
-        _LOG.info(f"Reading input bed files.")
-
-    (
-        target_regions_dict,
-        discard_regions_dict,
-        mutation_rate_dict
-    ) = parse_beds(options, reference_keys_with_lens, mut_model.avg_mut_rate)
+    if any((options.target_bed, options.discard_bed, options.mutation_bed)):
+        _LOG.debug("Finished reading input beds.")
 
     # Prepare headers for final vcf
     bam_header = None
@@ -122,16 +110,16 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         # This information will be needed later to create the bam header.
         bam_header = reference_keys_with_lens
 
-    if any(bed_files):
-        _LOG.debug("Finished reading input beds.")
-
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf.
     output_file_writer = OutputFileWriter(options=options, bam_header=bam_header)
 
     # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
     _LOG.info("Splitting reference...")
-    splits_files_dict = split_main(options, fraglen_model.fragment_mean, reference_index)
+    splits_files_dict: dict[str, dict[tuple[int, int], Path]] = split_main(
+        options,
+        reference_index
+    )
 
     if options.threads > 1:
         _LOG.info(f"[parallel] Launching {len(splits_files_dict)} NEAT job(s) (max {options.threads} in parallel)...")
@@ -142,9 +130,10 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     output_files: list = []
     # a dict with contig keys, then the thread index, and finally the applicable contig variants as the value
     all_variants: dict[str, dict[int, ContigVariants]] = {chrom: {} for chrom in reference_index.keys()}
+    thread_idx = 1
     for contig in splits_files_dict:
         contig_index = list(reference_keys_with_lens.keys()).index(contig)
-        for (thread_idx, splits_file) in enumerate(splits_files_dict[contig]):
+        for ((start, length), splits_file) in splits_files_dict[contig].items():
             current_output_dir = options.temp_dir_path / splits_file.stem
             current_output_dir.mkdir(parents=True, exist_ok=True)
             # Create local filenames based on fasta indexing scheme.
@@ -171,13 +160,10 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             if options.threads == 1:
                 idx, contig, files_written, local_variants = read_simulator_single(
                     1,
+                    start,
                     current_options,
                     contig,
                     contig_index,
-                    mut_model,
-                    seq_error_model,
-                    qual_score_model,
-                    fraglen_model,
                     input_variants_dict[contig],
                     target_regions_dict[contig],
                     discard_regions_dict[contig],
@@ -187,30 +173,40 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                 all_variants[contig][idx] = local_variants
                 output_files.append((thread_idx, files_written))
             else:
+                thread_input_variants = filter_thread_variants(input_variants_dict[contig], (start, start+length))
+                thread_target_regions = filter_bed_regions(target_regions_dict[contig], (start, start+length))
+                thread_discard_regions = filter_bed_regions(discard_regions_dict[contig], (start, start + length))
+                thread_mutation_regions = filter_bed_regions(mutation_rate_dict[contig], (start, start + length))
+
                 output_opts.append((
                     thread_idx,
+                    start,
                     current_options,
                     contig,
                     contig_index,
-                    mut_model,
-                    seq_error_model,
-                    qual_score_model,
-                    fraglen_model,
-                    input_variants_dict[contig],
-                    target_regions_dict[contig],
-                    discard_regions_dict[contig],
-                    mutation_rate_dict[contig],
+                    thread_input_variants,
+                    thread_target_regions,
+                    thread_discard_regions,
+                    thread_mutation_regions
                 ))
+            thread_idx += 1
 
     if options.threads > 1:
         pool = ThreadPool(options.threads)
-        results = pool.starmap(read_simulator_single, output_opts)
-        for (thread_idx, contig_name, files_written, local_variants) in results:
-            all_variants[contig_name][thread_idx] = local_variants
+        results = []
+        for opts in output_opts:
+            results.append(pool.apply_async(read_simulator_single, opts))
+        pool.close()
+        pool.join()
+        _LOG.info(f"Completed mutiprocess simulation, recording results.")
+        results = [r.get() for r in output_files]
+        # Need to organize the results, as above
+        for idx, contig, files_written, local_variants in results:
+            all_variants[contig][idx] = local_variants
             output_files.append((thread_idx, files_written))
 
     _LOG.info("Processing complete, writing output")
-    # stitch fastq and bams
+
     stitch_main(output_file_writer, output_files)
 
     # sort all variants and write out final VCF
@@ -253,56 +249,23 @@ def write_final_vcf(
                            f"{sample}\n"
                     ofw.write_vcf_record(line)
 
-def initialize_all_models(options: Options):
-    """
-    Helper function that initializes models for use in the rest of the program.
-    This includes loading the model and attaching the rng for this run
-    to each model, so we can perform the various methods.
+def filter_thread_variants(contig_variants: ContigVariants, coords: tuple[int, int]) -> ContigVariants:
+    ret_contig_vars = ContigVariants()
+    for variant_loc in contig_variants.variant_locations:
+        if coords[0] <= variant_loc < coords[1]:
+            # The variant location is within our area of interest
+            variants_of_interest = contig_variants[variant_loc]
+            for variant in variants_of_interest:
+                ret_contig_vars.add_variant(variant)
 
-    :param options: the options for this run
-    """
+    return ret_contig_vars
 
-    # Load mutation model or instantiate default
-    if options.mutation_model:
-        mut_model = pickle.load(gzip.open(options.mutation_model))
-    else:
-        mut_model = MutationModel()
-
-    # Set random number generator for the mutations:
-    mut_model.rng = options.rng
-    # Set custom mutation rate for the run, or set the option to the input rate so we can use it later
-    if options.mutation_rate is not None:
-        mut_model.avg_mut_rate = options.mutation_rate
-
-    _LOG.debug("Mutation models loaded")
-
-    # We need sequencing errors to get the quality score attributes, even for the vcf
-    if options.error_model:
-        error_models = pickle.load(gzip.open(options.error_model))
-        error_model = error_models["error_model1"]
-        quality_score_model = error_models["qual_score_model1"]
-    else:
-        # Use all the default values
-        error_model = SequencingErrorModel()
-        quality_score_model = TraditionalQualityModel()
-
-    _LOG.debug('Sequencing error and quality score models loaded')
-
-    if options.fragment_model:
-        fraglen_model = pickle.load(gzip.open(options.fragment_model))
-        fraglen_model.rng = options.rng
-    elif options.fragment_mean:
-        fraglen_model = FragmentLengthModel(options.fragment_mean, options.fragment_st_dev)
-    else:
-        # For single ended, fragment length will be based on read length
-        fragment_mean = options.read_len * 2.0
-        fragment_st_dev = fragment_mean * 0.2
-        fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev)
-
-    _LOG.debug("Fragment length model loaded")
-
-    return \
-        mut_model, \
-        error_model, \
-        quality_score_model, \
-        fraglen_model
+def filter_bed_regions(regions: list, coords: tuple[int,int]) -> list:
+    ret_list = []
+    for region in regions:
+        if region[0] <= coords[0] < region[1] or \
+            region[0] < coords[1] <= region[1] or \
+            coords[0] <= region[0] < coords[1] or \
+            coords[0] < region[1] <= coords[1]:
+            ret_list.append(region)
+    return ret_list

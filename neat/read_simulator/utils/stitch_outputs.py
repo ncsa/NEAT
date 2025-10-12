@@ -45,12 +45,13 @@ def merge_bam(bams: List[Path], bam_handle) -> None:
                 else:
                     bam_handle.write(line)
 
-def main(ofw: OutputFileWriter, output_files: list[tuple[int, dict[str, Path]]]) -> None:
+def main(ofw: OutputFileWriter, output_files: list[tuple[int, str, dict[str, Path]]]) -> None:
+
     fq1_list = []
     fq2_list = []
     bam_list = []
     # Gather all output files from the ops objects
-    for (thread_idx, file_dict) in output_files:
+    for (thread_idx, contig_name, file_dict) in output_files:
         if file_dict["fq1"]:
             fq1_list.append(file_dict["fq1"])
         if file_dict["fq2"]:

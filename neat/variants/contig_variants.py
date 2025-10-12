@@ -10,10 +10,11 @@ import numpy as np
 import logging
 
 from bisect import bisect
-from Bio import SeqRecord
+from Bio.SeqRecord import SeqRecord
 
+from .base_variant import BaseVariant
 from ..common import get_genotype_string
-from .constants import *
+from .constants import Insertion, Deletion, SingleNucleotideVariant
 
 _LOG = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ class ContigVariants:
         return False
 
     @staticmethod
-    def get_ref_alt(variant: VariantTypes, reference: SeqRecord) -> (str, str):
+    def get_ref_alt(variant: BaseVariant, reference: SeqRecord) -> tuple[str, str]:
         """
         Turns variants at a location into a vcf output. Only outputs items it has data for,
         but in the correct vcf format and order. Note that for a VCF, Insertion and Deletion

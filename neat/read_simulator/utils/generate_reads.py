@@ -1,16 +1,10 @@
 import logging
 import time
-import pickle
-import re
 
 from math import ceil
-from pathlib import Path
 
-import Bio
-from Bio import SeqRecord
+from Bio.SeqRecord import SeqRecord
 from bisect import bisect_left, bisect_right
-
-from Bio.Seq import Seq
 
 from . import OutputFileWriter
 from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
@@ -248,12 +242,12 @@ def generate_reads(
             continue
         raw_read = read1 + read2
 
-        read_name = f'{contig_index:010d}_{thread_index}_{str(i+1)}'
+        read_name = f'NEAT_generated_{contig_index:010d}_{thread_index}_{str(i+1)}'
 
         # add a small amount of padding to the end to account for deletions.
         # Trying out this method of using the read-length, which for the default neat run gives ~30.
         padding = options.read_len//5
-        segment = reference[read1[0]: read1[1] + padding]
+        segment = reference[read1[0]: read1[1] + padding].seq
 
         # if we're at the end of the contig, this may not pick up the full padding
         actual_padding = len(segment) - options.read_len
@@ -286,7 +280,7 @@ def generate_reads(
             padding = options.read_len//5
             start_coordinate = max((read2[0] - padding), 0)
             # this ensures that we get a segment with NEAT-recognized bases
-            segment = reference[start_coordinate: read2[1]]
+            segment = reference[start_coordinate: read2[1]].seq
             # See note above
             actual_padding = len(segment) - options.read_len
 
