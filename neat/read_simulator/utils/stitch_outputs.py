@@ -23,6 +23,7 @@ from Bio import SeqIO, bgzf
 
 from neat.common import open_output, open_input
 from neat.read_simulator.utils import Options, OutputFileWriter
+from neat.read_simulator.utils.output_file_writer import BAM_COMPRESSION_LEVEL
 
 _LOG = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def merge_bam(reads_pickles: List[Path], ofw: OutputFileWriter, contig_dict: dic
     if not reads_pickles:
         return
 
+    bam_handle = bgzf.BgzfWriter(ofw.bam, "w", compresslevel=BAM_COMPRESSION_LEVEL)
     for file in reads_pickles:
         contig_reads_data = pickle.load(gzip.open(file))
         for read_data in contig_reads_data:
@@ -50,12 +52,14 @@ def merge_bam(reads_pickles: List[Path], ofw: OutputFileWriter, contig_dict: dic
                 ofw.write_bam_record(
                     read1,
                     contig_dict[read1.reference_id],
+                    bam_handle,
                     read_length
                 )
             if read2:
                 ofw.write_bam_record(
                     read2,
                     contig_dict[read2.reference_id],
+                    bam_handle,
                     read_length
                 )
 

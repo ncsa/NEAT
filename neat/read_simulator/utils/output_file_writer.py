@@ -139,6 +139,7 @@ class OutputFileWriter:
                 bam_handle.write(pack('<i', name_length))
                 bam_handle.write(f'{item}\0')
                 bam_handle.write(pack('<i', self.bam_header[item]))
+            bam_handle.close()
 
     def write_fastq_record(self, filename: Path, record: str):
         if filename in self.files_to_write:
@@ -170,6 +171,7 @@ class OutputFileWriter:
             self,
             read: Read,
             contig_id: int,
+            bam_handle,
             read_length: int
     ):
         """
@@ -238,7 +240,7 @@ class OutputFileWriter:
 
         block_size = 32 + len(read.name) + 1 + len(encoded_cig) + len(encoded_seq) + len(encoded_qual)
 
-        self.files_to_write[self.bam].write((
+        bam_handle.write((
                 pack('<i', block_size) +
                 pack('<i', contig_id) +
                 pack('<i', read.position + 1) +
