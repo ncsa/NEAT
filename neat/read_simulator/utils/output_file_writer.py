@@ -170,7 +170,6 @@ class OutputFileWriter:
             self,
             read: Read,
             contig_id: int,
-            bam_handle: bgzf.BgzfWriter,
             read_length: int
     ):
         """
@@ -178,7 +177,6 @@ class OutputFileWriter:
 
         :param read: Read object to write to file
         :param contig_id: the index of the reference for this
-        :param bam_handle: the handle to write files to
         :param read_length: the length of the read to output
         """
         read_bin = reg2bin(read.position, read.end_point)
@@ -240,7 +238,7 @@ class OutputFileWriter:
 
         block_size = 32 + len(read.name) + 1 + len(encoded_cig) + len(encoded_seq) + len(encoded_qual)
 
-        bam_handle.write((
+        self.files_to_write[self.bam].write((
                 pack('<i', block_size) +
                 pack('<i', contig_id) +
                 pack('<i', read.position + 1) +

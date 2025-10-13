@@ -56,7 +56,7 @@ def chunk_record(record: Seq, chunk_len: int, overlap: int) -> Iterator[tuple[in
         start = end - overlap
         chunkid += 1
 
-def main(options: Options, reference_index: dict) -> dict:
+def main(options: Options, reference_index: dict) -> tuple[dict, int]:
     """Perform the splitting of a FASTA and NEAT configuration."""
 
     overlap = int(options.read_len) * 2
@@ -93,4 +93,4 @@ def main(options: Options, reference_index: dict) -> dict:
 
     # Report success via the logger instead of printing to stderr
     _LOG.info(f"Generated {written} FASTAs in {options.splits_dir}")
-    return split_fasta_dict
+    return split_fasta_dict, written

@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+from multiprocessing import Pool, Process
 from pathlib import Path
 from struct import pack
 from typing import Iterable, List, Tuple
@@ -34,27 +35,11 @@ def concat(files_to_join: List[Path], ofw: OutputFileWriter, file: Path) -> None
     for f in files_to_join:
         with bgzf.BgzfReader(f) as in_f:
             shutil.copyfileobj(in_f, out_handle)
+    out_handle.close()
 
-def merge_bam(reads_pickles: List[Path], ofw: OutputFileWriter, contig_dict: dict, read_length: int) -> None:
+def merge_bam(reads_pickles: List[Path], ofw: OutputFileWriter, contig_dict: dict, read_length: int, threads: int) -> None:
     if not reads_pickles:
         return
-    bam_out = ofw.files_to_write[ofw.bam]
-    bam_out.write("BAM\1")
-    header = "@HD\tVN:1.4\tSO:coordinate\n"
-    for item in ofw.bam_header:
-        header += f'@SQ\tSN:{item}\tLN:{str(ofw.bam_header[item])}\n'
-    header += "@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n"
-    header_bytes = len(header)
-    num_refs = len(ofw.bam_header)
-    bam_out.write(pack('<i', header_bytes))
-    bam_out.write(header)
-    bam_out.write(pack('<i', num_refs))
-
-    for item in ofw.bam_header:
-        name_length = len(item) + 1
-        bam_out.write(pack('<i', name_length))
-        bam_out.write(f'{item}\0')
-        bam_out.write(pack('<i', ofw.bam_header[item]))
 
     for file in reads_pickles:
         contig_reads_data = pickle.load(gzip.open(file))
@@ -65,23 +50,21 @@ def merge_bam(reads_pickles: List[Path], ofw: OutputFileWriter, contig_dict: dic
                 ofw.write_bam_record(
                     read1,
                     contig_dict[read1.reference_id],
-                    bam_out,
                     read_length
                 )
             if read2:
                 ofw.write_bam_record(
                     read2,
                     contig_dict[read2.reference_id],
-                    bam_out,
                     read_length
                 )
-    bam_out.close()
 
 def main(
         ofw: OutputFileWriter,
         output_files: list[tuple[int, str, dict[str, Path]]],
         contig_dict: dict | None = None,
         read_length: int | None = None,
+        threads: int | None = None
 ) -> None:
 
     fq1_list = []
@@ -98,7 +81,6 @@ def main(
     # concatenate all files of each type. An empty list will result in no action
     concat(fq1_list, ofw, ofw.fq1)
     concat(fq2_list, ofw, ofw.fq2)
-    merge_bam(reads_pickles, ofw, contig_dict, read_length)
-
+    merge_bam(reads_pickles, ofw, contig_dict, read_length, threads)
     # Final success message via logging
     _LOG.info("Stitching complete!")

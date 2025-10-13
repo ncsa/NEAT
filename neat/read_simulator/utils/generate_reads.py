@@ -60,15 +60,6 @@ def cover_dataset(
     while read_count <= number_reads + 10:
         start = 0
         loop_count += 1
-        # if loop_count > options.coverage * 100:
-        #     _LOG.error("The selected fragment mean and standard deviation are causing NEAT to get stuck.")
-        #     _LOG.error("Please try adjusting fragment mean or standard deviation to see if that fixes the issue.")
-        #     _LOG.error(f"parameters:\n"
-        #                f"chromosome length: {span_length}\n"
-        #                f"read length: {options.read_len}\n"
-        #                f"fragment mean: {options.fragment_mean}\n"
-        #                f"fragment standard deviation: {options.fragment_st_dev}")
-        #     sys.exit(1)
         temp_fragments = []
         # Mapping random fragments onto genome
         i = 0
@@ -184,19 +175,19 @@ def generate_reads(
         implemented, to be used for parallelization.
     :return: A tuple of the filenames for the temp files created
     """
-    _LOG.info(f'Sampling reads for thread {thread_index}...')
+    # _LOG.info(f'Sampling reads for thread {thread_index}...')
     start_time = time.time()
 
-    _LOG.debug("Covering dataset.")
+    # _LOG.debug("Covering dataset.")
     t = time.time()
     reads = cover_dataset(
         len(reference),
         options,
         fraglen_model,
     )
-    _LOG.debug(f"Dataset coverage took: {(time.time() - t)/60:.2f} m")
+    # _LOG.debug(f"Dataset coverage took: {(time.time() - t)/60:.2f} m")
 
-    _LOG.debug("Writing fastq(s) and optional bam, if indicated")
+    # _LOG.debug("Writing fastq(s) and optional bam, if indicated")
     t = time.time()
 
     reads_to_write = []
@@ -319,10 +310,11 @@ def generate_reads(
             reads_to_write.append((read_1, None))
 
     if options.produce_fastq:
-        _LOG.info(f"Chunk fastq(s) written in: {(time.time() - t)/60:.2f} m")
+        # _LOG.info(f"Chunk fastq(s) written in: {(time.time() - t)/60:.2f} m")
+        pass
     if options.produce_bam:
         with open_output(options.reads_pickle) as reads:
             pickle.dump(reads_to_write, reads)
-        _LOG.info(f"Chunk bam(s) written.")
+        # _LOG.info(f"Chunk bam(s) written.")
 
     _LOG.info(f"Finished sampling reads for thread {thread_index} in {(time.time() - start_time)/60:.2f} m")

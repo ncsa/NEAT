@@ -115,13 +115,13 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
     _LOG.info("Splitting reference...")
-    splits_files_dict: dict[str, dict[tuple[int, int], Path]] = split_main(
+    (splits_files_dict, count) = split_main(
         options,
         reference_index
     )
 
     if options.threads > 1:
-        _LOG.info(f"[parallel] Launching {len(splits_files_dict)} NEAT job(s) (max {options.threads} in parallel)...")
+        _LOG.info(f"[parallel] Launching {count} NEAT job(s) (max {options.threads} in parallel)...")
     else:
         _LOG.info(f"Launching NEAT!")
 
@@ -191,7 +191,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         pool = mp.Pool(options.threads)
         results = pool.starmap_async(read_simulator_single, output_opts)
 
-        _LOG.info(f"Completed mutiprocess simulation, recording results.")
+        _LOG.info(f"launching mutiprocess simulation, recording results.")
         pool.close()
         pool.join()
 
@@ -202,16 +202,18 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     _LOG.info("Processing complete, writing output")
 
-    if options.produce_bam:
-        stitch_main(output_file_writer, output_files, contig_dict, options.read_len)
-    else:
-        stitch_main(output_file_writer, output_files)
-
     # sort all variants and write out final VCF
     if options.produce_vcf:
         write_final_vcf(all_variants, reference_index, output_file_writer)
 
-    output_file_writer.close_files()
+    start = time.time()
+    if options.produce_bam:
+        stitch_main(output_file_writer, output_files, contig_dict, options.read_len, options.threads)
+    else:
+        stitch_main(output_file_writer, output_files)
+    _LOG.info(f"It took {time.time()-start} s to write the bam file")
+
+    # output_file_writer.close_files()
 
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
 
