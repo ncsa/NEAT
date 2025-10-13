@@ -8,18 +8,14 @@ Methods allow comparisons between reads, based on chromosome, start and end. Als
 both the reference sequence and the read and the actual read sequence.
 """
 import logging
-from copy import deepcopy
-
 import numpy as np
 
-from typing import TextIO
+from typing import TextIO, Iterator
 from Bio.Seq import Seq, MutableSeq
 from Bio import pairwise2
 from Bio.pairwise2 import format_alignment
 from numpy.random import Generator
 
-from . import Options
-from . import OutputFileWriter
 from ...common import ALLOWED_NUCL
 from ...models import SequencingErrorModel, ErrorContainer, TraditionalQualityModel
 from ...variants import SingleNucleotideVariant, Insertion, Deletion
@@ -306,24 +302,32 @@ class Read:
 
     def finalize_read_and_write(
             self,
-            read_num: int,
             err_model: SequencingErrorModel,
             qual_model: TraditionalQualityModel,
-            options: Options,
-            output_file_writer: OutputFileWriter,
+            fastq_handle: Iterator,
+            quality_offset: int,
+            produce_fastq: bool,
+            rng: Generator,
     ):
         """
         Writes the record to the temporary fastq file
 
-        :param read_num: 1 or 2 are the possibilities
         :param err_model: The error model for the run
         :param qual_model: The quality score model for the run
         :param options: The options for this section
-        :param output_file_writer: for writing files
+        :param fastq_handle: for writing fastq1
+        :param quality_offset: the quality offset for this run
+        :param produce_fastq: If true, this will write out the temp fastqs. If false, this will only write out the tsams
+            to create the bam files.
+        :param rng: the random number generator for this run
         """
 
         # Generate quality scores for the read
-        self.quality_array = qual_model.get_quality_scores(err_model.read_length, len(self.reference_segment), options.rng)
+        self.quality_array = qual_model.get_quality_scores(
+            err_model.read_length,
+            len(self.reference_segment),
+            rng
+        )
 
         # This replaces either hard or soft-masked reference segment with upper case or a standard repeat
         # It updates the quality array and reference segment in place, including reversing them, if appropriate
@@ -337,40 +341,22 @@ class Read:
             self.padding,
             self.reference_segment,
             self.quality_array,
-            options.rng
+            rng
         )
 
         # This applies any variants, updates quality score and read sequence in place
-        self.apply_variants_for_final_output(qual_model, options.rng)
+        self.apply_variants_for_final_output(qual_model, rng)
 
-        self.read_quality_string = "".join([chr(int(x) + options.quality_offset) for x in self.quality_array])
+        self.read_quality_string = "".join([chr(int(x) + quality_offset) for x in self.quality_array])
         # If this read isn't low quality, pick a standard mapping quality
         # We could have this be user assigned.
         if not self.mapping_quality:
             self.mapping_quality = 70
 
-        if options.produce_fastq:
+        # Might as well double check here
+        if produce_fastq:
             fastq_record = f'@{self.name}\n{str(self.read_sequence[:self.run_read_length])}\n+\n{self.read_quality_string}\n'
-            if read_num == 1:
-                output_file_writer.write_fastq_record(options.fq1, fastq_record)
-            else:
-                output_file_writer.write_fastq_record(options.fq2, fastq_record)
-
-        if options.produce_bam:
-            output_file_writer.write_bam_record(
-                self.name,
-                self.position,
-                self.end_point,
-                self.get_mpos(),
-                self.get_tlen(),
-                self.calculate_flags(options.paired_ended),
-                self.read_sequence,
-                self.make_cigar(),
-                self.read_quality_string,
-                self.mapping_quality,
-                self.ref_id_index,
-                options.read_len
-            )
+            fastq_handle.write(fastq_record)
 
 
     def convert_masking(self, quality_model: TraditionalQualityModel):

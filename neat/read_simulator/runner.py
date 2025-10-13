@@ -3,8 +3,7 @@ Runner for generate_reads task
 """
 import logging
 import time
-from multiprocessing import set_start_method
-from multiprocessing.pool import ThreadPool
+import multiprocessing as mp
 
 from pathlib import Path
 
@@ -131,16 +130,17 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # a dict with contig keys, then the thread index, and finally the applicable contig variants as the value
     all_variants: dict[str, dict[int, ContigVariants]] = {chrom: {} for chrom in reference_index.keys()}
     thread_idx = 1
+    contig_list = list(reference_keys_with_lens.keys())
+    contig_dict = {contig: contig_list.index(contig) for contig in reference_keys_with_lens.keys()}
     for contig in splits_files_dict:
-        contig_index = list(reference_keys_with_lens.keys()).index(contig)
+        contig_index = contig_dict[contig]
         for ((start, length), splits_file) in splits_files_dict[contig].items():
             current_output_dir = options.temp_dir_path / splits_file.stem
             current_output_dir.mkdir(parents=True, exist_ok=True)
             # Create local filenames based on fasta indexing scheme.
             fq1 = None
             fq2 = None
-            bam = None
-            vcf = None
+            block_reads_pickle = None
             if options.produce_fastq:
                 fq1 = current_output_dir / options.fq1.name
                 # validate to double-check we don't have name collisions
@@ -150,13 +150,9 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     fq2 = current_output_dir / options.fq2.name
                     validate_output_path(fq2, True, False)
             if options.produce_bam:
-                bam = current_output_dir / options.bam.name
-                validate_output_path(bam, True, False)
-            if options.produce_vcf:
-                vcf = current_output_dir / options.vcf.name
-                validate_output_path(vcf, True, False)
-
-            current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, vcf, bam)
+                block_reads_pickle = current_output_dir / "reads.p.gz"
+                validate_output_path(block_reads_pickle, True, False)
+            current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, block_reads_pickle)
             if options.threads == 1:
                 idx, contig, local_variants, files_written = read_simulator_single(
                     1,
@@ -192,22 +188,24 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             thread_idx += 1
 
     if options.threads > 1:
-        pool = ThreadPool(options.threads)
-        results = []
-        for opts in output_opts:
-            results.append(pool.apply_async(read_simulator_single, opts))
+        pool = mp.Pool(options.threads)
+        results = pool.starmap_async(read_simulator_single, output_opts)
+
+        _LOG.info(f"Completed mutiprocess simulation, recording results.")
         pool.close()
         pool.join()
-        _LOG.info(f"Completed mutiprocess simulation, recording results.")
-        results = [r.get() for r in results]
+
         # Need to organize the results, as above
-        for idx, contig, local_variants, files_written in results:
+        for idx, contig, local_variants, files_written in results.get():
             all_variants[contig][idx] = local_variants
             output_files.append((idx, files_written))
 
     _LOG.info("Processing complete, writing output")
 
-    stitch_main(output_file_writer, output_files)
+    if options.produce_bam:
+        stitch_main(output_file_writer, output_files, contig_dict, options.read_len)
+    else:
+        stitch_main(output_file_writer, output_files)
 
     # sort all variants and write out final VCF
     if options.produce_vcf:

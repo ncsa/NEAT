@@ -11,13 +11,11 @@ __all__ = [
 import re
 from struct import pack
 import logging
-import gzip
 
 from Bio import bgzf
 from pathlib import Path
 
-from Bio.Seq import Seq
-
+from .read import Read
 from .options import Options
 
 _LOG = logging.getLogger(__name__)
@@ -142,7 +140,6 @@ class OutputFileWriter:
                 bam_handle.write(f'{item}\0')
                 bam_handle.write(pack('<i', self.bam_header[item]))
 
-
     def write_fastq_record(self, filename: Path, record: str):
         if filename in self.files_to_write:
             self.files_to_write[filename].write(record)
@@ -171,104 +168,93 @@ class OutputFileWriter:
 
     def write_bam_record(
             self,
-            read_name: str,
-            read_position: int,
-            read_end: int,
-            read_mpos: int,
-            read_tlen: int,
-            read_flags: int,
-            read_alt_seq: Seq,
-            read_cigar: str,
-            read_qual_string: str,
-            read_map_qual: int,
+            read: Read,
             contig_id: int,
+            bam_handle: bgzf.BgzfWriter,
             read_length: int
     ):
         """
         Takes a read object and writes it out as a bam record
 
-        :param read_name: the name assigned to the read
-        :param read_position: position of the read.
-        :param read_end: end point of the read
-        :param read_mpos: mate position for the read
-        :param read_tlen: template length for read
-        :param read_flags: the number representing the flags for this read
-        :param read_alt_seq: The sequence to write
-        :param read_cigar: the cigar string for this read
-        :param read_qual_string: The quality array string for this read
-        :param read_map_qual: The quality score of this mapping
+        :param read: Read object to write to file
         :param contig_id: the index of the reference for this
+        :param bam_handle: the handle to write files to
         :param read_length: the length of the read to output
         """
-        if self.bam in self.files_to_write:
-            read_bin = reg2bin(read_position, read_end)
+        read_bin = reg2bin(read.position, read.end_point)
 
-            cig_letters = re.split(r"\d+", read_cigar)[1:]
-            cig_numbers = [int(n) for n in re.findall(r"\d+", read_cigar)]
-            cig_ops = len(cig_letters)
+        mate_position = read.get_mpos()
+        flag = read.calculate_flags(self.paired_ended)
+        template_length = read.get_tlen()
+        alt_sequence = read.read_sequence
 
-            next_ref_id = contig_id
+        cigar = read.make_cigar()
 
-            if not read_mpos:
-                next_pos = 0
-                read_tlen = 0
-            else:
-                next_pos = read_mpos
+        cig_letters = re.split(r"\d+", cigar)[1:]
+        cig_numbers = [int(n) for n in re.findall(r"\d+", cigar)]
+        cig_ops = len(cig_letters)
 
-            encoded_cig = bytearray()
+        next_ref_id = contig_id
 
-            for i in range(cig_ops):
-                encoded_cig.extend(pack('<I', (cig_numbers[i] << 4) + CIGAR_PACKED[cig_letters[i]]))
-
-            encoded_seq = bytearray()
-            encoded_len = (read_length + 1) // 2
-            seq_len = read_length
-            if seq_len & 1:
-                read_alt_seq += '='
-            for i in range(encoded_len):
-                # if self.debug:
-                #     # Note: trying to remove all this part
-                encoded_seq.extend(
-                    pack('<B',
-                         (SEQ_PACKED[read_alt_seq[2 * i].capitalize()] << 4) +
-                         SEQ_PACKED[read_alt_seq[2 * i + 1].capitalize()]))
-
-            # apparently samtools automatically adds 33 to the quality score string...
-            encoded_qual = ''.join([chr(ord(n) - 33) for n in read_qual_string[:read_length]])
-
-            """
-            block_size = 4 +		# refID 		int32
-                         4 +		# pos			int32
-                         4 +		# bin_mq_nl		uint32
-                         4 +		# flag_nc		uint32
-                         4 +		# l_seq			int32
-                         4 +		# next_ref_id	int32
-                         4 +		# next_pos		int32
-                         4 +		# tlen			int32
-                         len(readName)+1 +
-                         len(encoded cigar) +
-                         encoded_len +
-                         len(seq)
-            """
-
-            block_size = 32 + len(read_name) + 1 + len(encoded_cig) + len(encoded_seq) + len(encoded_qual)
-
-            self.files_to_write[self.bam].write((pack('<i', block_size) +
-                              pack('<i', contig_id) +
-                              pack('<i', read_position + 1) +
-                              pack('<I', (read_bin << 16)
-                                   + (read_map_qual << 8)
-                                   + len(read_name)
-                                   + 1) +
-                              pack('<I', (read_flags << 16) + cig_ops) +
-                              pack('<i', seq_len) +
-                              pack('<i', next_ref_id) +
-                              pack('<i', next_pos) +
-                              pack('<i', read_tlen) +
-                              read_name.encode('utf-8') + b'\0' +
-                              encoded_cig +
-                              encoded_seq +
-                              encoded_qual.encode('utf-8')))
+        if not mate_position:
+            next_pos = 0
+            template_length = 0
         else:
-            _LOG.error(f"Tried to write bam record to unknown file")
-            raise ValueError
+            next_pos = mate_position
+
+        encoded_cig = bytearray()
+
+        for i in range(cig_ops):
+            encoded_cig.extend(pack('<I', (cig_numbers[i] << 4) + CIGAR_PACKED[cig_letters[i]]))
+
+        encoded_seq = bytearray()
+        encoded_len = (read_length + 1) // 2
+        seq_len = read_length
+        if seq_len & 1:
+            alt_sequence += '='
+        for i in range(encoded_len):
+            # if self.debug:
+            #     # Note: trying to remove all this part
+            encoded_seq.extend(
+                pack('<B',
+                     (SEQ_PACKED[alt_sequence[2 * i].capitalize()] << 4) +
+                     SEQ_PACKED[alt_sequence[2 * i + 1].capitalize()]))
+
+        # apparently samtools automatically adds 33 to the quality score string...
+        encoded_qual = ''.join([chr(ord(n) - 33) for n in alt_sequence[:read_length]])
+
+        """
+        block_size = 4 +		# refID 		int32
+                     4 +		# pos			int32
+                     4 +		# bin_mq_nl		uint32
+                     4 +		# flag_nc		uint32
+                     4 +		# l_seq			int32
+                     4 +		# next_ref_id	int32
+                     4 +		# next_pos		int32
+                     4 +		# tlen			int32
+                     len(readName)+1 +
+                     len(encoded cigar) +
+                     encoded_len +
+                     len(seq)
+        """
+
+        block_size = 32 + len(read.name) + 1 + len(encoded_cig) + len(encoded_seq) + len(encoded_qual)
+
+        bam_handle.write((
+                pack('<i', block_size) +
+                pack('<i', contig_id) +
+                pack('<i', read.position + 1) +
+                pack('<I', (read_bin << 16)
+                   + (read.mapping_quality << 8)
+                   + len(read.name)
+                   + 1) +
+                pack('<I', (flag << 16) + cig_ops) +
+                pack('<i', seq_len) +
+                pack('<i', next_ref_id) +
+                pack('<i', next_pos) +
+                pack('<i', template_length) +
+                read.name.encode('utf-8') + b'\0' +
+                encoded_cig +
+                encoded_seq +
+                encoded_qual.encode('utf-8')
+        ))

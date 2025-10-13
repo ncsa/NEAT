@@ -56,6 +56,7 @@ class Options(SimpleNamespace):
                  fq2: Path | None = None,
                  vcf: Path | None = None,
                  bam: Path | None = None,
+                 reads_pickle: Path | None = None,
                  output_prefix: str = "neat_sim",
                  overwrite_output: bool = False,
                  rng_seed: int | None = None,
@@ -179,6 +180,8 @@ class Options(SimpleNamespace):
         self.fq2: Path | None = fq2
         self.vcf: Path | None = vcf
         self.bam: Path | None = bam
+        # kind of a temporary holding pen for bam files
+        self.reads_pickle: Path | None = reads_pickle
 
         # Set the rng for the run
         self.rng = self.set_random_seed()
@@ -334,8 +337,7 @@ class Options(SimpleNamespace):
                           current_output_dir: Path | None = None,
                           fq1: Path | None = None,
                           fq2: Path | None = None,
-                          vcf: Path | None = None,
-                          bam: Path | None = None,
+                          reads_pickle: Path | None = None,
                           ):
         return_options = deepcopy(self)
         if reference is not None:
@@ -346,10 +348,9 @@ class Options(SimpleNamespace):
             return_options.fq1 = fq1
         if fq2 is not None:
             return_options.fq2 = fq2
-        if vcf is not None:
-            return_options.vcf = vcf
-        if bam is not None:
-            return_options.bam = bam
+        if reads_pickle is not None:
+            return_options.reads_pickle = reads_pickle
+            self.bam = None
         return return_options
 
     def set_random_seed(self) -> Generator:

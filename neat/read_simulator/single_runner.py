@@ -48,17 +48,17 @@ def read_simulator_single(
 
     Read input models or default models, as specified by user.
     """
-    if thread_idx != 1:
-        _THREAD_LOG = logging.getLogger(f"thread_{thread_idx}")
-        _THREAD_LOG.propagate = False
-    else:
-        _THREAD_LOG = _LOG
+    # if thread_idx != 1:
+    #     _THREAD_LOG = logging.getLogger(f"thread_{thread_idx}")
+    #     _THREAD_LOG.propagate = False
+    # else:
+    #     _THREAD_LOG = _LOG
 
     """
     Load models (note that this means each thread has it's very own copy of the models. It also means they may be trying 
     to read the initial beds at the same time. But not sure of a better solution at this point.
     """
-    _THREAD_LOG.info('Initializing models')
+    # _THREAD_LOG.info('Initializing models')
     # initialize models for run
     (
         mut_model,
@@ -70,7 +70,7 @@ def read_simulator_single(
     """
     Process Inputs
     """
-    _THREAD_LOG.info(f'Reading {local_options.reference}.')
+    # _THREAD_LOG.info(f'Reading {local_options.reference}.')
     local_ref_index = SeqIO.index(str(local_options.reference), "fasta")
     local_ref_name = list(local_ref_index.keys())[0]
     local_seq_record = local_ref_index[local_ref_name]
@@ -78,15 +78,12 @@ def read_simulator_single(
     coords = (block_start, block_start+len(local_seq_record))
     mutation_rate_regions = recalibrate_mutation_regions(mutation_regions, coords, mut_model.avg_mut_rate)
 
-    # For the local bam, we will forgo the header, and then add it at the end.
-    bam_header = None
-
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf.
     # We'll also keep track here of what files we are producing.
     # We don't really need to write out the VCF. We should be able to store it in memory
     local_options.produce_vcf = False
-    local_output_file_writer = OutputFileWriter(options=local_options, bam_header=bam_header)
+    local_output_file_writer = OutputFileWriter(options=local_options)
     """
     Begin Analysis
     """
@@ -113,16 +110,16 @@ def read_simulator_single(
             target_regions,
             discard_regions,
             local_options,
+            local_output_file_writer,
             contig_name,
             contig_index,
-            local_output_file_writer,
         )
 
     local_output_file_writer.close_files()
     file_dict = {
         "fq1": local_output_file_writer.fq1,
         "fq2": local_output_file_writer.fq2,
-        "bam": local_output_file_writer.bam,
+        "reads": local_options.reads_pickle,
     }
     return (
         thread_idx,
@@ -152,7 +149,7 @@ def initialize_all_models(options: Options):
     if options.mutation_rate is not None:
         mut_model.avg_mut_rate = options.mutation_rate
 
-    _LOG.debug("Mutation models loaded")
+    # _LOG.debug("Mutation models loaded")
 
     # We need sequencing errors to get the quality score attributes, even for the vcf
     if options.error_model:
@@ -164,7 +161,7 @@ def initialize_all_models(options: Options):
         error_model = SequencingErrorModel()
         quality_score_model = TraditionalQualityModel()
 
-    _LOG.debug('Sequencing error and quality score models loaded')
+    # _LOG.debug('Sequencing error and quality score models loaded')
 
     if options.fragment_model:
         fraglen_model = pickle.load(gzip.open(options.fragment_model))
@@ -177,7 +174,7 @@ def initialize_all_models(options: Options):
         fragment_st_dev = fragment_mean * 0.2
         fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev)
 
-    _LOG.debug("Fragment length model loaded")
+    # _LOG.debug("Fragment length model loaded")
 
     return \
         mut_model, \

@@ -1,12 +1,15 @@
 import logging
+import pickle
 import time
 
 from math import ceil
+from pathlib import Path
 
 from Bio.SeqRecord import SeqRecord
 from bisect import bisect_left, bisect_right
 
-from . import OutputFileWriter
+from .output_file_writer import OutputFileWriter
+from ...common import open_output
 from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
 from .options import Options
 from ...variants import ContigVariants
@@ -156,9 +159,9 @@ def generate_reads(
         targeted_regions: list,
         discarded_regions: list,
         options: Options,
+        ofw: OutputFileWriter,
         contig_name: str,
         contig_index: int,
-        output_file_writer: OutputFileWriter,
         ref_start: int = 0
 ):
     """
@@ -174,9 +177,9 @@ def generate_reads(
         file or 2% retained by default)
     :param discarded_regions: A list of regions to discard for the run
     :param options: The options entered for this run by the user
+    :param ofw: the output file writer for the run
     :param contig_name: The name of the chromosome this ref segment originates from
     :param contig_index: The index of the above chromosome within the overall bam header
-    :param output_file_writer: The file writer for this segment.
     :param ref_start: The start point for this reference segment. Default is 0 and this is currently not fully
         implemented, to be used for parallelization.
     :return: A tuple of the filenames for the temp files created
@@ -195,6 +198,8 @@ def generate_reads(
 
     _LOG.debug("Writing fastq(s) and optional bam, if indicated")
     t = time.time()
+
+    reads_to_write = []
 
     for i in range(len(reads)):
         # First thing we'll do is check to see if this read is filtered out by a bed file
@@ -267,11 +272,12 @@ def generate_reads(
 
         read_1.mutations = find_applicable_mutations(read_1, contig_variants)
         read_1.finalize_read_and_write(
-            1,
             error_model,
             qual_model,
-            options,
-            output_file_writer,
+            ofw.files_to_write[ofw.fq1],
+            options.quality_offset,
+            options.produce_fastq,
+            options.rng
         )
 
         # skip over read 2 for single ended reads.
@@ -301,16 +307,22 @@ def generate_reads(
             read_2.mutations = find_applicable_mutations(read_2, contig_variants)
 
             read_2.finalize_read_and_write(
-                2,
                 error_model,
                 qual_model,
-                options,
-                output_file_writer,
+                ofw.files_to_write[ofw.fq2],
+                options.quality_offset,
+                options.produce_fastq,
+                options.rng
             )
+            reads_to_write.append((read_1, read_2))
+        else:
+            reads_to_write.append((read_1, None))
 
     if options.produce_fastq:
         _LOG.info(f"Chunk fastq(s) written in: {(time.time() - t)/60:.2f} m")
     if options.produce_bam:
+        with open_output(options.reads_pickle) as reads:
+            pickle.dump(reads_to_write, reads)
         _LOG.info(f"Chunk bam(s) written.")
 
     _LOG.info(f"Finished sampling reads for thread {thread_index} in {(time.time() - start_time)/60:.2f} m")

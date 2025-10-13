@@ -88,7 +88,7 @@ def generate_variants(
     Decide how many and where any random mutations will happen in this contig
     """
     total = len(reference)
-    _LOG.debug(f"Contig length: {total}")
+    # _LOG.debug(f"Contig length: {total}")
     factors = []
     for i in range(len(mutation_rate_regions)):
         region_len = abs(mutation_rate_regions[i][1] - mutation_rate_regions[i][0])
@@ -105,11 +105,11 @@ def generate_variants(
     # This number will serve as a counter for our loops. Default is 1 mutation per chromosome.
     min_mutations = options.min_mutations
 
-    _LOG.debug(f"Average number of mutations for this contig: {average_number_of_mutations}")
+    # _LOG.debug(f"Average number of mutations for this contig: {average_number_of_mutations}")
     # Pick a random number from a poisson distribution. We want at least min_mutations and at most max mutations.
     how_many_mutations = min(max(options.rng.poisson(average_number_of_mutations), min_mutations), max_mutations)
 
-    _LOG.info(f'Planning to add {how_many_mutations} mutations. The final number may be less.')
+    # _LOG.info(f'Planning to add {how_many_mutations} mutations. The final number may be less.')
 
     while how_many_mutations > 0:
         # Pick a region based on the mutation rates
@@ -284,7 +284,7 @@ def generate_variants(
             # The count will tell us how many we actually added v how many we were trying to add
             n_added += 1
 
-    _LOG.debug(f'Finished generating chunk random mutations in {(time.time() - start_time)/60:.2f} minutes')
+    # _LOG.debug(f'Finished generating chunk random mutations in {(time.time() - start_time)/60:.2f} minutes')
 
     return return_variants
 
