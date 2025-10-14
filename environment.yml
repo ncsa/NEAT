@@ -12,7 +12,7 @@ dependencies:
   - pyyaml
   - pip
   - scipy
-  - libgcc=5.2.0
+  - libgcc=14
   - htslib
   - pip:
     - pysam
