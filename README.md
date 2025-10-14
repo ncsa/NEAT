@@ -1,8 +1,9 @@
-# The NEAT Project v4.3.1
+# The NEAT Project v4.3.2
 Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.1. This release of NEAT 4.3.1 includes several fixes and a little bit of restructuring, including a parallel process for running NEAT read-simulator. Our tests show much improved performance. If the logs seem execssive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.1 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatability, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X
 
 # NEAT v4.3
-Neat 4.3.1 servel as the officially 'complete' version of NEAT 4.3, implementing parallelization. To add parallelization to you run, simply add the "threads" parameter in your configuration and run read-simulator as normal. NEAT will take care of the rest. You can customize the parameters in you configuration file, as needed.
+Neat 4.3.1 serve as the officially 'complete' version of NEAT 4.3, implementing parallelization. To add parallelization to you run, simply add the "threads" parameter in your configuration and run read-simulator as normal. NEAT will take care of the rest. You can customize the parameters in you configuration file, as needed.
+Subsequent versions will be improvements on that core.
 
 We have completed major revisions on NEAT since 3.4 and consider NEAT 4.3.1 to be a stable release. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 
@@ -43,8 +44,7 @@ Table of Contents
 * Some version of Anaconda to set up the environment
 * Python == 3.10.*
 * poetry == 1.3.*
-* biopython == 1.79
-* samtools == 1.20
+* biopython == 1.85
 * pkginfo
 * matplotlib
 * numpy
