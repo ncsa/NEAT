@@ -309,12 +309,5 @@ def generate_reads(
         else:
             reads_to_write.append((read_1, None))
 
-    if options.produce_fastq:
-        # _LOG.info(f"Chunk fastq(s) written in: {(time.time() - t)/60:.2f} m")
-        pass
-    if options.produce_bam:
-        with open_output(options.reads_pickle) as reads:
-            pickle.dump(reads_to_write, reads)
-        # _LOG.info(f"Chunk bam(s) written.")
-
     _LOG.info(f"Finished sampling reads for thread {thread_index} in {(time.time() - start_time)/60:.2f} m")
+    return reads_to_write

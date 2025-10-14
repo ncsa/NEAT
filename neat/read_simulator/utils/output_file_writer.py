@@ -8,12 +8,16 @@ __all__ = [
     "OutputFileWriter"
 ]
 
+import os
 import re
 from struct import pack
 import logging
+from typing import Any
 
 from Bio import bgzf
 from pathlib import Path
+
+from Bio.bgzf import BgzfWriter
 
 from .read import Read
 from .options import Options
@@ -22,8 +26,6 @@ _LOG = logging.getLogger(__name__)
 
 
 # Some Constants
-# TODO make bam compression a configurable option
-BAM_COMPRESSION_LEVEL = 6
 CIGAR_PACKED = {'M': 0, 'I': 1, 'D': 2, 'N': 3, 'S': 4, 'H': 5, 'P': 6, '=': 7, 'X': 8}
 SEQ_PACKED = {'=': 0, 'A': 1, 'C': 2, 'M': 3, 'G': 4, 'R': 5, 'S': 6, 'V': 7,
               'T': 8, 'W': 9, 'Y': 10, 'H': 11, 'K': 12, 'D': 13, 'B': 14, 'N': 15}
@@ -62,16 +64,16 @@ class OutputFileWriter:
     in the various formats.
 
     :param options: Options for the current run.
-    :param bam_header: A dictionary of lengths of each contig from the reference, keyed by contig id.
+    :param header: A dictionary of lengths of each contig from the reference, keyed by contig id.
     """
     def __init__(self,
                  options: Options,
-                 bam_header: dict = None):
+                 header: dict = None):
 
         self.paired_ended = options.paired_ended
-        self.bam_header = bam_header
+        self.bam_header = header
 
-        file_handles = {}
+        file_handles: dict[Path, Any] = {}
 
         # Set up filenames based on booleans
         if options.fq1 is not None:
@@ -91,7 +93,6 @@ class OutputFileWriter:
             vcf = None
         if options.bam is not None:
             bam = options.bam
-            file_handles[bam] = bgzf.BgzfWriter(bam, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
         else:
             bam = None
 
@@ -119,19 +120,19 @@ class OutputFileWriter:
                          f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n'
             self.files_to_write[self.vcf].write(vcf_header)
 
-        if options.produce_bam and self.bam_header:
+        if options.produce_bam:
             # bam header
-            bam_handle = self.files_to_write[self.bam]
+            bam_handle = bgzf.BgzfWriter(self.bam, 'w', compresslevel=6)
             bam_handle.write("BAM\1")
             # Without a header, we can't write these as bams.
-            bam_header = "@HD\tVN:1.4\tSO:coordinate\n"
+            header = "@HD\tVN:1.4\tSO:coordinate\n"
             for item in self.bam_header:
-                bam_header += f'@SQ\tSN:{item}\tLN:{str(self.bam_header[item])}\n'
-            bam_header += "@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n"
-            header_bytes = len(bam_header)
+                header += f'@SQ\tSN:{item}\tLN:{str(self.bam_header[item])}\n'
+            header += "@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n"
+            header_bytes = len(header)
             num_refs = len(self.bam_header)
             bam_handle.write(pack('<i', header_bytes))
-            bam_handle.write(bam_header)
+            bam_handle.write(header)
             bam_handle.write(pack('<i', num_refs))
             # Contigs and lengths. If we can skip writing this out for intermediate files, great
             for item in self.bam_header:
@@ -139,6 +140,7 @@ class OutputFileWriter:
                 bam_handle.write(pack('<i', name_length))
                 bam_handle.write(f'{item}\0')
                 bam_handle.write(pack('<i', self.bam_header[item]))
+            bam_handle.flush()
             bam_handle.close()
 
     def write_fastq_record(self, filename: Path, record: str):
@@ -148,10 +150,15 @@ class OutputFileWriter:
             _LOG.error(f"Tried to write fastq record to unknown file {filename}")
             raise ValueError
 
-    def close_files(self):
+    def flush_and_close_files(self):
         for file_name in self.files_to_write:
             file_handle = self.files_to_write[file_name]
-            file_handle.close()
+            try:
+                file_handle.flush()
+                os.fsync(file_handle.fileno())
+                file_handle.close()
+            except ValueError:
+                _LOG.debug(f"file {file_name} already closed")
 
     def write_vcf_record(self, line: str):
         """
@@ -171,7 +178,7 @@ class OutputFileWriter:
             self,
             read: Read,
             contig_id: int,
-            bam_handle,
+            bam_handle: BgzfWriter,
             read_length: int
     ):
         """
@@ -179,6 +186,7 @@ class OutputFileWriter:
 
         :param read: Read object to write to file
         :param contig_id: the index of the reference for this
+        :param bam_handle: the handle to write data to
         :param read_length: the length of the read to output
         """
         read_bin = reg2bin(read.position, read.end_point)

@@ -2,8 +2,11 @@
 Runner for read-simulator in single-ended mode
 """
 import gzip
+import os
 import pickle
-from Bio import SeqIO
+
+import pysam
+from Bio import SeqIO, bgzf
 import logging
 from pathlib import Path
 
@@ -21,6 +24,7 @@ def read_simulator_single(
         thread_idx: int,
         block_start: int,
         local_options: Options,
+        bam_header: list | None,
         contig_name: str,
         contig_index: int,
         input_variants_local: ContigVariants,
@@ -33,6 +37,7 @@ def read_simulator_single(
     :param thread_idx: index of current thread
     :param block_start: Where on the reference does this block start? For a full contig, this will be 0.
     :param local_options: options for current thread and reference chunk
+    :param bam_header: Pass in the outer bam header.
     :param contig_name: The original list of contig names.
     :param contig_index: The index of the contig which this chunk comes from
     :param input_variants_local: The input variants for this block
@@ -83,7 +88,7 @@ def read_simulator_single(
     # We'll also keep track here of what files we are producing.
     # We don't really need to write out the VCF. We should be able to store it in memory
     local_options.produce_vcf = False
-    local_output_file_writer = OutputFileWriter(options=local_options)
+    local_output_file_writer = OutputFileWriter(options=local_options, header=bam_header)
     """
     Begin Analysis
     """
@@ -100,7 +105,7 @@ def read_simulator_single(
     )
 
     if local_options.produce_fastq or local_options.produce_bam:
-        generate_reads(
+        reads_to_write = generate_reads(
             thread_idx,
             local_seq_record,
             seq_error_model,
@@ -115,11 +120,38 @@ def read_simulator_single(
             contig_index,
         )
 
-    local_output_file_writer.close_files()
+        # TODO write the per-block bam here. For some reason moving it entirely out of the loop slows it down in all cases
+        #   Hopefully this lets us take advantage of multithreading for writing the bams. Should make the final stitching
+        #   easier -- basically, that gets moved to here and there will just be a straight file dump.
+        bam_handle = bgzf.BgzfWriter(local_output_file_writer.bam, 'a', compresslevel=6)
+        for read_data in reads_to_write:
+            read1 = read_data[0]
+            read2 = read_data[1]
+            if read1:
+                local_output_file_writer.write_bam_record(
+                    read1,
+                    contig_index,
+                    bam_handle,
+                    local_options.read_len
+                )
+            if read2:
+                local_output_file_writer.write_bam_record(
+                    read2,
+                    contig_index,
+                    bam_handle,
+                    local_options.read_len
+                )
+        bam_handle.flush()
+        bam_handle.close()
+        sorted_bam = local_output_file_writer.bam.with_suffix(".sorted.bam")
+        pysam.sort("-@", str(local_options.threads), "-o", str(sorted_bam), str(local_output_file_writer.bam))
+        os.rename(str(sorted_bam), str(local_output_file_writer.bam))
+
+    local_output_file_writer.flush_and_close_files()
     file_dict = {
         "fq1": local_output_file_writer.fq1,
         "fq2": local_output_file_writer.fq2,
-        "reads": local_options.reads_pickle,
+        "bam": local_options.bam,
     }
     return (
         thread_idx,

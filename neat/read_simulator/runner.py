@@ -111,7 +111,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf.
-    output_file_writer = OutputFileWriter(options=options, bam_header=bam_header)
+    output_file_writer = OutputFileWriter(options=options, header=bam_header)
 
     # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
     _LOG.info("Splitting reference...")
@@ -140,7 +140,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             # Create local filenames based on fasta indexing scheme.
             fq1 = None
             fq2 = None
-            block_reads_pickle = None
+            bam = None
             if options.produce_fastq:
                 fq1 = current_output_dir / options.fq1.name
                 # validate to double-check we don't have name collisions
@@ -150,14 +150,15 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     fq2 = current_output_dir / options.fq2.name
                     validate_output_path(fq2, True, False)
             if options.produce_bam:
-                block_reads_pickle = current_output_dir / "reads.p.gz"
-                validate_output_path(block_reads_pickle, True, False)
-            current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, block_reads_pickle)
+                bam = current_output_dir / options.bam.name
+                validate_output_path(bam, True, False)
+            current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, bam)
             if options.threads == 1:
                 idx, contig, local_variants, files_written = read_simulator_single(
                     1,
                     start,
                     current_options,
+                    bam_header,
                     contig,
                     contig_index,
                     input_variants_dict[contig],
@@ -178,6 +179,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     thread_idx,
                     start,
                     current_options,
+                    bam_header,
                     contig,
                     contig_index,
                     thread_input_variants,
@@ -208,12 +210,12 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     start = time.time()
     if options.produce_bam:
-        stitch_main(output_file_writer, output_files, contig_dict, options.read_len, options.threads)
+        stitch_main(output_file_writer, output_files, options.threads)
     else:
         stitch_main(output_file_writer, output_files)
     _LOG.info(f"It took {time.time()-start} s to write the bam file")
 
-    output_file_writer.close_files()
+    output_file_writer.flush_and_close_files()
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
 
 def write_final_vcf(
