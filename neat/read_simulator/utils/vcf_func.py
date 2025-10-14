@@ -44,7 +44,6 @@ def parse_input_vcf(
         input_dict: dict[str, ContigVariants],
         vcf_path: Path,
         ploidy: int,
-        homozygous_frequency: float,
         reference: _IndexedSeqFileDict,
         options: Options
 ) -> dict:
@@ -59,13 +58,11 @@ def parse_input_vcf(
             - genotype: Genotype data for the first sample
             - genotype_tumor: Genotype data for the second (tumor) sample (optional)
 
-    :param input_dict: Dicitonary of contig variants objects holding data for each contig
+    :param input_dict: Dictionary of contig variants objects holding data for each contig
     :param vcf_path: Path to input vcf file
     :param ploidy: number of copies of each chromosome in the dataset.
-    :param homozygous_frequency: Chance of an allele appearing on more than one ploid
     :param reference: The reference index object for this run.
     :param options: Options for this run
-    :param tumor_normal: Whether the sample is cancer (note, cancer models not yet implemented)
     :return: A dictionary with sample name data read from the vcf
     """
 
@@ -101,7 +98,7 @@ def parse_input_vcf(
 
                 # Recode the sample columns to match the index of the dictionary we are generating
                 # We only output 1 sample column for normal runs, 2 for tumor_normal. Those will be indices 7 and 8
-                # in the output dictionary, se we hardcode those indices now for later retrieval
+                # in the output dictionary, so we hard code those indices now for later retrieval
 
                 if sample_columns:
                     sample_columns = {sample_columns[0]: 7}
@@ -181,7 +178,7 @@ def parse_input_vcf(
                     else:
                         format_column = 'GT:' + record[8]
                         alt_count = len(record[4].split(';'))
-                        genotype = pick_ploids(ploidy, homozygous_frequency, alt_count, options.rng)
+                        genotype = pick_ploids(ploidy, 0.001, alt_count, options.rng)
                         gt_field = get_genotype_string(genotype)
                         normal_sample_field = f'{gt_field}:{record[9]}'
 
@@ -204,7 +201,7 @@ def parse_input_vcf(
                     # If there was no format column, there's no sample column, so we'll generate one
                     format_column = "GT"
                     alt_count = len(record[4].split(';'))
-                    genotype = pick_ploids(ploidy, homozygous_frequency, alt_count, options.rng)
+                    genotype = pick_ploids(ploidy, 0.001, alt_count, options.rng)
                     normal_sample_field = get_genotype_string(genotype)
 
                 chrom = record[0]

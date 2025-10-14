@@ -4,11 +4,15 @@ Stitch NEAT split‑run outputs into one dataset.
 
 import argparse
 import gzip
+import pickle
 import re
 import shutil
+import pysam
 import subprocess
 import sys
+from multiprocessing import Pool, Process
 from pathlib import Path
+from struct import pack
 from typing import Iterable, List, Tuple
 import yaml
 
@@ -16,115 +20,52 @@ import logging
 
 __all__ = ["main"]
 
-from neat.read_simulator.utils import Options
+from Bio import SeqIO, bgzf
+from Bio.bgzf import BgzfWriter
+
+from neat.common import open_output, open_input
+from neat.read_simulator.utils import Options, OutputFileWriter
 
 _LOG = logging.getLogger(__name__)
 
-def concat(files_to_join: List[Path], dest: Path) -> None:
+def concat(files_to_join: List[Path], dest_file: BgzfWriter) -> None:
     if not files_to_join:
         # Nothing to do, and no error to throw
         return
 
-    with dest.open("wb") as out_f:
-        for f in files_to_join:
-            with f.open("rb") as in_f:
-                shutil.copyfileobj(in_f, out_f)
+    for f in files_to_join:
+        with bgzf.BgzfReader(f) as in_f:
+            shutil.copyfileobj(in_f, dest_file)
 
-def merge_bam(bams: List[Path], dest: Path) -> None:
-    if not bams:
+def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int) -> None:
+    if not bam_files:
         return
 
-    import pysam
-    unsorted = dest.with_suffix(".unsorted.bam")
-    pysam.merge("--no-PG", "-f", str(unsorted), *map(str, bams))
-    pysam.sort("-o", str(dest), str(unsorted))
+    unsorted = ofw.bam.with_suffix(".unsorted.bam")
+    pysam.merge("--no-PG", "-@", str(threads), "-f", str(unsorted), *map(str, bam_files))
+    pysam.sort("-@", str(threads), "-o", str(ofw.bam), str(unsorted))
     unsorted.unlink(missing_ok=True)
-    """Make BAM header deterministic: drop @PG, sort @SQ/@RG."""
-    hdr_text = pysam.view("-H", str(dest), text=True)
 
-    hd: list[str] = []
-    sq: list[str] = []
-    rg: list[str] = []
-    other: list[str] = []
-    for line in hdr_text.splitlines():
-        if line.startswith("@PG"):
-            continue
-        if line.startswith("@HD"):
-            hd.append(line)
-        elif line.startswith("@SQ"):
-            sq.append(line)
-        elif line.startswith("@RG"):
-            parts = [t for t in line.split("\t") if not t.startswith("CL:")]
-            line = "\t".join(parts)
-            rg.append(line)
-        else:
-            other.append(line)
+def main(
+        ofw: OutputFileWriter,
+        output_files: list[tuple[int, str, dict[str, Path]]],
+        threads: int | None = None
+) -> None:
 
-    def sn(x: str) -> str:
-        for t in x.split("\t"):
-            if t.startswith("SN:"):
-                return t[3:]
-        return x
-
-    def rgid(x: str) -> str:
-        for t in x.split("\t"):
-            if t.startswith("ID:"):
-                return t[3:]
-        return x
-
-    sq.sort(key=sn)
-    rg.sort(key=rgid)
-
-    new_hdr = "\n".join([
-        *(hd or ["@HD\tVN:1.6\tSO:coordinate"]),
-        *sq,
-        *rg,
-        *other,
-    ]) + "\n"
-
-    hdr_tmp = dest.with_suffix(".reheader.sam")
-    out_tmp = dest.with_suffix(".reheader.bam")
-    hdr_tmp.write_text(new_hdr)
-
-    with open(out_tmp, 'wb') as out_f:
-        data = pysam.reheader(str(hdr_tmp), str(dest))
-        out_f.write(data)
-
-    out_tmp.replace(dest)
-    hdr_tmp.unlink(missing_ok=True)
-
-def merge_vcf(vcfs: List[Path], dest: Path) -> None:
-    if not vcfs:
-        return
-    first, *rest = vcfs
-    shutil.copy(first, dest)
-    with dest.open("ab") as out_f:
-        for vcf in rest:
-            with vcf.open("rb") as fh:
-                for line in fh:
-                    if not line.startswith(b"#"):
-                        out_f.write(line)
-
-def main(options: Options, thread_options: list[Options]) -> None:
     fq1_list = []
     fq2_list = []
-    vcf_list = []
-    bam_list = []
+    bam = []
     # Gather all output files from the ops objects
-    for local_ops in thread_options:
-        if local_ops.fq1:
-            fq1_list.append(local_ops.fq1)
-        if local_ops.fq2:
-            fq2_list.append(local_ops.fq2)
-        if local_ops.vcf:
-            vcf_list.append(local_ops.vcf)
-        if local_ops.bam:
-            bam_list.append(local_ops.bam)
+    for (thread_idx,file_dict) in output_files:
+        if file_dict["fq1"]:
+            fq1_list.append(file_dict["fq1"])
+        if file_dict["fq2"]:
+            fq2_list.append(file_dict["fq2"])
+        if file_dict["bam"]:
+            bam.append(file_dict["bam"])
     # concatenate all files of each type. An empty list will result in no action
-    concat(fq1_list, options.fq1)
-    concat(fq2_list, options.fq2)
-    merge_bam(bam_list, options.bam)
-    merge_vcf(vcf_list, options.vcf)
-
+    concat(fq1_list, ofw.files_to_write[ofw.fq1])
+    concat(fq2_list, ofw.files_to_write[ofw.fq2])
+    merge_bam(bam, ofw, threads)
     # Final success message via logging
     _LOG.info("Stitching complete!")

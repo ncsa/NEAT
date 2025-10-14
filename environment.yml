@@ -5,14 +5,14 @@ channels:
 
 dependencies:
   - python=3.10.*
-  - biopython=1.79
+  - biopython=1.85
   - pkginfo
   - matplotlib
   - numpy
   - pyyaml
   - pip
   - scipy
-  - libgcc=5.2.0
+  - libgcc=14
   - htslib
   - pip:
     - pysam

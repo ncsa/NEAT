@@ -6,26 +6,53 @@ import logging
 import pathlib
 import sys
 
-from Bio.File import _IndexedSeqFileDict
-
 from .options import Options
 from ...common import open_input
 
 __all__ = [
     "parse_beds",
-    "fill_out_bed_dict"
+    "fill_out_bed_dict",
+    "intersect_regions",
+    "recalibrate_mutation_regions"
 ]
 
 _LOG = logging.getLogger(__name__)
 
 
-def parse_beds(options: Options, ref_keys_counts: dict, average_mutation_rate: float) -> list:
+def intersect_regions(mutation_regions: list, block_tuple: tuple[int, int], default_value: float) -> list:
+    """
+    Our assumption here is that mutation regions is a continuous list, such that
+    for each region, the end of the previous region is the start of the next region,
+    and there are no gaps. This should be true of anything generated from parse_beds, but
+    needs some tests to verify
+    """
+    ret_list = []
+    block_start, block_end = block_tuple
+    for i in range(len(mutation_regions)):
+        region = mutation_regions[i]
+        if region[0] <= block_start < region[1]:
+            # We found the first region covering the block
+            if block_end <= region[1]:
+                # If the block spans the entire region, we have a special case
+                ret_list.append((block_start, block_end, region[2]))
+                # nothing more to do
+                return ret_list
+            ret_list.append((block_start, region[1], region[2]))
+        elif region[0] <= block_end < region[1]:
+            # We found the last region covering the block
+            ret_list.append((region[0], block_end, region[2]))
+            # nothing more to do
+            return ret_list
+    # If we haven't returned yet, then we did not find the end in our mutations list
+    ret_list.append((mutation_regions[-1][1], block_end, default_value))
+    return ret_list
+
+def parse_beds(options: Options, ref_keys_counts: dict) -> list:
     """
     This single function parses the three possible bed file types for NEAT.
 
     :param options: The options object for this run
     :param ref_keys_counts: A dictionary containing the reference keys and the associated lengths.
-    :param average_mutation_rate: The average mutation rate from the model or user input for this run
     :return: target_dict, discard_dict, mutation_rate_dict
     """
 
@@ -50,7 +77,7 @@ def parse_beds(options: Options, ref_keys_counts: dict, average_mutation_rate: f
             False,
             bool(options.discard_bed)),
         2: ("mutation",
-            average_mutation_rate,  # Default value will be this for all sections
+            None, # We won't need a default with multithreading, but we need a spacer here, so we added None for now
             bool(options.mutation_bed))
     }
 
@@ -62,7 +89,8 @@ def parse_beds(options: Options, ref_keys_counts: dict, average_mutation_rate: f
         )
         # If there was a bed this function will fill in any gaps the bed might have missed, so we have a complete map
         # of each chromosome. The uniform case in parse_single_bed handles this in cases of no input bed.
-        if processing_structure[i][2]:
+        # We skip mutation dict and fill it out on the thread level
+        if processing_structure[i][2] and not processing_structure[i][0] == "mutation":
             final_dict = fill_out_bed_dict(ref_keys_counts, temp_bed_dict, processing_structure[i])
         else:
             final_dict = temp_bed_dict
@@ -70,6 +98,46 @@ def parse_beds(options: Options, ref_keys_counts: dict, average_mutation_rate: f
         return_list.append(final_dict)
 
     return return_list
+
+
+def recalibrate_mutation_regions(mut_regions: list, coords: tuple[int, int], run_mut_rate: float) -> list:
+    """
+    Input here is a list of mutation bed regions for a contig. We will restrict it to the coordinates given and fill out as 
+    needed
+    
+    :param mut_regions: the Region to check
+    :param coords: The coordinates to intersect with the region
+    :param run_mut_rate: The mutation rate for the run
+    :return: the updated list
+    """
+    ret_list = []
+
+    cleared_mut_regions = []
+    for region in mut_regions:
+        if region[2] is None:
+            cleared_mut_regions.append((region[0], region[1], run_mut_rate))
+        else:
+            cleared_mut_regions.append(region)
+
+    for region in cleared_mut_regions:
+        if region[0] <= coords[0] < region[1]:
+            # found a starting place
+            if region[0] < coords[1] <= region[1]:
+                # one region contained the whole thing so we can just return it
+                ret_list.append((coords[0], coords[1], region[2]))
+                return ret_list
+            else:
+                ret_list.append((coords[0], region[1], region[2]))
+        elif region[0] < coords[1] <= region[1]:
+            # Found an ending place
+            ret_list.append((region[0], coords[1], region[2]))
+        elif coords[0] <= region[0] or coords[1] >= region[1]:
+            # In this case it is somewhere in between the coords
+            ret_list.append(region)
+
+    # Update ret_list by filling in any gaps so we have 100% block coverage
+    ret_list = fill_out_mut_regions(ret_list, coords, run_mut_rate)
+    return ret_list
 
 
 def parse_single_bed(input_bed: str,
@@ -167,6 +235,26 @@ def parse_single_bed(input_bed: str,
 
     return ret_dict
 
+def fill_out_mut_regions(regions_list: list, coords: tuple[int, int], default_mut_rate) -> list:
+    if not regions_list:
+        return [(coords[0], coords[1], default_mut_rate)]
+
+    max_value = coords[1]
+    start = 0
+    return_list = []
+    for region in regions_list:
+        if region[0] > start:
+            return_list.append((start, region[0], default_mut_rate))
+            start = region[1]
+            return_list.append(region)
+        elif region[0] == start:
+            return_list.append(region)
+            start = region[1]
+
+    if return_list[-1][1] != max_value:
+        return_list.append((start, max_value, default_mut_rate))
+
+    return return_list
 
 def fill_out_bed_dict(ref_keys_counts: dict,
                       region_dict: dict | None,

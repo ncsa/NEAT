@@ -269,8 +269,8 @@ class ErrorContainer:
                  error_type: VariantTypes,
                  location: int,
                  length: int,
-                 ref: str or Seq,
-                 alt: str or Seq):
+                 ref: str | Seq,
+                 alt: str | Seq):
         self.error_type = error_type
         self.location = location
         self.length = length

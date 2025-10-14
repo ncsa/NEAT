@@ -63,10 +63,9 @@ def open_input(path: str | Path) -> Iterator[TextIO]:
     # - https://github.com/python/mypy/issues/12053
     open_: Callable[..., TextIO]
     if is_compressed(path):
-        open_ = gzip.open
+        handle = bgzf.BgzfReader(path, 'r')
     else:
-        open_ = open
-    handle = open_(path, "rt", encoding="utf-8")
+        handle = open(path, 'rt', encoding='utf-8')
     try:
         yield handle
     finally:
