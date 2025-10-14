@@ -4,6 +4,7 @@ import gzip
 from pathlib import Path
 
 import pytest
+from Bio import bgzf
 
 from neat.common.io import is_compressed, open_input, open_output, validate_input_path, validate_output_path
 
@@ -12,7 +13,7 @@ def test_is_compressed_plain_and_gz(tmp_path: Path):
     plain = tmp_path / "file.txt"
     plain.write_text("hello", encoding="utf-8")
     gz = tmp_path / "file.txt.gz"
-    with gzip.open(gz, "wt", encoding="utf-8") as f:
+    with bgzf.BgzfWriter(gz, "wt") as f:
         f.write("hello")
 
     assert is_compressed(plain) is False
@@ -28,10 +29,13 @@ def test_open_input_reads_plain_and_gz(tmp_path: Path):
 
     # Gz
     gz = tmp_path / "b.txt.gz"
-    with gzip.open(gz, "wt", encoding="utf-8") as fh:
+    with bgzf.BgzfWriter(gz, "wt") as fh:
         fh.write("xyz\n")
+    out = ""
     with open_input(gz) as fh:
-        assert fh.read() == "xyz\n"
+        for line in fh:
+            out += line
+    assert out == "xyz\n"
 
 
 def test_open_output_creates_dirs_and_writes_plain(tmp_path: Path):
