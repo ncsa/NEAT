@@ -138,15 +138,15 @@ The default is given:
 `mutation_bed`: full path to a list of regions with a column describing the mutation rate of that region, as a float with values between 0 and 0.3. The mutation rate must be in the third column as, e.g., mut_rate=0.00.    
 `rng_seed`: Manually enter a seed for the random number generator. Used for repeating runs. _Must be an integer._    
 `min_mutations`: Set the minimum number of mutations that NEAT should add, per contig. _Default is 0._ We recommend setting this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.
-'threads': Number of threads to use. More than 1 will activate parallel mode and perform part of the calclutations in parallel then recombine into the desired output files.
-'parallel_mode': 'size' or 'contig' whether to divide the contigs into blocks or just by contig. By contig is the default, try by size. Varying the parallel_block_size parameter may help if default values are not sufficient.
-'parallel_block_size': Default value of 500,000.
-'cleanup_splits': If running more than one simulation on the same input fasta, you can reuse splits files. By default, this will be set to False, and splits files will be deleted at the end of the run.
-'reuse_splits': If an existing splits file exists in the output folder, it will use those splits, if this value is set to True.
+`threads`: Number of threads to use. More than 1 will activate parallel mode and perform part of the calclutations in parallel then recombine into the desired output files.
+`parallel_mode`: 'size' or 'contig' whether to divide the contigs into blocks or just by contig. By contig is the default, try by size. Varying the parallel_block_size parameter may help if default values are not sufficient.
+`parallel_block_size`: Default value of 500,000.
+`cleanup_splits`: If running more than one simulation on the same input fasta, you can reuse splits files. By default, this will be set to False, and splits files will be deleted at the end of the run.
+`reuse_splits`: If an existing splits file exists in the output folder, it will use those splits, if this value is set to True.
 
 The command line options for NEAT are as follows:
 
-Universal options can be applied to any subfunction. The commands should come before the function name (e.g., neat --log-level DEBUG read-simulator ...), excetp -h or --help, which can appear anywhere in the command.
+Universal options can be applied to any subfunction. The commands should come before the function name (e.g., neat --log-level DEBUG read-simulator ...), except -h or --help, which can appear anywhere in the command.
 | Universal Options   | Description                          |
 |---------------------|--------------------------------------|
 | -h, --help          | Displays usage information           |
@@ -161,7 +161,7 @@ read-simulator command line options
 |---------------------|-------------------------------------|
 | -c VALUE, --config VALUE | The VALUE should be the name of the config file to use for this run |
 | -o OUTPUT_DIR, --output_dir OUTPUT_DIR | The path to the directory to write the output files |
-| -p PREFIX, --prefix PREFIX | The prefix for file names |
+| -p PREFIX, --prefix String | The prefix for file names |
 
 ## Functionality
 
@@ -188,7 +188,7 @@ Features:
 
 ## Examples
 
-The following commands are examples for common types of data to be generated. The simulation uses a reference genome in fasta format to generate reads of 126 bases with default 10X coverage. Outputs paired fastq files, a BAM file and a VCF file. The random variants inserted into the sequence will be present in the VCF and all of the reads will show their proper alignment in the BAM. Unless specified, the simulator will also insert some "sequencing error" -- random variants in some reads that represents false positive results from sequencing.
+The following commands are examples for common types of data to be generated. The simulation uses a reference genome in fasta format to generate reads of 126 bases with default 10X coverage. Outputs paired fastq files, a BAM file and a VCF file. The random variants inserted into the sequence will be present in the VCF and the reads will show their proper alignment in the BAM. Unless specified, the simulator will also insert some "sequencing error" -- random variants in some reads that represents false positive results from sequencing.
 
 ### Whole genome simulation
 Simulate whole genome dataset with random variants inserted according to the default model. 

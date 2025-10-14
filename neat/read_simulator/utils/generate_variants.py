@@ -10,12 +10,13 @@ import numpy as np
 import re
 import sys
 
-from Bio import SeqRecord
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 from numpy.random import Generator
 
 from ...models import MutationModel
 from ...variants import Insertion, Deletion, SingleNucleotideVariant, ContigVariants
-from ..utils import Options
+from ..utils import Options, bed_func
 from ...common import ALLOWED_NUCL, pick_ploids
 
 _LOG = logging.getLogger(__name__)
@@ -54,18 +55,17 @@ def map_non_n_regions(sequence) -> np.ndarray:
 
 def generate_variants(
         reference: SeqRecord,
-        mutation_rate_regions: list[tuple[int, int]],
+        ref_start: int,
+        mutation_rate_regions: list[tuple[int, int, float]],
         existing_variants: ContigVariants,
         mutation_model: MutationModel,
         options: Options,
-        max_qual_score: int
+        max_qual_score: int,
 ) -> ContigVariants:
     """
     This function will generate variants to add to the dataset, by writing them to the input temp vcf file.
-
-    TODO: need to add cancer logic to this section
-
     :param reference: The reference to generate variants off of. This should be a SeqRecord object
+    :param ref_start: where on the reference this SeqRecord above starts.
     :param mutation_rate_regions: Genome segments with associated mutation rates
     :param existing_variants: Any input variants or overlaps to pick up from the previous contig
     :param mutation_model: The mutation model for the dataset
@@ -82,13 +82,13 @@ def generate_variants(
     max_window_size = 1000
     n_added = 0
 
-    start = time.time()
+    start_time = time.time()
 
     """
     Decide how many and where any random mutations will happen in this contig
     """
     total = len(reference)
-    _LOG.debug(f"Contig length: {total}")
+    # _LOG.debug(f"Contig length: {total}")
     factors = []
     for i in range(len(mutation_rate_regions)):
         region_len = abs(mutation_rate_regions[i][1] - mutation_rate_regions[i][0])
@@ -99,36 +99,42 @@ def generate_variants(
     factors.append(total * mutation_model.avg_mut_rate)
     overall_mutation_average = sum(factors)/len(reference)
     average_number_of_mutations = round(len(reference) * overall_mutation_average)
-    max_mutations = round(len(reference) * 0.3)
+    # Trying to set some sort of rational upper bound to restrain the poisson distribution which, rarely, blows up.
+    max_mutations = round(len(reference) * (overall_mutation_average * 2))
 
     # This number will serve as a counter for our loops. Default is 1 mutation per chromosome.
     min_mutations = options.min_mutations
 
-    _LOG.debug(f"Average number of mutations for this contig: {average_number_of_mutations}")
+    # _LOG.debug(f"Average number of mutations for this contig: {average_number_of_mutations}")
     # Pick a random number from a poisson distribution. We want at least min_mutations and at most max mutations.
     how_many_mutations = min(max(options.rng.poisson(average_number_of_mutations), min_mutations), max_mutations)
 
-    _LOG.debug(f'Planning to add {how_many_mutations} mutations. The final number may be less.')
+    # _LOG.info(f'Planning to add {how_many_mutations} mutations. The final number may be less.')
 
     while how_many_mutations > 0:
         # Pick a region based on the mutation rates
         # (default is one rate for the whole chromosome, so this will be trivial in that case
         # for this selection, we'll normalize the mutation rates
         probability_rates = mutation_rates / sum(mutation_rates)
-        mut_region = options.rng.choice(a=mutation_rate_regions, p=probability_rates)
+        # We need to intersect our chosen mutation region with our block
+        local_mut_regions = bed_func.intersect_regions(mutation_rate_regions, (ref_start, ref_start + len(reference)), options.mutation_rate)
+        # For no input mutation regions bed, this will return the entire sequence.
+        mut_region = options.rng.choice(a=local_mut_regions, p=probability_rates)
+        mut_region_offset = (int(mut_region[0]-ref_start), int(mut_region[1]-ref_start), mut_region[2])
         # Pick a random starting place. Randint is inclusive of endpoints, so we subtract 1
-        window_start = options.rng.integers(mut_region[0], mut_region[1] - 1, dtype=int)
+        window_start = options.rng.integers(mut_region_offset[0], mut_region_offset[1] - 1, dtype=int)
+
         found = False
         if reference[window_start] not in ALLOWED_NUCL:
             # pick a random location to the right
-            plus = options.rng.integers(window_start + 1, mut_region[1] - 1, dtype=int)
+            plus = options.rng.integers(window_start + 1, mut_region_offset[1] - 1, dtype=int)
             if reference[plus] in ALLOWED_NUCL:
                 found = True
                 window_start = plus
             else:
                 # If that didn't work pick a random location to the left
-                if window_start - 1 > mut_region[0]:
-                    minus = options.rng.integers(mut_region[0], window_start - 1, dtype=int)
+                if window_start - 1 > mut_region_offset[0]:
+                    minus = options.rng.integers(mut_region_offset[0], window_start - 1, dtype=int)
                     if reference[minus] in ALLOWED_NUCL:
                         found = True
                         window_start = minus
@@ -139,15 +145,22 @@ def generate_variants(
         if not found:
             continue
 
-        # at this point the location is found. Now we need a second endpoint. Grab 1000 bases or to the end.
-        end_point = options.rng.integers(window_start,
-                                         min(mut_region[1], window_start + max_window_size) - 1,
-                                         dtype=int)
+        end_point = min(
+            options.rng.integers(
+                window_start,
+                min(mut_region_offset[1], window_start+max_window_size)-1,
+                dtype=int
+            ),
+            # Don't go past the barrier
+            len(reference)-1
+        )
         if reference[end_point] not in ALLOWED_NUCL:
             # Didn't find it to the right, look to the left
-            end_point = options.rng.integers(max(window_start - max_window_size, mut_region[0]),
-                                             window_start,
-                                             dtype=int)
+            end_point = options.rng.integers(
+                max(window_start - max_window_size, mut_region_offset[0]),
+                window_start,
+                dtype=int
+            )
             if reference[end_point] not in ALLOWED_NUCL:
                 # No suitable end_point, so we try again
                 continue
@@ -271,8 +284,7 @@ def generate_variants(
             # The count will tell us how many we actually added v how many we were trying to add
             n_added += 1
 
-    _LOG.info(f'Finished generating random mutations in {(time.time() - start)/60:.2f} minutes')
-    _LOG.info(f'Added {n_added} mutations to {reference.id}')
+    # _LOG.debug(f'Finished generating chunk random mutations in {(time.time() - start_time)/60:.2f} minutes')
 
     return return_variants
 
