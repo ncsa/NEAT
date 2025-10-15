@@ -243,11 +243,12 @@ parallel_mode: size
 parallel_block_size: 500000
 ```
 Then run with the command:
-``````
+```
 neat read-simulator                 \
         --no-log                    \
         -c neat_config.yml          \
         -o /home/me/simulated_reads/
+```
 
 
 ### Insert specific variants
