@@ -119,32 +119,32 @@ def read_simulator_single(
             contig_name,
             contig_index,
         )
-
-        # Writing an intermediate bam that is sorted, to make compiling them together at the end easier.
-        bam_handle = local_output_file_writer.files_to_write[local_output_file_writer.bam]
-        for read_data in reads_to_write:
-            read1 = read_data[0]
-            read2 = read_data[1]
-            if read1:
-                local_output_file_writer.write_bam_record(
-                    read1,
-                    contig_index,
-                    bam_handle,
-                    local_options.read_len
-                )
-            if read2:
-                local_output_file_writer.write_bam_record(
-                    read2,
-                    contig_index,
-                    bam_handle,
-                    local_options.read_len
-                )
-        bam_handle.flush()
-        bam_handle.close()
-        sorted_bam = local_output_file_writer.bam.with_suffix(".sorted.bam")
-        pysam.sort("-@", str(local_options.threads), "-o", str(sorted_bam), str(local_output_file_writer.bam))
-        os.rename(str(sorted_bam), str(local_output_file_writer.bam))
-        _LOG.info(f"bam for thread {thread_idx} written")
+        if local_options.produce_bam:
+            # Writing an intermediate bam that is sorted, to make compiling them together at the end easier.
+            bam_handle = local_output_file_writer.files_to_write[local_output_file_writer.bam]
+            for read_data in reads_to_write:
+                read1 = read_data[0]
+                read2 = read_data[1]
+                if read1:
+                    local_output_file_writer.write_bam_record(
+                        read1,
+                        contig_index,
+                        bam_handle,
+                        local_options.read_len
+                    )
+                if read2:
+                    local_output_file_writer.write_bam_record(
+                        read2,
+                        contig_index,
+                        bam_handle,
+                        local_options.read_len
+                    )
+            bam_handle.flush()
+            bam_handle.close()
+            sorted_bam = local_output_file_writer.bam.with_suffix(".sorted.bam")
+            pysam.sort("-@", str(local_options.threads), "-o", str(sorted_bam), str(local_output_file_writer.bam))
+            os.rename(str(sorted_bam), str(local_output_file_writer.bam))
+            _LOG.info(f"bam for thread {thread_idx} written")
 
     local_output_file_writer.flush_and_close_files()
     file_dict = {
