@@ -234,7 +234,6 @@ class Options(SimpleNamespace):
             'rng_seed': (int, None, None, None),
             'min_mutations': (int, 0, None, None),
             'overwrite_output': (bool, False, None, None),
-            'parallel_mode': (bool, False, None, None),
             'mode': (str, 'size', 'choice', ['size', 'contig']),
             'size': (int, 500000, None, None),
             'threads': (int, 1, 1, 1000),
