@@ -2,10 +2,9 @@
 Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.1. This release of NEAT 4.3.1 includes several fixes and a little bit of restructuring, including a parallel process for running NEAT read-simulator. Our tests show much improved performance. If the logs seem execssive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.1 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatability, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X
 
 # NEAT v4.3
-Neat 4.3.1 serve as the officially 'complete' version of NEAT 4.3, implementing parallelization. To add parallelization to you run, simply add the "threads" parameter in your configuration and run read-simulator as normal. NEAT will take care of the rest. You can customize the parameters in you configuration file, as needed.
-Subsequent versions will be improvements on that core.
+Neat 4.3.1 marked the officially 'complete' version of NEAT 4.3, implementing parallelization. To add parallelization to you run, simply add the "threads" parameter in your configuration and run read-simulator as normal. NEAT will take care of the rest. You can customize the parameters in you configuration file, as needed.
 
-We have completed major revisions on NEAT since 3.4 and consider NEAT 4.3.1 to be a stable release. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
+We have completed major revisions on NEAT since 3.4 and consider NEAT 4.3.1 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 
 NEAT's read-simulator is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
 
@@ -89,25 +88,26 @@ $ python -m neat --help
 ```
 
 ## Usage
-NEAT's core functionality is invoked using the read-simulator command. Here's the simplest invocation of read-simulator using default parameters. This command produces a single ended fastq file with reads of length 151, ploidy 2, coverage 10X, using the default sequencing substitution, and mutation rate models.
+NEAT's core functionality is invoked using the read-simulator command. Here's the simplest invocation of read-simulator using default parameters. This command produces a single ended fastq file with reads of length 151, ploidy 4, coverage 15X, using the default sequencing substitution, and mutation rate models.
 
 Contents of neat_config.yml
 ```
 reference: /path/to/my/genome.fa
+read_len: 151
+ploidy: 4
+coverage: 15
 ```
 
 ```
 neat read-simulator -c neat_config.yml -o simulated_data
 ```
 
-The output prefix should not specify a file extension (i.e., .fasta, .fastq, etc.),
-as these will be appended by NEAT.
+The --output (-o) option sets the folder to place output data. If the folder does not exist, Python will attempt to create it. To specify a common filename prefix, you can additionally add the --prefix (-p), e.g., -p ecoli_20x will result in output files ecoli_20x.fastq.gz, ecoil_20x.vcf.gz, etc.
 
 A config file is required. The config is a yml file specifying the input parameters. The following is a brief
-description of the potential inputs in the config file. See NEAT/config_template/template_neat_config.yml for a
-template config file to copy and use for your runs.
+description of the potential inputs in the config file. See NEAT/config_template/template_neat_config.yml for a template config file to copy and use for your runs.
 
-To run the simulator in parallel with the same config file and significantly speed up runtime, please see the [Parallelization](#parallelization) section.
+To run the simulator in multithreaded mode, set the 'threads' value in the config to something greater than 1. .
 
 `reference`: full path to a fasta file to generate reads from    
 `read_len`: The length of the reads for the fastq (if using). _Integer value, default 101._    
@@ -138,8 +138,8 @@ The default is given:
 `mutation_bed`: full path to a list of regions with a column describing the mutation rate of that region, as a float with values between 0 and 0.3. The mutation rate must be in the third column as, e.g., mut_rate=0.00.    
 `rng_seed`: Manually enter a seed for the random number generator. Used for repeating runs. _Must be an integer._    
 `min_mutations`: Set the minimum number of mutations that NEAT should add, per contig. _Default is 0._ We recommend setting this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.
-`threads`: Number of threads to use. More than 1 will activate parallel mode and perform part of the calclutations in parallel then recombine into the desired output files.
-`parallel_mode`: 'size' or 'contig' whether to divide the contigs into blocks or just by contig. By contig is the default, try by size. Varying the parallel_block_size parameter may help if default values are not sufficient.
+`threads`: Number of threads to use. More than 1 will use multithreading parallelism to speed up processing.
+`parallel_mode`: 'size' or 'contig' whether to divide the contigs into blocks or just by contig. By contig is the default, try by size. Varying the block_size parameter may help if default values are not sufficient.
 `parallel_block_size`: Default value of 500,000.
 `cleanup_splits`: If running more than one simulation on the same input fasta, you can reuse splits files. By default, this will be set to False, and splits files will be deleted at the end of the run.
 `reuse_splits`: If an existing splits file exists in the output folder, it will use those splits, if this value is set to True.
@@ -184,7 +184,6 @@ Features:
 - Output a VCF file with the 'golden' set of true positive variants. These can be compared to bioinformatics workflow output (includes coverage and allele balance information)
 - Output a BAM file with the 'golden' set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
 - Create paired tumour/normal datasets using characteristics learned from real tumour data
-- Parallelization. COMING SOON!
 
 ## Examples
 
@@ -227,6 +226,29 @@ neat read-simulator                 \
         -o /home/me/simulated_reads/
 
 ```
+### Multithreading a reference consisting of one large contig
+In this case you would want to split the contig into blocks, rather than reading by contig. Even in single-threaded mode this is likely to be faster. 
+Also, we demonstrate the situation where you do not want any logs produced.
+
+neat_config.yml:
+```
+reference: giant_bacterium.fa
+read_len: 150
+produce_bam: True
+paired_ended: True
+fragment_mean: 350
+fragment_st_dev: 50
+threads: 12
+parallel_mode: size
+parallel_block_size: 500000
+```
+Then run with the command:
+``````
+neat read-simulator                 \
+        --no-log                    \
+        -c neat_config.yml          \
+        -o /home/me/simulated_reads/
+
 
 ### Insert specific variants
 Simulate a whole genome dataset with only the variants in the provided VCF file using -v and setting mutation rate to 0 with -M.
