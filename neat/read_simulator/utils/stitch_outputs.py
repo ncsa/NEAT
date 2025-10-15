@@ -41,6 +41,7 @@ def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int) -> Non
     if not bam_files:
         return
 
+    # ofw.files_to_write[ofw.bam].close()
     unsorted = ofw.bam.with_suffix(".unsorted.bam")
     pysam.merge("--no-PG", "-@", str(threads), "-f", str(unsorted), *map(str, bam_files))
     pysam.sort("-@", str(threads), "-o", str(ofw.bam), str(unsorted))

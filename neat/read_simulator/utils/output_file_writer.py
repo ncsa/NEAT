@@ -93,6 +93,8 @@ class OutputFileWriter:
             vcf = None
         if options.bam is not None:
             bam = options.bam
+            if header:
+                file_handles[bam] = bgzf.BgzfWriter(bam, 'w', compresslevel=6)
         else:
             bam = None
 
@@ -120,9 +122,9 @@ class OutputFileWriter:
                          f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n'
             self.files_to_write[self.vcf].write(vcf_header)
 
-        if options.produce_bam:
+        if options.produce_bam and header:
             # bam header
-            bam_handle = bgzf.BgzfWriter(self.bam, 'w', compresslevel=6)
+            bam_handle = self.files_to_write[self.bam]
             bam_handle.write("BAM\1")
             # Without a header, we can't write these as bams.
             header = "@HD\tVN:1.4\tSO:coordinate\n"
@@ -140,8 +142,6 @@ class OutputFileWriter:
                 bam_handle.write(pack('<i', name_length))
                 bam_handle.write(f'{item}\0')
                 bam_handle.write(pack('<i', self.bam_header[item]))
-            bam_handle.flush()
-            bam_handle.close()
 
     def write_fastq_record(self, filename: Path, record: str):
         if filename in self.files_to_write:
@@ -150,8 +150,10 @@ class OutputFileWriter:
             _LOG.error(f"Tried to write fastq record to unknown file {filename}")
             raise ValueError
 
-    def flush_and_close_files(self):
+    def flush_and_close_files(self, no_bam: bool = False):
         for file_name in self.files_to_write:
+            if file_name.suffix == "bam" and no_bam:
+                continue
             file_handle = self.files_to_write[file_name]
             try:
                 file_handle.flush()
