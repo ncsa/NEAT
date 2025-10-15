@@ -215,7 +215,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         stitch_main(output_file_writer, output_files)
     _LOG.info(f"It took {time.time()-start} s to write the bam file")
 
-    output_file_writer.flush_and_close_files()
+    output_file_writer.flush_and_close_files(True)
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
 
 def write_final_vcf(

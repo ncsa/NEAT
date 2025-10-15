@@ -120,10 +120,8 @@ def read_simulator_single(
             contig_index,
         )
 
-        # TODO write the per-block bam here. For some reason moving it entirely out of the loop slows it down in all cases
-        #   Hopefully this lets us take advantage of multithreading for writing the bams. Should make the final stitching
-        #   easier -- basically, that gets moved to here and there will just be a straight file dump.
-        bam_handle = bgzf.BgzfWriter(local_output_file_writer.bam, 'a', compresslevel=6)
+        # Writing an intermediate bam that is sorted, to make compiling them together at the end easier.
+        bam_handle = local_output_file_writer.files_to_write[local_output_file_writer.bam]
         for read_data in reads_to_write:
             read1 = read_data[0]
             read2 = read_data[1]
