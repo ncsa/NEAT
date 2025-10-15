@@ -93,7 +93,8 @@ class OutputFileWriter:
             vcf = None
         if options.bam is not None:
             bam = options.bam
-            file_handles[bam] = bgzf.BgzfWriter(bam, 'wb', compresslevel=6)
+            if header:
+                file_handles[bam] = bgzf.BgzfWriter(bam, 'w', compresslevel=6)
         else:
             bam = None
 
@@ -121,7 +122,7 @@ class OutputFileWriter:
                          f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n'
             self.files_to_write[self.vcf].write(vcf_header)
 
-        if options.produce_bam:
+        if options.produce_bam and header:
             # bam header
             bam_handle = self.files_to_write[self.bam]
             bam_handle.write("BAM\1")

@@ -144,6 +144,7 @@ def read_simulator_single(
         sorted_bam = local_output_file_writer.bam.with_suffix(".sorted.bam")
         pysam.sort("-@", str(local_options.threads), "-o", str(sorted_bam), str(local_output_file_writer.bam))
         os.rename(str(sorted_bam), str(local_output_file_writer.bam))
+        _LOG.info(f"bam for thread {thread_idx} written")
 
     local_output_file_writer.flush_and_close_files()
     file_dict = {

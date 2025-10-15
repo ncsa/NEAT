@@ -110,8 +110,9 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         bam_header = reference_keys_with_lens
 
     # Creates files and sets up objects for files that can be written to as needed.
-    # Also creates headers for bam and vcf.
-    output_file_writer = OutputFileWriter(options=options, header=bam_header)
+    # Also creates headers for bam and vcf. We create the overall bam with no header, as it will get a header from
+    # merging the smaller bams.
+    output_file_writer = OutputFileWriter(options=options, header=None)
 
     # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
     _LOG.info("Splitting reference...")
