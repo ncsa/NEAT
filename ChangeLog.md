@@ -1,6 +1,12 @@
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
+# NEAT 4.3.4
+- More fixes to bam creation, finalizing parallel code
+
+# NEAT 4.3.3
+- Bug fixes, but inadvertently pushed a non-working branch. Will remove.
+
 # NEAT v4.3.2
 - Bug fixes for parallel processing, which was causing some of the headers to be printed incorrectly. To fix that, we had to rewrite a bunch of the code and integrate parallelism more directly into NEAT.
 
