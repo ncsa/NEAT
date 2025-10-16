@@ -2,7 +2,7 @@
 Classes for the variant models included in NEAT.
 Every Variant type in variants > variant_types must have a corresponding model in order to be fully implemented.
 """
-
+import pdb
 import re
 import logging
 import abc
@@ -78,7 +78,7 @@ class DeletionModel(VariantModel):
     _type = Deletion
     _description = "A deletion of a random number of bases"
 
-    def __init__(self, deletion_len_model: dict[int: float, ...]):
+    def __init__(self, deletion_len_model: dict[int, float, ...]):
         # Creating probabilities from the weights
         tot = sum(deletion_len_model.values())
         self.deletion_len_model = {key: val/tot for key, val in deletion_len_model.items()}
@@ -133,8 +133,8 @@ class SnvModel(VariantModel):
         self.trinuc_bias_map = None
 
         # Some local variables for modeling
-        self.local_trinuc_bias: np.array = None
-        self.local_sequence: Seq or None = None
+        self.local_trinuc_bias: np.ndarray | None = None
+        self.local_sequence: Seq | None = None
 
     def map_local_trinuc_bias(
             self,
@@ -163,7 +163,12 @@ class SnvModel(VariantModel):
                 # Update the map bias at the central position for that trinuc
                 for trinuc in ALL_TRINUCS:
                     for match in re.finditer(trinuc, str(sequence)):
+                        # match.start() + 1 puts us at the center of the trinuc
+                        if match.start() + 1 > len(self.local_trinuc_bias):
+                            print("???")
                         self.local_trinuc_bias[match.start() + 1] = self.trinuc_mutation_bias[TRINUC_IND[trinuc]]
+                        if len(self.local_trinuc_bias) != len(sequence):
+                            print("???")
 
             # Now we normalize the bias
             self.local_trinuc_bias = self.local_trinuc_bias / sum(self.local_trinuc_bias)

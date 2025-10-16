@@ -166,6 +166,7 @@ dependencies:
   - yaml=0.2.5=h7f98852_2
   - zlib=1.2.12=h166bdaf_1
   - zstd=1.5.2=h8a70e8d_2
+  - pytest
   - pip:
     - asttokens==2.0.5
     - backcall==0.2.0

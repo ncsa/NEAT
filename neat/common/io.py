@@ -63,10 +63,9 @@ def open_input(path: str | Path) -> Iterator[TextIO]:
     # - https://github.com/python/mypy/issues/12053
     open_: Callable[..., TextIO]
     if is_compressed(path):
-        open_ = gzip.open
+        handle = bgzf.BgzfReader(path, 'r')
     else:
-        open_ = open
-    handle = open_(path, "rt", encoding="utf-8")
+        handle = open(path, 'rt', encoding='utf-8')
     try:
         yield handle
     finally:
@@ -149,7 +148,8 @@ def validate_input_path(path: str | Path):
         sys.exit(7)
     if not os.access(path, os.R_OK):
         mssg += f"cannot read from '{path}': access denied"
-        _LOG.error(9)
+        _LOG.error(mssg)
+        sys.exit(9)
 
 
 def validate_output_path(path: str | Path, is_file: bool = True, overwrite: bool = False):
@@ -182,4 +182,4 @@ def validate_output_path(path: str | Path, is_file: bool = True, overwrite: bool
                 _LOG.error(f"cannot write to '{path}', access denied")
                 sys.exit(11)
         else:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            path.mkdir(parents=True, exist_ok=True)

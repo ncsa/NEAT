@@ -107,10 +107,12 @@ def main(parser: argparse.ArgumentParser, arguments: list[str]) -> int:
     except SystemExit:
         return 2
 
-    log_file = Path(f'{args.log_name}').with_suffix('.log').resolve()
-    log_file.unlink(missing_ok=True)
-    log_file.touch()
-    print(f"NEAT run log: {log_file}")
+    log_file = None
+    if not args.no_log:
+        log_file = Path(f'{args.log_name}').with_suffix('.log').resolve()
+        log_file.unlink(missing_ok=True)
+        log_file.touch()
+        print(f"NEAT run log: {log_file}")
 
     setup_logging(
         omit_log=args.no_log,
@@ -138,7 +140,10 @@ def main(parser: argparse.ArgumentParser, arguments: list[str]) -> int:
         else:
             end = time.time()
             log.info(
-                f"command finished successfully; execution took {(end - start)/60:.2f} m"
+                f"command finished successfully; execution took {(end - start)*1000:.2f} ms\nd"
+            )
+            log.info(
+                f"command finished successfully; execution took {(end - start) / 60:.2f} m"
             )
         return 0
 
