@@ -108,12 +108,12 @@ fragment_st_dev: .
 # Whether to produce the golden bam file. This file will contain the reads
 # aligned with the exact region of the genome
 # type: boolean | required = no | default = false
-produce_bam: .
+produce_bam: true
 
 # Whether to produce a vcf file containing all the mutation errors added
 # by NEAT.
 # type: boolean | required = no | default = false
-produce_vcf: .
+produce_vcf: true
 
 # Whether to output the fastq(s) of the reads. This is the default output. NEAT
 # will produce 1 fastq for single ended reads or 2 fastqs for paired ended.
