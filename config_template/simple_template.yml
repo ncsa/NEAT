@@ -26,3 +26,8 @@ rng_seed: .
 min_mutations: .
 overwrite_output: .
 
+mode: .
+size: .
+jobs: .
+cleanup_splits: .
+reuse_splits: .

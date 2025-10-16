@@ -140,3 +140,27 @@ min_mutations: .
 # type: bool | required = no | default = false
 overwrite_output: .
 
+# How to split the input reference for parallelization
+# Note if threads == 1, this option has no effect.
+# type = string | required: no | default = contig | values: contig, size
+parallel_mode: .
+
+# Target block size if by = size (overlap = read_len * 2).
+# Default is 500000 when by = size. Not used for by = contig.
+# type = int | required: no | default = 500000 (when by=size)
+parallel_block_size: .
+
+# Maximum number of concurrent NEAT jobs (threads or hyperthreads) to run.
+# type = int | required: no | default = all available.
+threads: .
+
+# Delete the 'splits' directory after stitching completes
+# Note if threads == 1, this option has no effect.
+# type = bool | required: no | default = true
+cleanup_splits: .
+
+# Reuse existing files in '<out_dir>/splits' and skip the split step.
+# The directory must contain neat-generated files and must be in the output dir within "splits"
+# Note if threads == 1, this option has no effect.
+# type = bool | required: no | default = False
+reuse_splits: .

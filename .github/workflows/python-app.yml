@@ -1,8 +1,6 @@
 name: NEAT Unit Tests
 
 on:
-  push:
-    branches: [develop, main]
   pull_request:
     branches: [main]
 
@@ -17,8 +15,7 @@ jobs:
           environment-name: test_neat
           cache-environment: true
 
-      - name: Run NEAT Simulations
+      - name: Run unit tests (pytest)
         run: |
-          for i in {1..11}; do
-            micromamba run -n test_neat python -m neat --log-level DEBUG read-simulator -c data/test_configs/config_test$i.yml -o ../outputs/test${i}_read-simulator;
-          done
+          micromamba run -n test_neat poetry install
+          micromamba run -n test_neat pytest -q tests

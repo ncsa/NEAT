@@ -3,6 +3,7 @@ Command line interface for NEAT's generate reads function
 """
 
 import argparse
+from pathlib import Path
 
 from ...read_simulator import read_simulator_runner
 from .base import BaseCommand
@@ -44,4 +45,4 @@ class Command(BaseCommand):
 
         :param arguments: The namespace with arguments and their values.
         """
-        read_simulator_runner(arguments.config, arguments.output)
+        read_simulator_runner(arguments.config, arguments.output_dir, arguments.prefix)
