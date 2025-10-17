@@ -37,6 +37,15 @@ def concat(files_to_join: List[Path], dest_file: BgzfWriter) -> None:
         with bgzf.BgzfReader(f) as in_f:
             shutil.copyfileobj(in_f, dest_file)
 
+def merge_vcfs(vcfs: List[Path], dest: BgzfWriter) -> None:
+    if not vcfs:
+        return
+    for vcf in vcfs:
+        with bgzf.BgzfReader(vcf) as fh:
+            for line in fh:
+                if not line.startswith("#"):
+                    dest.write(line)
+
 def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int) -> None:
     if not bam_files:
         return
@@ -55,18 +64,22 @@ def main(
 
     fq1_list = []
     fq2_list = []
-    bam = []
+    bam_list = []
+    vcf_list = []
     # Gather all output files from the ops objects
     for (thread_idx,file_dict) in output_files:
         if file_dict["fq1"]:
             fq1_list.append(file_dict["fq1"])
         if file_dict["fq2"]:
             fq2_list.append(file_dict["fq2"])
+        if file_dict["vcf"]:
+            vcf_list.append(file_dict["vcf"])
         if file_dict["bam"]:
-            bam.append(file_dict["bam"])
+            bam_list.append(file_dict["bam"])
     # concatenate all files of each type. An empty list will result in no action
     concat(fq1_list, ofw.files_to_write[ofw.fq1])
     concat(fq2_list, ofw.files_to_write[ofw.fq2])
-    merge_bam(bam, ofw, threads)
+    merge_vcfs(vcf_list, ofw.files_to_write[ofw.vcf])
+    merge_bam(bam_list, ofw, threads)
     # Final success message via logging
     _LOG.info("Stitching complete!")
