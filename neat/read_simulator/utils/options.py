@@ -333,7 +333,8 @@ class Options(SimpleNamespace):
                           current_output_dir: Path | None = None,
                           fq1: Path | None = None,
                           fq2: Path | None = None,
-                          bam: Path | None = None
+                          bam: Path | None = None,
+                          vcf: Path | None = None
                           ):
         return_options = deepcopy(self)
         if reference is not None:
@@ -346,6 +347,8 @@ class Options(SimpleNamespace):
             return_options.fq2 = fq2
         if bam is not None:
             return_options.bam = bam
+        if vcf is not None:
+            return_options.vcf = vcf
         return return_options
 
     def set_random_seed(self) -> Generator:

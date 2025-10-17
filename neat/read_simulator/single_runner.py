@@ -146,10 +146,15 @@ def read_simulator_single(
             os.rename(str(sorted_bam), str(local_output_file_writer.bam))
             _LOG.info(f"bam for thread {thread_idx} written")
 
+    # TODO Write per thread/per contig vcf here. It seemed like passing it out and writing later would be faster,
+    #    but in fact it seems much slower
+    write_block_vcf(local_variants, contig_name, local_ref_index, local_output_file_writer)
+
     local_output_file_writer.flush_and_close_files()
     file_dict = {
         "fq1": local_output_file_writer.fq1,
         "fq2": local_output_file_writer.fq2,
+        "vcf": local_output_file_writer.vcf,
         "bam": local_options.bam,
     }
     return (
@@ -158,6 +163,32 @@ def read_simulator_single(
         local_variants,
         file_dict,
     )
+
+def write_block_vcf(
+        local_variants: ContigVariants,
+        contig: str,
+        ref_index: dict,
+        ofw: OutputFileWriter,
+):
+    # take contig name from ref index because we know it is in the proper order
+    locations = sorted(local_variants.variant_locations)
+    for location in locations:
+        for variant in local_variants[location]:
+            ref, alt = local_variants.get_ref_alt(variant, ref_index[contig])
+            sample = local_variants.get_sample_info(variant)
+            # +1 to position because the VCF uses 1-based coordinates
+            #          .id should give the more complete name
+            line = f"{ref_index[contig].id}\t" \
+                   f"{variant.position1 + 1}\t" \
+                   f"{local_variants.generate_field(variant, 'ID')}\t" \
+                   f"{ref}\t" \
+                   f"{alt}\t" \
+                   f"{variant.qual_score}\t" \
+                   f"{local_variants.generate_field(variant, 'FILTER')}\t" \
+                   f"{local_variants.generate_field(variant, 'INFO')}\t" \
+                   f"{local_variants.generate_field(variant, 'FORMAT')}\t" \
+                   f"{sample}\n"
+            ofw.write_vcf_record(line)
 
 def initialize_all_models(options: Options):
     """

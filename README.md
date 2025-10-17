@@ -1,4 +1,4 @@
-# The NEAT Project v4.3.2
+# The NEAT Project v4.3.5
 Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.1. This release of NEAT 4.3.1 includes several fixes and a little bit of restructuring, including a parallel process for running NEAT read-simulator. Our tests show much improved performance. If the logs seem execssive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.1 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatability, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X
 
 # NEAT v4.3
