@@ -139,8 +139,8 @@ The default is given:
 `rng_seed`: Manually enter a seed for the random number generator. Used for repeating runs. _Must be an integer._    
 `min_mutations`: Set the minimum number of mutations that NEAT should add, per contig. _Default is 0._ We recommend setting this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.
 `threads`: Number of threads to use. More than 1 will use multithreading parallelism to speed up processing.
-`parallel_mode`: 'size' or 'contig' whether to divide the contigs into blocks or just by contig. By contig is the default, try by size. Varying the block_size parameter may help if default values are not sufficient.
-`parallel_block_size`: Default value of 500,000.
+`mode`: 'size' or 'contig' whether to divide the contigs into blocks or just by contig. By contig is the default, try by size. Varying the size parameter may help if default values are not sufficient.
+`size`: Default value of 500,000.
 `cleanup_splits`: If running more than one simulation on the same input fasta, you can reuse splits files. By default, this will be set to False, and splits files will be deleted at the end of the run.
 `reuse_splits`: If an existing splits file exists in the output folder, it will use those splits, if this value is set to True.
 

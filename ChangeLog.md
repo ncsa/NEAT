@@ -4,6 +4,12 @@ NEAT is now a part of the NCSA github and active development will continue here.
 # NEAT v4.3.5
 - An improvement rather than a bug fix this time. We moved vcf processing into the threaded portion, as our speeds were better than single threaded, but very slow on the vcf writing portion. This sped things up considerably, so we tested and confirmed that it is working as desired and are updating to a new version with improved VCF production in parallel mode.
 
+# NEAT 4.3.4
+- More fixes to bam creation, finalizing parallel code
+
+# NEAT 4.3.3
+- Bug fixes, but inadvertently pushed a non-working branch. Will remove.
+
 # NEAT v4.3.2
 - Bug fixes for parallel processing, which was causing some of the headers to be printed incorrectly. To fix that, we had to rewrite a bunch of the code and integrate parallelism more directly into NEAT.
 
