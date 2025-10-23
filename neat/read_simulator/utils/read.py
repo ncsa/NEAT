@@ -314,7 +314,6 @@ class Read:
 
         :param err_model: The error model for the run
         :param qual_model: The quality score model for the run
-        :param options: The options for this section
         :param fastq_handle: for writing fastq1
         :param quality_offset: the quality offset for this run
         :param produce_fastq: If true, this will write out the temp fastqs. If false, this will only write out the tsams
@@ -347,7 +346,7 @@ class Read:
         # This applies any variants, updates quality score and read sequence in place
         self.apply_variants_for_final_output(qual_model, rng)
 
-        self.read_quality_string = "".join([chr(int(x) + quality_offset) for x in self.quality_array])
+        self.read_quality_string = "".join([chr(x) for x in self.quality_array])
         # If this read isn't low quality, pick a standard mapping quality
         # We could have this be user assigned.
         if not self.mapping_quality:
