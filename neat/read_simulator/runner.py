@@ -217,7 +217,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     else:
         stitch_main(output_file_writer, output_files)
 
-    output_file_writer.flush_and_close_files(index_file=True)
+    output_file_writer.flush_and_close_files()
     force = False
     if options.overwrite_output:
         force = True

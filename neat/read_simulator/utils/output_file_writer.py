@@ -152,9 +152,17 @@ class OutputFileWriter:
             _LOG.error(f"Tried to write fastq record to unknown file {filename}")
             raise ValueError
 
-    def flush_and_close_files(self, no_bam: bool = True, index_file: bool = False):
+    def flush_and_close_files(self, skip_bam: bool = True):
+        """
+        flushes and closes all open files. On the thread level, we will want to go ahead and close the bam,
+        but on the main level, we close the bam manually, so we don't need to do that here.
+
+        :param skip_bam: Whether to skip trying to close the bam. This prevents a problem where the file was
+            being "closed" twice and an extra line ending was getting written. Basically, the block level files
+            need to be closed before they can be used by pysam.sort to make sure they are in the proper order.
+        """
         for file_name in self.files_to_write:
-            if file_name.suffix == "bam" and no_bam:
+            if file_name.suffix == "bam" and skip_bam:
                 continue
             file_handle = self.files_to_write[file_name]
             try:
