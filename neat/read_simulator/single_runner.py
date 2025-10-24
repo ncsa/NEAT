@@ -146,11 +146,9 @@ def read_simulator_single(
             os.rename(str(sorted_bam), str(local_output_file_writer.bam))
             _LOG.info(f"bam for thread {thread_idx} written")
 
-    # TODO Write per thread/per contig vcf here. It seemed like passing it out and writing later would be faster,
-    #    but in fact it seems much slower
     write_block_vcf(local_variants, contig_name, local_ref_index, local_output_file_writer)
 
-    local_output_file_writer.flush_and_close_files()
+    local_output_file_writer.flush_and_close_files(False)
     file_dict = {
         "fq1": local_output_file_writer.fq1,
         "fq2": local_output_file_writer.fq2,
