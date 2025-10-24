@@ -28,10 +28,13 @@ from neat.read_simulator.utils import Options, OutputFileWriter
 
 _LOG = logging.getLogger(__name__)
 
-def concat(files_to_join: List[Path], dest_file: BgzfWriter) -> None:
+def concat(files_to_join: List[Path], ofw: OutputFileWriter, read_num: str) -> None:
     if not files_to_join:
         # Nothing to do, and no error to throw
         return
+
+    read_file = ofw.fq1 if read_num == "1" else ofw.fq2
+    dest_file = ofw.files_to_write[read_file]
 
     for f in files_to_join:
         with bgzf.BgzfReader(f) as in_f:
@@ -77,8 +80,8 @@ def main(
         if file_dict["bam"]:
             bam_list.append(file_dict["bam"])
     # concatenate all files of each type. An empty list will result in no action
-    concat(fq1_list, ofw.files_to_write[ofw.fq1])
-    concat(fq2_list, ofw.files_to_write[ofw.fq2])
+    concat(fq1_list, ofw, "1")
+    concat(fq2_list, ofw, "2")
     merge_vcfs(vcf_list, ofw.files_to_write[ofw.vcf])
     merge_bam(bam_list, ofw, threads)
     # Final success message via logging
