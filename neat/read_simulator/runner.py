@@ -7,6 +7,7 @@ import multiprocessing as mp
 
 from pathlib import Path
 
+import pysam
 from Bio import SeqIO
 
 from .utils import Options, OutputFileWriter, parse_beds, parse_input_vcf
@@ -216,7 +217,21 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     else:
         stitch_main(output_file_writer, output_files)
 
-    output_file_writer.flush_and_close_files(True)
+    output_file_writer.flush_and_close_files(index_file=True)
+    force = False
+    if options.overwrite_output:
+        force = True
+    for file in options.output_files:
+        if file.suffix == ".bam":
+            _LOG.info(f"bam file: {file}")
+            bam_idx = pysam.index(f"{str(file)}", "-@", str(options.threads))
+            _LOG.info(f'bam index: {bam_idx}')
+        elif "fastq" in file.name:
+            continue
+        else:
+            # Must be a vcf
+            pysam.tabix_index(str(file), preset="vcf", force=force)
+
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
 
 def filter_thread_variants(contig_variants: ContigVariants, coords: tuple[int, int]) -> ContigVariants:

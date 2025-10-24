@@ -148,7 +148,7 @@ def read_simulator_single(
 
     write_block_vcf(local_variants, contig_name, local_ref_index, local_output_file_writer)
 
-    local_output_file_writer.flush_and_close_files()
+    local_output_file_writer.flush_and_close_files(no_bam=False, index_file=False)
     file_dict = {
         "fq1": local_output_file_writer.fq1,
         "fq2": local_output_file_writer.fq2,
