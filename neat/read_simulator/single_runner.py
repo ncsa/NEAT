@@ -80,6 +80,10 @@ def read_simulator_single(
     local_ref_name = list(local_ref_index.keys())[0]
     local_seq_record = local_ref_index[local_ref_name]
 
+    if len(local_seq_record) < local_options.read_length:
+        _LOG.debug("Record too small for processing")
+
+
     coords = (block_start, block_start+len(local_seq_record))
     mutation_rate_regions = recalibrate_mutation_regions(mutation_regions, coords, mut_model.avg_mut_rate)
 

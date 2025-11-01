@@ -52,7 +52,7 @@ def map_non_n_regions(sequence) -> np.ndarray:
 
     return base_check
 
-
+# TODO tests to ensure generate variants doesn't try to sample out of bounds
 def generate_variants(
         reference: SeqRecord,
         ref_start: int,
@@ -121,23 +121,33 @@ def generate_variants(
         # For no input mutation regions bed, this will return the entire sequence.
         mut_region = options.rng.choice(a=local_mut_regions, p=probability_rates)
         mut_region_offset = (int(mut_region[0]-ref_start), int(mut_region[1]-ref_start), mut_region[2])
-        # Pick a random starting place. Randint is inclusive of endpoints, so we subtract 1
-        window_start = options.rng.integers(mut_region_offset[0], mut_region_offset[1] - 1, dtype=int)
 
+        # Pick a random starting place. Randint is inclusive of endpoints, so we subtract 1
+        if mut_region_offset[1] <= mut_region_offset[0]:
+            # ensure we are still in bounds
+            continue
+
+        window_start = options.rng.integers(mut_region_offset[0], mut_region_offset[1] - 1, dtype=int)
         found = False
         if reference[window_start] not in ALLOWED_NUCL:
             # pick a random location to the right
+            if window_start + 1 >= mut_region_offset[1] - 1 or mut_region_offset[1] -1 <= 0:
+                # ensure we are still in bounds
+                continue
             plus = options.rng.integers(window_start + 1, mut_region_offset[1] - 1, dtype=int)
             if reference[plus] in ALLOWED_NUCL:
                 found = True
                 window_start = plus
             else:
                 # If that didn't work pick a random location to the left
-                if window_start - 1 > mut_region_offset[0]:
-                    minus = options.rng.integers(mut_region_offset[0], window_start - 1, dtype=int)
-                    if reference[minus] in ALLOWED_NUCL:
-                        found = True
-                        window_start = minus
+                if mut_region_offset[0] >= window_start - 1 or window_start - 1 <= 0:
+                    # ensure we are still in bounds
+                    continue
+
+                minus = options.rng.integers(mut_region_offset[0], window_start - 1, dtype=int)
+                if reference[minus] in ALLOWED_NUCL:
+                    found = True
+                    window_start = minus
         else:
             found = True
 
@@ -145,6 +155,9 @@ def generate_variants(
         if not found:
             continue
 
+        if window_start > min(mut_region_offset[1], window_start+max_window_size)-1:
+            # ensure we are still in bounds
+            continue
         end_point = min(
             options.rng.integers(
                 window_start,
@@ -156,6 +169,9 @@ def generate_variants(
         )
         if reference[end_point] not in ALLOWED_NUCL:
             # Didn't find it to the right, look to the left
+            if max(window_start - max_window_size, mut_region_offset[0]) > window_start:
+                # ensure we are still in bounds
+                continue
             end_point = options.rng.integers(
                 max(window_start - max_window_size, mut_region_offset[0]),
                 window_start,
@@ -165,6 +181,8 @@ def generate_variants(
                 # No suitable end_point, so we try again
                 continue
 
+        if not window_start or not end_point:
+            continue
         # Sorting assures that wherever we found the end point, the coordinates will be in the correct order for slicing
         mutation_slice = sorted([window_start, end_point])
         slice_distance = mutation_slice[1] - mutation_slice[0]
@@ -284,7 +302,7 @@ def generate_variants(
             # The count will tell us how many we actually added v how many we were trying to add
             n_added += 1
 
-    # _LOG.debug(f'Finished generating chunk random mutations in {(time.time() - start_time)/60:.2f} minutes')
+    _LOG.debug(f'Finished generating chunk random mutations in {(time.time() - start_time)/60:.2f} minutes')
 
     return return_variants
 
