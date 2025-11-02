@@ -80,9 +80,13 @@ def main(
         if file_dict["bam"]:
             bam_list.append(file_dict["bam"])
     # concatenate all files of each type. An empty list will result in no action
-    concat(fq1_list, ofw, "1")
-    concat(fq2_list, ofw, "2")
-    merge_vcfs(vcf_list, ofw.files_to_write[ofw.vcf])
-    merge_bam(bam_list, ofw, threads)
+    if fq1_list:
+        concat(fq1_list, ofw, "1")
+    if fq2_list:
+        concat(fq2_list, ofw, "2")
+    if vcf_list:
+        merge_vcfs(vcf_list, ofw.files_to_write[ofw.vcf])
+    if bam_list:
+        merge_bam(bam_list, ofw, threads)
     # Final success message via logging
     _LOG.info("Stitching complete!")
