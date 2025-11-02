@@ -80,7 +80,7 @@ def read_simulator_single(
     local_ref_name = list(local_ref_index.keys())[0]
     local_seq_record = local_ref_index[local_ref_name]
 
-    if len(local_seq_record) < local_options.read_length:
+    if len(local_seq_record) < local_options.read_len:
         _LOG.debug("Record too small for processing")
 
 
