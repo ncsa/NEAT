@@ -13,6 +13,7 @@ matplotlib = "^3.10"
 pkginfo = "^1.8.3"
 numpy = "^2.2"
 PyYAML = "^6.0"
+scipy = "^1.14.1"
 pysam = "^0.23"
 frozendict = "^2.4.6"
 
