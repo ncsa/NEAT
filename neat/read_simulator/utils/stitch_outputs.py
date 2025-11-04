@@ -65,7 +65,7 @@ def main(
     if fq2_list:
         concat(fq2_list, ofw, "2")
     if vcf_list:
-        merge_vcfs(vcf_list, ofw.files_to_write[ofw.vcf])
+        merge_vcfs(vcf_list, ofw)
     if bam_list:
         merge_bam(bam_list, ofw, threads)
     # Final success message via logging

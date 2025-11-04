@@ -102,7 +102,7 @@ def read_simulator_single(
         reference=local_seq_record,
         ref_start=block_start,
         mutation_rate_regions=mutation_rate_regions,
-        existing_variants=input_variants_local,
+        input_variants=input_variants_local,
         mutation_model=mut_model,
         max_qual_score=max_qual_score,
         options=local_options,
@@ -150,7 +150,7 @@ def read_simulator_single(
             os.rename(str(sorted_bam), str(local_output_file_writer.bam))
             _LOG.info(f"bam for thread {thread_idx} written")
 
-    write_block_vcf(local_variants, contig_name, local_ref_index, local_output_file_writer)
+    write_block_vcf(local_variants, contig_name, block_start, local_ref_index, local_output_file_writer)
 
     local_output_file_writer.flush_and_close_files(False)
     file_dict = {
@@ -169,14 +169,22 @@ def read_simulator_single(
 def write_block_vcf(
         local_variants: ContigVariants,
         contig: str,
+        ref_start: int,
         ref_index: dict,
         ofw: OutputFileWriter,
 ):
+    """
+    :param local_variants: The ContigVariants object for this block
+    :param contig: The name of the contig this block comes from
+    :param ref_start: The reference start position, relative to the contig
+    :param ref_index: The local index for this reference block
+    :param ofw: The OutputFileWriter object for this block
+    """
     # take contig name from ref index because we know it is in the proper order
     locations = sorted(local_variants.variant_locations)
     for location in locations:
         for variant in local_variants[location]:
-            ref, alt = local_variants.get_ref_alt(variant, ref_index[contig])
+            ref, alt = local_variants.get_ref_alt(variant, ref_index[contig], ref_start)
             sample = local_variants.get_sample_info(variant)
             # +1 to position because the VCF uses 1-based coordinates
             #          .id should give the more complete name
