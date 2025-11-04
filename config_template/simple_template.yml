@@ -28,6 +28,6 @@ overwrite_output: .
 
 mode: .
 size: .
-jobs: .
+threads: .
 cleanup_splits: .
 reuse_splits: .

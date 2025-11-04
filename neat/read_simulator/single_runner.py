@@ -150,7 +150,8 @@ def read_simulator_single(
             os.rename(str(sorted_bam), str(local_output_file_writer.bam))
             _LOG.info(f"bam for thread {thread_idx} written")
 
-    write_block_vcf(local_variants, contig_name, block_start, local_ref_index, local_output_file_writer)
+    if local_options.produce_vcf:
+        write_block_vcf(local_variants, contig_name, block_start, local_ref_index, local_output_file_writer)
 
     local_output_file_writer.flush_and_close_files(False)
     file_dict = {
