@@ -14,7 +14,6 @@ from struct import pack
 import logging
 from typing import Any
 
-import pysam
 from Bio import bgzf
 from pathlib import Path
 

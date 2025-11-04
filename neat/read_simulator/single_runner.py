@@ -91,7 +91,6 @@ def read_simulator_single(
     # Also creates headers for bam and vcf.
     # We'll also keep track here of what files we are producing.
     # We don't really need to write out the VCF. We should be able to store it in memory
-    local_options.produce_vcf = False
     local_output_file_writer = OutputFileWriter(options=local_options, header=bam_header)
     """
     Begin Analysis
