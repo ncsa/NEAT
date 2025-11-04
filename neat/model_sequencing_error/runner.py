@@ -30,6 +30,7 @@ def model_seq_err_runner(
         qual_scores: list | int,
         max_reads: int,
         overwrite: bool,
+        output_dir: str,
         output_prefix: str,
         pileup: str = None,
         plot: bool = False,
@@ -45,7 +46,8 @@ def model_seq_err_runner(
     :param max_reads: The maximum number of reads to process. This can speed up the time taken to create the model,
         at the expense of accuracy.
     :param overwrite: True to overwrite input, mainly a debugging option
-    :param output_prefix: The name of the file to write the output.
+    :param output_dir: The name of the directory to write the output.
+    :param output_prefix: The prefix to use for filenames
     :param pileup: If pileup file included, get stats from that
     :param plot: run optional plotting.
     """
@@ -86,11 +88,11 @@ def model_seq_err_runner(
     _LOG.debug(f"Plot the data? {plot}")
     _LOG.debug(f'Overwrite existing data? {overwrite}')
 
-    validate_output_path(output_prefix, is_file=False)
-    output_prefix = Path(output_prefix)
+    validate_output_path(output_dir, is_file=False)
+    output_dir = Path(output_dir)
 
     # used string logic instead of pathlib here bc pathlib was cutting off extensions.
-    output_file = output_prefix.parent / f'{output_prefix.name}.p.gz'
+    output_file = output_dir / f'{output_prefix}.p.gz'
     validate_output_path(output_file, overwrite=overwrite)
     _LOG.info(f'Writing output to: {output_file}')
 
