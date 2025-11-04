@@ -95,7 +95,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             input_variants_dict,
             options.include_vcf,
             options.ploidy,
-            options,
+            reference_index,
             options
         )
 
