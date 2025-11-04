@@ -46,7 +46,7 @@ class InsertionModel(VariantModel):
     _type = Insertion
     _description = "An insertion of N nucleotides into a chromosome."
 
-    def __init__(self, insert_len_model: dict[int: float, ...]):
+    def __init__(self, insert_len_model: dict[int, float]):
         # Creating probabilities from the weights
         tot = sum(insert_len_model.values())
         self.insertion_len_model = {key: val / tot for key, val in insert_len_model.items()}
@@ -78,12 +78,12 @@ class DeletionModel(VariantModel):
     _type = Deletion
     _description = "A deletion of a random number of bases"
 
-    def __init__(self, deletion_len_model: dict[int, float, ...]):
+    def __init__(self, deletion_len_model: dict[int, float]):
         # Creating probabilities from the weights
         tot = sum(deletion_len_model.values())
         self.deletion_len_model = {key: val/tot for key, val in deletion_len_model.items()}
 
-    def get_deletion_length(self, rng: Generator, size: int = None) -> int | list[int, ...]:
+    def get_deletion_length(self, rng: Generator, size: int = None) -> int | list[int]:
         """
         Get size number of inserts lengths. Size == 1 results in an int return, else a list of ints.
 

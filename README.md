@@ -76,6 +76,12 @@ $ poetry install
 ```
 
 Notes: If any packages are struggling to resolve, check the channels and try to manually pip install the package to see if that helps (but note that NEAT is not tested on the pip versions.)
+If poetry hangs for you, try the following fix (from https://github.com/python-poetry/poetry/issues/8623):
+
+```
+export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
+```
+then re-run `poetry install`
 
 Test your install by running:
 ```
