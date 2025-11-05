@@ -319,7 +319,7 @@ To activate parallelism, set threads to a number greater than 1. By default, NEA
 
 ## neat model-fraglen
 
-Computes empirical fragment length distribution from sample data.
+Computes empirical fragment length distribution from sample paired-end data. NEAT uses the template length (tlen) attribute calculated from paired-ended alignments to generate summary statistics for fragment lengths, which can be input into NEAT.
 
     neat model-fraglen   \
         -i input.bam            \

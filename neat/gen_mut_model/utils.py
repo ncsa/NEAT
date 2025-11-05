@@ -47,11 +47,12 @@ def extract_header(vcf_file):
     return ret
 
 
-def read_and_filter_variants(vcf_file, reference_index, ignore):
+def read_and_filter_variants(vcf_file, vcf_alt_names, reference_index, ignore):
     """
     Finds all the matching chromosomes between ref and vcf(mutation file)
 
     :param Path vcf_file: Full path to input vcf
+    :param dict vcf_alt_names: alternate names of the vcf contigs
     :param dict reference_index: SeqIO dictionary of the index
     :param list ignore: list of contigs to ignore
     :return list, list: list of matching variants and a list of matching chromosomes
@@ -90,9 +91,12 @@ def read_and_filter_variants(vcf_file, reference_index, ignore):
                 if chrom not in matching_chroms:
                     if chrom in reference_index:
                         matching_chroms.append(chrom)
+                    elif vcf_alt_names[chrom] in reference_index:
+                        chrom = vcf_alt_names[chrom]
+                        matching_chroms.append(chrom)
 
                 # If CHROM is present in matching_chroms, then the variant is a candidate
-                if chrom in matching_chroms:
+                else:
                     # multi-allelic, we'll just take the first one
                     if ',' in columns[4]:
                         variant_alt = columns[4].split(',')[0]
