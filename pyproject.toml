@@ -17,13 +17,9 @@ scipy = "^1.14.1"
 pysam = "^0.23"
 frozendict = "^2.4.6"
 
-[tool.poetry.dev-dependencies]
-poetry = "^1.3"
-ipython = "^8.4.0"
-
 [tool.poetry.scripts]
 neat = 'neat.cli.cli:run'
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
