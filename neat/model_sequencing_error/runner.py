@@ -65,9 +65,10 @@ def model_seq_err_runner(
 
     final_quality_scores: list
     binned_scores = False
-    if len(qual_scores) == 1:
-        final_quality_scores = list(range(1, qual_scores[0] + 1))
+    if type(qual_scores) == int:
+        final_quality_scores = list(range(1, qual_scores + 1))
     else:
+        # Must be a list. Note that binned scores are not yet implemented
         binned_scores = True
         final_quality_scores = sorted(qual_scores)
 

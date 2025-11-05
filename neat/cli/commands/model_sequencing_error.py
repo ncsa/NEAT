@@ -95,5 +95,6 @@ class Command(BaseCommand):
             # arguments.pileup,
             # arguments.plot,
             arguments.overwrite,
-            arguments.output_dir
+            arguments.output_dir,
+            arguments.prefix
         )
