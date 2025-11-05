@@ -1,22 +1,7 @@
 name: neat
-channels:
-    - conda-forge
-    - bioconda
 
 dependencies:
-  - python=3.10.*
-  - biopython=1.85
-  - pkginfo
-  - matplotlib
-  - numpy
-  - pyyaml
+  - python==3.11.*
   - pip
-  - scipy
-  - libgcc=14
-  - htslib
   - pip:
-    - pysam
-    - frozendict
-    - poetry==1.3.*
-
-  - pytest
+    - poetry==2.2.*

@@ -32,6 +32,7 @@ _LOG = logging.getLogger(__name__)
 def runner(reference_index,
            vcf_to_process,
            vcf_columns,
+           vcf_alt_names,
            outcounts_file,
            show_trinuc,
            save_trinuc,
@@ -46,6 +47,7 @@ def runner(reference_index,
     :param dict reference_index: The reference index from SeqIO
     :param Path vcf_to_process: Path to the vcf to use for analysis
     :param list vcf_columns: Columns present in the input vcf
+    :param dict vcf_alt_names: alternate names, if any, of each contig
     :param Path outcounts_file: Path to outcounts file, if present
     :param bool show_trinuc: If true, display trinucleotide counts
     :param bool save_trinuc: If true, save trinucleotide counts
@@ -87,6 +89,7 @@ def runner(reference_index,
     _LOG.info('Processing VCF file...')
     matching_variants, matching_chromosomes = read_and_filter_variants(
         vcf_to_process,
+        vcf_alt_names,
         reference_index,
         ignore
     )
@@ -383,6 +386,18 @@ def compute_mut_runner(reference,
     vcf_header = extract_header(mutations)
     vcf_columns = vcf_header[-1]
 
+    vcf_names = [x[len('##contig=<'):-1] for x in vcf_header[:-1] if x.startswith('##contig=')]
+    vcf_alt_names = {}
+    for name in vcf_names:
+        # names should be of the format contig=<ID=NAME1,accession="GW000299.2"> etc
+        name_split = name.split(',')
+        if name_split[0].startswith("ID="):
+            temp_split = name_split[0][len("ID="):]
+            if name_split[1].startswith("accession="):
+                # need to strip the accession= and the quotation marks
+                value = name_split[1][len("accession=")+1:-1]
+                vcf_alt_names[temp_split] = value
+
     if bed:
         vcf_columns = ['bed_chr', 'bed_pos1', 'bed_pos2'] + vcf_columns
         _LOG.info('Intersecting bed and vcf.')
@@ -452,6 +467,7 @@ def compute_mut_runner(reference,
         reference_index,
         vcf_to_process,
         vcf_columns,
+        vcf_alt_names,
         outcounts,
         show_trinuc,
         save_trinuc,

@@ -53,4 +53,4 @@ class Command(BaseCommand):
 
         :param arguments: The namespace with arguments and their values.
         """
-        compute_fraglen_runner(arguments.input_file, arguments.min_reads, arguments.output_dir, arguments.overwrite)
+        compute_fraglen_runner(arguments.input_file, arguments.min_reads, arguments.output_dir, arguments.prefix, arguments.overwrite)
