@@ -12,7 +12,7 @@ import numpy as np
 
 from typing import TextIO, Iterator
 from Bio.Seq import Seq, MutableSeq
-from Bio.Align import PairwiseAligner
+from Bio.Align import pairwise2
 from Bio.pairwise2 import format_alignment
 from numpy.random import Generator
 
@@ -395,7 +395,7 @@ class Read:
         The sequence alignment. We restrict the alignment to the section of the reference where we know the read
         came from and try to generate a minimal cigar string. The cigar string part may still need tweaking.
         """
-        raw_alignment = PairwiseAligner.align.globalms(
+        raw_alignment = pairwise2.align.globalms(
             self.reference_segment,
             self.read_sequence,
             match=10,
