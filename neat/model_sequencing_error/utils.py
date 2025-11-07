@@ -139,6 +139,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 
             if len(qualities_to_check) != read_length:
                 wrong_len += 1
+                _LOG.debug("Skipping record that doesn't match read length")
                 continue
 
             # TODO Adding this section to account for quality score "shape" in a fastq
