@@ -233,7 +233,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         elif "fastq" in file.name:
             continue
         else:
-
+            # may still need to sort the vcf
             pysam.tabix_index(str(file), preset="vcf", force=force)
 
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")

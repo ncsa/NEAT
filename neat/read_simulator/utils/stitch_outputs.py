@@ -12,28 +12,28 @@ import logging
 __all__ = ["main"]
 
 from Bio import bgzf
+import gzip
 from neat.read_simulator.utils import OutputFileWriter
 
 _LOG = logging.getLogger(__name__)
 
-def concat(files_to_join: List[Path], ofw: OutputFileWriter, read_num: str) -> None:
-    read_file = ofw.fq1 if read_num == "1" else ofw.fq2
-    dest_file = ofw.files_to_write[read_file]
-
+def concat(files_to_join: List[Path], file_to_write: Path) -> None:
+    dest_file = bgzf.BgzfWriter(file_to_write)
     for f in files_to_join:
         with bgzf.BgzfReader(f) as in_f:
             shutil.copyfileobj(in_f, dest_file)
+    dest_file.close()
 
-def merge_vcfs(vcfs: List[Path], ofw: OutputFileWriter) -> None:
-    dest = ofw.files_to_write[ofw.vcf]
+def merge_vcfs(vcfs: List[Path], file_to_write: Path) -> None:
+    dest = bgzf.BgzfWriter(file_to_write)
     for vcf in vcfs:
-        with bgzf.BgzfReader(vcf) as fh:
+        with gzip.open(vcf, 'rt') as fh:
             for line in fh:
                 if not line.startswith("#"):
                     dest.write(line)
+    dest.close()
 
 def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int) -> None:
-    # ofw.files_to_write[ofw.bam].close()
     unsorted = ofw.bam.with_suffix(".unsorted.bam")
     pysam.merge("--no-PG", "-@", str(threads), "-f", str(unsorted), *map(str, bam_files))
     pysam.sort("-@", str(threads), "-o", str(ofw.bam), str(unsorted))
@@ -61,11 +61,11 @@ def main(
             bam_list.append(file_dict["bam"])
     # concatenate all files of each type. An empty list will result in no action
     if fq1_list:
-        concat(fq1_list, ofw, "1")
+        concat(fq1_list, ofw.fq1)
     if fq2_list:
-        concat(fq2_list, ofw, "2")
+        concat(fq2_list, ofw.fq2)
     if vcf_list:
-        merge_vcfs(vcf_list, ofw)
+        merge_vcfs(vcf_list, ofw.vcf)
     if bam_list:
         merge_bam(bam_list, ofw, threads)
     # Final success message via logging
