@@ -142,6 +142,7 @@ def overlaps(test_interval: tuple[int, int], comparison_interval: tuple[int, int
 
 def generate_reads(
         thread_index: int,
+        coords: tuple[int, int],
         reference: SeqRecord,
         error_model: SequencingErrorModel,
         qual_model: TraditionalQualityModel,
@@ -159,6 +160,7 @@ def generate_reads(
     This will generate reads given a set of parameters for the run. The reads will output in a fastq.
 
     :param thread_index: Index of current thread
+    :param coords: The coordinates of this block
     :param reference: The reference segment that reads will be drawn from.
     :param error_model: The error model for this run, the forward strand
     :param qual_model: The quality score model for this run, forward strand
@@ -238,7 +240,7 @@ def generate_reads(
             continue
         raw_read = read1 + read2
 
-        read_name = f'NEAT_generated_{contig_index:010d}_{thread_index}_{str(i+1)}'
+        read_name = f'NEAT_generated_{contig_index:010d}_{thread_index}_{str(i+coords[0]+1)}'
 
         # add a small amount of padding to the end to account for deletions.
         # Trying out this method of using the read-length, which for the default neat run gives ~30.

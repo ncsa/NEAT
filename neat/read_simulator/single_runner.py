@@ -110,6 +110,7 @@ def read_simulator_single(
     if local_options.produce_fastq or local_options.produce_bam:
         reads_to_write = generate_reads(
             thread_idx,
+            coords,
             local_seq_record,
             seq_error_model,
             qual_score_model,
