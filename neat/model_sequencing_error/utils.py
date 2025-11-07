@@ -102,6 +102,7 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 
         if read_length == 0:
             _LOG.error("ERROR reading input file")
+            raise ValueError
 
     _LOG.debug(f'Assuming read length of {read_length}')
 
