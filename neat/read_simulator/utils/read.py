@@ -346,7 +346,7 @@ class Read:
         # This applies any variants, updates quality score and read sequence in place
         self.apply_variants_for_final_output(qual_model, rng)
 
-        self.read_quality_string = "".join([chr(x) for x in self.quality_array])
+        self.read_quality_string = "".join([chr(x+33) for x in self.quality_array])
         # If this read isn't low quality, pick a standard mapping quality
         # We could have this be user assigned.
         if not self.mapping_quality:
