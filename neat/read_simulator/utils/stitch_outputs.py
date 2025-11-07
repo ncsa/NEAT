@@ -20,8 +20,9 @@ _LOG = logging.getLogger(__name__)
 def concat(files_to_join: List[Path], file_to_write: Path) -> None:
     dest_file = bgzf.BgzfWriter(file_to_write)
     for f in files_to_join:
-        with gzip.open(f, 'rt') as in_f:
-            shutil.copyfileobj(in_f, dest_file)
+        with gzip.open(f, 'r') as in_f:
+            for line in in_f:
+                dest_file.write(line)
     dest_file.close()
 
 def merge_vcfs(vcfs: List[Path], file_to_write: Path) -> None:
