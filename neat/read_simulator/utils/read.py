@@ -370,10 +370,10 @@ class Read:
         # we'll use generic human repeats, as commonly found in masked regions. We may refine this to make configurable
         repeat_bases = list("TTAGGG")
         if self.is_reverse:
-            raw_sequence = self.reference_segment.reverse_complement().upper()
+            raw_sequence = self.reference_segment.reverse_complement()
             self.quality_array = self.quality_array[::-1]
         else:
-            raw_sequence = self.reference_segment.upper()
+            raw_sequence = self.reference_segment
 
         start = raw_sequence.find('N')
         if start != -1:
