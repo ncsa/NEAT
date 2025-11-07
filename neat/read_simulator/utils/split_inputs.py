@@ -78,12 +78,12 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
         if options.mode == "contig":
             stem = f"{idx:0{pad}d}__{contig}"
             fa = options.splits_dir / f"{stem}.fa.gz"
-            write_fasta(contig, seq_record.seq, fa)
+            write_fasta(contig, seq_record.seq.upper(), fa)
             split_fasta_dict[contig][(0, len(seq_record))] = fa
             idx += 1
             written += 1
         else:
-            for start, subseq in chunk_record(seq_record.seq, options.size, overlap):
+            for start, subseq in chunk_record(seq_record.seq.upper(), options.size, overlap):
                 stem = f"{idx:0{pad}d}__{contig}"
                 fa = options.splits_dir / f"{stem}.fa.gz"
                 write_fasta(contig, subseq, fa)
