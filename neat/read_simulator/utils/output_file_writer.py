@@ -276,5 +276,5 @@ class OutputFileWriter:
                 read.name.encode('utf-8') + b'\0' +
                 encoded_cig +
                 encoded_seq +
-                encoded_qual
+                encoded_qual.encode('utf-8')
         ))
