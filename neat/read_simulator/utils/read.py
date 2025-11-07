@@ -12,7 +12,7 @@ import numpy as np
 
 from typing import TextIO, Iterator
 from Bio.Seq import Seq, MutableSeq
-from Bio.Align import pairwise2
+from Bio import pairwise2
 from Bio.pairwise2 import format_alignment
 from numpy.random import Generator
 
