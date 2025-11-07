@@ -17,6 +17,8 @@ from typing import Any
 from Bio import bgzf
 from pathlib import Path
 
+#gzip for temp outs, bgzip for final outs
+import gzip
 from Bio.bgzf import BgzfWriter
 
 from .read import Read
@@ -78,17 +80,17 @@ class OutputFileWriter:
         # Set up filenames based on booleans
         if options.fq1 is not None:
             fq1 = options.fq1
-            file_handles[fq1] = bgzf.BgzfWriter(fq1)
+            file_handles[fq1] = gzip.open(fq1, 'wt')
         else:
             fq1 = None
         if options.fq2 is not None:
             fq2 = options.fq2
-            file_handles[fq2] = bgzf.BgzfWriter(fq2)
+            file_handles[fq2] = gzip.open(fq2, 'wt')
         else:
             fq2 = None
         if options.vcf is not None:
             vcf = options.vcf
-            file_handles[vcf] = bgzf.BgzfWriter(vcf)
+            file_handles[vcf] = gzip.open(vcf, 'wt')
         else:
             vcf = None
         if options.bam is not None:
