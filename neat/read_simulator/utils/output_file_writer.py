@@ -239,7 +239,9 @@ class OutputFileWriter:
                      (SEQ_PACKED[alt_sequence[2 * i].capitalize()] << 4) +
                      SEQ_PACKED[alt_sequence[2 * i + 1].capitalize()]))
 
-        encoded_qual = bytearray(read.read_quality_string[:read_length], 'utf-8')
+        # In NEAT 2.0, this was `encodedQual = ''.join([chr(ord(n)-33) for n in qual])` but this converts the char back into
+        # the original quality score, which we saved, so we'll try just using that.
+        encoded_qual = "".join([chr(n) for n in read.quality_array])
 
         """
         block_size = 4 +		# refID 		int32
@@ -274,5 +276,5 @@ class OutputFileWriter:
                 read.name.encode('utf-8') + b'\0' +
                 encoded_cig +
                 encoded_seq +
-                encoded_qual
+                encoded_qual.encode('utf-8')
         ))
