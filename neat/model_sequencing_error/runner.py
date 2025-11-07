@@ -147,13 +147,13 @@ def model_seq_err_runner(
 
     # First model, always produced
     seq_err_model = SequencingErrorModel(
-        avg_seq_error=average_error,
+        avg_seq_error=float(average_error),
         read_length=read_length,
     )
 
     # Just the default model
     qual_score_model = TraditionalQualityModel(
-        average_error=average_error,
+        average_error=float(average_error),
         quality_scores=np.array(final_quality_scores),
         qual_score_probs=read_parameters[0],
     )
@@ -170,12 +170,12 @@ def model_seq_err_runner(
     else:
         # Second model if a second input was given
         seq_err_model_r2 = SequencingErrorModel(
-            avg_seq_error=average_error,
+            avg_seq_error=float(average_error),
             read_length=read_length,
         )
 
         qual_score_model_r2 = TraditionalQualityModel(
-            average_error=average_error,
+            average_error=float(average_error),
             quality_scores=np.array(final_quality_scores),
             qual_score_probs=read_parameters[1]
         )

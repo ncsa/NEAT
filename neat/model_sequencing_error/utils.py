@@ -68,7 +68,7 @@ def _make_gen(reader):
         b = reader(1024 * 1024)
 
 
-def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int, readlen: int):
+def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offset: int, read_length: int):
     """
     Parses an individual file for statistics
 
@@ -76,25 +76,14 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
     :param quality_scores: A list of potential quality scores
     :param max_reads: Max number of reads to process for this file
     :param qual_offset: The offset score for this fastq file. We assume the Illumina default of 33.
-    :param readlen: The read length for these datasets. If 0, then we will determine it.
+    :param read_length: The read length for these datasets. If 0, then we will determine it.
     :return:
     """
 
     _LOG.info(f'reading {input_file}')
 
-    if not readlen:
-        readlens = []
-
-        # takes too long and uses too much memory to read all of them, so let's just get a sample.
-        with open_input(input_file) as fq_in:
-            i = 0
-            # Count the first 1000 lines
-            while i < 1000:
-                i += 1
-                for _ in (0, 1, 2):
-                    fq_in.readline()
-                line = fq_in.readline().strip()
-                readlens.append(len(line))
+    if not read_length:
+        read_length = 0
 
         # solution from stack overflow to quickly count lines in a file.
         # https://stackoverflow.com/questions/19001402/how-to-count-the-total-number-of-lines-in-a-text-file-using-python
@@ -103,21 +92,18 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
             f_gen = _make_gen(f.raw.read)
             max_reads = sum(buf.count(b'\n') for buf in f_gen)
 
-        readlens = np.array(readlens)
+        # Take the first record as being the read length value for the run
+        with open_input(input_file) as fq_in:
+            # Count the first record
+            for _ in (0, 1, 2):
+                fq_in.readline()
+            line = fq_in.readline().strip()
+            read_length = len(line)
 
-        # Using the statistical mode seems like the right approach here. We expect the readlens to be roughly the same.
-        readlen_mode = mode(readlens, axis=None, keepdims=False)
-        if readlen_mode.count < (0.5 * len(readlens)):
-            _LOG.warning("Highly variable read lengths detected. Results may be less than ideal.")
-        if readlen_mode.count < 20:
-            _LOG.error(f"Dataset is too scarce or inconsistent to make a model. Try a different input.")
-            sys.exit(1)
-        read_length = int(readlen_mode.mode)
+        if read_length == 0:
+            _LOG.error("ERROR reading input file")
 
-    else:
-        read_length = readlen
-
-    _LOG.debug(f'Read len of {read_length}, over {1000} samples')
+    _LOG.debug(f'Assuming read length of {read_length}')
 
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
     qual_score_counter = {x: 0 for x in quality_scores}
