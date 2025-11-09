@@ -91,7 +91,7 @@ def read_simulator_single(
     # Also creates headers for bam and vcf.
     # We'll also keep track here of what files we are producing.
     # We don't really need to write out the VCF. We should be able to store it in memory
-    local_output_file_writer = OutputFileWriter(options=local_options, header=bam_header)
+    local_output_file_writer = OutputFileWriter(options=local_options, vcf_format = "gzip", bam_header=bam_header)
     """
     Begin Analysis
     """
@@ -110,7 +110,6 @@ def read_simulator_single(
     if local_options.produce_fastq or local_options.produce_bam:
         reads_to_write = generate_reads(
             thread_idx,
-            coords,
             local_seq_record,
             seq_error_model,
             qual_score_model,
@@ -122,6 +121,7 @@ def read_simulator_single(
             local_output_file_writer,
             contig_name,
             contig_index,
+            coords[0],
         )
         if local_options.produce_bam:
             # Writing an intermediate bam that is sorted, to make compiling them together at the end easier.

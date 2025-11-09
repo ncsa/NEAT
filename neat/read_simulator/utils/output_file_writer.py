@@ -66,14 +66,17 @@ class OutputFileWriter:
     in the various formats.
 
     :param options: Options for the current run.
-    :param header: A dictionary of lengths of each contig from the reference, keyed by contig id.
+    :param bam_header: A dictionary of lengths of each contig from the reference, keyed by contig id.
+    :param vcf_format: The format to compress the vcf file, since we need to speed up the intermediate files with gzip
     """
     def __init__(self,
                  options: Options,
-                 header: dict = None):
+                 vcf_format: str = "bgzip",
+                 bam_header: dict = None):
 
         self.paired_ended = options.paired_ended
-        self.bam_header = header
+        self.bam_header = bam_header
+        self.vcf_format = vcf_format
 
         file_handles: dict[Path, Any] = {}
 
@@ -90,12 +93,13 @@ class OutputFileWriter:
             fq2 = None
         if options.vcf is not None:
             vcf = options.vcf
-            file_handles[vcf] = gzip.open(vcf, 'wt')
+            _open = gzip.open if self.vcf_format == "gzip" else bgzf.BgzfWriter
+            file_handles[vcf] = _open(vcf, 'wt')
         else:
             vcf = None
         if options.bam is not None:
             bam = options.bam
-            if header:
+            if bam_header:
                 file_handles[bam] = bgzf.BgzfWriter(bam, 'w', compresslevel=6)
         else:
             bam = None
@@ -125,19 +129,19 @@ class OutputFileWriter:
                          f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n'
             self.files_to_write[self.vcf].write(vcf_header)
 
-        if options.produce_bam and header:
+        if options.produce_bam and bam_header:
             # bam header
             bam_handle = self.files_to_write[self.bam]
             bam_handle.write("BAM\1")
             # Without a header, we can't write these as bams.
-            header = "@HD\tVN:1.4\tSO:coordinate\n"
+            bam_header = "@HD\tVN:1.4\tSO:coordinate\n"
             for item in self.bam_header:
-                header += f'@SQ\tSN:{item}\tLN:{str(self.bam_header[item])}\n'
-            header += "@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n"
-            header_bytes = len(header)
+                bam_header += f'@SQ\tSN:{item}\tLN:{str(self.bam_header[item])}\n'
+            bam_header += "@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n"
+            header_bytes = len(bam_header)
             num_refs = len(self.bam_header)
             bam_handle.write(pack('<i', header_bytes))
-            bam_handle.write(header)
+            bam_handle.write(bam_header)
             bam_handle.write(pack('<i', num_refs))
             # Contigs and lengths. If we can skip writing this out for intermediate files, great
             for item in self.bam_header:
