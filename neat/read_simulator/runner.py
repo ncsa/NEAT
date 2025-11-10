@@ -3,6 +3,7 @@ Runner for generate_reads task
 """
 import logging
 import os
+import subprocess
 import time
 import multiprocessing as mp
 
@@ -234,7 +235,10 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         elif "fastq" in file.name:
             continue
         else:
-            bcftools.sort(str(file), "-Ob9")
+            temp_file = options.temp_dir_path / "temp.sorted.vcf.gz"
+            subprocess.run(["bcftools", "sort", "-o", temp_file, "-Ob9", str(file)])
+            Path(temp_file).is_file()
+            os.rename(file, str(file))
             pysam.tabix_index(str(file), preset="vcf", force=force)
 
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
