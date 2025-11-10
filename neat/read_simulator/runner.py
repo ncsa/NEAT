@@ -230,15 +230,17 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     for file in options.output_files:
         if file.suffix == ".bam":
             _LOG.info(f"bam file: {file}")
-            bam_idx = pysam.index(f"{str(file)}", "-@", str(options.threads))
-            _LOG.info(f'bam index: {bam_idx}')
+            pysam.index(f"{str(file)}", "-@", str(options.threads))
+            _LOG.info(f'bam index: {file}.bai')
         elif "fastq" in file.name:
             continue
         else:
-            temp_file = options.temp_dir_path / "temp.sorted.vcf.gz"
+            _LOG.info("Sorting VCF file")
+            temp_file = str(options.temp_dir_path / "temp.sorted.vcf.gz")
             subprocess.run(["bcftools", "sort", "-o", temp_file, "-Ob9", str(file)])
             Path(temp_file).is_file()
-            os.rename(file, str(file))
+            os.rename(temp_file, str(file))
+            _LOG.info("Indexing vcf")
             pysam.tabix_index(str(file), preset="vcf", force=force)
 
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
