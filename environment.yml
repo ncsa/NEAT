@@ -3,5 +3,6 @@ name: neat
 dependencies:
   - python==3.11.*
   - pip
+  - bcftools==1.22*
   - pip:
     - poetry==2.2.*

@@ -53,15 +53,25 @@ Table of Contents
 * frozendict
 
 ## Installation
+
+###Prerequisites
+NEAT assumes a linux environment and was tested primarily on Ubuntu Linux. It should work on most linux systems. If you 
+use another operating system, please install WSL or a similar tool to create a linux environment to operate NEAT from.
+For setting up NEAT, you will need `Anaconda` (or `miniconda`). The method described here installs NEAT as a base package 
+in the active conda environment, so whenever you want to run NEAT, you can first activate the environment, then run
+from any place on your system. If you desire VCF files, please install also `bcftools`. For your convenience, we have
+added bcftools to the environment file, as it is available from conda. You may remove this line if you do not want or 
+need VCF files with the variants NEAT added.
+
 To install NEAT, you must create a virtual environment using a tool such as conda. Once activated, you can
 use the poetry module in build a wheel file, which can then be pip installed. You will need to run these
-commands from within the NEAT directory.
+commands from within the NEAT directory. Assuming you have installed conda and run `source activate` or `conda activate`
 
-```
-$ conda env create -f environment.yml
-$ conda activate neat
-$ poetry build
-$ pip install dist/neat*whl
+```bash
+(base) $ conda env create -f environment.yml
+(base) $ conda activate neat
+(neat) $ poetry build
+(neat) $ pip install dist/neat*whl
 ```
 
 This allows you to run NEAT as a command line tool directly:
@@ -69,27 +79,31 @@ This allows you to run NEAT as a command line tool directly:
 
 Alternatively, if you wish to work with NEAT in the development environment, you can use poetry install within
 the NEAT repo, after creating the conda environment:
-```
+
+```bash
 $ conda env create -f environment.yml
 $ conda activate neat
 $ poetry install
 ```
 
-Notes: If any packages are struggling to resolve, check the channels and try to manually pip install the package to see if that helps (but note that NEAT is not tested on the pip versions.)
-If poetry hangs for you, try the following fix (from https://github.com/python-poetry/poetry/issues/8623):
+Any updates to the neat code will be instantly reflected with a `poetry install` version.
 
-```
+Notes: If any packages are struggling to resolve, check the channels and try to manually pip install the package to see 
+if that helps (but note that NEAT is not tested on the pip versions.) If poetry hangs for you, try the following fix 
+(from https://github.com/python-poetry/poetry/issues/8623):
+
+```bash
 export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
 ```
 then re-run `poetry install`
 
 Test your install by running:
-```
+```bash
 $ neat --help
 ```
 
 You can also try running it using the python command directly:
-```
+```bash
 $ python -m neat --help
 ```
 
@@ -97,14 +111,14 @@ $ python -m neat --help
 NEAT's core functionality is invoked using the read-simulator command. Here's the simplest invocation of read-simulator using default parameters. This command produces a single ended fastq file with reads of length 151, ploidy 4, coverage 15X, using the default sequencing substitution, and mutation rate models.
 
 Contents of neat_config.yml
-```
+```yml
 reference: /path/to/my/genome.fa
 read_len: 151
 ploidy: 4
 coverage: 15
 ```
 
-```
+```bash
 neat read-simulator -c neat_config.yml -o simulated_data
 ```
 
