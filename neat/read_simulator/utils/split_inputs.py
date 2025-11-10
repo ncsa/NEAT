@@ -15,7 +15,6 @@ __all__ = ["main"]
 
 from Bio import bgzf
 from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 
 from neat.read_simulator.utils import Options
 
@@ -60,13 +59,6 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
     """Perform the splitting of a FASTA and NEAT configuration."""
 
     overlap = int(options.read_len) * 2
-
-    approx_out_bytes = int(options.reference.stat().st_size * 1.1)
-    if disk_bytes_free(options.output_dir) < approx_out_bytes:
-        print_stderr(
-            f"Not enough free space in {options.output_dir} (need about {approx_out_bytes/1e9:.2f} GB)",
-            exit_=True,
-        )
 
     idx = 1
     pad = 10  # zero-pad width for global indices
