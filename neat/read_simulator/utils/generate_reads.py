@@ -47,19 +47,22 @@ def cover_dataset(
     # The numerator is the total number of base pair calls needed.
     # Divide that by read length gives the number of reads needed
     number_reads_per_layer = ceil(span_length / fragment_model.fragment_mean)
-    number_reads = number_reads_per_layer * options.coverage
+    if options.paired_ended:
+        number_reads = number_reads_per_layer * (options.coverage//2)
+    else:
+        number_reads = number_reads_per_layer * options.coverage
 
     # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
-    # step 2: repeat above until number of reads exceeds number_reads * 1.5
+    # step 2: repeat above until number of reads exceeds number_reads
     # step 3: shuffle pool, then draw number_reads (or number_reads/2 for paired ended) reads to be our reads
     read_count = 0
     loop_count = 0
 
-    while read_count <= number_reads + 10:
+    while read_count <= number_reads:
         start = 0
         loop_count += 1
         # We use fragments to model the DNA
-        fragment_pool = fragment_model.generate_fragments(number_reads_per_layer + 11, options.rng)
+        fragment_pool = fragment_model.generate_fragments(number_reads_per_layer, options.rng)
 
         temp_fragments = []
         # Mapping random fragments onto genome
