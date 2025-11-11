@@ -87,6 +87,12 @@ Assuming you have installed `conda`, run `source activate` or `conda activate`.
 
 Please note that these installation instructions support MacOS, Windows, and Linux. However, if you are on MacOS, you need to remove the line `libgcc=14` from `environment.yml`. A solution for some non-Linux users is simple to remove the version specification (e.g., `libgcc`).
 
+An alternative form of installation uses `bioconda`. Once `conda` is installed, the following command can be run for easy setup:
+
+```bash
+(base) $ conda create -n neat -c conda-forge -c bioconda neat
+```
+
 After completing installation, you can now run NEAT as a command line tool directly:
 `neat --help`
 
