@@ -218,14 +218,17 @@ class OutputFileWriter:
         mate_position = read.get_mpos()
         flag = read.calculate_flags(self.paired_ended)
         template_length = read.get_tlen()
-        alt_sequence = read.read_sequence
+        if read.is_reverse:
+            # having weird issues with the bam
+            alt_sequence = read.read_sequence.reverse_complement()
+        else:
+            alt_sequence = read.read_sequence
 
         cigar = read.make_cigar()
 
         cig_letters = re.split(r"\d+", cigar)[1:]
         cig_numbers = [int(n) for n in re.findall(r"\d+", cigar)]
         cig_ops = len(cig_letters)
-
         next_ref_id = contig_id
 
         if not mate_position:
@@ -249,8 +252,8 @@ class OutputFileWriter:
             #     # Note: trying to remove all this part
             encoded_seq.extend(
                 pack('<B',
-                     (SEQ_PACKED[alt_sequence[2 * i].capitalize()] << 4) +
-                     SEQ_PACKED[alt_sequence[2 * i + 1].capitalize()]))
+                     (SEQ_PACKED[alt_sequence[2 * i]] << 4) +
+                     SEQ_PACKED[alt_sequence[2 * i + 1]]))
 
         # In NEAT 2.0, this was `encodedQual = ''.join([chr(ord(n)-33) for n in qual])` but this converts the char back into
         # the original quality score, which we saved, so we'll try just using that.
@@ -276,11 +279,12 @@ class OutputFileWriter:
         bam_handle.write((
                 pack('<i', block_size) +
                 pack('<i', contig_id) +
-                pack('<i', read.position + 1) +
-                pack('<I', (read_bin << 16)
-                   + (read.mapping_quality << 8)
-                   + len(read.name)
-                   + 1) +
+                pack('<i', read.position) +
+                pack('<I',
+                     (read_bin << 16) +
+                     (read.mapping_quality << 8) +
+                     len(read.name)+1
+                ) +
                 pack('<I', (flag << 16) + cig_ops) +
                 pack('<i', seq_len) +
                 pack('<i', next_ref_id) +
