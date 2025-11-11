@@ -63,8 +63,7 @@ added `bcftools` to the environment file, as it is available from `conda`. You m
 need VCF files with the variants NEAT added.
 
 ## Installation
-To install NEAT, you must create a virtual environment using a tool such as `conda`. Once activated, you can
-use the `poetry` module in build a wheel file, which can then be `pip` installed. 
+To install NEAT, you must create a virtual environment using a tool such as `conda`. 
 
 First, clone the environment and move to the NEAT directory:
 
@@ -73,32 +72,32 @@ $ git clone git@github.com:ncsa/NEAT.git
 $ cd NEAT
 ```
 
-You will need to run these
-commands from within the NEAT directory:
+A quick form of installation uses `bioconda`. Once `conda` is installed, the following command can be run for easy setup:
+
+```bash
+(base) $ conda create -n neat -c conda-forge -c bioconda neat
+(base) $ conda activate neat
+(neat) $ neat --help # tests that NEAT has installed correctly
+```
+
+Alternatively, instead of the `bioconda` method, you can use the `poetry` module in build a wheel file, which can then be `pip` installed.
+
+You will need to run these commands from within the NEAT directory:
 
 ```bash
 (base) $ conda env create -f environment.yml
 (base) $ conda activate neat
 (neat) $ poetry build
 (neat) $ pip install dist/neat*whl
+(neat) $ neat --help # tests that NEAT has installed correctly
 ```
 
 Assuming you have installed `conda`, run `source activate` or `conda activate`.
 
 Please note that these installation instructions support MacOS, Windows, and Linux. However, if you are on MacOS, you need to remove the line `libgcc=14` from `environment.yml`. A solution for some non-Linux users is simple to remove the version specification (e.g., `libgcc`).
 
-An quick form of installation uses `bioconda`. Once `conda` is installed, the following command can be run for easy setup:
-
-```bash
-(base) $ conda create -n neat -c conda-forge -c bioconda neat
-(base) $ conda activate neat
-```
-
-After completing installation, you can now run NEAT as a command line tool directly:
-`neat --help`
-
-Alternatively, if you wish to work with NEAT in the development environment, you can use poetry install within
-the NEAT repo, after creating the conda environment:
+Alternatively, if you wish to work with NEAT in the development-only environment, you can use `poetry install` within
+the NEAT repo, after creating the `conda` environment:
 
 ```bash
 $ conda env create -f environment.yml
@@ -122,7 +121,7 @@ Test your install by running:
 $ neat --help
 ```
 
-You can also try running it using the python command directly:
+You can also try running it using the Python command directly:
 ```bash
 $ python -m neat --help
 ```
