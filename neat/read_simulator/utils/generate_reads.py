@@ -237,9 +237,10 @@ def generate_reads(
         if not any(read2) and options.paired_ended:
             # Marked paired, but no read 2 so we toss this one.
             continue
-        raw_read = read1 + read2
-
-        read_name = f'NEAT_generated_{contig_index:010d}_{thread_index}_{str(i+ref_start+1)}'
+        block_read = read1 + read2
+        raw_read = tuple(x + ref_start for x in block_read)
+        # +1 to account for sam indexing
+        read_name = f'NEAT_generated_{contig_name}_{thread_index}_{raw_read[0]+1:010d}_{raw_read[3]+1:010d}'
 
         # add a small amount of padding to the end to account for deletions.
         # Trying out this method of using the read-length, which for the default neat run gives ~30.
@@ -284,7 +285,7 @@ def generate_reads(
 
             read_2 = Read(
                 name=read_name + "/2",
-                raw_read=reads[i],
+                raw_read=raw_read,
                 reference_segment=segment,
                 reference_id=contig_name,
                 ref_id_index=contig_index,

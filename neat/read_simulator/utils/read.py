@@ -8,12 +8,13 @@ Methods allow comparisons between reads, based on chromosome, start and end. Als
 both the reference sequence and the read and the actual read sequence.
 """
 import logging
+from copy import deepcopy
+
 import numpy as np
 
 from typing import TextIO, Iterator
 from Bio.Seq import Seq, MutableSeq
-from Bio import pairwise2
-from Bio.pairwise2 import format_alignment
+from Bio.Align import PairwiseAligner
 from numpy.random import Generator
 
 from ...common import ALLOWED_NUCL
@@ -304,7 +305,7 @@ class Read:
             self,
             err_model: SequencingErrorModel,
             qual_model: TraditionalQualityModel,
-            fastq_handle: Iterator,
+            fastq_handle,
             quality_offset: int,
             produce_fastq: bool,
             rng: Generator,
@@ -314,7 +315,7 @@ class Read:
 
         :param err_model: The error model for the run
         :param qual_model: The quality score model for the run
-        :param fastq_handle: for writing fastq1
+        :param fastq_handle: for writing fastq1, either a gzip file or a bgzipWriter object.
         :param quality_offset: the quality offset for this run
         :param produce_fastq: If true, this will write out the temp fastqs. If false, this will only write out the tsams
             to create the bam files.
@@ -332,8 +333,8 @@ class Read:
         # It updates the quality array and reference segment in place, including reversing them, if appropriate
         self.convert_masking(qual_model)
 
-        # set the read sequence to match the reference
-        self.read_sequence = self.reference_segment
+        # set the read sequence to match the reference, then modify
+        self.read_sequence = deepcopy(self.reference_segment)
 
         # Get errors for the rea and update the quality score
         self.errors, self.padding = err_model.get_sequencing_errors(
@@ -352,9 +353,13 @@ class Read:
         if not self.mapping_quality:
             self.mapping_quality = 70
 
+        if self.is_reverse:
+            self.read_sequence = self.read_sequence.reverse_complement()[:self.run_read_length]
+        else:
+            self.read_sequence = self.read_sequence[:self.run_read_length]
         # Might as well double check here
         if produce_fastq:
-            fastq_record = f'@{self.name}\n{str(self.read_sequence[:self.run_read_length])}\n+\n{self.read_quality_string}\n'
+            fastq_record = f'@{self.name}\n{str(self.read_sequence)}\n+\n{self.read_quality_string}\n'
             fastq_handle.write(fastq_record)
 
 
@@ -369,11 +374,7 @@ class Read:
         bad_score = min(quality_model.quality_scores)
         # we'll use generic human repeats, as commonly found in masked regions. We may refine this to make configurable
         repeat_bases = list("TTAGGG")
-        if self.is_reverse:
-            raw_sequence = self.reference_segment.reverse_complement()
-            self.quality_array = self.quality_array[::-1]
-        else:
-            raw_sequence = self.reference_segment
+        raw_sequence = deepcopy(self.reference_segment)
 
         start = raw_sequence.find('N')
         if start != -1:
@@ -390,64 +391,6 @@ class Read:
 
         self.reference_segment = Seq(modified_segment)
 
-    def align_seqs(self):
-        """
-        The sequence alignment. We restrict the alignment to the section of the reference where we know the read
-        came from and try to generate a minimal cigar string. The cigar string part may still need tweaking.
-        """
-        raw_alignment = pairwise2.align.globalms(
-            self.reference_segment,
-            self.read_sequence,
-            match=10,
-            mismatch=-10,
-            open=-20,
-            extend=-10,
-            penalize_extend_when_opening=True,
-            one_alignment_only=True,
-        )
-        alignment = format_alignment(*raw_alignment[0], full_sequences=True).split()
-        aligned_template_seq = alignment[0]
-        aligned_mut_seq = alignment[-2]
-        cig_count = 0
-        cig_length = 0
-        curr_char = ''
-        cig_string = ''
-        # Find first match. Added a +1 because all my matches were coming up short.
-        for char in range(len(self.read_sequence) + 1):
-            if aligned_template_seq[char] == '-':  # insertion
-                if curr_char == 'I':  # more insertions
-                    cig_count += 1
-                    cig_length += 1
-                else:  # new insertion
-                    cig_string = cig_string + str(cig_count) + curr_char
-                    curr_char = 'I'
-                    cig_count = 1
-                    cig_length += 1
-            elif aligned_mut_seq[char] == '-':  # deletion
-                if curr_char == 'D':  # more deletions
-                    cig_count += 1
-                else:  # new deletion
-                    if cig_count != 0:
-                        cig_string = cig_string + str(cig_count) + curr_char
-                    curr_char = 'D'
-                    cig_count = 1
-            else:  # match
-                if curr_char == 'M':  # more matches
-                    cig_count += 1
-                    cig_length += 1
-                else:  # new match
-                    # If there is anything before this, add it to the string and increment,
-                    # else, just increment
-                    if cig_count != 0:
-                        cig_string = cig_string + str(cig_count) + curr_char
-                    curr_char = 'M'
-                    cig_count = 1
-                    cig_length += 1
-            if cig_length == self.run_read_length:
-                break
-
-        return cig_string, cig_count, curr_char, cig_length
-
     def make_cigar(self):
         """
         Aligns the reference and mutated sequences.
@@ -455,18 +398,54 @@ class Read:
         # These parameters were set to minimize breaks in the mutated sequence and find the best
         # alignment from there.
 
-        cig_string, cig_count, curr_char, cig_length = self.align_seqs()
-        if cig_length < self.run_read_length:
-            _LOG.warning("Poor alignment, trying reversed")
-            cig_string2, cig_count2, curr_char2, cig_length2 = self.align_seqs()
-            if cig_length2 < cig_length:
-                cig_length = cig_length2
-            while cig_length < self.run_read_length:
-                cig_string += "M"
-                cig_length += 1
+        """
+        The sequence alignment. We restrict the alignment to the section of the reference where we know the read
+        came from and try to generate a minimal cigar string. The cigar string part may still need tweaking.
+        """
 
-        # append the final section as we return
-        return cig_string + str(cig_count) + curr_char
+        template = self.reference_segment
+        if self.is_reverse:
+            template = template.reverse_complement()
+        query = self.read_sequence
+
+        cigar = ["M"] * self.run_read_length
+        aligner2 = PairwiseAligner()
+        aligner2.mode = "fogsaa"
+        alignments2 = aligner2.align(template, query)
+        aligned_template = alignments2[0][0]
+        aligned_query = alignments2[0][1]
+        start_point = self.run_read_length - 1 if self.is_reverse else 0
+        for i in range(self.run_read_length):
+            if self.is_reverse:
+                index = start_point - i
+            else:
+                index = i
+            if aligned_template[index] == "-":
+                cigar[index] = "I"
+            elif aligned_query[index] == "-":
+                # Ds are special because they don't count toward the final total and we need to maintain a consistent
+                # cigar length, so we insert.
+                cigar.insert(index, "D")
+        if self.is_reverse:
+            cigar.reverse()
+        return self.tally_cigar_list(cigar)
+
+    @staticmethod
+    def tally_cigar_list(cigar: list):
+        cigar_string = ""
+        cigar_char = cigar[0]
+        char_count = 1
+        for char in cigar[1:]:
+            if char == cigar_char:
+                char_count += 1
+            else:
+                cigar_string += str(char_count)
+                cigar_string += cigar_char
+                cigar_char = char
+                char_count = 1
+        cigar_string += str(char_count)
+        cigar_string += cigar_char
+        return cigar_string
 
     def get_mpos(self):
         """

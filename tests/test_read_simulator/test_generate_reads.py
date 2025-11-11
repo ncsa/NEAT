@@ -6,6 +6,7 @@ import numpy as np
 from neat.models import FragmentLengthModel
 from neat.read_simulator.utils import Options
 from neat.read_simulator.utils.generate_reads import *
+from neat.read_simulator.utils.read import *
 
 
 def test_cover_dataset():
@@ -175,3 +176,31 @@ def test_overlaps():
     assert not overlaps(interval1, comparsion_interval)  # doesn't overlap
     interval1 = (500, 700)
     assert not overlaps(interval1, comparsion_interval)  # doesn't overlap
+
+def test_cigar():
+    cigar = ["M"] * 150
+    reference = "A" * 150
+    read = Read(
+        "test",
+        (0, 150, 150, 300),
+        Seq(reference),
+        "chrom",
+        0,
+        0,
+        150,
+        15,
+        150,
+        False,
+        True
+    )
+
+    cig_str = read.tally_cigar_list(cigar)
+    assert cig_str == "150M"
+
+    cigar[11] = "I"
+    cig_str = read.tally_cigar_list(cigar)
+    assert cig_str == "11M1I138M"
+
+    cigar[137] = "D"
+    cig_str = read.tally_cigar_list(cigar)
+    assert cig_str == "11M1I125M1D12M"
