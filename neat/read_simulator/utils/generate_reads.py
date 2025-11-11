@@ -48,6 +48,7 @@ def cover_dataset(
     # Divide that by read length gives the number of reads needed
     number_reads_per_layer = ceil(span_length / fragment_model.fragment_mean)
     if options.paired_ended:
+        # TODO use gc bias to skew this number. Calculate at the runner level.
         number_reads = number_reads_per_layer * (options.coverage//2)
     else:
         number_reads = number_reads_per_layer * options.coverage
