@@ -55,11 +55,11 @@ def cover_dataset(
     read_count = 0
     loop_count = 0
 
-    while read_count <= number_reads + 10:
+    while read_count <= number_reads + 1:
         start = 0
         loop_count += 1
         # We use fragments to model the DNA
-        fragment_pool = fragment_model.generate_fragments(number_reads_per_layer + 11, options.rng)
+        fragment_pool = fragment_model.generate_fragments(number_reads_per_layer, options.rng)
 
         temp_fragments = []
         # Mapping random fragments onto genome
