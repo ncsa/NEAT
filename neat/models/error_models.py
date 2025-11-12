@@ -10,6 +10,7 @@ import logging
 
 from Bio.Seq import Seq
 from Bio import SeqRecord
+from numpy import median
 
 from neat import variants
 
@@ -165,8 +166,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     def get_sequencing_errors(
             self,
             padding: int,
-            reference_segment: SeqRecord,
+            reference_segment: Seq,
             quality_scores: np.ndarray,
+            num_errors,
             rng
     ):
         """
@@ -175,8 +177,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         :param padding: this is the amount of space we have in the read for deletions.
         :param reference_segment: The section of the reference from which the read is drawn
         :param quality_scores: Array of quality scores for the read
-        :return: Modified sequence and associated quality scores
+        :param num_errors: The estimated number of errors to add.
         :param rng: random number generator.
+        :return: Modified sequence and associated quality scores
         """
 
         error_indexes = []
@@ -189,9 +192,19 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         if self.average_error == 0:
             return introduced_errors
         else:
-            for i in range(len(quality_scores)):
-                if rng.random() < quality_score_error_rate[quality_scores[i]]:
-                    error_indexes.append(i)
+            i = len(quality_scores)
+            while len(error_indexes) <= num_errors and i > 0:
+                index = rng.choice(list(range(len(quality_scores))))
+                if rng.random() < quality_score_error_rate[quality_scores[index]]:
+                    error_indexes.append(index)
+                i -= 1
+            # This should fill in any errors to make sure we aren't coming up short
+            median_score = median(quality_scores)
+            while len(error_indexes) < num_errors:
+                index = rng.choice(quality_scores)
+                score = quality_scores[index]
+                if score < median_score:
+                    error_indexes.append(index)
 
         total_indel_length = 0
         # To prevent deletion collisions

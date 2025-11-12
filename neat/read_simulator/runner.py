@@ -1,11 +1,14 @@
 """
 Runner for generate_reads task
 """
+import gzip
 import logging
 import os
+import pickle
 import subprocess
 import time
 import multiprocessing as mp
+from math import ceil
 
 from pathlib import Path
 
@@ -16,6 +19,7 @@ from Bio import SeqIO
 from .utils import Options, OutputFileWriter, parse_beds, parse_input_vcf
 from ..common import validate_input_path, validate_output_path
 from .single_runner import read_simulator_single
+from ..models import SequencingErrorModel
 from ..variants import ContigVariants
 from .utils.split_inputs import main as split_main
 from .utils.stitch_outputs import main as stitch_main
@@ -73,6 +77,25 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # Set up the recombination later
     reference_index = SeqIO.index(str(options.reference), "fasta")
     reference_keys_with_lens = {key: len(value) for key, value in reference_index.items()}
+
+    # We need sequencing errors to get the quality score attributes, even for the vcf
+    if options.error_model:
+        error_models = pickle.load(gzip.open(options.error_model))
+        error_model = error_models["error_model1"]
+    else:
+        # Use all the default values
+        error_model = SequencingErrorModel()
+
+    # Update error to user specified input
+    if options.avg_seq_error:
+        error_model.average_error = options.avg_seq_error
+
+    # _LOG.debug('Sequencing error and quality score models loaded')
+    # We need to estimate how many total errors to add
+    total_reference_length = sum(reference_keys_with_lens.values())
+    total_errors = ceil(error_model.average_error * total_reference_length)
+    normalized_counts = {k: v / total_reference_length for (k, v) in reference_keys_with_lens.items()}
+    errors_per_contig = {k: ceil(v * total_errors) for (k, v) in normalized_counts.items()}
 
     count = 0
     for contig in reference_keys_with_lens:
@@ -175,6 +198,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     target_regions_dict[contig],
                     discard_regions_dict[contig],
                     mutation_rate_dict[contig],
+                    errors_per_contig[contig],
                 )
                 _LOG.info(f"Completed simulating contig {contig}.")
                 # TODO Remove if not needed

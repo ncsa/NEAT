@@ -10,6 +10,8 @@ from Bio import SeqIO, bgzf
 import logging
 from pathlib import Path
 
+from math import ceil, floor
+
 from .utils import OutputFileWriter, \
     generate_variants, generate_reads, Options, recalibrate_mutation_regions
 from ..variants import ContigVariants
@@ -24,20 +26,21 @@ def read_simulator_single(
         thread_idx: int,
         block_start: int,
         local_options: Options,
-        bam_header: list | None,
+        bam_header: dict | None,
         contig_name: str,
         contig_index: int,
         input_variants_local: ContigVariants,
         target_regions: list,
         discard_regions: list,
         mutation_regions: list,
+        errors_for_contig: int,
 ) -> tuple[int, str, ContigVariants, dict[str, Path], ]:
     """
     inputs:
     :param thread_idx: index of current thread
     :param block_start: Where on the reference does this block start? For a full contig, this will be 0.
     :param local_options: options for current thread and reference chunk
-    :param bam_header: Pass in the outer bam header.
+    :param bam_header: Pass in the outer bam header, which is a dictionary of the contigs plus lengths.
     :param contig_name: The original list of contig names.
     :param contig_index: The index of the contig which this chunk comes from
     :param input_variants_local: The input variants for this block
@@ -46,6 +49,7 @@ def read_simulator_single(
     :param target_regions: Target regions for the run
     :param discard_regions:  discard regions for the run
     :param mutation_regions: mutation regions (unchecked) for the run
+    :param errors_for_contig: How many errors this contig will receive
 
     Ideally this should work for either a file chunk or contig. We'll assume here that we're
     getting either an entire contig or a file chunk, and that no new subdivisions are needed.
@@ -107,11 +111,16 @@ def read_simulator_single(
         options=local_options,
     )
 
+    # This gives the percentage of the contig this particular block is
+    contig_percentage = len(local_seq_record) * bam_header[contig_name]
+    # How many errors to add to this block
+    errors_to_add = ceil(contig_percentage * errors_for_contig)
     if local_options.produce_fastq or local_options.produce_bam:
         reads_to_write = generate_reads(
             thread_idx,
             local_seq_record,
             seq_error_model,
+            errors_to_add,
             qual_score_model,
             fraglen_model,
             local_variants,
