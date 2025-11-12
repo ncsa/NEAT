@@ -3,12 +3,13 @@ import gzip
 import shutil
 import yaml
 import pysam
+import unittest
+import os
 
 from pathlib import Path
 from typing import List
-from neat.read_simulator.utils import Options, OutputFileWriter
 from Bio import bgzf
-from Bio.bgzf import BgzfWriter
+from Bio.bgzf import BgzfWriter, BgzfReader
 
 
 # Rearranges the bacterial chromosome by wrapping it around
@@ -42,31 +43,46 @@ def write_fasta_file(new_seq, bacteria_name, fasta_header):
     return fasta_file_name
 
 
+# Splits the coverage in half for the reference config file
 # Writes a yml configuration file for the newly rearranged chromosome's fasta sequence
 # This uses the default parameters for NEAT
 
 def write_config_file(ref_config_file, rearranged_seq_file, bacteria_name):
-    new_config_file_name = f"new_{bacteria_name}_config_test.yml"
+    new_config_file_name = f"test_new_{bacteria_name}_config_test.yml"
+    old_config_file_name = f"test_{bacteria_name}_config_test.yml"
 
-    with open(ref_config_file, 'r') as ref_file, open(new_config_file_name, 'w') as new_file:
+    with open(ref_config_file, 'r') as ref_file, open(new_config_file_name, 'w') as new_file, open(old_config_file_name, 'w') as old_file:
         
         for line in ref_file:
-            if line.find("reference:") == -1:
-                new_file.write(line)
-            else:
+            if line.find("reference:") != -1:
                 new_file.write(f"reference: {rearranged_seq_file}")
+                old_file.write(line)
+            elif line.find("coverage:") != -1:
+                if line.strip() == "coverage: .":
+                    new_coverage = 5.0
+                else:
+                    new_coverage = float((line.split(" "))[1].strip()) / 2
+        
+                new_file.write(f"coverage: {new_coverage}")
+                old_file.write(f"coverage: {new_coverage}")
+            else:
+                new_file.write(line)
+                old_file.write(line)
 
 
     ref_file.close()
     new_file.close()
+    old_file.close()
+
+    ref_file = old_file
 
     return new_config_file_name
 
 
 # Runs the NEAT read simulator using the given config file
 
-def run_neat(config_file):
-    subprocess.run(["neat", "read-simulator", "-c", config_file, "-o", config_file])
+def run_neat(config_file, output_dir, prefix):
+    subprocess.run(["neat", "read-simulator", "-c", config_file, "-o", output_dir + "/" + prefix])
 
 
 # General function for bacterial wrapper that calls all of the functions defined above
@@ -80,20 +96,20 @@ def bacterial_wrapper(reference_file, bacteria_name, ref_config_file):
 
     for line in f:
         if line[0] != ">":
-            orig_seq += line
+            orig_seq += line.strip()
         elif line.find("plasmid") != -1: # exclude plasmids from the sequence to be rearranged
             break
         
     f.close()
 
-    full_orig_seq = orig_seq.replace("\n", "")
+    output_dir = str(Path(ref_config_file).parent.absolute())
 
-    rearranged_seq = wrapper(full_orig_seq)
+    rearranged_seq = wrapper(orig_seq)
     rearranged_seq_file = write_fasta_file(rearranged_seq, bacteria_name, fasta_header)
     new_config_file = write_config_file(ref_config_file, rearranged_seq_file, bacteria_name)
 
-    run_neat(ref_config_file)
-    run_neat(new_config_file)
+    run_neat(ref_config_file, output_dir, "Regular")
+    run_neat(new_config_file, output_dir, "Wrapped")
 
 
 
@@ -107,54 +123,15 @@ tuberculosis_file = "BacterialWrapperScriptReferenceFiles/Tuberculosis/GCF_00019
 
 # Set config files for each reference file
 
-salmonella_config_file = "Outputs/Salmonella/salmonella_config_test.yml"
-pneumonia_config_file = "Outputs/Pneumonia/pneumonia_config_test.yml"
-tuberculosis_config_file = "Outputs/Tuberculosis/tuberculosis_config_test.yml"
+salmonella_config_file = "Outputs/Salmonella/paired-ended/salmonella_config_test.yml"
+pneumonia_config_file = "Outputs/Pneumonia/paired-ended/pneumonia_config_test.yml"
+tuberculosis_config_file = "Outputs/Tuberculosis/paired-ended/tuberculosis_config_test.yml"
 
 # Call the bacterial wrapper script on each reference file
 
 # bacterial_wrapper(salmonella_file, "Salmonella", salmonella_config_file)
 # bacterial_wrapper(pneumonia_file, "Pneumonia", pneumonia_config_file)
 # bacterial_wrapper(tuberculosis_file, "Tuberculosis", tuberculosis_config_file)
-
-
-
-# Stitching outputs back together - based on Keshav's script
-
-# def stitch_outputs(input_files, bacteria_name):
-#     dest_file = Path(bacteria_name + "_stitched_reads.fastq")
-#     with dest_file.open("wb") as out_f:
-#         for input_file in input_files:
-#             input_file = Path(input_file)
-            
-#             if input_file.suffix in {".gz", "bgz"}:
-#                 opener = gzip.open
-#             else:
-#                 opener = open
-#             with opener(input_file, "rb") as in_f:
-#                 shutil.copyfileobj(in_f, out_f)
-
-
-# Stitch output fastq files together for each reference file
-
-# orig_salmonella_input = "Outputs/Salmonella/salmonella_config_test.fastq"
-# new_salmonella_input = "Outputs/Salmonella/new_Salmonella_config_test.fastq"
-# salmonella_inputs = [orig_salmonella_input, new_salmonella_input]
-# stitch_outputs(salmonella_inputs, "salmonella")
-
-# orig_pneumonia_input = "Outputs/Pneumonia/pneumonia_config_test.fastq"
-# new_pneumonia_input = "Outputs/Pneumonia/new_Pneumonia_config_test.fastq"
-# pneumonia_inputs = [orig_pneumonia_input, new_pneumonia_input]
-# stitch_outputs(pneumonia_inputs, "pneumonia")
-
-# orig_tuberculosis_input = "Outputs/Tuberculosis/tuberculosis_config_test.fastq"
-# new_tuberculosis_input = "Outputs/Tuberculosis/new_Tuberculosis_config_test.fastq"
-# tuberculosis_inputs = [orig_tuberculosis_input, new_tuberculosis_input]
-# stitch_outputs(tuberculosis_inputs, "tuberculosis")
-
-
-
-
 
 
 # Stitching all outputs together - Keshav's script
@@ -168,128 +145,167 @@ def concat_fq(input_files: List[Path], dest: BgzfWriter) -> None:
         with bgzf.BgzfReader(input_file) as in_f:
             shutil.copyfileobj(in_f, dest)
 
-# def concat_fq(input_files: List[Path], dest: Path) -> None:
-    
-#     if not input_files:
-#         return
-    
-#     with dest.open("wb") as out_f:
-#         for input_file in input_files:
-#             input_file = Path(input_file)
-            
-#             with input_file.open("rb") as in_f:
-#                 shutil.copyfileobj(in_f, out_f)
-
-def merge_bam(bams: List[Path], ofw: OutputFileWriter, threads: int) -> None:
+def merge_bam(bams: List[Path], dest: Path, threads: int) -> None:
     
     if not bams:
         return
 
-    unsorted = ofw.bam.with_suffix(".unsorted.bam")
+    unsorted = dest.with_suffix(".unsorted.bam")
     pysam.merge("--no-PG", "-@", str(threads), "-f", str(unsorted), *map(str, bams))
-    pysam.sort("-@", str(threads), "-o", str(ofw.bam), str(unsorted))
+    pysam.sort("-@", str(threads), "-o", str(dest), str(unsorted))
     unsorted.unlink(missing_ok=True)
 
-# def merge_bam(bams: List[Path], dest: Path) -> None:
+def merge_vcf(vcfs: List[Path], dest: Path) -> None:
+    if not vcfs:
+        return
     
-#     if not bams:
-#         return
+    first, *rest = vcfs
+    shutil.copy(first, dest)
 
-#     unsorted = dest.with_suffix(".unsorted.bam")
-#     pysam.merge("--no-PG", "-@", str(unsorted), *map(str, bams))
-#     pysam.sort("-@", str(dest), str(unsorted))
-#     unsorted.unlink(missing_ok=True)
+    with dest.open("ab") as out_f:
+        for vcf in rest:
+            with vcf.open("rb") as fh:
+                for line in fh:
+                    if not line.startswith(b"#"):
+                        out_f.write(line)
 
-# def merge_vcf(vcfs: List[Path], dest: Path) -> None:
-#     if not vcfs:
-#         return
-    
-#     first, *rest = vcfs
-#     shutil.copy(first, dest)
-
-#     with dest.open("ab") as out_f:
-#         for vcf in rest:
-#             with vcf.open("rb") as fh:
-#                 for line in fh:
-#                     if not line.startswith(b"#"):
-#                         out_f.write(line)
-
-def stitch_all_outputs(ofw: OutputFileWriter, output_files: list[tuple[int, dict[str, Path]]], 
-                       threads: int | None = None) -> None:
-    
+def stitch_all_outputs(files: List[Path]) -> None:
     fq1_list = []
     fq2_list = []
+    vcf_list = []
     bam_list = []
 
-    for (thread_idx, file_dict) in output_files:
-        if file_dict["fq1"]:
-            fq1_list.append(file_dict["fq1"])
-        if file_dict["fq2"]:
-            fq2_list.append(file_dict["fq2"])
-        if file_dict["bam"]:
-            bam_list.append(file_dict["bam"])
+    for file in files:
+        file_name = file.stem # use stem to differentiate fq1 and fq2
+        suffixes = file.suffixes # use suffixes to catch vcf and bam files
+        
+        if "r1.fastq" in file_name:
+            fq1_list.append(file)
+        elif "r2.fastq" in file_name:
+            fq2_list.append(file)
+        elif ".vcf" in suffixes:
+            vcf_list.append(file)
+        elif ".bam" in suffixes:
+            bam_list.append(file)
     
-    concat_fq(fq1_list, ofw.files_to_write[ofw.fq1])
-    concat_fq(fq2_list, ofw.files_to_write[ofw.fq2])
-    merge_bam(bam_list, ofw, threads)
-
-# def stitch_all_outputs(options: Options, thread_options: list[Options]) -> None:
-#     fq1_list = []
-#     fq2_list = []
-#     vcf_list = []
-#     bam_list = []
-
-#     for local_ops in thread_options:
-#         if local_ops.fq1:
-#             fq1_list.append(local_ops.fq1)
-#         if local_ops.fq2:
-#             fq2_list.append(local_ops.fq2)
-#         if local_ops.vcf:
-#             vcf_list.append(local_ops.vcf)
-#         if local_ops.bam:
-#             bam_list.append(local_ops.bam)
+    dest_fq1 = bgzf.BgzfWriter("stitched_fq1.bgzf")
+    dest_fq2 = bgzf.BgzfWriter("stitched_fq2.bgzf")
+    dest_bam = Path("stitched.bam")
+    dest_vcf = Path("stitched.vcf")
     
-#     concat_fq(fq1_list, options.fq1)
-#     concat_fq(fq2_list, options.fq2)
-#     merge_bam(bam_list, options.bam)
-#     merge_vcf(vcf_list, options.vcf)
+    concat_fq(fq1_list, dest_fq1)
+    concat_fq(fq2_list, dest_fq2)
+    merge_bam(bam_list, dest_bam, 2)
+    merge_vcf(vcf_list, dest_vcf)
 
 
-# orig_salmonella_input = Path("Outputs/Salmonella/salmonella_config_test.fastq")
-# new_salmonella_input = Path("Outputs/Salmonella/new_Salmonella_config_test.fastq")
-# salmonella_inputs = [orig_salmonella_input, new_salmonella_input]
-# dest = Path("Outputs/Salmonella/salmonella_stitched.fastq")
-# concat_fq(salmonella_inputs, dest)
+# Stitching outputs for salmonella, single-ended reads
 
-# orig_salmonella_input = Path("Outputs/Salmonella/salmonella_config_test_golden.bam")
-# new_salmonella_input = Path("Outputs/Salmonella/new_Salmonella_config_test_golden.bam")
-# salmonella_inputs = [orig_salmonella_input, new_salmonella_input]
-# dest = Path("Outputs/Salmonella/salmonella_stitched_golden.bam")
-# merge_bam(salmonella_inputs, dest)
+# orig_salmonella_fq = Path("Outputs/Salmonella/Regular.fastq.gz")
+# orig_salmonella_bam = Path("Outputs/Salmonella/Regular_golden.bam")
+# orig_salmonella_vcf = Path("Outputs/Salmonella/Regular_golden.vcf")
 
-# orig_salmonella_input = Path("Outputs/Salmonella/salmonella_config_test_golden.vcf.gz")
-# new_salmonella_input = Path("Outputs/Salmonella/new_Salmonella_config_test_golden.vcf.gz")
-# salmonella_inputs = [orig_salmonella_input, new_salmonella_input]
-# dest = Path("Outputs/Salmonella/salmonella_stitched_golden.vcf.gz")
-# merge_vcf(salmonella_inputs, dest)
+# new_salmonella_fq = Path("Outputs/Salmonella/Wrapped.fastq.gz")
+# new_salmonella_bam = Path("Outputs/Salmonella/Wrapped_golden.bam")
+# new_salmonella_vcf = Path("Outputs/Salmonella/Wrapped_golden.vcf")
 
-# output_path = Path("Outputs/Salmonella/all_stitched/final")
-# config_file = salmonella_config_file
-# reference = salmonella_file
-# fq1 = Path("Outputs/Salmonella/salmonella_config_test.fastq")
-# fq2 = Path("")
-# vcf = Path("Outputs/Salmonella/salmonella_config_test_golden.vcf.gz")
-# bam = Path("Outputs/Salmonella/salmonella_config_test_golden.bam")
+# salmonella_inputs = [orig_salmonella_fq, orig_salmonella_bam, orig_salmonella_vcf, 
+#                      new_salmonella_fq, new_salmonella_bam, new_salmonella_vcf]
+
+# stitch_all_outputs(salmonella_inputs)
 
 
-# options = Options(reference)
-# bam_header = {}
+# Stitching outputs for salmonella, paired-ended reads
 
-# ofw = OutputFileWriter(options, bam_header)
-# output_files = [(1, {"fq1": Path("Outputs/Salmonella/salmonella_config_test.fastq"),
-#                      "fq2": Path(""),
-#                      "bam": Path("Outputs/Salmonella/salmonella_config_test_golden.bam")})]
+# orig_salmonella_fq1 = Path("Outputs/Salmonella/paired-ended/Regular_r1.fastq.gz")
+# orig_salmonella_fq2 = Path("Outputs/Salmonella/paired-ended/Regular_r2.fastq.gz")
+# orig_salmonella_bam = Path("Outputs/Salmonella/paired-ended/Regular_golden.bam")
+# orig_salmonella_vcf = Path("Outputs/Salmonella/paired-ended/Regular_golden.vcf")
 
-# stitch_all_outputs(ofw, output_files, 1)
+# new_salmonella_fq1 = Path("Outputs/Salmonella/paired-ended/Wrapped_r1.fastq.gz")
+# new_salmonella_fq2 = Path("Outputs/Salmonella/paired-ended/Wrapped_r2.fastq.gz")
+# new_salmonella_bam = Path("Outputs/Salmonella/paired-ended/Wrapped_golden.bam")
+# new_salmonella_vcf = Path("Outputs/Salmonella/paired-ended/Wrapped_golden.vcf")
 
-# output_files: list[tuple[int, str, dict[str, Path]]]
+# salmonella_inputs = [orig_salmonella_fq1, orig_salmonella_fq2, orig_salmonella_bam, orig_salmonella_vcf, 
+#                      new_salmonella_fq1, new_salmonella_fq2, new_salmonella_bam, new_salmonella_vcf]
+
+# stitch_all_outputs(salmonella_inputs)
+
+
+# Stitching outputs for pneumonia, single-ended reads
+
+# orig_pneumonia_fq = Path("Outputs/Pneumonia/Regular.fastq.gz")
+# orig_pneumonia_bam = Path("Outputs/Pneumonia/Regular_golden.bam")
+# orig_pneumonia_vcf = Path("Outputs/Pneumonia/Regular_golden.vcf")
+
+# new_pneumonia_fq = Path("Outputs/Pneumonia/Wrapped.fastq.gz")
+# new_pneumonia_bam = Path("Outputs/Pneumonia/Wrapped_golden.bam")
+# new_pneumonia_vcf = Path("Outputs/Pneumonia/Wrapped_golden.vcf")
+
+# pneumonia_inputs = [orig_pneumonia_fq, orig_pneumonia_bam, orig_pneumonia_vcf, 
+#                      new_pneumonia_fq, new_pneumonia_bam, new_pneumonia_vcf]
+
+# stitch_all_outputs(pneumonia_inputs)
+
+
+# Stitching outputs for pneumonia, paired-ended reads
+
+# orig_pneumonia_fq1 = Path("Outputs/Pneumonia/paired-ended/Regular_r1.fastq.gz")
+# orig_pneumonia_fq2 = Path("Outputs/Pneumonia/paired-ended/Regular_r2.fastq.gz")
+# orig_pneumonia_bam = Path("Outputs/Pneumonia/paired-ended/Regular_golden.bam")
+# orig_pneumonia_vcf = Path("Outputs/Pneumonia/paired-ended/Regular_golden.vcf")
+
+# new_pneumonia_fq1 = Path("Outputs/Pneumonia/paired-ended/Wrapped_r1.fastq.gz")
+# new_pneumonia_fq2 = Path("Outputs/Pneumonia/paired-ended/Wrapped_r2.fastq.gz")
+# new_pneumonia_bam = Path("Outputs/Pneumonia/paired-ended/Wrapped_golden.bam")
+# new_pneumonia_vcf = Path("Outputs/Pneumonia/paired-ended/Wrapped_golden.vcf")
+
+# pneumonia_inputs = [orig_pneumonia_fq1, orig_pneumonia_fq2, orig_pneumonia_bam, orig_pneumonia_vcf, 
+#                      new_pneumonia_fq1, new_pneumonia_fq2, new_pneumonia_bam, new_pneumonia_vcf]
+
+# stitch_all_outputs(pneumonia_inputs)
+
+
+# Stitching outputs for tuberculosis, single-ended reads
+
+# orig_tuberculosis_fq = Path("Outputs/Tuberculosis/Regular.fastq.gz")
+# orig_tuberculosis_bam = Path("Outputs/Tuberculosis/Regular_golden.bam")
+# orig_tuberculosis_vcf = Path("Outputs/Tuberculosis/Regular_golden.vcf")
+
+# new_tuberculosis_fq = Path("Outputs/Tuberculosis/Wrapped.fastq.gz")
+# new_tuberculosis_bam = Path("Outputs/Tuberculosis/Wrapped_golden.bam")
+# new_tuberculosis_vcf = Path("Outputs/Tuberculosis/Wrapped_golden.vcf")
+
+# tuberculosis_inputs = [orig_tuberculosis_fq, orig_tuberculosis_bam, orig_tuberculosis_vcf, 
+#                      new_tuberculosis_fq, new_tuberculosis_bam, new_tuberculosis_vcf]
+
+# stitch_all_outputs(tuberculosis_inputs)
+
+
+# Stitching outputs for tuberculosis, paired-ended readssource ~/anaconda3/bin/activate
+
+# orig_tuberculosis_fq1 = Path("Outputs/Tuberculosis/paired-ended/Regular_r1.fastq.gz")
+# orig_tuberculosis_fq2 = Path("Outputs/Tuberculosis/paired-ended/Regular_r2.fastq.gz")
+# orig_tuberculosis_bam = Path("Outputs/Tuberculosis/paired-ended/Regular_golden.bam")
+# orig_tuberculosis_vcf = Path("Outputs/Tuberculosis/paired-ended/Regular_golden.vcf")
+
+# new_tuberculosis_fq1 = Path("Outputs/Tuberculosis/paired-ended/Wrapped_r1.fastq.gz")
+# new_tuberculosis_fq2 = Path("Outputs/Tuberculosis/paired-ended/Wrapped_r2.fastq.gz")
+# new_tuberculosis_bam = Path("Outputs/Tuberculosis/paired-ended/Wrapped_golden.bam")
+# new_tuberculosis_vcf = Path("Outputs/Tuberculosis/paired-ended/Wrapped_golden.vcf")
+
+# tuberculosis_inputs = [orig_tuberculosis_fq1, orig_tuberculosis_fq2, orig_tuberculosis_bam, orig_tuberculosis_vcf, 
+#                      new_tuberculosis_fq1, new_tuberculosis_fq2, new_tuberculosis_bam, new_tuberculosis_vcf]
+
+# stitch_all_outputs(tuberculosis_inputs)
+
+
+# Testing functions
+
+class TestWrapper(unittest.TestCase):
+    def test_even(self):
+        self.assertEqual(wrapper("ABBCBB"), "CBBABB")
+
+    def test_odd(self):
+        self.assertEqual(wrapper("ABBCBBC"), "BBCABBC")
