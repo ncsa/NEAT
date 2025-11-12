@@ -33,7 +33,7 @@ def read_simulator_single(
         target_regions: list,
         discard_regions: list,
         mutation_regions: list,
-        errors_for_contig: int,
+        errors_per_read: int,
 ) -> tuple[int, str, ContigVariants, dict[str, Path], ]:
     """
     inputs:
@@ -44,12 +44,10 @@ def read_simulator_single(
     :param contig_name: The original list of contig names.
     :param contig_index: The index of the contig which this chunk comes from
     :param input_variants_local: The input variants for this block
-    TODO I'm counting on the target and discard regions not being used. They are likely broken with multithreading.
-            Probably they make more sense after the fact now
     :param target_regions: Target regions for the run
     :param discard_regions:  discard regions for the run
     :param mutation_regions: mutation regions (unchecked) for the run
-    :param errors_for_contig: How many errors this contig will receive
+    :param errors_per_read: How many errors this contig will receive
 
     Ideally this should work for either a file chunk or contig. We'll assume here that we're
     getting either an entire contig or a file chunk, and that no new subdivisions are needed.
@@ -111,16 +109,12 @@ def read_simulator_single(
         options=local_options,
     )
 
-    # This gives the percentage of the contig this particular block is
-    contig_percentage = len(local_seq_record) * bam_header[contig_name]
-    # How many errors to add to this block
-    errors_to_add = ceil(contig_percentage * errors_for_contig)
     if local_options.produce_fastq or local_options.produce_bam:
         reads_to_write = generate_reads(
             thread_idx,
             local_seq_record,
             seq_error_model,
-            errors_to_add,
+            errors_per_read,
             qual_score_model,
             fraglen_model,
             local_variants,

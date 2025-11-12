@@ -288,7 +288,11 @@ class Options(SimpleNamespace):
             if value_to_check not in crit2:
                 _LOG.error(f"Must choose one of {crit2}")
                 sys.exit(1)
-        elif isinstance(crit1, int) and isinstance(crit2, int):
+        elif not crit1 and not crit2:
+            # Nothing to check
+            pass
+        else:
+            # Must be a range
             if not (crit1 <= value_to_check <= crit2):
                 _LOG.error(f'`{keyname}` must be between {crit1} and {crit2} (input: {value_to_check}).')
                 sys.exit(1)

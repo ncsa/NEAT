@@ -149,7 +149,7 @@ def generate_reads(
         thread_index: int,
         reference: SeqRecord,
         error_model: SequencingErrorModel,
-        errors_in_contig: int,
+        errors_per_read: int,
         qual_model: TraditionalQualityModel,
         fraglen_model: FragmentLengthModel,
         contig_variants: ContigVariants,
@@ -167,7 +167,7 @@ def generate_reads(
     :param thread_index: Index of current thread
     :param reference: The reference segment that reads will be drawn from.
     :param error_model: The error model for this run, the forward strand
-    :param errors_in_contig: Total number of errors to add to contig
+    :param errors_per_read: Total number of errors to add to contig
     :param qual_model: The quality score model for this run, forward strand
     :param fraglen_model: The fragment length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
@@ -253,8 +253,6 @@ def generate_reads(
         padding = options.read_len//5
         segment = reference[read1[0]: read1[1] + padding].seq
 
-        errors_per_read = max((options.read_len // len(reference)) * errors_in_contig, 1)
-
         # if we're at the end of the contig, this may not pick up the full padding
         actual_padding = len(segment) - options.read_len
 
@@ -272,7 +270,7 @@ def generate_reads(
         )
 
         read_1.mutations = find_applicable_mutations(read_1, contig_variants)
-        num_errors = read_1.finalize_read_and_write(
+        read_1.finalize_read_and_write(
             error_model,
             qual_model,
             ofw.files_to_write[ofw.fq1],
@@ -281,7 +279,6 @@ def generate_reads(
             errors_per_read,
             options.rng
         )
-        errors_in_contig -= num_errors
         # skip over read 2 for single ended reads.
         if options.paired_ended:
             # Padding, as above
@@ -308,7 +305,7 @@ def generate_reads(
 
             read_2.mutations = find_applicable_mutations(read_2, contig_variants)
 
-            num_errors = read_2.finalize_read_and_write(
+            read_2.finalize_read_and_write(
                 error_model,
                 qual_model,
                 ofw.files_to_write[ofw.fq2],
@@ -317,7 +314,6 @@ def generate_reads(
                 errors_per_read,
                 options.rng
             )
-            errors_in_contig -= num_errors
             reads_to_write.append((read_1, read_2))
         else:
             reads_to_write.append((read_1, None))
