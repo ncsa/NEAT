@@ -223,11 +223,11 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
 
             # Deletion error
             if error_type == Deletion:
-                deletion_length = self.get_deletion_length()
+                deletion_length = self.get_deletion_length(rng)
                 if padding - deletion_length < 0:
                     # No space in this read to add this deletion
                     continue
-                deletion_reference = reference_segment.seq[index: index + deletion_length + 1]
+                deletion_reference = reference_segment[index: index + deletion_length + 1]
                 deletion_alternate = deletion_reference[0]
                 introduced_errors.append(
                     ErrorContainer(Deletion, index, deletion_length, deletion_reference, deletion_alternate)
