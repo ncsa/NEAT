@@ -432,7 +432,20 @@ neat vcf_compare
         --incl-fail        Include calls that failed filters [False]   \
         --fast             No equivalent variant detection [False]
 ```
-Mappability track examples: https://github.com/zstephens/neat-repeat/tree/master/example_mappabilityTracks
+
+## Tests
+
+We provide unit tests (e.g., mutation and sequencing error models) and basic integration tests for the CLI.
+
+### Run locally
+```bash
+conda env create -f environment.yml
+conda activate neat
+poetry install --with dev
+pytest -q tests
+```
+
+Please see `CONTRIBUTING.md` for more information and further instructions.
 
 ### Note on Sensitive Patient Data
 ICGC's "Access Controlled Data" documentation can be found at <a href = https://docs.icgc.org/portal/access/ target="_blank">https://docs.icgc.org/portal/access/</a>. To have access to controlled germline data, a DACO must be submitted. Open tier data can be obtained without a DACO, but germline alleles that do not match the reference genome are masked and replaced with the reference allele. Controlled data includes unmasked germline alleles.
