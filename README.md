@@ -156,7 +156,7 @@ To run the simulator in multithreaded mode, set the `threads` value in the confi
 `reference`: full path to a fasta file to generate reads from.  
 `read_len`: The length of the reads for the fastq (if using). _Integer value, default 101._    
 `coverage`: desired coverage value. _Float or integer, default = 10._    
-`ploidy`: Desired value for ploidy (# of copies of each chromosome in the organism). _Default is 2._    
+`ploidy`: Desired value for ploidy (# of copies of each chromosome in the organism, where if ploidy > 2, "heterozygous"  mutates floor(ploidy / 2) chromosomes). _Default is 2._    
 `paired_ended`: If paired-ended reads are desired, set this to True. Setting this to true requires either entering values for fragment_mean and fragment_st_dev or entering the path to a valid fragment_model.    
 `fragment_mean`: Use with paired-ended reads, set a fragment length mean manually    
 `fragment_st_dev`: Use with paired-ended reads, set the standard deviation of the fragment length dataset
