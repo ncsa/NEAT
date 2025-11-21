@@ -7,9 +7,13 @@ Neat 4.3.5 marked the officially 'complete' version of NEAT 4.3, implementing pa
 
 We have completed major revisions on NEAT since 3.4 and consider NEAT 4.3.5 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 
-NEAT's read-simulator is a fine-grained read simulator. It simulates real-looking data using models learned from specific datasets. There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
-
 We've deprecated NEAT's command-line interface options for the most part, opting to simplify things with configuration files. If you require the CLI for legacy purposes, NEAT 3.4 was our last release to be fully command-line interface. Please convert your CLI commands to the corresponding yaml configuration for future runs.
+
+### Statement of Need
+
+Developing and validating bioinformatics pipelines depends on access to genomic data with known ground truth. As a result, many research groups rely on simulated reads, and it can be useful to vary the parameters of the sequencing process itself. NEAT addresses this need as an open-source Python package that can integrate seamlessly with existing bioinformatics workflows—its simulations account for a wide range of sequencing parameters (e.g., coverage, fragment length, sequencing error models, mutational frequencies, ploidy, etc.) and allow users to customize their sequencing data.
+
+NEAT is a fine-grained read simulator that  simulates real-looking data using models learned from specific datasets. It was originally designed to simulate short reads, but it handles long-read simulation as well and is adaptable to any machine, with custom error models and the capability to handle single-base substitutions and indel errors. Unlike many simulators that rely solely on fixed error profiles, NEAT can learn empirical mutation and sequencing models from real datasets and use these models to generate realistic sequencing data, providing outputs in several common file formats (e.g., FASTQ, BAM, and VCF). There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
 
 To cite this work, please use:
 
@@ -24,6 +28,7 @@ To cite this work, please use:
   * [Installation](#installation)
   * [Usage](#usage)
   * [Functionality](#functionality)
+    * [Estimated runtimes](#estimated-runtimes)
   * [Examples](#examples)
     * [Whole genome simulation](#whole-genome-simulation)
     * [Targeted region simulation](#targeted-region-simulation)
@@ -151,7 +156,7 @@ To run the simulator in multithreaded mode, set the `threads` value in the confi
 `reference`: full path to a fasta file to generate reads from.  
 `read_len`: The length of the reads for the fastq (if using). _Integer value, default 101._    
 `coverage`: desired coverage value. _Float or integer, default = 10._    
-`ploidy`: Desired value for ploidy (# of copies of each chromosome in the organism). _Default is 2._    
+`ploidy`: Desired value for ploidy (# of copies of each chromosome in the organism, where if ploidy > 2, "heterozygous"  mutates floor(ploidy / 2) chromosomes). _Default is 2._    
 `paired_ended`: If paired-ended reads are desired, set this to True. Setting this to true requires either entering values for fragment_mean and fragment_st_dev or entering the path to a valid fragment_model.    
 `fragment_mean`: Use with paired-ended reads, set a fragment length mean manually    
 `fragment_st_dev`: Use with paired-ended reads, set the standard deviation of the fragment length dataset
@@ -223,6 +228,60 @@ Features:
 - Output a VCF file with the 'golden' set of true positive variants. These can be compared to bioinformatics workflow output (includes coverage and allele balance information)
 - Output a BAM file with the 'golden' set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
 - Create paired tumour/normal datasets using characteristics learned from real tumour data
+
+### Estimated runtimes
+
+To give users a sense of how long `neat read-simulator` runs may take, we benchmarked NEAT 4.3.5 on several reference genomes. All runs were paired-end, with read length of 150 bp, coverage of 10, fragment mean of 300 bp, and fragment standard deviation of 50 bp. Runtimes are reported as the average across three unique runs (`Avg. time (ms)`) and the corresponding runtime in minutes. Cells marked with N/A indicate that NEAT was not able to run to completion.
+
+Benchmarks were run on a System76 Meerkat with a 13th Gen Intel Core i3-1315U (8 logical cores, up to 4.50 GHz) and 16 GiB RAM, using a 512 GB SSD and Ubuntu 24.04.3 LTS (Linux kernel 6.14). Actual runtimes will vary depending on your hardware.
+
+#### NEAT Single-Threaded (contig mode)
+
+The inputs in single-threaded, contig-based mode most closely replicate the behavior of legacy versions of NEAT.
+
+The configuration used:
+
+- `mode: contig`
+- `threads: 1`
+- `cleanup_splits: True`
+
+| Organism        | File size (bytes) | Avg. runtime (ms) | Avg. runtime (min) |
+|-----------------|-------------------|-------------------|--------------------|
+| H1N1            | 13,599            | 702               | 0.0117             |
+| Herpes virus    | 174,029           | 4,909             | 0.0818             |
+| Pneumonia       | 2,137,444         | 64,424            | 1.0737             |
+| *E. coli*       | 1,258,807         | 146,843           | 2.4474             |
+| *S. cerevisiae* | 12,310,392        | 339,842           | 5.6640             |
+| Honeybee        | 228,091,137       | N/A               | N/A                |
+| Rice            | 394,543,607       | N/A               | N/A                |
+| *Miscanthus*    | 2,718,242,062     | N/A               | N/A                |
+
+For small genomes, single-threaded performance is already fast (on the order of seconds). Larger genomes could not be fully benchmarked under this configuration.
+
+#### NEAT Multi-Threaded (size mode)
+
+Here we enabled NEAT’s parallelized mode (“small filtering”), which splits contigs into size-based blocks and processes them concurrently. The configuration used:
+
+- `mode: size`
+- `size: 500000`
+- `produce_bam: false`
+- `threads: 7`
+- `cleanup_splits: True`
+
+| Organism        | File size (bytes) | Avg. runtime (ms) | Avg. runtime (min) |
+|-----------------|-------------------|-------------------|--------------------|
+| H1N1            | 13,599            | 199               | 0.0033             |
+| Herpes virus    | 174,029           | 5,267             | 0.0878             |
+| Pneumonia       | 2,137,444         | 31,113            | 0.5186             |
+| *E. coli*       | 1,258,807         | 58,927            | 0.9821             |
+| *S. cerevisiae* | 12,310,392        | 139,148           | 2.3191             |
+| Honeybee        | 228,091,137       | 3,040,336         | 50.6723            |
+| Rice            | 394,543,607       | 4,335,126         | 72.2521            |
+| *Miscanthus*    | 2,718,242,062     | 24876744          | 414.6              |
+
+For mid-sized genomes (e.g., *E. coli* and *S. cerevisiae*), enabling parallelization reduced runtimes by roughly a factor of two to three compared to the base configuration. For larger genomes (honeybee and rice), the parallel configuration may make multi-hour simulations feasible.
+
+Access to high-performance computing systems may improve runtimes.
 
 ## Examples
 
@@ -359,14 +418,14 @@ and creates `fraglen.pickle.gz` model in working directory.
 
 ## `neat gen-mut-model`
 
-Takes references genome and VCF file to generate mutation models:
+Takes reference genome and VCF file to generate mutation models:
 
 ```bash
 neat gen-mut-model reference.fa input_variants.vcf   \
         -o /home/me/models
 ```
 
-Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
+Trinucleotides are identified in the reference genome and the variant file. The mutation model uses trinucleotide context and selects mutation sites and alternate alleles with a transition matrix. Frequencies of each trinucleotide transition are calculated and output as a pickle file. Mutations are simulated to reflect the same context-dependent biases as the training data. In NEAT 4.3.5, we have only made minor optimizations to improve the speed, and the underlying statistical models are similar to those described in the original NEAT manuscript.
 
 | Option          | Description                                                                   |
 |-----------------|-------------------------------------------------------------------------------|
@@ -378,8 +437,11 @@ Trinucleotides are identified in the reference genome and the variant file. Freq
 
 ## `neat model-seq-err`
 
-Generates sequencing error model for neat.
-This script needs revision, to improve the quality-score model eventually, and to include code to learn sequencing errors from pileup data.
+Generates sequencing error model for NEAT.
+
+The sequencing error model uses real FASTQ/BAM data, summarizing position-specific substitution, insertion, and deletion frequencies. These are stored as discrete transition matrices that are sampled during read generation to reproduce empirical error profiles. In this way, it is similar to a simple version of `gen-mut-model`.
+
+This script needs revision to improve the quality-score model and to include code to learn sequencing errors from pileup data.
 
 Note that `model-seq-err` does not allow for SAM inputs. If you would like to use
 a BAM/SAM file, please use `samtools` to convert to a FASTQ, then use the FASTQ as input.
@@ -412,7 +474,7 @@ Please note that `-i2` can be used in place of `-i` to produce paired data.
 
 ## `neat vcf_compare`
 
-Tool for comparing VCF files (Not yet implemented in NEAT 4.0).
+Tool for comparing VCF files (Not yet implemented in NEAT 4.3.5).
 
 ```bash
 neat vcf_compare
