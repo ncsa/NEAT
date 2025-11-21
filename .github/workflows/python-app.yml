@@ -1,21 +1,36 @@
-name: NEAT Unit Tests
+name: NEAT Unit and Integration Tests
 
 on:
+  push:
+    branches: [develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
-  detailed_test_execution:
+  tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: mamba-org/setup-micromamba@v1
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v1
         with:
           environment-file: environment.yml
-          environment-name: test_neat
+          environment-name: neat
           cache-environment: true
 
-      - name: Run unit tests (pytest)
+      - name: Install NEAT (with developer dependencies)
+        shell: bash -l {0}
         run: |
-          micromamba run -n test_neat poetry install
-          micromamba run -n test_neat pytest -q tests
+          micromamba run -n neat poetry install --with dev
+
+      - name: Run unit tests
+        shell: bash -l {0}
+        run: |
+          micromamba run -n neat pytest -q tests
+
+      - name: Run CLI integration test
+        shell: bash -l {0}
+        run: |
+          micromamba run -n neat pytest -q tests/test_cli

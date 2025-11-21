@@ -32,6 +32,7 @@ _LOG = logging.getLogger(__name__)
 def runner(reference_index,
            vcf_to_process,
            vcf_columns,
+           vcf_alt_names,
            outcounts_file,
            show_trinuc,
            save_trinuc,
@@ -46,10 +47,11 @@ def runner(reference_index,
     :param dict reference_index: The reference index from SeqIO
     :param Path vcf_to_process: Path to the vcf to use for analysis
     :param list vcf_columns: Columns present in the input vcf
+    :param dict vcf_alt_names: alternate names, if any, of each contig
     :param Path outcounts_file: Path to outcounts file, if present
     :param bool show_trinuc: If true, display trinucleotide counts
     :param bool save_trinuc: If true, save trinucleotide counts
-    :param Path output: Full path to final output
+    :param Path output: File to write
     :param Path bed: Optional input bed
     :param bool human_sample: If true, treat as human sample
     :param bool skip_common: if true, skip common
@@ -87,6 +89,7 @@ def runner(reference_index,
     _LOG.info('Processing VCF file...')
     matching_variants, matching_chromosomes = read_and_filter_variants(
         vcf_to_process,
+        vcf_alt_names,
         reference_index,
         ignore
     )
@@ -341,7 +344,8 @@ def compute_mut_runner(reference,
                        save_trinuc,
                        human_sample,
                        skip_common,
-                       output,
+                       output_dir,
+                       output_prefix,
                        overwrite_output):
     """
     Runner for computing the mutation model
@@ -354,13 +358,17 @@ def compute_mut_runner(reference,
     :param bool save_trinuc: Optionally save trinucleotide counts
     :param bool human_sample: If true, treat as human sample
     :param bool skip_common: if true, skip common variants
-    :param str output: path to output file
+    :param str output_dir: directory to write output files
+    :param str output_prefix: File prefix for output
     :param bool overwrite_output: True to overwrite output
     """
 
     validate_input_path(reference)
     validate_input_path(mutations)
     mutations = Path(mutations)
+    validate_output_path(output_dir, is_file=False)
+    outcounts_prefix = output_prefix + ".trinuc.pickle.gz"
+    model_prefix = output_prefix + ".model.pickle.gz"
 
     if bed:
         validate_input_path(bed)
@@ -370,13 +378,25 @@ def compute_mut_runner(reference,
         validate_input_path(outcounts)
         outcounts = Path(outcounts)
     elif save_trinuc:
-        outcounts = Path(output + '.trinuc.pickle.gz')
+        outcounts = Path(output_dir) / outcounts_prefix
 
     print('Processing reference...')
     reference_index = SeqIO.index(reference, 'fasta')
 
     vcf_header = extract_header(mutations)
     vcf_columns = vcf_header[-1]
+
+    vcf_names = [x[len('##contig=<'):-1] for x in vcf_header[:-1] if x.startswith('##contig=')]
+    vcf_alt_names = {}
+    for name in vcf_names:
+        # names should be of the format contig=<ID=NAME1,accession="GW000299.2"> etc
+        name_split = name.split(',')
+        if name_split[0].startswith("ID="):
+            temp_split = name_split[0][len("ID="):]
+            if name_split[1].startswith("accession="):
+                # need to strip the accession= and the quotation marks
+                value = name_split[1][len("accession=")+1:-1]
+                vcf_alt_names[temp_split] = value
 
     if bed:
         vcf_columns = ['bed_chr', 'bed_pos1', 'bed_pos2'] + vcf_columns
@@ -440,13 +460,14 @@ def compute_mut_runner(reference,
     else:
         vcf_to_process = mutations
 
-    output = Path(output + '.pickle.gz')
+    output = Path(output_dir) / model_prefix
     validate_output_path(output, overwrite=overwrite_output)
 
     runner(
         reference_index,
         vcf_to_process,
         vcf_columns,
+        vcf_alt_names,
         outcounts,
         show_trinuc,
         save_trinuc,

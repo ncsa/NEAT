@@ -30,6 +30,7 @@ def model_seq_err_runner(
         qual_scores: list | int,
         max_reads: int,
         overwrite: bool,
+        output_dir: str,
         output_prefix: str,
         pileup: str = None,
         plot: bool = False,
@@ -45,7 +46,8 @@ def model_seq_err_runner(
     :param max_reads: The maximum number of reads to process. This can speed up the time taken to create the model,
         at the expense of accuracy.
     :param overwrite: True to overwrite input, mainly a debugging option
-    :param output_prefix: The name of the file to write the output.
+    :param output_dir: The name of the directory to write the output.
+    :param output_prefix: The prefix to use for filenames
     :param pileup: If pileup file included, get stats from that
     :param plot: run optional plotting.
     """
@@ -63,9 +65,10 @@ def model_seq_err_runner(
 
     final_quality_scores: list
     binned_scores = False
-    if len(qual_scores) == 1:
-        final_quality_scores = list(range(1, qual_scores[0] + 1))
+    if type(qual_scores) == int:
+        final_quality_scores = list(range(1, qual_scores + 1))
     else:
+        # Must be a list. Note that binned scores are not yet implemented
         binned_scores = True
         final_quality_scores = sorted(qual_scores)
 
@@ -86,11 +89,11 @@ def model_seq_err_runner(
     _LOG.debug(f"Plot the data? {plot}")
     _LOG.debug(f'Overwrite existing data? {overwrite}')
 
-    validate_output_path(output_prefix, is_file=False)
-    output_prefix = Path(output_prefix)
+    validate_output_path(output_dir, is_file=False)
+    output_dir = Path(output_dir)
 
     # used string logic instead of pathlib here bc pathlib was cutting off extensions.
-    output_file = output_prefix.parent / f'{output_prefix.name}.p.gz'
+    output_file = output_dir / f'{output_prefix}.p.gz'
     validate_output_path(output_file, overwrite=overwrite)
     _LOG.info(f'Writing output to: {output_file}')
 
@@ -144,13 +147,13 @@ def model_seq_err_runner(
 
     # First model, always produced
     seq_err_model = SequencingErrorModel(
-        avg_seq_error=average_error,
+        avg_seq_error=float(average_error),
         read_length=read_length,
     )
 
     # Just the default model
     qual_score_model = TraditionalQualityModel(
-        average_error=average_error,
+        average_error=float(average_error),
         quality_scores=np.array(final_quality_scores),
         qual_score_probs=read_parameters[0],
     )
@@ -167,12 +170,12 @@ def model_seq_err_runner(
     else:
         # Second model if a second input was given
         seq_err_model_r2 = SequencingErrorModel(
-            avg_seq_error=average_error,
+            avg_seq_error=float(average_error),
             read_length=read_length,
         )
 
         qual_score_model_r2 = TraditionalQualityModel(
-            average_error=average_error,
+            average_error=float(average_error),
             quality_scores=np.array(final_quality_scores),
             qual_score_probs=read_parameters[1]
         )

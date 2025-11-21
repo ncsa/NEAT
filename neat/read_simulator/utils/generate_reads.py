@@ -46,20 +46,25 @@ def cover_dataset(
     # precompute how many reads we want
     # The numerator is the total number of base pair calls needed.
     # Divide that by read length gives the number of reads needed
-    number_reads = ceil((span_length * options.coverage) / options.read_len)
-
-    # We use fragments to model the DNA
-    fragment_pool = fragment_model.generate_fragments(number_reads * 3, options.rng)
+    number_reads_per_layer = ceil(span_length / fragment_model.fragment_mean)
+    if options.paired_ended:
+        # TODO use gc bias to skew this number. Calculate at the runner level.
+        number_reads = number_reads_per_layer * (options.coverage//2)
+    else:
+        number_reads = number_reads_per_layer * options.coverage
 
     # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
-    # step 2: repeat above until number of reads exceeds number_reads * 1.5
+    # step 2: repeat above until number of reads exceeds number_reads
     # step 3: shuffle pool, then draw number_reads (or number_reads/2 for paired ended) reads to be our reads
     read_count = 0
     loop_count = 0
 
-    while read_count <= number_reads + 10:
+    while read_count <= number_reads:
         start = 0
         loop_count += 1
+        # We use fragments to model the DNA
+        fragment_pool = fragment_model.generate_fragments(number_reads_per_layer, options.rng)
+
         temp_fragments = []
         # Mapping random fragments onto genome
         i = 0
@@ -70,7 +75,7 @@ def cover_dataset(
             end = min(start + fragment, span_length)
 
             # Ensure the read is long enough to form a read, else we will not use it.
-            if (end > options.read_len) and (end - start > options.read_len + 2):
+            if (end > options.read_len) and (end - start > options.read_len + 10):
                 temp_fragments.append((start, end))
             start = end
 
@@ -153,7 +158,7 @@ def generate_reads(
         ofw: OutputFileWriter,
         contig_name: str,
         contig_index: int,
-        ref_start: int = 0
+        ref_start: int,
 ):
     """
     This will generate reads given a set of parameters for the run. The reads will output in a fastq.
@@ -236,9 +241,10 @@ def generate_reads(
         if not any(read2) and options.paired_ended:
             # Marked paired, but no read 2 so we toss this one.
             continue
-        raw_read = read1 + read2
-
-        read_name = f'NEAT_generated_{contig_index:010d}_{thread_index}_{str(i+1)}'
+        block_read = read1 + read2
+        raw_read = tuple(x + ref_start for x in block_read)
+        # +1 to account for sam indexing
+        read_name = f'NEAT_generated_{contig_name}_{thread_index}_{raw_read[0]+1:010d}_{raw_read[3]+1:010d}'
 
         # add a small amount of padding to the end to account for deletions.
         # Trying out this method of using the read-length, which for the default neat run gives ~30.
@@ -262,10 +268,14 @@ def generate_reads(
         )
 
         read_1.mutations = find_applicable_mutations(read_1, contig_variants)
+        if options.produce_fastq:
+            fastq_handle = ofw.files_to_write[ofw.fq1]
+        else:
+            fastq_handle = None
         read_1.finalize_read_and_write(
             error_model,
             qual_model,
-            ofw.files_to_write[ofw.fq1],
+            fastq_handle,
             options.quality_offset,
             options.produce_fastq,
             options.rng
@@ -283,7 +293,7 @@ def generate_reads(
 
             read_2 = Read(
                 name=read_name + "/2",
-                raw_read=reads[i],
+                raw_read=raw_read,
                 reference_segment=segment,
                 reference_id=contig_name,
                 ref_id_index=contig_index,
@@ -297,10 +307,14 @@ def generate_reads(
 
             read_2.mutations = find_applicable_mutations(read_2, contig_variants)
 
+            if options.produce_fastq:
+                fastq_handle = ofw.files_to_write[ofw.fq2]
+            else:
+                fastq_handle = None
             read_2.finalize_read_and_write(
                 error_model,
                 qual_model,
-                ofw.files_to_write[ofw.fq2],
+                fastq_handle,
                 options.quality_offset,
                 options.produce_fastq,
                 options.rng

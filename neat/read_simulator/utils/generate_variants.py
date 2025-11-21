@@ -52,12 +52,11 @@ def map_non_n_regions(sequence) -> np.ndarray:
 
     return base_check
 
-
 def generate_variants(
         reference: SeqRecord,
         ref_start: int,
         mutation_rate_regions: list[tuple[int, int, float]],
-        existing_variants: ContigVariants,
+        input_variants: ContigVariants,
         mutation_model: MutationModel,
         options: Options,
         max_qual_score: int,
@@ -67,13 +66,16 @@ def generate_variants(
     :param reference: The reference to generate variants off of. This should be a SeqRecord object
     :param ref_start: where on the reference this SeqRecord above starts.
     :param mutation_rate_regions: Genome segments with associated mutation rates
-    :param existing_variants: Any input variants or overlaps to pick up from the previous contig
+    :param input_variants: Any input variants or overlaps to pick up from the previous contig
     :param mutation_model: The mutation model for the dataset
     :param options: The options for the run
     :param max_qual_score: the maximum quality score for the run.
     """
-    return_variants = existing_variants
-    # Step 1: Create a VCF of mutations
+    return_variants = ContigVariants()
+    for variant_location in input_variants.variant_locations:
+        if ref_start <= variant_location < ref_start + len(reference):
+            for variant in input_variants.contig_variants[variant_location]:
+                return_variants.add_variant(variant)
 
     # pase out the mutation rates
     mutation_rates = np.array([x[2] for x in mutation_rate_regions])
@@ -121,23 +123,32 @@ def generate_variants(
         # For no input mutation regions bed, this will return the entire sequence.
         mut_region = options.rng.choice(a=local_mut_regions, p=probability_rates)
         mut_region_offset = (int(mut_region[0]-ref_start), int(mut_region[1]-ref_start), mut_region[2])
-        # Pick a random starting place. Randint is inclusive of endpoints, so we subtract 1
-        window_start = options.rng.integers(mut_region_offset[0], mut_region_offset[1] - 1, dtype=int)
 
+        # Pick a random starting place. Randint is inclusive of endpoints, so we subtract 1
+        if mut_region_offset[1] <= mut_region_offset[0]:
+            _LOG.error("Invalid Mutation Region")
+            raise ValueError
+
+        window_start = options.rng.integers(mut_region_offset[0], mut_region_offset[1] - 1, dtype=int)
         found = False
+        if window_start > len(reference):
+            _LOG.error("Invalid Mutation Region")
+            raise ValueError
         if reference[window_start] not in ALLOWED_NUCL:
-            # pick a random location to the right
-            plus = options.rng.integers(window_start + 1, mut_region_offset[1] - 1, dtype=int)
-            if reference[plus] in ALLOWED_NUCL:
-                found = True
-                window_start = plus
-            else:
-                # If that didn't work pick a random location to the left
-                if window_start - 1 > mut_region_offset[0]:
-                    minus = options.rng.integers(mut_region_offset[0], window_start - 1, dtype=int)
-                    if reference[minus] in ALLOWED_NUCL:
-                        found = True
-                        window_start = minus
+            # Ensure we are not too close to the edge
+            if window_start + 1 < mut_region_offset[1] - 1 and mut_region_offset[1] - 1 > 0:
+                # pick a random location to the right
+                plus = options.rng.integers(window_start + 1, mut_region_offset[1] - 1, dtype=int)
+                if reference[plus] in ALLOWED_NUCL:
+                    found = True
+                    window_start = plus
+                else:
+                    # If that didn't work pick a random location to the left
+                    if mut_region_offset[0] < window_start - 1 and window_start - 1 > 0:
+                        minus = options.rng.integers(mut_region_offset[0], window_start - 1, dtype=int)
+                        if reference[minus] in ALLOWED_NUCL:
+                            found = True
+                            window_start = minus
         else:
             found = True
 
@@ -145,26 +156,34 @@ def generate_variants(
         if not found:
             continue
 
-        end_point = min(
-            options.rng.integers(
-                window_start,
-                min(mut_region_offset[1], window_start+max_window_size)-1,
-                dtype=int
-            ),
-            # Don't go past the barrier
-            len(reference)-1
-        )
-        if reference[end_point] not in ALLOWED_NUCL:
-            # Didn't find it to the right, look to the left
-            end_point = options.rng.integers(
-                max(window_start - max_window_size, mut_region_offset[0]),
-                window_start,
-                dtype=int
+        if window_start < min(mut_region_offset[1], window_start+max_window_size)-1:
+            end_point = min(
+                options.rng.integers(
+                    window_start,
+                    min(mut_region_offset[1], window_start+max_window_size)-1,
+                    dtype=int
+                ),
+                # Don't go past the barrier
+                len(reference)-1
             )
             if reference[end_point] not in ALLOWED_NUCL:
-                # No suitable end_point, so we try again
-                continue
+                # Didn't find it to the right, look to the left
+                if max(window_start - max_window_size, mut_region_offset[0]) > window_start:
+                    # ensure we are still in bounds
+                    continue
+                end_point = options.rng.integers(
+                    max(window_start - max_window_size, mut_region_offset[0]),
+                    window_start,
+                    dtype=int
+                )
+                if reference[end_point] not in ALLOWED_NUCL:
+                    # No suitable end_point, so we try again
+                    continue
+        else:
+            end_point = None
 
+        if not window_start or not end_point:
+            continue
         # Sorting assures that wherever we found the end point, the coordinates will be in the correct order for slicing
         mutation_slice = sorted([window_start, end_point])
         slice_distance = mutation_slice[1] - mutation_slice[0]
@@ -203,10 +222,12 @@ def generate_variants(
                 # Because the slice is a substring, we add the start point onto the relative location to get the
                 # location relative to the reference.
                 position = find_random_non_n(options.rng, n_gaps)  # position in slice
-                location = position + mutation_slice[0]  # location relative to reference
+                location = position + mutation_slice[0] + ref_start  # location relative to overall contig
                 if variant_type == Insertion:
+                    # Want to insert the variant in the overall context
                     temp_variant = mutation_model.generate_insertion(location, subsequence[position], options.rng)
                 else:
+                    # Want to insert the variant in the overall context
                     temp_variant = mutation_model.generate_deletion(location, options.rng)
 
             # Case 2: SNV
@@ -214,10 +235,11 @@ def generate_variants(
                 # We'll sample for the location within this slice
                 # It's a relative location, so we add the start point of the subsequence to that.
                 position = mutation_model.sample_trinucs(options.rng)  # position in slice
-                location = position + mutation_slice[0]  # location relative to reference
-                if location == 0:
+                local_location = position + mutation_slice[0]  # location relative to slice
+                location = local_location + ref_start  # relative to overall contig
+                if local_location == 0:
                     continue
-                trinuc = reference[location: location+3].seq.upper()
+                trinuc = reference[local_location: local_location+3].seq.upper()
                 disallowed_chars = False
                 for letter in trinuc:
                     if letter not in ALLOWED_NUCL:
@@ -284,7 +306,7 @@ def generate_variants(
             # The count will tell us how many we actually added v how many we were trying to add
             n_added += 1
 
-    # _LOG.debug(f'Finished generating chunk random mutations in {(time.time() - start_time)/60:.2f} minutes')
+    _LOG.debug(f'Finished generating chunk random mutations in {(time.time() - start_time)/60:.2f} minutes')
 
     return return_variants
 

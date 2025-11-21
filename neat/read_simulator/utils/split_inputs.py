@@ -4,7 +4,7 @@ Split a FASTA and NEAT config into per‑contig or fixed‑size chunks ready for
 
 import shutil
 import sys
-import gzip
+import resource
 from pathlib import Path
 from textwrap import wrap
 from typing import Iterator
@@ -15,7 +15,6 @@ __all__ = ["main"]
 
 from Bio import bgzf
 from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 
 from neat.read_simulator.utils import Options
 
@@ -61,13 +60,6 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
 
     overlap = int(options.read_len) * 2
 
-    approx_out_bytes = int(options.reference.stat().st_size * 1.1)
-    if disk_bytes_free(options.output_dir) < approx_out_bytes:
-        print_stderr(
-            f"Not enough free space in {options.output_dir} (need about {approx_out_bytes/1e9:.2f} GB)",
-            exit_=True,
-        )
-
     idx = 1
     pad = 10  # zero-pad width for global indices
 
@@ -78,12 +70,12 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
         if options.mode == "contig":
             stem = f"{idx:0{pad}d}__{contig}"
             fa = options.splits_dir / f"{stem}.fa.gz"
-            write_fasta(contig, seq_record.seq, fa)
+            write_fasta(contig, seq_record.seq.upper(), fa)
             split_fasta_dict[contig][(0, len(seq_record))] = fa
             idx += 1
             written += 1
         else:
-            for start, subseq in chunk_record(seq_record.seq, options.size, overlap):
+            for start, subseq in chunk_record(seq_record.seq.upper(), options.size, overlap):
                 stem = f"{idx:0{pad}d}__{contig}"
                 fa = options.splits_dir / f"{stem}.fa.gz"
                 write_fasta(contig, subseq, fa)
@@ -91,6 +83,12 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
                 idx += 1
                 written += 1
 
+    # soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    # # plus one for the final file to write
+    # if hard_limit > written + 1 >= soft_limit:
+    #     resource.setrlimit(resource.RLIMIT_NOFILE, (written + 1, hard_limit))
+    # elif written + 1 >= hard_limit:
+    #     raise ValueError("Too many files for psyam merge to work successfully, increase Size parameter and try again.")
     # Report success via the logger instead of printing to stderr
     _LOG.info(f"Generated {written} FASTAs in {options.splits_dir}")
     return split_fasta_dict, written

@@ -1,6 +1,7 @@
 """
 Unit tests for the split_inputs module of the parallel read simulator
 """
+
 from Bio.Seq import Seq
 
 from neat.read_simulator.utils.split_inputs import chunk_record

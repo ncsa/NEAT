@@ -1,27 +1,31 @@
 [tool.poetry]
 name = "neat"
-version = "4.3.2"
+version = "4.3.5"
 description = "NGS Simulation toolkit"
 authors = ["Joshua Allen <jallen17@illinois.edu>"]
 license = "BSD 3-Clause License"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-pip = "^22.2.2"
-biopython = "1.79"
-matplotlib = "^3.5"
+pip = "^25.2"
+biopython = "1.85"
+matplotlib = "^3.10"
 pkginfo = "^1.8.3"
-numpy = "^1.23"
+numpy = "^2.2"
 PyYAML = "^6.0"
-pysam = "^0.19.1"
+scipy = "^1.14.1"
+pysam = "^0.23"
+frozendict = "^2.4.6"
 
-[tool.poetry.dev-dependencies]
-poetry = "^1.1.13"
-ipython = "^8.4.0"
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
 
 [tool.poetry.scripts]
 neat = 'neat.cli.cli:run'
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"

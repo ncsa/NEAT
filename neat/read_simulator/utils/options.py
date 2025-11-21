@@ -180,6 +180,9 @@ class Options(SimpleNamespace):
         self.vcf: Path | None = vcf
         self.bam: Path | None = bam
 
+        # list of the files to write
+        self.output_files = []
+
         # Set the rng for the run
         self.rng = self.set_random_seed()
 
@@ -333,7 +336,8 @@ class Options(SimpleNamespace):
                           current_output_dir: Path | None = None,
                           fq1: Path | None = None,
                           fq2: Path | None = None,
-                          bam: Path | None = None
+                          bam: Path | None = None,
+                          vcf: Path | None = None
                           ):
         return_options = deepcopy(self)
         if reference is not None:
@@ -346,6 +350,8 @@ class Options(SimpleNamespace):
             return_options.fq2 = fq2
         if bam is not None:
             return_options.bam = bam
+        if vcf is not None:
+            return_options.vcf = vcf
         return return_options
 
     def set_random_seed(self) -> Generator:
@@ -401,21 +407,25 @@ class Options(SimpleNamespace):
                 files_to_produce += f'\t- {fq2}\n'
                 self.fq1 = Path(fq1)
                 self.fq2 = Path(fq2)
+                self.output_files.extend([self.fq1, self.fq2])
             else:
                 fq1 = f'{str(self.output_dir)}/{self.output_prefix}.fastq.gz'
                 validate_output_path(fq1, True, self.overwrite_output)
                 files_to_produce += f'\t- {fq1}\n'
                 self.fq1 = Path(fq1)
+                self.output_files.append(self.fq1)
         if self.produce_bam:
             bam = f'{str(self.output_dir)}/{self.output_prefix}_golden.bam'
             validate_output_path(bam, True, self.overwrite_output)
             files_to_produce += f'\t- {bam}\n'
             self.bam = Path(bam)
+            self.output_files.append(self.bam)
         if self.produce_vcf:
             vcf = f'{str(self.output_dir)}/{self.output_prefix}_golden.vcf.gz'
             validate_output_path(vcf, True, self.overwrite_output)
             files_to_produce += f'\t- {vcf}\n'
             self.vcf = Path(vcf)
+            self.output_files.append(self.vcf)
 
         _LOG.info(files_to_produce)
 

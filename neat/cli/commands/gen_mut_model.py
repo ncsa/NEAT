@@ -90,4 +90,4 @@ class Command(BaseCommand):
         """
         compute_mut_runner(arguments.reference, arguments.mutations, arguments.bed, arguments.outcounts,
                            arguments.show_trinuc, arguments.save_trinuc, arguments.human_sample,
-                           arguments.skip_common, arguments.output, arguments.overwrite)
+                           arguments.skip_common, arguments.output_dir, arguments.prefix, arguments.overwrite)

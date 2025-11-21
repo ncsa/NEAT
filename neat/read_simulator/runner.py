@@ -2,11 +2,15 @@
 Runner for generate_reads task
 """
 import logging
+import os
+import subprocess
 import time
 import multiprocessing as mp
 
 from pathlib import Path
 
+import pysam
+from pysam import bcftools
 from Bio import SeqIO
 
 from .utils import Options, OutputFileWriter, parse_beds, parse_input_vcf
@@ -93,7 +97,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             input_variants_dict,
             options.include_vcf,
             options.ploidy,
-            options,
+            reference_index,
             options
         )
 
@@ -112,7 +116,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf. We create the overall bam with no header, as it will get a header from
     # merging the smaller bams.
-    output_file_writer = OutputFileWriter(options=options, header=None)
+    output_file_writer = OutputFileWriter(options=options, vcf_header = reference_keys_with_lens, bam_header=None)
 
     # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
     _LOG.info("Splitting reference...")
@@ -129,7 +133,8 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     output_opts: list = []
     output_files: list = []
     # a dict with contig keys, then the thread index, and finally the applicable contig variants as the value
-    all_variants: dict[str, dict[int, ContigVariants]] = {chrom: {} for chrom in reference_index.keys()}
+    # TODO Remove if not needed
+    # all_variants: dict[str, dict[int, ContigVariants]] = {chrom: {} for chrom in reference_index.keys()}
     thread_idx = 1
     contig_list = list(reference_keys_with_lens.keys())
     contig_dict = {contig: contig_list.index(contig) for contig in reference_keys_with_lens.keys()}
@@ -142,6 +147,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             fq1 = None
             fq2 = None
             bam = None
+            vcf = None
             if options.produce_fastq:
                 fq1 = current_output_dir / options.fq1.name
                 # validate to double-check we don't have name collisions
@@ -153,7 +159,10 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             if options.produce_bam:
                 bam = current_output_dir / options.bam.name
                 validate_output_path(bam, True, False)
-            current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, bam)
+            if options.produce_vcf:
+                vcf = current_output_dir / options.vcf.name
+                validate_output_path(vcf, True, False)
+            current_options = options.copy_with_changes(splits_file, current_output_dir, fq1, fq2, bam, vcf)
             if options.threads == 1:
                 idx, contig, local_variants, files_written = read_simulator_single(
                     1,
@@ -168,7 +177,8 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     mutation_rate_dict[contig],
                 )
                 _LOG.info(f"Completed simulating contig {contig}.")
-                all_variants[contig][idx] = local_variants
+                # TODO Remove if not needed
+                # all_variants[contig][idx] = local_variants
                 output_files.append((thread_idx, files_written))
             else:
                 thread_input_variants = filter_thread_variants(input_variants_dict[contig], (start, start+length))
@@ -200,56 +210,40 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
         # Need to organize the results, as above
         for idx, contig, local_variants, files_written in results.get():
-            all_variants[contig][idx] = local_variants
+            # TODO Remove if not needed
+            # all_variants[contig][idx] = local_variants
             output_files.append((idx, files_written))
 
     _LOG.info("Processing complete, writing output")
 
-    # sort all variants and write out final VCF
-    if options.produce_vcf:
-        write_final_vcf(all_variants, reference_index, output_file_writer)
-
     start = time.time()
     if options.produce_bam:
         stitch_main(output_file_writer, output_files, options.threads)
+        _LOG.info(f"It took {time.time() - start} s to write the bam file")
     else:
         stitch_main(output_file_writer, output_files)
-    _LOG.info(f"It took {time.time()-start} s to write the bam file")
 
-    output_file_writer.flush_and_close_files(True)
+    output_file_writer.flush_and_close_files()
+    force = False
+    if options.overwrite_output:
+        force = True
+    for file in options.output_files:
+        if file.suffix == ".bam":
+            _LOG.info(f"bam file: {file}")
+            pysam.index(f"{str(file)}", "-@", str(options.threads))
+            _LOG.info(f'bam index: {file}.bai')
+        elif "fastq" in file.name:
+            continue
+        else:
+            _LOG.info("Sorting VCF file")
+            temp_file = str(options.temp_dir_path / "temp.sorted.vcf.gz")
+            subprocess.run(["bcftools", "sort", "-o", temp_file, "-Ob9", str(file)])
+            Path(temp_file).is_file()
+            os.rename(temp_file, str(file))
+            _LOG.info("Indexing vcf")
+            pysam.tabix_index(str(file), preset="vcf", force=force)
+
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
-
-def write_final_vcf(
-        all_variants: dict[str, dict[int, ContigVariants]],
-        ref_index: dict,
-        ofw: OutputFileWriter,
-):
-    # take contig name from ref index because we know it is in the proper order
-    for contig in ref_index.keys():
-        block_vars_dict = all_variants[contig]
-        # Ensuring these are put together in the right order, given that they might have
-        #    been written out of order, due to race conditions.
-        sorted_keys = sorted(block_vars_dict.keys())
-        for block in sorted_keys:
-            local_variants = block_vars_dict[block]
-            locations = sorted(local_variants.variant_locations)
-            for location in locations:
-                for variant in local_variants[location]:
-                    ref, alt = local_variants.get_ref_alt(variant, ref_index[contig])
-                    sample = local_variants.get_sample_info(variant)
-                    # +1 to position because the VCF uses 1-based coordinates
-                    #          .id should give the more complete name
-                    line = f"{ref_index[contig].id}\t" \
-                           f"{variant.position1 + 1}\t" \
-                           f"{local_variants.generate_field(variant, 'ID')}\t" \
-                           f"{ref}\t" \
-                           f"{alt}\t" \
-                           f"{variant.qual_score}\t" \
-                           f"{local_variants.generate_field(variant, 'FILTER')}\t" \
-                           f"{local_variants.generate_field(variant, 'INFO')}\t" \
-                           f"{local_variants.generate_field(variant, 'FORMAT')}\t" \
-                           f"{sample}\n"
-                    ofw.write_vcf_record(line)
 
 def filter_thread_variants(contig_variants: ContigVariants, coords: tuple[int, int]) -> ContigVariants:
     ret_contig_vars = ContigVariants()
