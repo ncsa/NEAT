@@ -80,6 +80,7 @@ class OutputFileWriter:
         self.vcf_header = vcf_header
         self.bam_header = bam_header
         self.vcf_format = vcf_format
+        self.tmp_dir = options.temp_dir_path
 
         file_handles: dict[Path, Any] = {}
 

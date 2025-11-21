@@ -1,7 +1,7 @@
 """
 Stitch NEAT split‑run outputs into one dataset.
 """
-
+import resource
 import shutil
 import pysam
 from pathlib import Path
@@ -30,11 +30,17 @@ def merge_vcfs(vcfs: List[Path], ofw: OutputFileWriter) -> None:
                 if not line.startswith("#"):
                     dest.write(line)
 
-def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int) -> None:
-    unsorted = ofw.bam.with_suffix(".unsorted.bam")
-    pysam.merge("--no-PG", "-@", str(threads), "-f", str(unsorted), *map(str, bam_files))
-    pysam.sort("-@", str(threads), "-o", str(ofw.bam), str(unsorted))
-    unsorted.unlink(missing_ok=True)
+def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int):
+    merged_file = ofw.tmp_dir / "temp_merged.bam"
+    intermediate_files = []
+    # Note 1000 is abritrary. May need to be a user parameter/adjustable/a function
+    for i in range(0, len(bam_files), 500):
+        temp_file = str(ofw.tmp_dir / f"temp_merged_{i}.bam")
+        pysam.merge("--no-PG", "-f", temp_file, *map(str, bam_files[i:i+500]))
+        intermediate_files.append(temp_file)
+    pysam.merge("--no-PG", "-f", str(merged_file), *intermediate_files)
+    pysam.sort("-@", str(threads), "-m", "1G", "-o", str(ofw.bam), str(merged_file))
+    merged_file.unlink(missing_ok=True)
 
 def main(
         ofw: OutputFileWriter,
