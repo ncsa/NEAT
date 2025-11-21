@@ -247,11 +247,11 @@ The configuration used:
 
 | Organism        | File size (bytes) | Avg. runtime (ms) | Avg. runtime (min) |
 |-----------------|-------------------|-------------------|--------------------|
-| H1N1            | 13,599            | 702.7             | 0.0117             |
-| Herpes virus    | 174,029           | 4,909.0           | 0.0818             |
-| Pneumonia       | 2,137,444         | 64,424.0          | 1.0737             |
-| *E. coli*       | 1,258,807         | 146,843.0         | 2.4474             |
-| *S. cerevisiae* | 12,310,392        | 339,842.0         | 5.6640             |
+| H1N1            | 13,599            | 702               | 0.0117             |
+| Herpes virus    | 174,029           | 4,909             | 0.0818             |
+| Pneumonia       | 2,137,444         | 64,424            | 1.0737             |
+| *E. coli*       | 1,258,807         | 146,843           | 2.4474             |
+| *S. cerevisiae* | 12,310,392        | 339,842           | 5.6640             |
 | Honeybee        | 228,091,137       | N/A               | N/A                |
 | Rice            | 394,543,607       | N/A               | N/A                |
 | *Miscanthus*    | 2,718,242,062     | N/A               | N/A                |
@@ -270,14 +270,14 @@ Here we enabled NEAT’s parallelized mode (“small filtering”), which splits
 
 | Organism        | File size (bytes) | Avg. runtime (ms) | Avg. runtime (min) |
 |-----------------|-------------------|-------------------|--------------------|
-| H1N1            | 13,599            | 199.0             | 0.0033             |
-| Herpes virus    | 174,029           | 5,267.0           | 0.0878             |
-| Pneumonia       | 2,137,444         | 31,113.0          | 0.5186             |
-| *E. coli*       | 1,258,807         | 58,927.0          | 0.9821             |
-| *S. cerevisiae* | 12,310,392        | 139,148.0         | 2.3191             |
-| Honeybee        | 228,091,137       | 3,040,336.0       | 50.6723            |
-| Rice            | 394,543,607       | 4,335,126.0       | 72.2521            |
-| *Miscanthus*    | 2,718,242,062     | N/A               | N/A                |
+| H1N1            | 13,599            | 199               | 0.0033             |
+| Herpes virus    | 174,029           | 5,267             | 0.0878             |
+| Pneumonia       | 2,137,444         | 31,113            | 0.5186             |
+| *E. coli*       | 1,258,807         | 58,927            | 0.9821             |
+| *S. cerevisiae* | 12,310,392        | 139,148           | 2.3191             |
+| Honeybee        | 228,091,137       | 3,040,336         | 50.6723            |
+| Rice            | 394,543,607       | 4,335,126         | 72.2521            |
+| *Miscanthus*    | 2,718,242,062     | 24876744          | 414.6              |
 
 For mid-sized genomes (e.g., *E. coli* and *S. cerevisiae*), enabling parallelization reduced runtimes by roughly a factor of two to three compared to the base configuration. For larger genomes (honeybee and rice), the parallel configuration may make multi-hour simulations feasible.
 
