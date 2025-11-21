@@ -268,10 +268,14 @@ def generate_reads(
         )
 
         read_1.mutations = find_applicable_mutations(read_1, contig_variants)
+        if options.produce_fastq:
+            fastq_handle = ofw.files_to_write[ofw.fq1]
+        else:
+            fastq_handle = None
         read_1.finalize_read_and_write(
             error_model,
             qual_model,
-            ofw.files_to_write[ofw.fq1],
+            fastq_handle,
             options.quality_offset,
             options.produce_fastq,
             options.rng
@@ -303,10 +307,14 @@ def generate_reads(
 
             read_2.mutations = find_applicable_mutations(read_2, contig_variants)
 
+            if options.produce_fastq:
+                fastq_handle = ofw.files_to_write[ofw.fq2]
+            else:
+                fastq_handle = None
             read_2.finalize_read_and_write(
                 error_model,
                 qual_model,
-                ofw.files_to_write[ofw.fq2],
+                fastq_handle,
                 options.quality_offset,
                 options.produce_fastq,
                 options.rng

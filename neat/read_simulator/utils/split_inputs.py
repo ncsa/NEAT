@@ -4,7 +4,7 @@ Split a FASTA and NEAT config into per‑contig or fixed‑size chunks ready for
 
 import shutil
 import sys
-import gzip
+import resource
 from pathlib import Path
 from textwrap import wrap
 from typing import Iterator
@@ -83,6 +83,12 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
                 idx += 1
                 written += 1
 
+    # soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    # # plus one for the final file to write
+    # if hard_limit > written + 1 >= soft_limit:
+    #     resource.setrlimit(resource.RLIMIT_NOFILE, (written + 1, hard_limit))
+    # elif written + 1 >= hard_limit:
+    #     raise ValueError("Too many files for psyam merge to work successfully, increase Size parameter and try again.")
     # Report success via the logger instead of printing to stderr
     _LOG.info(f"Generated {written} FASTAs in {options.splits_dir}")
     return split_fasta_dict, written
