@@ -1,2 +1,3 @@
-"""Modules related to the subcommands' interfaces"""
+"""Modules related to the subcommands"""
+
 from .base import *
