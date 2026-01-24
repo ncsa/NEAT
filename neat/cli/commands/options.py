@@ -14,6 +14,7 @@ output_group.add_argument(
     "--output_dir",
     dest="output_dir",
     type=str,
+    required=True,
     help="Path to the output directory. Will create if not present.",
     default=os.getcwd()
 )

@@ -237,8 +237,8 @@ class Options(SimpleNamespace):
             'rng_seed': (int, None, None, None),
             'min_mutations': (int, 0, None, None),
             'overwrite_output': (bool, False, None, None),
-            'mode': (str, 'size', 'choice', ['size', 'contig']),
-            'size': (int, 500000, None, None),
+            'parallel_mode': (str, 'size', 'choice', ['size', 'contig']),
+            'parallel_block_size': (int, 500000, None, None),
             'threads': (int, 1, 1, 1000),
             'cleanup_splits': (bool, True, None, None),
             'reuse_splits': (bool, False, None, None)
@@ -377,6 +377,7 @@ class Options(SimpleNamespace):
         """
         Some sanity checks and corrections to the options.
         """
+
         if not (self.produce_bam or self.produce_vcf or self.produce_fastq):
             _LOG.error('No files would be produced, as all file types are set to false')
             sys.exit(1)
