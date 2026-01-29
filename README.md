@@ -81,11 +81,14 @@ $ git clone git@github.com:ncsa/NEAT.git
 $ cd NEAT
 ```
 
-A quick form of installation uses `bioconda`. Once `conda` is installed, the following command can be run for easy setup:
+A quick form of installation uses `bioconda`. Once `conda` is installed, the following command can be run for easy setup. 
+In the NEAT repo, at the base level is the environment.yml file you will need. Change directories into the neat repository
+and run:
 
 ```bash
-(base) $ conda create -n neat -c conda-forge -c bioconda neat
+(base) $ conda env create -f environment.yml
 (base) $ conda activate neat
+(neat) $ poetry install
 (neat) $ neat --help # tests that NEAT has installed correctly
 ```
 
