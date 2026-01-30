@@ -9,6 +9,21 @@ import pytest
 from neat.cli.cli import Cli, main
 
 
+def _write_min_cfg(tmp_path: Path) -> Path:
+    """
+    Write a minimal config file for read-simulator.
+
+    These CLI tests validate argument handling, logging, and return codes,
+    not the full simulation behavior, but read-simulator still requires -c.
+    """
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\nACGT\n", encoding="utf-8")
+
+    cfg = tmp_path / "conf.yml"
+    cfg.write_text(f"reference: {ref}\nproduce_fastq: true\n", encoding="utf-8")
+    return cfg
+
+
 def test_cli_registers_read_simulator_subcommand():
     cli = Cli()
     # Argparse stores subparsers in a private map; ensure our command is registered
@@ -50,10 +65,15 @@ def test_logging_creates_named_log_file_and_announces(monkeypatch, tmp_path: Pat
         lambda *args, **kwargs: None,
     )
 
+    cfg = _write_min_cfg(tmp_path)
+
     rc = main(cli.parser, [
         "--log-name", str(logname),
         # Supply a benign subcommand with minimal required args
-        "read-simulator", "-o", str(tmp_path), "-p", "pref"
+        "read-simulator",
+        "-c", str(cfg),
+        "-o", str(tmp_path),
+        "-p", "pref",
     ])
     out = capsys.readouterr().out
     # main should create/log the file path and return 0 (success)
@@ -68,13 +88,12 @@ def test_read_simulator_success_invokes_runner(monkeypatch, tmp_path: Path):
     called = {}
 
     def fake_runner(cfg, outdir, prefix):
-        called['args'] = (cfg, outdir, prefix)
+        called["args"] = (cfg, outdir, prefix)
 
     # Patch runner used by command
     monkeypatch.setattr("neat.cli.commands.read_simulator.read_simulator_runner", fake_runner)
 
-    cfg = tmp_path / "conf.yml"
-    cfg.write_text("reference: ''\n", encoding="utf-8")  # minimal content; not validated here
+    cfg = _write_min_cfg(tmp_path)
 
     rc = main(cli.parser, [
         "--no-log",
@@ -85,7 +104,7 @@ def test_read_simulator_success_invokes_runner(monkeypatch, tmp_path: Path):
     ])
 
     assert rc == 0
-    assert called['args'] == (str(cfg), str(tmp_path), "myprefix")
+    assert called["args"] == (str(cfg), str(tmp_path), "myprefix")
 
 
 def test_read_simulator_failure_returns_1_and_prints_error(monkeypatch, tmp_path: Path, capsys):
@@ -94,11 +113,15 @@ def test_read_simulator_failure_returns_1_and_prints_error(monkeypatch, tmp_path
     def boom(*args, **kwargs):
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr("neat.read_simulator.read_simulator_runner", boom)
+    # Patch the runner symbol used by the read-simulator command
+    monkeypatch.setattr("neat.cli.commands.read_simulator.read_simulator_runner", boom)
+
+    cfg = _write_min_cfg(tmp_path)
 
     rc = main(cli.parser, [
         "--no-log",
         "read-simulator",
+        "-c", str(cfg),
         "-o", str(tmp_path),
         "-p", "x",
     ])
