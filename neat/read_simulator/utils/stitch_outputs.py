@@ -31,6 +31,7 @@ _LOG = logging.getLogger(__name__)
 def concat(files_to_join: List[Path], dest_file: BgzfWriter) -> None:
     if not files_to_join:
         # Nothing to do, and no error to throw
+        print(f"No files to join: {files_to_join}" )
         return
 
     for f in files_to_join:
@@ -56,6 +57,7 @@ def main(
     fq1_list = []
     fq2_list = []
     bam = []
+
     # Gather all output files from the ops objects
     for (thread_idx,file_dict) in output_files:
         if file_dict["fq1"]:
@@ -64,9 +66,11 @@ def main(
             fq2_list.append(file_dict["fq2"])
         if file_dict["bam"]:
             bam.append(file_dict["bam"])
+
     # concatenate all files of each type. An empty list will result in no action
     concat(fq1_list, ofw.files_to_write[ofw.fq1])
-    concat(fq2_list, ofw.files_to_write[ofw.fq2])
+    if (fq2_list):
+        concat(fq2_list, ofw.files_to_write[ofw.fq2])
     merge_bam(bam, ofw, threads)
     # Final success message via logging
     _LOG.info("Stitching complete!")

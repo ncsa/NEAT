@@ -59,7 +59,7 @@ def write_config_file(ref_config_file, rearranged_seq_file, bacteria_name, outpu
         
         for line in ref_file:
             if line.find("reference:") != -1:
-                new_file.write(f"reference: {rearranged_seq_file}")
+                new_file.write(f"reference: {rearranged_seq_file}\n")
                 old_file.write(line)
             elif line.find("coverage:") != -1:
                 if line.strip() == "coverage: .":
@@ -67,8 +67,8 @@ def write_config_file(ref_config_file, rearranged_seq_file, bacteria_name, outpu
                 else:
                     new_coverage = float((line.split(" "))[1].strip()) // 2
         
-                new_file.write(f"coverage: {new_coverage}")
-                old_file.write(f"coverage: {new_coverage}")
+                new_file.write(f"coverage: {new_coverage}\n")
+                old_file.write(f"coverage: {new_coverage}\n")
             else:
                 new_file.write(line)
                 old_file.write(line)
@@ -172,12 +172,15 @@ def stitch_all_outputs(files: List[Path], output_dir) -> None:
             bam_list.append(file)
 
     dest_fq1 = bgzf.BgzfWriter(f"{output_dir}/stitched_fq1.bgzf")
-    dest_fq2 = bgzf.BgzfWriter(f"{output_dir}/stitched_fq2.bgzf")
     dest_bam = Path(f"{output_dir}/stitched.bam")
     dest_vcf = Path(f"{output_dir}/stitched.vcf")
     
     concat_fq(fq1_list, dest_fq1)
-    concat_fq(fq2_list, dest_fq2)
+    
+    if (fq2_list):
+        dest_fq2 = bgzf.BgzfWriter(f"{output_dir}/stitched_fq2.bgzf")
+        concat_fq(fq2_list, dest_fq2)
+
     merge_bam(bam_list, dest_bam, 2)
     merge_vcf(vcf_list, dest_vcf)
 
