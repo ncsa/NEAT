@@ -17,7 +17,12 @@ from neat.read_simulator.utils import OutputFileWriter
 
 _LOG = logging.getLogger(__name__)
 
-def concat(files_to_join: List[Path], dest_file: gzip.GzipFile) -> None:
+def concat(files_to_join: List[Path], dest_file: BgzfWriter) -> None:
+    if not files_to_join:
+        # Nothing to do, and no error to throw
+        print(f"No files to join: {files_to_join}" )
+        return
+
     for f in files_to_join:
         with gzip.open(f, 'rt') as in_f:
             shutil.copyfileobj(in_f, dest_file)

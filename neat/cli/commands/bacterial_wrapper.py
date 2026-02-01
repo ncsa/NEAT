@@ -70,7 +70,7 @@ class Command(BaseCommand):
 
                 file = file[:-3]
                 reg_file_path = output_path / "Regular" / file
-                wrap_file_path = output_path / "Wrapped" / file   
+                wrap_file_path = output_path / "Wrapped" / file  
             
             output_files.append(reg_file_path)
             output_files.append(wrap_file_path)
