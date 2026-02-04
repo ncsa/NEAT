@@ -80,6 +80,10 @@ def read_simulator_single(
     local_ref_name = list(local_ref_index.keys())[0]
     local_seq_record = local_ref_index[local_ref_name]
 
+    if len(local_seq_record) < local_options.read_len:
+        _LOG.debug("Record too small for processing")
+
+
     coords = (block_start, block_start+len(local_seq_record))
     mutation_rate_regions = recalibrate_mutation_regions(mutation_regions, coords, mut_model.avg_mut_rate)
 
@@ -87,8 +91,7 @@ def read_simulator_single(
     # Also creates headers for bam and vcf.
     # We'll also keep track here of what files we are producing.
     # We don't really need to write out the VCF. We should be able to store it in memory
-    local_options.produce_vcf = False
-    local_output_file_writer = OutputFileWriter(options=local_options, header=bam_header)
+    local_output_file_writer = OutputFileWriter(options=local_options, vcf_format = "gzip", bam_header=bam_header)
     """
     Begin Analysis
     """
@@ -98,7 +101,7 @@ def read_simulator_single(
         reference=local_seq_record,
         ref_start=block_start,
         mutation_rate_regions=mutation_rate_regions,
-        existing_variants=input_variants_local,
+        input_variants=input_variants_local,
         mutation_model=mut_model,
         max_qual_score=max_qual_score,
         options=local_options,
@@ -118,6 +121,7 @@ def read_simulator_single(
             local_output_file_writer,
             contig_name,
             contig_index,
+            coords[0],
         )
         if local_options.produce_bam:
             # Writing an intermediate bam that is sorted, to make compiling them together at the end easier.
@@ -146,10 +150,14 @@ def read_simulator_single(
             os.rename(str(sorted_bam), str(local_output_file_writer.bam))
             _LOG.info(f"bam for thread {thread_idx} written")
 
-    local_output_file_writer.flush_and_close_files()
+    if local_options.produce_vcf:
+        write_block_vcf(local_variants, contig_name, block_start, local_ref_index, local_output_file_writer)
+
+    local_output_file_writer.flush_and_close_files(False)
     file_dict = {
         "fq1": local_output_file_writer.fq1,
         "fq2": local_output_file_writer.fq2,
+        "vcf": local_output_file_writer.vcf,
         "bam": local_options.bam,
     }
     return (
@@ -158,6 +166,40 @@ def read_simulator_single(
         local_variants,
         file_dict,
     )
+
+def write_block_vcf(
+        local_variants: ContigVariants,
+        contig: str,
+        ref_start: int,
+        ref_index: dict,
+        ofw: OutputFileWriter,
+):
+    """
+    :param local_variants: The ContigVariants object for this block
+    :param contig: The name of the contig this block comes from
+    :param ref_start: The reference start position, relative to the contig
+    :param ref_index: The local index for this reference block
+    :param ofw: The OutputFileWriter object for this block
+    """
+    # take contig name from ref index because we know it is in the proper order
+    locations = sorted(local_variants.variant_locations)
+    for location in locations:
+        for variant in local_variants[location]:
+            ref, alt = local_variants.get_ref_alt(variant, ref_index[contig], ref_start)
+            sample = local_variants.get_sample_info(variant)
+            # +1 to position because the VCF uses 1-based coordinates
+            #          .id should give the more complete name
+            line = f"{ref_index[contig].id}\t" \
+                   f"{variant.position1 + 1}\t" \
+                   f"{local_variants.generate_field(variant, 'ID')}\t" \
+                   f"{ref}\t" \
+                   f"{alt}\t" \
+                   f"{variant.qual_score}\t" \
+                   f"{local_variants.generate_field(variant, 'FILTER')}\t" \
+                   f"{local_variants.generate_field(variant, 'INFO')}\t" \
+                   f"{local_variants.generate_field(variant, 'FORMAT')}\t" \
+                   f"{sample}\n"
+            ofw.write_vcf_record(line)
 
 def initialize_all_models(options: Options):
     """

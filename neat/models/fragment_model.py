@@ -59,8 +59,6 @@ class FragmentLengthModel:
         dist = [abs(x) for x in dist]
         # We'll append enough fragments to pad out distribution and add variability. Don't know if the cost of doing
         # this is worth it though.
-        number_extra = int(number_of_fragments * 0.1)
-        for i in range(number_extra):
-            dist.append(extra_fragments[i % len(extra_fragments)])
+        dist.extend(extra_fragments)
         rng.shuffle(dist)  # this shuffle mixes extra fragments in.
         return dist[:number_of_fragments]

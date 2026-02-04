@@ -106,7 +106,7 @@ class ContigVariants:
         return False
 
     @staticmethod
-    def get_ref_alt(variant: BaseVariant, reference: SeqRecord) -> tuple[str, str]:
+    def get_ref_alt(variant: BaseVariant, reference: SeqRecord, block_start: int) -> tuple[str, str]:
         """
         Turns variants at a location into a vcf output. Only outputs items it has data for,
         but in the correct vcf format and order. Note that for a VCF, Insertion and Deletion
@@ -118,19 +118,22 @@ class ContigVariants:
 
         :param variant: The variant to retrieve ref and alternate for
         :param reference: The reference SeqRecord for this contig
+        :param block_start: Where, in relation to the overall contig, this SeqRecord starts
         :return: A list of vcf lines based on the variants for that location
         """
         ref: str
         alt: str
 
+        position1 = variant.position1 - block_start
+        _LOG.debug(f"Getting ref and alt from {variant.position1}")
         if type(variant) == Insertion:
-            ref = reference[variant.position1]
+            ref = reference[position1]
             alt = variant.get_alt()
         elif type(variant) == Deletion:
-            ref = str(reference[variant.position1: variant.position1 + variant.length].seq)
-            alt = reference[variant.position1]
+            ref = str(reference[position1: position1 + variant.length].seq)
+            alt = reference[position1]
         elif type(variant) == SingleNucleotideVariant:
-            ref = reference[variant.position1]
+            ref = reference[position1]
             alt = variant.get_alt()
         else:
             # Unknown types must have an explicit ref and alternate in metadata

@@ -21,25 +21,31 @@ __all__ = [
 _LOG = logging.getLogger(__name__)
 
 
-def compute_fraglen_runner(file: str | Path, filter_minreads: int, output: str | Path, overwrite: bool = False):
+def compute_fraglen_runner(
+        file: str | Path,
+        filter_minreads: int,
+        output_dir: str | Path,
+        output_prefix: str,
+        overwrite: bool = False):
     """
     Main function takes 2 arguments:
     :param file: a path to a sam or bam file_list input
     :param filter_minreads: minimum number of reads needed to count a fragment length.
                             If 0, then filtering will be skipped
-    :param output: the string prefix of the output
+    :param output_dir: The directory where to write files
+    :param output_prefix: the prefix for filenames
     :param overwrite: If true, any existing file_list found will be overwritten
     """
     _LOG.info("Generating fragment length model")
 
     input_file = file
-    output_prefix = output
-    output = Path(output_prefix + '.pickle.gz')
-    validate_output_path(output, True, overwrite)
+    out_file_name = output_prefix + ".pickle.gz"
+    output_file = Path(output_dir) / out_file_name
+    validate_output_path(output_file, True, overwrite)
 
     _LOG.debug(f"File: {input_file}")
     _LOG.debug(f'Minimum reads: {filter_minreads}')
-    _LOG.debug(f'Output: {output}')
+    _LOG.debug(f'Output: {output_file}')
     _LOG.debug(f'Overwrite: {overwrite}')
 
     _LOG.info("Counting fragments")
@@ -60,8 +66,8 @@ def compute_fraglen_runner(file: str | Path, filter_minreads: int, output: str |
     mean = float(np.mean(filtered_lengths))
 
     model = FragmentLengthModel(mean, st_dev)
-    _LOG.info(f'Saving model: {output}')
-    with gzip.open(output, 'w+') as outfile:
+    _LOG.info(f'Saving model: {output_file}')
+    with gzip.open(output_file, 'w+') as outfile:
         pickle.dump(model, outfile)
 
     _LOG.info("Modeling complete.")

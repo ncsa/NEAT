@@ -49,14 +49,14 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
     def __init__(self,
                  avg_mut_rate: float = default_avg_mut_rate,
                  homozygous_freq: float = default_homozygous_freq,
-                 variant_probs: dict[variants: float, ...] = default_variant_probs,
+                 variant_probs: dict[VariantTypes, float] = default_variant_probs,
                  transition_matrix: np.ndarray = default_mutation_sub_matrix,
                  is_cancer: bool = False,
                  # Any new parameters needed for new models should go below
                  trinuc_trans_matrices: np.ndarray = default_trinuc_trans_matrices,
                  trinuc_mut_bias: np.ndarray = default_trinuc_mut_bias,
-                 insert_len_model: dict[int: float] = default_insertion_len_model,
-                 deletion_len_model: dict[int: float] = default_deletion_len_model):
+                 insert_len_model: dict[int, float] = default_insertion_len_model,
+                 deletion_len_model: dict[int, float] = default_deletion_len_model):
 
         # Any new mutation types will need to be instantiated in the mutation model here
         SnvModel.__init__(self,
@@ -78,7 +78,7 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         self.all_dels = []
         self.all_ins = []
 
-    def get_mutation_type(self, rng: Generator) -> variants:
+    def get_mutation_type(self, rng: Generator) -> VariantTypes:
         """
         Picks one of the mutation types at random using a weighted list from the model.
         Note that the order of mutation types is Insertion, Deletion, SNV. To update the model selection if any
@@ -122,9 +122,9 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         """
         This method generates an insertion object, based on the insertion model
 
-        :param location: The location of the variant, relative to the reference
-        :param ref: The reference for which to generate the variant
-        :param rng: The random number generator for the run
+        :param location: The location of the variant, relative to the reference.
+        :param ref: The reference for which to generate the variant.
+        :param rng: The random number generator for the run.
         :return:
         """
         # Note that insertion length model is based on the number of bases inserted. We add 1 to the length

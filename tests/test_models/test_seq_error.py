@@ -1,6 +1,7 @@
 """
 Tests for sequencing error model in models
 """
+
 import numpy as np
 
 from Bio.SeqRecord import SeqRecord
