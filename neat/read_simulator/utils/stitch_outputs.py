@@ -20,7 +20,7 @@ _LOG = logging.getLogger(__name__)
 def concat(files_to_join: List[Path], dest_file: BgzfWriter) -> None:
     if not files_to_join:
         # Nothing to do, and no error to throw
-        print(f"No files to join: {files_to_join}" )
+        _LOG.warn(f"Concat called but there are no files to join: {files_to_join}" )
         return
 
     for f in files_to_join:
