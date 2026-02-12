@@ -56,7 +56,6 @@ def write_config_file(ref_config_file, rearranged_seq_file, bacteria_name, outpu
     old_config_file_path = output_dir_path / old_config_file_name
 
     with open(ref_config_file, 'r') as ref_file, open(new_config_file_path, 'w') as new_file, open(old_config_file_path, 'w') as old_file:
-        
         for line in ref_file:
             if line.find("reference:") != -1:
                 new_file.write(f"reference: {rearranged_seq_file}\n")
@@ -99,7 +98,7 @@ def bacterial_wrapper(reference_file, bacteria_name, ref_config_file, output_dir
     for line in f:
         if line[0] != ">":
             orig_seq += line.strip()
-        elif line.find("plasmid") != -1:  # exclude plasmids from the sequence to be rearranged
+        elif line.lower().find("plasmid") != -1:  # exclude plasmids from the sequence to be rearranged
             break
         
     f.close()
