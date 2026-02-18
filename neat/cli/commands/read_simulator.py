@@ -33,7 +33,7 @@ class Command(BaseCommand):
             "-c", "--config",
             metavar="config",
             type=str,
-            required=False,
+            required=True,
             help="Path (including filename) to the configuration file for this run."
         )
 
