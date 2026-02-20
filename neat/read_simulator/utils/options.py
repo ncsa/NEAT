@@ -439,7 +439,7 @@ class Options(SimpleNamespace):
 
         if self.parallel_mode == 'size':
             _LOG.info(f'Splitting reference into chunks.')
-            _LOG.info(f'  - splitting input into size {self.size}')
+            _LOG.info(f'  - splitting input into size {self.parallel_block_size}')
         elif self.parallel_mode == 'contig':
             _LOG.info(f'Splitting input by contig.')
         if not self.cleanup_splits or self.reuse_splits:
