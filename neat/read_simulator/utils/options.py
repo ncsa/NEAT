@@ -266,7 +266,7 @@ class Options(SimpleNamespace):
 
         # Update items to config or default values
         base_options.__dict__.update(final_args)
-        base_options.set_random_seed()
+        base_options.rng = base_options.set_random_seed()
 
         # Some options checking to clean up the args dict
         base_options.check_options()
