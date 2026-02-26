@@ -125,14 +125,16 @@ def bacterial_wrapper(reference_file, bacteria_name, ref_config_file, output_dir
 
 # Stitching all outputs together - Keshav's script
 
-def concat_fq(input_files: List[Path], dest: BgzfWriter) -> None:
+def concat_fq(input_files: List[Path], dest: Path) -> None:
     
     if not input_files:
+        # Nothing to do, and no error to throw
         return
-    
-    for input_file in input_files:
-        with bgzf.BgzfReader(input_file) as in_f:
-            shutil.copyfileobj(in_f, dest)
+
+    with gzip.open(dest, 'wt') as out_f:
+        for input_file in input_files:
+            with gzip.open(input_file, 'rt') as in_f:
+                shutil.copyfileobj(in_f, out_f)
 
 def merge_bam(bams: List[Path], dest: Path, threads: int) -> None:
     
@@ -172,19 +174,19 @@ def stitch_all_outputs(files: List[Path], output_dir) -> None:
             fq2_list.append(file)
         elif "r1.fastq" in file_name or ".fastq" in suffixes:
             fq1_list.append(file)
-        elif ".vcf" in suffixes:
+        elif ".vcf" in suffixes and ".tbi" not in suffixes:
             vcf_list.append(file)
-        elif ".bam" in suffixes:
+        elif ".bam" in suffixes and ".bai" not in suffixes:
             bam_list.append(file)
 
-    dest_fq1 = bgzf.BgzfWriter(f"{output_dir}/stitched_fq1.bgzf")
+    dest_fq1 = Path(f"{output_dir}/stitched_fq1.gz")
     dest_bam = Path(f"{output_dir}/stitched.bam")
     dest_vcf = Path(f"{output_dir}/stitched.vcf")
     
     concat_fq(fq1_list, dest_fq1)
     
     if (fq2_list):
-        dest_fq2 = bgzf.BgzfWriter(f"{output_dir}/stitched_fq2.bgzf")
+        dest_fq2 = Path(f"{output_dir}/stitched_fq2.gz")
         concat_fq(fq2_list, dest_fq2)
 
     merge_bam(bam_list, dest_bam, 2)
