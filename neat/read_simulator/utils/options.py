@@ -155,7 +155,7 @@ class Options(SimpleNamespace):
         self.discard_bed: Path | None = discard_bed
         self.mutation_model: Path | None = mutation_model
         self.mutation_rate: float | None = mutation_rate
-        self.mutation_bed: str | None = mutation_bed
+        self.mutation_bed: Path | None = mutation_bed
         self.quality_offset: int = quality_offset
 
         self.paired_ended: bool = paired_ended

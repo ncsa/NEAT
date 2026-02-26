@@ -20,8 +20,9 @@ _LOG = logging.getLogger(__name__)
 def concat(files_to_join: List[Path], dest_file: gzip.GzipFile) -> None:
     if not files_to_join:
         # Nothing to do, and no error to throw
-        _LOG.warn(f"Concat called but there are no files to join: {files_to_join}" )
+        _LOG.warning(f"Concat called but there are no files to join: {files_to_join}" )
         return
+
     for f in files_to_join:
         with gzip.open(f, 'rt') as in_f:
             shutil.copyfileobj(in_f, dest_file)
@@ -37,7 +38,7 @@ def merge_vcfs(vcfs: List[Path], ofw: OutputFileWriter) -> None:
 def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int):
     merged_file = ofw.tmp_dir / "temp_merged.bam"
     intermediate_files = []
-    # Note 1000 is abritrary. May need to be a user parameter/adjustable/a function
+    # Note 1000 is arbitrary. May need to be a user parameter/adjustable/a function
     for i in range(0, len(bam_files), 500):
         temp_file = str(ofw.tmp_dir / f"temp_merged_{i}.bam")
         pysam.merge("--no-PG", "-f", temp_file, *map(str, bam_files[i:i+500]))
