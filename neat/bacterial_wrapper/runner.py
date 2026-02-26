@@ -32,8 +32,8 @@ def wrapper(seq):
 
 # Writes the newly rearranged chromosome's sequence to a new fasta file
 
-def write_fasta_file(new_seq, bacteria_name, fasta_header, output_dir_path):
-    fasta_file_name = f"wrapped_{bacteria_name}.fna"
+def write_fasta_file(new_seq, bacteria_name, fasta_header, output_dir_path, type):
+    fasta_file_name = f"{type}_{bacteria_name}.fna"
     fasta_file_path = output_dir_path / fasta_file_name
     fasta_file = open(fasta_file_path, "w")
 
@@ -48,7 +48,7 @@ def write_fasta_file(new_seq, bacteria_name, fasta_header, output_dir_path):
 # Splits the coverage in half for the reference and new config files
 # These use default values for all other parameters for NEAT
 
-def write_config_file(ref_config_file, rearranged_seq_file, bacteria_name, output_dir_path):
+def write_config_file(ref_config_file, rearranged_seq_file, orig_seq_file, bacteria_name, output_dir_path):
     new_config_file_name = f"new_{bacteria_name}_config_test.yml"
     old_config_file_name = f"{bacteria_name}_config_test.yml"
 
@@ -59,7 +59,7 @@ def write_config_file(ref_config_file, rearranged_seq_file, bacteria_name, outpu
         for line in ref_file:
             if line.find("reference:") != -1:
                 new_file.write(f"reference: {rearranged_seq_file}\n")
-                old_file.write(line)
+                old_file.write(f"reference: {orig_seq_file}\n")
             elif line.find("coverage:") != -1:
                 if line.strip() == "coverage: .":
                     new_coverage = 5.0
@@ -95,10 +95,13 @@ def bacterial_wrapper(reference_file, bacteria_name, ref_config_file, output_dir
     f = open(reference_file)
     fasta_header = f.readline().strip()
 
+    plasmids = False
+
     for line in f:
         if line[0] != ">":
             orig_seq += line.strip()
         elif line.lower().find("plasmid") != -1:  # exclude plasmids from the sequence to be rearranged
+            plasmids = True
             break
         
     f.close()
@@ -106,9 +109,13 @@ def bacterial_wrapper(reference_file, bacteria_name, ref_config_file, output_dir
     output_dir_path = Path(output_dir)
 
     rearranged_seq = wrapper(orig_seq)
-    rearranged_seq_file = write_fasta_file(rearranged_seq, bacteria_name, fasta_header, output_dir_path)
+    rearranged_seq_file = write_fasta_file(rearranged_seq, bacteria_name, fasta_header, output_dir_path, "wrapped")
+
+    orig_seq_file = reference_file
+    if plasmids:
+        orig_seq_file = write_fasta_file(orig_seq, bacteria_name, fasta_header, output_dir_path, "orig")
     
-    config_files = write_config_file(ref_config_file, rearranged_seq_file, bacteria_name, output_dir_path)
+    config_files = write_config_file(ref_config_file, rearranged_seq_file, orig_seq_file, bacteria_name, output_dir_path)
     old_config_file = config_files[0]
     new_config_file = config_files[1]
 
