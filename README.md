@@ -1,6 +1,6 @@
-# The NEAT Project v4.3.5
+# The NEAT Project v4.3.6
 
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.5. This release of NEAT 4.3.5 includes several fixes and a little bit of restructuring, including a parallel process for running `neat read-simulator`. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.5 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatibility, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X.
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.6. This release of NEAT 4.3.5 includes several fixes and a little bit of restructuring, including a parallel process for running `neat read-simulator`. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.5 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatibility, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X.
 
 ## NEAT v4.3.5
 
@@ -22,7 +22,7 @@ To cite this work, please use:
 
 ## Table of Contents
 
-* [The NEAT Project v4.3.5](#the-neat-project-v435)
+* [The NEAT Project v4.3.6](#the-neat-project-v436)
 * [NEAT v4.3.5](#neat-v435)
 * [Table of Contents](#table-of-contents)
   * [Prerequisites](#prerequisites)
