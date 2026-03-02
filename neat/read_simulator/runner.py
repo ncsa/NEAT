@@ -2,7 +2,7 @@
 Runner for generate_reads task
 """
 import logging
-import os
+import shutil
 import subprocess
 import time
 import multiprocessing as mp
@@ -239,7 +239,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             temp_file = str(options.temp_dir_path / "temp.sorted.vcf.gz")
             subprocess.run(["bcftools", "sort", "-o", temp_file, "-Ob9", str(file)])
             Path(temp_file).is_file()
-            os.rename(temp_file, str(file))
+            shutil.move(temp_file, str(file))
             _LOG.info("Indexing vcf")
             pysam.tabix_index(str(file), preset="vcf", force=force)
 

@@ -67,7 +67,7 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
     # We'll keep track of chunks by contig, to help us out later
     split_fasta_dict: dict[str, dict[tuple[int, int], Path]] = {key: {} for key in reference_index.keys()}
     for contig, seq_record in reference_index.items():
-        if options.mode == "contig":
+        if options.parallel_mode == "contig":
             stem = f"{idx:0{pad}d}__{contig}"
             fa = options.splits_dir / f"{stem}.fa.gz"
             write_fasta(contig, seq_record.seq.upper(), fa)
@@ -75,7 +75,7 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
             idx += 1
             written += 1
         else:
-            for start, subseq in chunk_record(seq_record.seq.upper(), options.size, overlap):
+            for start, subseq in chunk_record(seq_record.seq.upper(), options.parallel_block_size, overlap):
                 stem = f"{idx:0{pad}d}__{contig}"
                 fa = options.splits_dir / f"{stem}.fa.gz"
                 write_fasta(contig, subseq, fa)

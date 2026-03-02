@@ -1,6 +1,9 @@
 """Implements command line interface used by the package."""
 
 __all__ = ['Cli', 'main', 'run']
+__version__ = "4.3.6"
+__author__ = "Joshua Allen"
+__email__ = "jallen17@illinois.edu"
 
 import argparse
 import importlib
@@ -40,6 +43,11 @@ class Cli:
     def __init__(self):
         self.parser = argparse.ArgumentParser(
             prog="neat", description="Run NEAT components"
+        )
+        self.parser.add_argument(
+            "-v", "--version",
+            action="version",
+            version="%(prog)s {version}".format(version=__version__),
         )
         self.parser.add_argument(
             "--no-log",
