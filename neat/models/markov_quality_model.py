@@ -115,8 +115,6 @@ class MarkovQualityModel:
                     if total <= 0:
                         continue
 
-                    keys = [int(k) for k in next_map.keys()]
-
                     keys = []
                     probs = []
 

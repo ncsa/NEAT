@@ -45,7 +45,7 @@ def _down_bin_quality(q: int, allowed: List[int]) -> int:
 
 def read_quality_lists(
     files: Iterable[str],
-    max_reads: int,
+    max_reads: int | float,
     offset: int,
     allowed_quality_scores: Optional[Iterable[int]] = None,
 ) -> Tuple[List[List[int]], int]:
