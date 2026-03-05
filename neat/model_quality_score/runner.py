@@ -79,6 +79,7 @@ def model_qual_score_runner(
 
     if max_reads in (-1, None):
         num_records_to_process = float("inf")
+        
     else:
         num_records_to_process = max_reads
 
