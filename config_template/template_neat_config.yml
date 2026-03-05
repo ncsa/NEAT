@@ -5,23 +5,23 @@
 ## All other items can be present or not. If present and the value is set to a single
 ## period, the variable will be treated as though it had been omitted. Please do
 ## not modify this template, but instead make a copy in your working directory.
-## Run with: neat read-simulator -c <config.yml> -o <out_dir> [-p <prefix>]
+## Run with this command: neat read-simulator -c <config.yml> -o <out_dir> [-p <prefix>]
 
 # Absolute path to input reference FASTA file
 # type = string | required: yes
 reference: REQUIRED
 
-# Read length of the reads in the FASTQ output. Only used if produce_fastq = true
+# Read length of the reads in the FASTQ output. Only required if @produce_fastq is set to true
 # type = int | required: no | default = 151
 read_len: .
 
 # Average coverage for the entire genome
-# type = int | required: no | default = 10
+# type = float | required: no | default = 10.0
 coverage: .
 
-# Absolute path to file with sequencing error model or quality-score model
-# Error models are typically produced by neat model-seq-err (from FASTQ/BAM-like inputs)
-# Quality-score models can be produced by neat model-qual-score (optionally fit with --markov)
+# Absolute path to file with sequencing error model or quality-score model.
+# Error models are typically produced by neat model-seq-err (from FASTQ/BAM-like inputs), while
+# quality-score models can be produced by neat model-qual-score (optionally fit with --markov)
 # type = string | required: no | default: <NEAT_DIR>/neat/models/defaults/default_error_model.pickle.gz
 error_model: .
 
@@ -29,11 +29,12 @@ error_model: .
 # type = float | required = no | must be between 0.0 and 0.3
 avg_seq_error: .
 
-# Scale quality scores to match avg_seq_error
+# This scales the quality scores to match the desired average sequencing error rate specified by avg_seq_error
 # type: boolean | required = no | default = false
 rescale_qualities: .
 
-# PHRED quality offset (e.g., 33 for Sanger)
+# This is the factor to add to the quality scores to get the ASCII text version of the
+# score. The default follows the Sanger quality offset
 # type: int | required = no | default = 33
 quality_offset: .
 
@@ -41,7 +42,9 @@ quality_offset: .
 # type = int | required = no | default = 2
 ploidy: .
 
-# Absolute path to VCF file containing variants that will always be included
+# Absolute path to VCF file containing variants that will always be included, regardless
+# of genotype and filter. You can pre-filter your VCF for these fields before inputting it
+# if this is not the desired behavior
 # type: string | required = no
 include_vcf: .
 
@@ -49,66 +52,85 @@ include_vcf: .
 # type = string | required = no
 target_bed: .
 
+# Scalar value for coverage in regions outside the targeted BED. Example: 0.5
+# would get you roughly half the coverage as the on target areas. Default is
+# 0 coverage in off-target regions. Number should be a float in decimal
+# type: float | required = no | default = 0.00
+off_target_scalar: .
+
 # Absolute path to BED file containing reference regions that the simulation should discard
 # type = string | required = no
 discard_bed: .
 
-# Absolute path to the mutation model pickle file
-# Typically produced by neat gen-mut-model using a reference FASTA and variants VCF
-# Uses trinucleotide context and a trinucleotide transition-matrix to select sites/alleles
+# Absolute path to the mutation model pickle file. Omitting this value will cause
+# NEAT to use the default model, with some standard parameters, and generally uniform biases
 # type: string | required = no
 mutation_model: .
 
-# Average mutation rate per base pair (overrides model mutation rate, if set)
+# Average mutation rate per base pair. Overall average is 0.001, or model default.
+# Use either this value to override the mutation rate for the default or input model
 # type: float | required = no | must be between 0.0 and 0.3
 mutation_rate: .
 
-# Absolute path to a BED file with mutation rates by region
+# Absolute path to a BED file with mutation rates by region.
 # Rates must be in the third column and be of the form "mut_rate=x.xx"
-# Rates must be between 0.00 and 0.30
+# Rates must be between 0.0 and 0.3
 # type: string | required = no
 mutation_bed: .
 
-# Paired-end output mode
-# If true, you must provide either fragment_model OR (fragment_mean + fragment_st_dev)
+# Whether the output should be paired ended. For certain conditions (i.e., VCF only or
+# FASTA only), this will be ignored. If this is true, then there must be an included fragment
+# length model output from runner.py or a mean and standard deviation
+# by declaring values for @fragment_mean and @fragment_std_dev
 # type: boolean | required = no | default = false
 paired_ended: .
 
-# Absolute path to a pickle file containing the fragment length model
+# Absolute path to a pickle file containing the fragment length model.
 # Typically produced by neat model-fraglen (learned from BAM alignments)
 # type: string | required = no | default: <NEAT_DIR>/neat/models/defaults/default_fraglen_model.pickle.gz
 fragment_model: .
 
-# Mean paired-end fragment length (used only if paired_ended = true and fragment_model is not set)
-# type: float | required: no (unless paired_ended and no fragment_model)
+# Mean for the paired-end fragment length. This only applies if paired-ended is set to true.
+# This number will form the mean for the sample distribution of the fragment lengths in the simulation
+# Note: This number is REQUIRED if paired_ended is set to true, unless a fragment length model is used.
+# type: float | required: no (unless paired-ended)
 fragment_mean: .
 
-# Standard deviation of paired-end fragment length distribution
-# type: float | required: no (unless paired_ended and no fragment_model)
+# Standard deviation for the paired-end fragment length. This only applies if paired-ended is set to true.
+# This number will form the standard deviation about the mean specified above for the sample distribution
+# of the fragment lengths in the simulation
+# Note: This number is REQUIRED if paired_ended is set to true, unless a fragment length model is used.
+# type: float | required: no (unless paired-ended)
 fragment_st_dev: .
 
-# Produce golden BAM file (aligned reads)
+# Whether to produce the golden BAM file. This file will contain the reads
+# aligned with the exact region of the genome
 # type: boolean | required = no | default = false
 produce_bam: .
 
-# Produce golden VCF file (all NEAT-added variants)
+# Whether to produce a VCF file containing all the mutation errors added by NEAT
 # type: boolean | required = no | default = false
 produce_vcf: .
 
-# Produce FASTQ output (default output)
+# Whether to output the FASTQ(s) of the reads. This is the default output. NEAT
+# will produce 1 FASTQ for single-ended reads or 2 FASTQs for paired-ended reads
 # type: boolean | required = no | default = true
 produce_fastq: .
 
-# Ignore coverage bias models and force constant coverage (debugging)
+# If set to true, this will ignore statistical models and force coverage to be
+# constant across the genome. This is considered a debugging feature
 # type: boolean | required = no | default = false
 no_coverage_bias: .
 
-# RNG seed for reproducibility
+# Set an RNG seed value. Runs using identical RNG values should produce identical results
+# so things like read locations, variant positions, error positions, etc. should be the same.
+# Useful for debugging
 # type: int | required = no
 rng_seed: .
 
-# Absolute minimum number of mutations (NEAT always adds at least 1)
-# type: int | required = no | default = 0
+# Set an absolute minimum number of mutations. The program always adds at least 1 mutation.
+# Useful for very small datasets
+# type: int | required = no
 min_mutations: .
 
 # Overwrite output files if they already exist
@@ -116,24 +138,26 @@ min_mutations: .
 overwrite_output: .
 
 # How to split the input reference for parallelization
-# Note: if threads == 1, this option has no effect (treated as contig)
+# Note: If threads == 1, this option has no effect.
 # type = string | required: no | default = contig | values: contig, size
 parallel_mode: .
 
-# Target block size if parallel_mode = size (overlap = read_len * 2)
-# type = int | required: no | default = 500000 (when parallel_mode=size)
+# Target block size if by = size (overlap = read_len * 2).
+# Default is 500000 when by = size. Not used for by = contig
+# type = int | required: no | default = 500000 (when by=size)
 parallel_block_size: .
 
-# Number of worker processes/threads to run
-# type = int | required: no | default = 1
+# Maximum number of concurrent NEAT jobs (threads or hyperthreads) to run
+# type = int | required: no | default = all available
 threads: .
 
-# If true, delete splits after stitching completes
-# Set false to preserve splits in <out_dir>/splits for reuse
+# Delete the 'splits' directory after stitching completes.
+# Note if threads == 1, this option has no effect.
 # type = bool | required: no | default = true
 cleanup_splits: .
 
-# Reuse existing files in '<out_dir>/splits' and skip the split step
-# Directory must exist and contain NEAT-generated split files
-# type = bool | required: no | default = false
+# Reuse existing files in '<out_dir>/splits' and skip the split step.
+# The directory must contain NEAT-generated files and must be in the output directory within "splits"
+# Note: If threads == 1, this option has no effect.
+# type = bool | required: no | default = False
 reuse_splits: .
