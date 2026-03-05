@@ -202,7 +202,7 @@ def test_from_cli_reuse_splits_missing_dir_raises(tmp_path: _PathAlias):
 
     yml_path = tmp_path / "neat_from_cli_reuse.yml"
     yml_path.write_text(cfg, encoding="utf-8")
-
+    
     outdir = tmp_path / "out"
     outdir.mkdir(parents=True, exist_ok=True)
 
