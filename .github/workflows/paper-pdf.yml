@@ -1,10 +1,10 @@
 name: Paper PDF
+
 on:
   push:
-    paths:
-      - paper.md
-      - paper.bib
-      - .github/workflows/paper-pdf.yml
+    branches:
+      - paper
+  workflow_dispatch:
 
 jobs:
   paper:
@@ -13,20 +13,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Open Journals PDF Generator
-        uses: openjournals/openjournals-draft-action@v.1.0
+        uses: openjournals/openjournals-draft-action@v1
         with:
           journal: joss
-          # This is the path to the paper within the repo
           paper-path: paper.md
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: paper
-          # This is the output path where Pandoc will write the compiled
-          # PDF (should be the same directory as the input paper.md)
           path: paper.pdf
 
       - name: Debug list files
         run: ls -R
-      # Double-check to find the actual path of the generated PDF
