@@ -1,12 +1,12 @@
-# The NEAT Project v4.3.5
+# The NEAT Project v4.3.6
 
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.5. This release of NEAT 4.3.5 includes several fixes and a little bit of restructuring, including a parallel process for running `neat read-simulator`. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.5 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatibility, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X.
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.6. This release of NEAT 4.3.6 includes several fixes and a little bit of restructuring, including a parallel process for running `neat read-simulator`. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.6 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatibility, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X.
 
-## NEAT v4.3.5
+## NEAT v4.3.6
 
-NEAT 4.3.5 marked the officially 'complete' version of NEAT 4.3, implementing parallelization. To add parallelization to your run, simply add the `threads` parameter in your configuration file and run `read-simulator` as normal. NEAT will take care of the rest. You can customize the parameters in your configuration file, as needed.
+NEAT 4.3.6 marked the officially 'complete' version of NEAT 4.3, implementing parallelization. To add parallelization to your run, simply add the `threads` parameter in your configuration file and run `read-simulator` as normal. NEAT will take care of the rest. You can customize the parameters in your configuration file, as needed.
 
-We have completed major revisions on NEAT since 3.4 and consider NEAT 4.3.5 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
+We have completed major revisions on NEAT since 3.4 and consider NEAT 4.3.6 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 
 We've deprecated NEAT's command-line interface options for the most part, opting to simplify things with configuration files. If you require the CLI for legacy purposes, NEAT 3.4 was our last release to be fully supported via command-line interface. Please convert your CLI commands to the corresponding configuration file for future runs.
 
@@ -22,8 +22,8 @@ To cite this work, please use:
 
 ## Table of Contents
 
-* [The NEAT Project v4.3.5](#the-neat-project-v435)
-* [NEAT v4.3.5](#neat-v435)
+* [The NEAT Project v4.3.6](#the-neat-project-v435)
+* [NEAT v4.3.6](#neat-v435)
 * [Table of Contents](#table-of-contents)
   * [Prerequisites](#prerequisites)
   * [Installation](#installation)
@@ -194,7 +194,7 @@ More parameters are below:
 | `target_bed`        | Full path to list of regions in BED format to target. All areas outside these regions will have coverage of 0.                                                                                                |
 | `discard_bed`       | Full path to a list of regions to discard, in BED format.                                                                                                                                                     |
 | `mutation_rate`     | Desired rate of mutation for the dataset. Float between 0.0 and 0.3 (default is determined by the mutation model).                                                                                            |
-| `mutation_bed`      | Full path to a list of regions with a column describing the mutation rate of that region, as a float with values between 0 and 0.3. The mutation rate must be in the third column as, e.g., `mut_rate`=0.00.  |
+| `mutation_bed`      | Full path to a list of regions with a column describing the mutation rate of that region, as a float with values between 0 and 0.3. The mutation rate must be in the third column (e.g., `mut_rate`=0.00).    |
 | `rng_seed`          | Manually enter a seed for the random number generator. Used for repeating runs. Must be an integer.                                                                                                           |
 | `min_mutations`     | Set the minimum number of mutations that NEAT should add, per contig. Default is 0. We recommend setting this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.   |
 | `threads`           | Number of threads to use. More than 1 will use multi-threading to speed up processing.                                                                                                                        |
@@ -205,23 +205,24 @@ More parameters are below:
 
 The command line options for NEAT are as follows:
 
-Universal options can be applied to any subfunction. The commands should come before the function name (e.g., neat --log-level DEBUG read-simulator ...), except -h or --help, which can appear anywhere in the command.
-| Universal Options   | Description                          |
-|---------------------|--------------------------------------|
-| -h, --help          | Displays usage information           |
-| --no-log            | Turn off log file creation           |
-| --log-name LOG_NAME | Custom name for log file, can be a full path (default is current working directory with a name starting with a timestamp)|
-| --log-level VALUE   | VALUE must be one of [DEBUG, INFO, WARN, WARNING, ERROR] - sets level of log to display |
-| --log-detail VALUE   | VALUE must be one of [LOW, MEDIUM, HIGH] - how much info to write for each log record |
-| --silent-mode       | Writes logs, but suppresses stdout messages |
+Universal options can be applied to any subfunction. The commands should come before the function name (e.g., `neat --log-level DEBUG read-simulator` ...), except `-h` or `--help`, which can appear anywhere in the command.
 
-`read-simulator` command line options
-| Option              | Description                         |
+| Universal Options       | Description                          |
+|-------------------------|--------------------------------------|
+| `-h`, `--help`          | Displays usage information           |
+| `--no-log`              | Turn off log file creation           |
+| `--log-name` `LOG_NAME` | Custom name for log file, can be a full path (default is current working directory with a name starting with a timestamp) |
+| `--log-level` `VALUE`   | `VALUE` must be one of [`DEBUG`, `INFO`, `WARN`, `WARNING`, `ERROR`] - sets level of log to display |
+| `--log-detail` `VALUE`  | `VALUE` must be one of [`LOW`, `MEDIUM`, `HIGH`] - how much info to write for each log record |
+| `--silent-mode`         | Writes logs, but suppresses stdout messages |
+
+`read-simulator` command line options:
+
+| Option | Description |
 |---------------------|-------------------------------------|
-| -c VALUE, --config VALUE | The VALUE should be the name of the config file to use for this run |
-| -o OUTPUT_DIR, --output_dir OUTPUT_DIR | The path to the directory to write the output files |
-| -p PREFIX, --prefix String | The prefix for file names |
-
+| `-c` `VALUE`, `--config` `VALUE` | The `VALUE` should be the name of the config file to use for this run |
+| `-o` `OUTPUT_DIR`, `--output_dir` `OUTPUT_DIR` | The path to the directory to write the output files |
+| `-p` `PREFIX`, `--prefix` `String` | The prefix for file names |
 ## Functionality
 
 ![Diagram describing the way that genReads simulates datasets](docs/NEATNEAT.png "Diagram describing the way that gen_reads simulates datasets")
@@ -242,11 +243,11 @@ Features:
 - Introduces sequencing substitution errors using either the default model or empirically learned in `utilities`
 - Output a VCF file with the 'golden' set of true positive variants. These can be compared to bioinformatics workflow output (includes coverage and allele balance information)
 - Output a BAM file with the 'golden' set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
-- Create paired tumour/normal datasets using characteristics learned from real tumour data
+- Create paired tumor/normal datasets using characteristics learned from real tumour data
 
 ### Estimated runtimes
 
-To give users a sense of how long `neat read-simulator` runs may take, we benchmarked NEAT 4.3.5 on several reference genomes. All runs were paired-end, with read length of 150 bp, coverage of 10, fragment mean of 300 bp, and fragment standard deviation of 50 bp. Runtimes are reported as the average across three unique runs (`Avg. time (ms)`) and the corresponding runtime in minutes. Cells marked with N/A indicate that NEAT was not able to run to completion.
+To give users a sense of how long `neat read-simulator` runs may take, we benchmarked NEAT 4.3.6 on several reference genomes. All runs were paired-end, with read length of 150 base pairs, coverage of 10, fragment mean of 300 base pairs, and fragment standard deviation of 50 base pairs. Runtimes are reported as the average across three unique runs (`Avg. time (ms)`) and the corresponding runtime in minutes. Cells marked with N/A indicate that NEAT was not able to run to completion.
 
 Benchmarks were run on a System76 Meerkat with a 13th Gen Intel Core i3-1315U (8 logical cores, up to 4.50 GHz) and 16 GiB RAM, using a 512 GB SSD and Ubuntu 24.04.3 LTS (Linux kernel 6.14). Actual runtimes will vary depending on your hardware.
 
@@ -321,7 +322,7 @@ neat read-simulator                 \
 ```
 
 ### Targeted region simulation
-Simulate a targeted region of a genome (e.g., an exome) with a targeted bed:
+Simulate a targeted region of a genome (e.g., an exome) with a targeted BED:
 
 ```yml
 [contents of neat_config.yml]
@@ -421,7 +422,7 @@ Several scripts are distributed with `gen_reads` that are used to generate the m
 
 ### `neat model-fraglen`
 
-Computes empirical fragment length distribution from sample paired-end data. NEAT uses the template length (tlen) attribute calculated from paired-ended alignments to generate summary statistics for fragment lengths, which can be input into NEAT.
+Computes empirical fragment length distribution from sample paired-end data. NEAT uses the template length (`tlen`) attribute calculated from paired-ended alignments to generate summary statistics for fragment lengths, which can be input into NEAT.
 
 ```bash
     neat model-fraglen    \
@@ -429,7 +430,7 @@ Computes empirical fragment length distribution from sample paired-end data. NEA
         -o /path/to/prefix
 ```
 
-and creates `fraglen.pickle.gz` model in working directory.
+The model `fraglen.pickle.gz` will be stored in the working directory by default.
 
 ### `neat gen-mut-model`
 
@@ -440,21 +441,21 @@ neat gen-mut-model reference.fa input_variants.vcf   \
         -o /home/me/models
 ```
 
-Trinucleotides are identified in the reference genome and the variant file. The mutation model uses trinucleotide context and selects mutation sites and alternate alleles with a transition matrix. Frequencies of each trinucleotide transition are calculated and output as a pickle file. Mutations are simulated to reflect the same context-dependent biases as the training data. In NEAT 4.3.5, we have only made minor optimizations to improve the speed, and the underlying statistical models are similar to those described in the original NEAT manuscript.
+Trinucleotides are identified in the reference genome and the variant file. The mutation model uses trinucleotide context and selects mutation sites and alternate alleles with a transition matrix. Frequencies of each trinucleotide transition are calculated and output as a pickle file. Mutations are simulated to reflect the same context-dependent biases as the training data. In NEAT 4.3.6, we have only made minor optimizations to improve the speed, and the underlying statistical models are similar to those described in the original NEAT manuscript.
 
-| Option          | Description                                                                   |
-|-----------------|-------------------------------------------------------------------------------|
-| -o <str>        | Path to output file and prefix; defaults to "neat_sim" in current working dir |
-| --bed           | Flag that indicates you are using a bed-restricted VCF and FASTA (see below)  |
-| --save-trinuc   | Save trinucleotide counts for reference                                       |
-| --human-sample  | Use to skip unnumbered scaffolds in human references                          |
-| --skip-common   | Do not save common snps or high mutation areas                                |
+| Option          | Description                                                                           |
+|-----------------|---------------------------------------------------------------------------------------|
+| `-o` <str>        | Path to output file and prefix; defaults to "`neat_sim`" in current working directory |
+| `--bed`           | Flag that indicates you are using a BED-restricted VCF and FASTA (see below)          |
+| `--save-trinuc`   | Save trinucleotide counts for reference                                               |
+| `--human-sample`  | Use to skip unnumbered scaffolds in human references                                  |
+| `--skip-common`   | Do not save common SNPs or high mutation areas                                        |
 
 ### `neat model-seq-err`
 
 Generates sequencing error model for NEAT.
 
-The sequencing error model uses real FASTQ/BAM data, summarizing position-specific substitution, insertion, and deletion frequencies. These are stored as discrete transition matrices that are sampled during read generation to reproduce empirical error profiles. In this way, it is similar to a simple version of `gen-mut-model`.
+The sequencing error model is stored as a pickled object, and during read generation, it introduces substitution, insertion, and deletion errors. Substitution alleles are sampled from a base-substitution transition matrix, while indel lengths are sampled from indel length distributions. The current `model-seq-err` utility estimates quality-score statistics and an overall average error rate from empirical FASTQ data (including FASTQ data derived from BAM files), and it packages these with the error model for simulation.
 
 This script needs revision to improve the quality-score model and to include code to learn sequencing errors from pileup data.
 
@@ -510,7 +511,7 @@ Finally, `-o` is the output directory for the model file and `-p` is the prefix 
 
 ### `neat vcf_compare`
 
-Tool for comparing VCF files (Not yet implemented in NEAT 4.3.5).
+Tool for comparing VCF files (Not yet implemented in NEAT 4.3.6).
 
 ```bash
 neat vcf_compare
