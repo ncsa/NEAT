@@ -8,10 +8,10 @@ tags:
   - simulation
 
 authors:
-  - name: Joshua M. Allen
+  - name: Joshua M. Allen*
     equal-contrib: true
     affiliation: 1
-  - name: Keshav R. Gandhi
+  - name: Keshav R. Gandhi*,†
     orcid: 0009-0000-1718-1862
     email: krg3@uic.edu
     equal-contrib: true
@@ -21,7 +21,7 @@ authors:
     affiliation: 1
   - name: Yash Wasnik
     affiliation: 3    
-  - name: Christina E. Fliege
+  - name: Christina E. Fliege†
     affiliation: 1
     email: cfliege2@illinois.edu
     corresponding: true
@@ -41,7 +41,10 @@ date: 5 March 2026
 bibliography: paper.bib
 ---
 
-J. M. A. and K. R. G. contributed equally to this work.
+<br>
+<br>
+
+**Denotes equal contribution. †Corresponding authors.*
 
 # Summary
 
@@ -135,6 +138,8 @@ The rise of single-cell DNA sequencing has also impacted read simulators. Single
 Within this landscape, NEAT is notable for integrating ground-truth BAM and VCF outputs suitable for systematic benchmarking pipelines and combining user-trainable mutation and sequencing models, supporting primarily short-read error profiles via custom models [@Alosaimi:2020; @Schmeing:2021; @Stephens:2016; @Milhaven:2023]. Uses of NEAT continue to be featured—from assisting benchmarks in the sequencing of the human Y chromosome [@Rhie:2023] to evaluating the performance of other bioinformatics tools [@Lefouili:2022; @Zhao:2020]. NEAT has supported benchmarking and method development across a range of bioinformatics tasks, including optimization of high-throughput variant-calling workflows [@Ahmed:2019; @Kendig:2019], feasibility studies of exome sequencing [@RuizSchultz:2021], pan-genome mapping [@Jandrasits:2019], Bayesian approaches for resolving ambiguously mapped reads [@Shah:2021], and ultra-sensitive multi-sample variant calling [@Delhomme:2020].
 
 The updates described here (NEAT 4.3) focus on improving NEAT’s capabilities so that it remains a practical tool for future work in the field alongside other simulators. The source code for both original and updated versions of NEAT is freely available on GitHub [@Stephens:2016].
+
+\newpage
 
 # Acknowledgements
 
