@@ -112,7 +112,7 @@ def read_quality_lists(
                 if allowed_sorted is not None:
                     qlist = [_down_bin_quality(q, allowed_sorted) for q in qlist]
 
-                qualities.append(quality_scores)
+                qualities.append(qlist)
                 reads_read += 1
 
     return qualities, read_length
@@ -126,8 +126,6 @@ def compute_initial_distribution(qualities: Iterable[List[int]]) -> Dict[int, fl
     for qlist in qualities:
         if qlist:
             counts[int(qlist[0])] += 1.0
-
-        counts[qlist[0]] += 1.0
 
     return dict(counts)
 

@@ -116,7 +116,14 @@ class MarkovQualityModel:
                         continue
 
                     keys = [int(k) for k in next_map.keys()]
-                    probs = [float(next_map[k]) / total for k in next_map.keys()]
+
+                    keys = []
+                    probs = []
+
+                    for qn, c in next_map.items():
+                        keys.append(int(qn))
+                        probs.append(float(c) / total)
+
                     cache_vals[int(q_prev)] = np.asarray(keys, dtype=int)
                     cache_probs[int(q_prev)] = np.asarray(probs, dtype=float)
 
@@ -157,6 +164,8 @@ class MarkovQualityModel:
 
         If transitions are not provided, use an empirical version of the model.
         """
+
+        _ = model_read_length
 
         if length <= 0:
             return np.zeros(0, dtype=int)
