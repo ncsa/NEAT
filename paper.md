@@ -41,6 +41,8 @@ date: 5 March 2026
 bibliography: paper.bib
 ---
 
+J. M. A. and K. R. G. contributed equally to this work.
+
 # Summary
 
 While the field of genomics has advanced significantly with the advent of high-throughput sequencing technologies, challenges related to the availability, complexity, and variability of this data can introduce difficulty to the development and validation of computational tools. Simulated short-read sequencing datasets provide researchers a method to obtain reproducible, verified data to test algorithms and benchmark software. Simulations also avoid the limitations of working with real data, including the cost of genomic sequencing, time to process sequencing data, accessibility of data, and protection of privacy for human datasets. Ideally, these datasets mimic the properties of real sequencing datasets. From introducing specific patterns of sequencing errors to modeling localized regions of mutations, realistic datasets are necessary to evaluate the accuracy and robustness of downstream alignment, variant-calling, and analysis pipelines. Sequencing parameters such as guanine-cytosine (GC) content, repeat structure, and genome complexity vary across species, and it is important for simulated reads to reflect these species-specific characteristics. The NExt-generation sequencing Analysis Toolkit (NEAT) is an open-source Python package that creates such simulated sequencing datasets and was originally released as NEAT 2.0 in 2016. Here, we describe ongoing updates released collectively as NEAT 4.3, including new features and increased speed, accuracy, and usability.
