@@ -13,6 +13,7 @@ authors:
     affiliation: 1
   - name: Keshav R. Gandhi
     orcid: 0009-0000-1718-1862
+    email: krg3@uic.edu
     equal-contrib: true
     corresponding: true
     affiliation: "1, 2"
@@ -22,13 +23,14 @@ authors:
     affiliation: 3    
   - name: Christina E. Fliege
     affiliation: 1
+    email: cfliege2@illinois.edu
     corresponding: true
 
 affiliations:
  - name: National Center for Supercomputing Applications, Genomics Group, Urbana, IL, USA, 61801, 
    index: 1
    
- - name: University of Illinois at Chicago, Chicago, IL, USA, 60607
+ - name: University of Illinois at Chicago, Chicago, IL, USA, 60607,
    index: 2
 
  - name: Blue Health Intelligence, Chicago, United States, 60611
@@ -51,8 +53,6 @@ NEAT is designed to simulate short reads. NEAT is adaptable to different sequenc
 
 After the original release of NEAT 2.0, most scripts have undergone significant ongoing changes since 2020. Upgrading to Python 3 brought NEAT 4.3 up to modern coding standards and allowed it to use standard Python libraries in order to streamline the code and improve its maintainability. The toolkit is optimized for both speed and accuracy, and new features have been implemented. A summary of algorithmic changes is provided in **Table 1**, and a summary of updates to NEAT’s software robustness and user experience is provided in **Table 2**.
 
-\newpage
-
 # Tables
 
 ### Table 1. Algorithmic Improvements and Methodological Changes
@@ -62,40 +62,63 @@ After the original release of NEAT 2.0, most scripts have undergone significant 
 +===+=======================+================================================================+======================================================+
 | 1 | BAM File Generation   | File generation was tightly integrated with all NEAT processes | BAM creation isolated from core functions            |
 +---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
 | 2 | GC Bias Computation   | Used a custom script for GC bias calculation                   | Bias can be accounted for with BED targeting         |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
 +---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
 | 3 | Ploidy Simulation     | Limited to diploid organisms in practice                       | Supports polyploidy                                  |
 +---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
 | 4 | Read Generation       | Sliding-window approach to generate reads                      | A new form of coordinate-based read selection        |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
 +---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
 | 5 | Read Quality Modeling | Markov-based model                                             | Revised binning method (optional Markov-based model) |
 +---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
 | 6 | Variant Handling      | Limited introduction of new variant types                      | A modular design with generic variant handling       |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
 +---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
 | 7 | Variant Insertion     | Issues with inserted variants (loss of genotype data)          | Preserves genotype data in the final VCF file        |
 +---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
 
 In NEAT, simulated reads can be accompanied by ground-truth alignment and variant outputs to support benchmarking pipelines. BAM file generation (**1**) produces aligned reads in a standard format for mapping and downstream processing. In NEAT 2.0, BAM creation was tightly integrated with all functions, which increased runtimes for users who only simulated FASTQ files. This update isolates BAM creation from the core simulation, improving modularity when alignment is not needed. GC bias computation (**2**) models the tendency of sequencing instruments to produce uneven coverage as a function of a local genomic region’s GC content, often underrepresenting regions of particularly high or low GC levels [@Benjamini:2012; @Ross:2013]. To streamline the codebase, NEAT 4.3 removes the GC-bias module. Instead, NEAT allows users to control coverage patterns via Browser Extensible Data (BED) region targeting. By default, this approach sets coverage outside targeted intervals to zero, enabling users to directly specify where reads are sampled. Ploidy simulation (**3**) mediates how many chromosomal copies are present in simulated sequencing data. It has been extended to improve the simulation of tumor genomes and polyploid organisms, such as plants, as ploidy inputs greater than two are now supported. Read generation (**4**) determines how read start positions are selected across the genome to simulate realistic coverage. Previously, NEAT 2.0's read generation algorithm introduced gaps (~50 base pairs) due to its sliding-window approach. The updated coordinate-based selection eliminates these gaps. Read quality modeling (**5**) assigns quality scores to each base, impacting downstream error profiles and variant calling. A revised binning method was implemented (alongside an optional Markov model that uses per-position transition matrices) to account for a slight tapering effect that reduces sequencing quality scores at a simulated sequence's edges. Variant handling (**6**) defines how different mutation classes are represented. This logic has been modularized to separate insertions from deletions and facilitate the future handling of structural and copy-number variants. Finally, variant insertion (**7**) handles how known mutations are integrated into simulated genomes and reported in VCF files. NEAT offers an option for a user to input a VCF file of variants to be incorporated into the simulated reads. NEAT 4.3 now preserves data in the per-sample genotype and allele-frequency VCF fields in the final simulated VCF files.
 
-\newpage
-
 ### Table 2. Improvements to Software Robustness and User Experience
 
-+---+-------------------------+--------------------------------------------+--------------------------------------------------------------------------+
-| # | Feature Name            | Prior Implementation (2.0)                 | Updated Implementation (4.3)                                             |
-+===+=========================+============================================+==========================================================================+
-| 1 | Automated Testing       | No formal testing framework                | Implemented continuous integration with GitHub-based automated tests     |
-+---+-------------------------+--------------------------------------------+--------------------------------------------------------------------------+
-| 2 | Configuration Files     | Required explicit command-line flags       | Introduced structured configuration files                                |
-+---+-------------------------+--------------------------------------------+--------------------------------------------------------------------------+
-| 3 | Detailed Logging        | Minimal error logging                      | Extensive logs to recreate runs and provide descriptions of errors       |
-+---+-------------------------+--------------------------------------------+--------------------------------------------------------------------------+
-| 4 | Friendly Installation   | Not installable as a package               | Easy installation via Bioconda or Poetry                                 |
-+---+-------------------------+--------------------------------------------+--------------------------------------------------------------------------+
-| 5 | Parallelization         | Single-threaded only                       | Multi-threaded runs are now possible                                     |
-+---+-------------------------+--------------------------------------------+--------------------------------------------------------------------------+
-| 6 | Refactored Unit Testing | Not originally present                     | Rewritten with testable, discrete functions                              |
-+---+-------------------------+--------------------------------------------+--------------------------------------------------------------------------+
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+| # | Feature Name          | Prior Implementation (2.0)                                     | Updated Implementation (4.3)                         |
++===+=======================+================================================================+======================================================+
+| 1 | Automated Testing     | No formal testing framework                                    | Implemented continuous integration with GitHub-based |
+|   |                       |                                                                | automated tests                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+| 2 | Configuration Files   | Required explicit command-line flags                           | Introduced structured configuration files            |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+| 3 | Detailed Logging      | Minimal error logging                                          | Extensive logs to recreate runs and provide          |
+|   |                       |                                                                | descriptions of errors                               |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+| 4 | Friendly Installation | Not installable as a package                                   | Easy installation via Bioconda or Poetry             |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+| 5 | Parallelization       | Single-threaded only                                           | Multi-threaded runs are now possible                 |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+|   |                       |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
+| 6 | Refactored Unit       | Not originally present                                         | Rewritten with testable, discrete functions          |
+|   | Testing               |                                                                |                                                      |
++---+-----------------------+----------------------------------------------------------------+------------------------------------------------------+
 
 Our new continuous integration pipeline (**1**) detects bugs early, streamlining development and enhancing error detection (e.g., handling of multiple genomic file formats as inputs and outputs). Configuration files in NEAT 4.3 (**2**), detailed error logging (**3**), and package installation (**4**) facilitate user friendliness and portability. NEAT 4.3's read simulator is also parallelized (**5**), promoting faster runtimes and ease of use. NEAT 4.3 features testable, discrete functions (**6**) that allow users to debug more easily. Documentation of these improvements, alongside benchmarks of parallelization-related performance speedups, is maintained as part of the project’s online repository and updated regularly. Quality-of-life development continues into the present.
 

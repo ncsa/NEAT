@@ -89,7 +89,7 @@ A quick form of installation uses `bioconda`. You must run these commands inside
 (neat) $ neat --help # tests that NEAT has installed correctly
 ```
 
-Alternatively, instead of the `bioconda` method, you can use the `poetry` module in build a wheel file, which can then be `pip` installed.
+Alternatively, instead of the `bioconda` method, you can use the `poetry` module in build a wheel file, which can then be `pip` installed. This is the preferred form of installation.
 
 Once `conda` is installed, the following command can be run for easy setup. 
 In the NEAT repository, at the base level is the `environment.yml` file you will need. Change directories into the NEAT repository
