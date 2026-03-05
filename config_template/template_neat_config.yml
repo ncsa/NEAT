@@ -151,8 +151,8 @@ parallel_block_size: .
 # type = int | required: no | default = all available
 threads: .
 
-# Delete the 'splits' directory after stitching completes.
-# Note if threads == 1, this option has no effect.
+# Delete the 'splits' directory after stitching completes
+# Note: If threads == 1, this option has no effect.
 # type = bool | required: no | default = true
 cleanup_splits: .
 
