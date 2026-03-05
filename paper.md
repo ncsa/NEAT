@@ -8,10 +8,10 @@ tags:
   - simulation
 
 authors:
-  - name: Joshua M. Allen\textsuperscript{*}
+  - name: Joshua M. Allen\textsuperscript{* }
     equal-contrib: true
     affiliation: 1
-  - name: Keshav R. Gandhi\textsuperscript{*,\textdagger}
+  - name: Keshav R. Gandhi\textsuperscript{* \textdagger }
     orcid: 0009-0000-1718-1862
     email: krg3@uic.edu
     equal-contrib: true
@@ -21,7 +21,7 @@ authors:
     affiliation: 1
   - name: Yash Wasnik
     affiliation: 3    
-  - name: Christina E. Fliege\textsuperscript{\textdagger}
+  - name: Christina E. Fliege\textsuperscript{\textdagger }
     affiliation: 1
     email: cfliege2@illinois.edu
     corresponding: true
@@ -42,7 +42,7 @@ bibliography: paper.bib
 ---
 
 \begin{center}
-\footnotesize \textsuperscript{*}\textit{Denotes equal contribution.} \textsuperscript{\textdagger}\textit{Corresponding authors.}
+\footnotesize \textsuperscript{*}\textit{Denotes equal contribution} \textsuperscript{\textdagger}\textit{Corresponding authors}
 \end{center}
 \vspace{0.75em}
 
