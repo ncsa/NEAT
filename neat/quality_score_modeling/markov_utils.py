@@ -1,17 +1,18 @@
 """
-Utility functions for building an empirical quality score model.
+Utility functions for building a position-specific Markov quality score model.
 
 The functions in this module extract per-read quality scores from FASTQ files
-and compute the statistics required by the ``MarkovQualityModel``.
+and compute the information required by the ``MarkovQualityModel``.
 """
 
 import logging
+from bisect import bisect_right
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
-from ..model_sequencing_error.utils import convert_quality_string
 from ..common import open_input
+from ..model_sequencing_error.utils import convert_quality_string
 
 _LOG = logging.getLogger(__name__)
 
@@ -19,37 +20,47 @@ __all__ = [
     "read_quality_lists",
     "compute_initial_distribution",
     "compute_position_distributions",
+    "compute_transition_distributions",
     "build_markov_model",
 ]
+
+
+def _down_bin_quality(q: int, allowed: List[int]) -> int:
+    """
+    Map q to the greatest allowed value <= q (down-binning).
+    If q is below the smallest allowed, map to allowed[0].
+    """
+
+    if not allowed:
+        return int(q)
+
+    q = int(q)
+    i = bisect_right(allowed, q) - 1
+
+    if i < 0:
+        return int(allowed[0])
+
+    return int(allowed[i])
 
 
 def read_quality_lists(
     files: Iterable[str],
     max_reads: int,
     offset: int,
+    allowed_quality_scores: Optional[Iterable[int]] = None,
 ) -> Tuple[List[List[int]], int]:
     """Read per-read quality scores from one or more FASTQ files.
 
-    Parameters
-    ----------
-    files:
-        An iterable of FASTQ filenames. Only the first ``max_reads`` reads
-        will be consumed from each file. If a file contains fewer than
-        ``max_reads`` reads, the entire file is processed.
-    max_reads:
-        Maximum number of reads per file to consume. A value of ``-1``
-        or ``float('inf')`` indicates that all reads in the file should be
-        processed.
-    offset:
-        Numeric quality score offset (usually 33 for Sanger encoding).
-
-    Returns
-    -------
-    Tuple[List[List[int]], int]
-        A tuple containing the list of quality score lists and the read
-        length inferred from the first record. If no reads are found this
-        function returns an empty list and zero.
+    Returns (qualities, read_length). If no reads are found, returns ([], 0).
     """
+
+    allowed_sorted: Optional[List[int]] = None
+
+    if allowed_quality_scores is not None:
+        allowed_sorted = sorted({int(x) for x in allowed_quality_scores})
+
+        if not allowed_sorted:
+            allowed_sorted = None
 
     qualities: List[List[int]] = []
     read_length = 0
@@ -71,32 +82,35 @@ def read_quality_lists(
 
             while reads_read < reads_to_parse:
 
-                # FASTQ format: four lines per record (header, sequence, plus, quality)
+                # FASTQ format: four lines per record
                 header = fq_in.readline()
 
                 if not header:
                     break  # end of file
 
-                seq = fq_in.readline()
-                plus = fq_in.readline()
+                _ = fq_in.readline()  # seq
+                _ = fq_in.readline()  # plus
                 qual = fq_in.readline()
 
                 if not qual:
-                    break  # truncated file
+                    break
 
-                quality_scores = convert_quality_string(qual.strip(), offset)
+                qlist = convert_quality_string(qual.strip(), offset)
 
                 if not read_length:
-                    read_length = len(quality_scores)
+                    read_length = len(qlist)
 
                 # Skip reads that do not match the inferred read length
-                if len(quality_scores) != read_length:
+                if len(qlist) != read_length:
                     _LOG.debug(
                         "Skipping record of length %d (expected %d)",
-                        len(quality_scores),
+                        len(qlist),
                         read_length,
                     )
                     continue
+
+                if allowed_sorted is not None:
+                    qlist = [_down_bin_quality(q, allowed_sorted) for q in qlist]
 
                 qualities.append(quality_scores)
                 reads_read += 1
@@ -105,26 +119,13 @@ def read_quality_lists(
 
 
 def compute_initial_distribution(qualities: Iterable[List[int]]) -> Dict[int, float]:
-    """Compute the empirical distribution of first quality scores.
-
-    Parameters
-    ----------
-    qualities:
-        An iterable of quality score lists. The first element of each list
-        will be used to populate the distribution. If a list is empty, it
-        contributes nothing.
-
-    Returns
-    -------
-    Dict[int, float]
-        A dictionary mapping quality scores to counts.
-    """
+    """Counts of Q at position 0."""
 
     counts: Dict[int, float] = defaultdict(float)
 
     for qlist in qualities:
-        if not qlist:
-            continue
+        if qlist:
+            counts[int(qlist[0])] += 1.0
 
         counts[qlist[0]] += 1.0
 
@@ -135,30 +136,12 @@ def compute_position_distributions(
     qualities: Iterable[List[int]],
     read_length: int,
 ) -> List[Dict[int, float]]:
-    """Compute per-position empirical distributions of quality scores.
-
-    Parameters
-    ----------
-    qualities:
-        An iterable of quality score lists. All lists are expected to have
-        length ``read_length``. Any that do not are ignored.
-    read_length:
-        Length of reads used for training.
-
-    Returns
-    -------
-    List[Dict[int, float]]
-        A list of length ``read_length``. Element ``i`` is a dictionary
-        mapping quality scores to counts at position ``i``.
-    """
+    """Counts of Q at position i."""
 
     if read_length <= 0:
         return []
 
-    # One histogram per position
-    histograms: List[Dict[int, float]] = [
-        defaultdict(float) for _ in range(read_length)
-    ]
+    histograms: List[Dict[int, float]] = [defaultdict(float) for _ in range(read_length)]
 
     for qlist in qualities:
 
@@ -168,59 +151,86 @@ def compute_position_distributions(
         for i, q in enumerate(qlist):
             histograms[i][int(q)] += 1.0
 
-    # Convert default dicts to plain dicts
     return [dict(h) for h in histograms]
+
+
+def compute_transition_distributions(
+        qualities: Iterable[List[int]],
+        read_length: int,
+) -> List[Dict[int, Dict[int, float]]]:
+    """
+    Transition counts per position i (0..read_length-2):
+      trans[i][q_prev][q_next] += 1
+    """
+
+    if read_length <= 1:
+        return []
+
+    trans: List[Dict[int, Dict[int, float]]] = [
+        defaultdict(lambda: defaultdict(float)) for _ in range(read_length - 1)
+    ]
+
+    for qlist in qualities:
+
+        if len(qlist) != read_length:
+            continue
+
+        for i in range(read_length - 1):
+            q_prev = int(qlist[i])
+            q_next = int(qlist[i + 1])
+            trans[i][q_prev][q_next] += 1.0
+
+    # Convert nested defaultdicts to plain dicts
+    out: List[Dict[int, Dict[int, float]]] = []
+
+    for i in range(read_length - 1):
+
+        pos_dict: Dict[int, Dict[int, float]] = {}
+
+        for q_prev, nexts in trans[i].items():
+            pos_dict[int(q_prev)] = {int(qn): float(c) for qn, c in nexts.items()}
+
+        out.append(pos_dict)
+
+    return out
 
 
 def build_markov_model(
     files: Iterable[str],
     max_reads: int,
     offset: int,
-) -> Tuple[Dict[int, float], List[Dict[int, float]], int, int]:
-    """Build distributions and max quality for the empirical quality model.
+    allowed_quality_scores: Optional[Iterable[int]] = None,
+) -> Tuple[
+    Dict[int, float],
+    List[Dict[int, float]],
+    List[Dict[int, Dict[int, float]]],
+    int,
+    int,
+]:
+    """Wrapper to create the Markov model."""
 
-    This is a convenience wrapper around :func:`read_quality_lists`,
-    :func:`compute_initial_distribution`, and
-    :func:`compute_position_distributions`. It returns the empirical
-    distributions and the maximum observed quality, along with the read
-    length used for training.
-
-    Parameters
-    ----------
-    files:
-        An iterable of FASTQ filenames.
-    max_reads:
-        Maximum number of reads per file to consume. ``-1`` or
-        ``float('inf')`` indicates that all reads should be processed.
-    offset:
-        Numeric quality score offset (usually 33 for Sanger encoding).
-
-    Returns
-    -------
-    Tuple[Dict[int, float], List[Dict[int, float]], int, int]
-        A tuple ``(initial_distribution, position_distributions,
-        max_quality, read_length)``. Distributions are returned as raw
-        counts; the caller is responsible for normalisation.
-    """
-
-    qualities, read_length = read_quality_lists(files, max_reads, offset)
+    qualities, read_length = read_quality_lists(
+        files, max_reads, offset, allowed_quality_scores=allowed_quality_scores
+    )
 
     if not qualities:
         raise ValueError("No quality scores could be read from the input files.")
 
     init_dist = compute_initial_distribution(qualities)
     pos_dists = compute_position_distributions(qualities, read_length)
+    trans_dists = compute_transition_distributions(qualities, read_length)
 
-    # Determine maximum observed quality
+    # Determine maximum quality (post-binning, if applied)
     max_quality = 0
-
     for qlist in qualities:
-        if not qlist:
-            continue
+        if qlist:
+            max_quality = max(max_quality, max(qlist))
 
-        mq = max(qlist)
+    # If user supplied bins, max_quality should not exceed the max bin.
+    if allowed_quality_scores is not None:
+        bins = sorted({int(x) for x in allowed_quality_scores})
 
-        if mq > max_quality:
-            max_quality = mq
+        if bins:
+            max_quality = min(max_quality, max(bins))
 
-    return init_dist, pos_dists, max_quality, read_length
+    return init_dist, pos_dists, trans_dists, int(max_quality), int(read_length)
