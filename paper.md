@@ -157,8 +157,6 @@ Within this landscape, NEAT is notable for integrating ground-truth BAM and VCF 
 
 The updates described here (NEAT 4.3) focus on improving NEAT’s capabilities so that it remains a practical tool for future work in the field alongside other simulators. The source code for both original and updated versions of NEAT is freely available on GitHub [@Stephens:2016].
 
-\newpage
-
 # Acknowledgements
 
 We thank the original creators of NEAT: Zachary D. Stephens, Matthew E. Hudson, Liudmila S. Mainzer, Morgan Taschuk, Matthew R. Weber, and Ravishankar K. Iyer. 
