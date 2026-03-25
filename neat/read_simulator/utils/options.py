@@ -264,7 +264,7 @@ class Options(SimpleNamespace):
 
         # Update items to config or default values
         base_options.__dict__.update(final_args)
-        base_options.set_random_seed()
+        base_options.rng = base_options.set_random_seed()
 
         # Some options checking to clean up the args dict
         base_options.check_options()
@@ -286,7 +286,7 @@ class Options(SimpleNamespace):
             if value_to_check not in crit2:
                 _LOG.error(f"Must choose one of {crit2}")
                 sys.exit(1)
-        elif isinstance(crit1, int) and isinstance(crit2, int):
+        elif isinstance(crit1, (int, float)) and isinstance(crit2, (int, float)):
             if not (crit1 <= value_to_check <= crit2):
                 _LOG.error(f'`{keyname}` must be between {crit1} and {crit2} (input: {value_to_check}).')
                 sys.exit(1)
@@ -442,15 +442,19 @@ class Options(SimpleNamespace):
             _LOG.info(f'  - splitting input into size {self.parallel_block_size}')
         elif self.parallel_mode == 'contig':
             _LOG.info(f'Splitting input by contig.')
-        if not self.cleanup_splits or self.reuse_splits:
+        if self.reuse_splits:
             splits_dir = Path(f'{self.output_dir}/splits/')
-            if splits_dir.is_dir():
-                _LOG.info(f'Reusing existing splits {splits_dir}.')
+            _LOG.info(f'Reusing existing splits {splits_dir}.')
+            if not splits_dir.is_dir():
+                raise FileNotFoundError(f"reuse_splits=True but splits dir not found: {splits_dir}")
             else:
                 if self.reuse_splits:
                     raise FileNotFoundError(f'reuse_splits=True')
                 else:
                     _LOG.warning(f'Reused splits set to True, but splits dir not found: {splits_dir}. Creating new splits')
+            _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
+        elif not self.cleanup_splits:
+            splits_dir = Path(f'{self.output_dir}/splits/')
             _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
         else:
             splits_dir = self.temp_dir_path / "splits"
