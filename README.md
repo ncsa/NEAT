@@ -77,7 +77,7 @@ To install NEAT, you must create a virtual environment using a tool such as `con
 First, clone the environment and move to the NEAT directory:
 
 ```bash
-$ git clone git@github.com:ncsa/NEAT.git 
+$ git clone https://github.com/ncsa/NEAT.git
 $ cd NEAT
 ```
 
