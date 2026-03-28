@@ -444,14 +444,17 @@ class Options(SimpleNamespace):
             _LOG.info(f'Splitting input by contig.')
         if self.reuse_splits:
             splits_dir = Path(f'{self.output_dir}/splits/')
+            _LOG.info(f'Reusing existing splits {splits_dir}.')
             if not splits_dir.is_dir():
                 raise FileNotFoundError(f"reuse_splits=True but splits dir not found: {splits_dir}")
-                _LOG.info(f'Reusing existing splits {splits_dir}.')
             else:
                 if self.reuse_splits:
                     raise FileNotFoundError(f'reuse_splits=True')
                 else:
                     _LOG.warning(f'Reused splits set to True, but splits dir not found: {splits_dir}. Creating new splits')
+            _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
+        elif not self.cleanup_splits:
+            splits_dir = Path(f'{self.output_dir}/splits/')
             _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
         else:
             splits_dir = self.temp_dir_path / "splits"
