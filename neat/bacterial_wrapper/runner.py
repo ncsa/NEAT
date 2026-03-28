@@ -60,14 +60,14 @@ def write_config_file(ref_config_file, rearranged_seq_file, orig_seq_file, bacte
             if line.find("reference:") != -1:
                 new_file.write(f"reference: {rearranged_seq_file}\n")
                 old_file.write(f"reference: {orig_seq_file}\n")
-            elif line.find("coverage:") != -1:
-                if line.strip() == "coverage: .":
-                    new_coverage = 5.0
-                else:
-                    new_coverage = float((line.split(" "))[1].strip()) // 2
+            # elif line.find("coverage:") != -1:
+            #     if line.strip() == "coverage: .":
+            #         new_coverage = 5.0
+            #     else:
+            #         new_coverage = float((line.split(" "))[1].strip()) // 2
         
-                new_file.write(f"coverage: {new_coverage}\n")
-                old_file.write(f"coverage: {new_coverage}\n")
+            #     new_file.write(f"coverage: {new_coverage}\n")
+            #     old_file.write(f"coverage: {new_coverage}\n")
             else:
                 new_file.write(line)
                 old_file.write(line)
