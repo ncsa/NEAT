@@ -138,6 +138,7 @@ def test_filter_bed_regions_single_region_fully_inside_block():
 def test_filter_bed_regions_returns_list():
     result = filter_bed_regions(_REGIONS, (50, 150))
     assert isinstance(result, list)
+    assert result == [(0, 200, 0.01)]  # only the overlapping region
 
 
 # ===========================================================================

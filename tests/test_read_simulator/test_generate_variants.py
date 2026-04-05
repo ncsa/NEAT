@@ -290,7 +290,7 @@ def test_generate_variants_reproducible_with_same_seed():
 
 
 def test_generate_variants_variant_types_are_valid():
-    """Every generated variant should be Insertion, Deletion, or SNV."""
+    """Every generated variant should be Insertion, Deletion, or SNV with valid attributes."""
     ref = _make_reference()
     model = _make_model()
     opts = _make_options(seed=7)
@@ -300,6 +300,10 @@ def test_generate_variants_variant_types_are_valid():
     for loc in result.variant_locations:
         for var in result.contig_variants[loc]:
             assert isinstance(var, (Insertion, Deletion, SingleNucleotideVariant))
+            assert var.position1 >= 0
+            assert var.genotype is not None
+            if isinstance(var, (Insertion, Deletion)):
+                assert var.length >= 1
 
 
 def test_generate_variants_single_rate_region_at_offset():

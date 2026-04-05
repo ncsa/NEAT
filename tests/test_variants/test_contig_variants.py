@@ -125,8 +125,17 @@ def test_get_sample_info_without_metadata_uses_genotype_string():
 # ===========================================================================
 
 def test_remove_variant_method_exists():
-    """remove_variant exists on ContigVariants (bug: uses variant.position
-    instead of variant.position1 — tracked separately)."""
+    """remove_variant silently no-ops due to variant.position bug.
+
+    The fix is on branch fix/contig-variants-remove-variant with regression
+    tests in tests/test_variants/test_remove_variant.py.
+    TODO (post-fix): replace this test with:
+        cv = ContigVariants()
+        v = _snv(10)
+        cv.add_variant(v)
+        cv.remove_variant(v)
+        assert 10 not in cv.variant_locations
+    """
     cv = ContigVariants()
     assert callable(cv.remove_variant)
 

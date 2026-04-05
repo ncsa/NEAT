@@ -236,8 +236,13 @@ def test_error_container_insertion_type():
 # SequencingErrorModel — indel error paths (lines 209, 213-235)
 # ===========================================================================
 
-def test_sem_can_produce_deletion_errors():
-    """Force the deletion branch via high deletion probability."""
+def test_sem_deletion_variant_prob_has_no_effect():
+    """variant_probs favouring Deletion still produces only SNVs (dead-code bug).
+
+    The indel gate condition is circular, so deletion errors are never produced
+    regardless of variant_probs. See test_sem_only_snv_errors_produced_regardless_of_variant_probs
+    for the full documentation test.
+    """
     from neat.variants import Deletion as Del, Insertion as Ins
     m = SequencingErrorModel(
         avg_seq_error=0.9,
@@ -246,40 +251,24 @@ def test_sem_can_produce_deletion_errors():
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 151)
     result, _ = m.get_sequencing_errors(50, _SEQ_RECORD, quality_scores, rng)
-    # At least some errors should have been attempted; deletions may be added
-    assert isinstance(result, list)
-
-
-def test_sem_deletion_error_container_type():
-    """With many low-quality bases, some deletion errors should appear."""
-    from neat.variants import Deletion as Del
-    # Use a very high indel probability to force deletion errors
-    from neat.variants import Insertion as Ins
-    m = SequencingErrorModel(
-        avg_seq_error=0.9,
-        variant_probs={Ins: 0.0, Del: 0.5, SingleNucleotideVariant: 0.5},
-    )
-    rng = np.random.default_rng(42)
-    quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ_RECORD, quality_scores, rng)
     del_errors = [e for e in result if e.error_type == Del]
-    ins_errors = [e for e in result if e.error_type == Ins]
-    # We should see at least deletions or insertions given the high error rate
-    assert len(del_errors) + len(ins_errors) >= 0  # at minimum no crash
+    # No deletions produced due to the unreachable gate (see dead-code comment below)
+    assert len(del_errors) == 0
 
 
-def test_sem_insertion_error_container_type():
-    """High insertion probability produces insertion ErrorContainers."""
+def test_sem_insertion_variant_prob_has_no_effect():
+    """variant_probs favouring Insertion still produces only SNVs (dead-code bug)."""
     from neat.variants import Insertion as Ins, Deletion as Del
     m = SequencingErrorModel(
         avg_seq_error=0.9,
-        variant_probs={Ins: 0.5, Del: 0.0, SingleNucleotideVariant: 0.5},
+        variant_probs={Ins: 1.0, Del: 0.0, SingleNucleotideVariant: 0.0},
     )
     rng = np.random.default_rng(7)
     quality_scores = np.array([1] * 151)
     result, _ = m.get_sequencing_errors(50, _SEQ_RECORD, quality_scores, rng)
     ins_errors = [e for e in result if e.error_type == Ins]
-    assert len(ins_errors) >= 0  # no crash; insertions may appear
+    # No insertions produced due to the unreachable gate
+    assert len(ins_errors) == 0
 
 
 def test_sem_blacklist_prevents_duplicate_deletion_sites():

@@ -309,6 +309,11 @@ class TestReadSimulatorSingle:
     def test_returns_four_element_tuple(self, tmp_path):
         result = self._run(tmp_path)
         assert len(result) == 4
+        thread_idx, contig_name, local_variants, file_dict = result
+        assert isinstance(thread_idx, int)
+        assert isinstance(contig_name, str)
+        assert isinstance(local_variants, ContigVariants)
+        assert isinstance(file_dict, dict)
 
     def test_thread_idx_preserved(self, tmp_path):
         thread_idx, *_ = self._run(tmp_path)

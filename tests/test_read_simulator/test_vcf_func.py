@@ -145,6 +145,8 @@ def test_variant_genotype_second_alt():
 def test_variant_genotype_returns_correct_ploidy_length():
     gt = variant_genotype(4, np.array([1, 0, 1, 0]), 1)
     assert len(gt) == 4
+    # Ploids where full_genotype == which_alt (1) get 1; others get 0
+    np.testing.assert_array_equal(gt, [1, 0, 1, 0])
 
 
 # ===========================================================================
