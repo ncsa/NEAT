@@ -1,9 +1,15 @@
+import numpy as np
 import pytest
+from types import SimpleNamespace
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
-from neat.models import FragmentLengthModel
+from neat.models import FragmentLengthModel, SequencingErrorModel, TraditionalQualityModel
 from neat.read_simulator.utils import Options
-from neat.read_simulator.utils.generate_reads import *
-from neat.read_simulator.utils.read import *
+from neat.read_simulator.utils.generate_reads import cover_dataset, overlaps, find_applicable_mutations, generate_reads
+from neat.read_simulator.utils.read import Read
+from neat.variants.contig_variants import ContigVariants
+from neat.variants import SingleNucleotideVariant
 
 
 def _span(a, b):
@@ -288,3 +294,224 @@ def test_cigar():
     cigar[137] = "D"
     cig_str = read.tally_cigar_list(cigar)
     assert cig_str == "11M1I125M1D12M"
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by generate_reads tests
+# ---------------------------------------------------------------------------
+
+_SPAN = 1000
+_READ_LEN = 100
+_REF_SEQ = "ACGT" * (_SPAN // 4)
+
+
+def _make_reference(seq=_REF_SEQ, name="chr1"):
+    return SeqRecord(Seq(seq), id=name, name=name, description="")
+
+
+def _make_options(paired=False, seed=0):
+    opts = Options(rng_seed=seed)
+    opts.read_len = _READ_LEN
+    opts.paired_ended = paired
+    opts.coverage = 5
+    opts.produce_fastq = False
+    opts.produce_bam = False
+    opts.produce_vcf = False
+    opts.overwrite_output = True
+    return opts
+
+
+def _make_models(read_len=_READ_LEN, frag_mean=300):
+    error_model = SequencingErrorModel(read_length=read_len)
+    qual_model = TraditionalQualityModel()
+    frag_model = FragmentLengthModel(frag_mean, 30)
+    return error_model, qual_model, frag_model
+
+
+def _all_span_targeted():
+    """One region covering the whole span, active."""
+    return [(_SPAN * 0, _SPAN, True)]
+
+
+def _nothing_discarded():
+    """One region covering the whole span, not discarded."""
+    return [(_SPAN * 0, _SPAN, False)]
+
+
+# ---------------------------------------------------------------------------
+# find_applicable_mutations
+# ---------------------------------------------------------------------------
+
+def _fake_read(position, end_point):
+    return SimpleNamespace(position=position, end_point=end_point)
+
+
+def test_find_applicable_mutations_empty_variants():
+    read = _fake_read(100, 200)
+    cv = ContigVariants()
+    assert find_applicable_mutations(read, cv) == {}
+
+
+def test_find_applicable_mutations_variant_in_range():
+    read = _fake_read(100, 200)
+    cv = ContigVariants()
+    cv.add_location(150)
+    result = find_applicable_mutations(read, cv)
+    assert 150 in result
+
+
+def test_find_applicable_mutations_at_boundaries():
+    read = _fake_read(100, 200)
+    cv = ContigVariants()
+    cv.add_location(100)   # position (inclusive)
+    cv.add_location(199)   # end_point - 1 (inclusive)
+    result = find_applicable_mutations(read, cv)
+    assert 100 in result
+    assert 199 in result
+
+
+def test_find_applicable_mutations_outside_range():
+    read = _fake_read(100, 200)
+    cv = ContigVariants()
+    cv.add_location(99)   # just before position
+    cv.add_location(200)  # equal to end_point (exclusive)
+    cv.add_location(300)  # well past end
+    result = find_applicable_mutations(read, cv)
+    assert result == {}
+
+
+def test_find_applicable_mutations_mixed():
+    read = _fake_read(100, 200)
+    cv = ContigVariants()
+    cv.add_location(50)   # out
+    cv.add_location(150)  # in
+    cv.add_location(180)  # in
+    cv.add_location(250)  # out
+    result = find_applicable_mutations(read, cv)
+    assert set(result.keys()) == {150, 180}
+
+
+# ---------------------------------------------------------------------------
+# generate_reads — structure
+# ---------------------------------------------------------------------------
+
+def test_generate_reads_single_ended_returns_read_none_pairs():
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=False)
+    cv = ContigVariants()
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             _all_span_targeted(), _nothing_discarded(),
+                             opts, None, "chr1", 0, 0)
+
+    assert isinstance(results, list)
+    assert len(results) > 0
+    for read1, read2 in results:
+        assert isinstance(read1, Read)
+        assert read2 is None
+
+
+def test_generate_reads_paired_ended_returns_read_read_pairs():
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=True)
+    cv = ContigVariants()
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             _all_span_targeted(), _nothing_discarded(),
+                             opts, None, "chr1", 0, 0)
+
+    assert len(results) > 0
+    for read1, read2 in results:
+        assert isinstance(read1, Read)
+        assert isinstance(read2, Read)
+
+
+def test_generate_reads_read_length_matches_options():
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=False)
+    cv = ContigVariants()
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             _all_span_targeted(), _nothing_discarded(),
+                             opts, None, "chr1", 0, 0)
+
+    for read1, _ in results:
+        assert len(read1.read_sequence) == _READ_LEN
+
+
+# ---------------------------------------------------------------------------
+# generate_reads — BED filtering
+# ---------------------------------------------------------------------------
+
+def test_generate_reads_targeted_region_flag_false_filters_all():
+    """When all targeted regions have flag=False, every read is filtered."""
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=False)
+    cv = ContigVariants()
+    no_target = [(0, _SPAN, False)]
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             no_target, _nothing_discarded(),
+                             opts, None, "chr1", 0, 0)
+
+    assert results == []
+
+
+def test_generate_reads_discard_region_removes_all():
+    """When the discard region covers the whole span and is active, all reads are dropped."""
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=False)
+    cv = ContigVariants()
+    discard_all = [(0, _SPAN, True)]
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             _all_span_targeted(), discard_all,
+                             opts, None, "chr1", 0, 0)
+
+    assert results == []
+
+
+def test_generate_reads_discard_flag_false_keeps_reads():
+    """A discard region with flag=False is ignored; reads pass through."""
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=False)
+    cv = ContigVariants()
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             _all_span_targeted(), _nothing_discarded(),
+                             opts, None, "chr1", 0, 0)
+
+    assert len(results) > 0
+
+
+# ---------------------------------------------------------------------------
+# generate_reads — variants applied
+# ---------------------------------------------------------------------------
+
+def test_generate_reads_variants_populated_on_reads():
+    """An SNV in the middle of the span should appear in at least one read's mutations."""
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=False)
+
+    cv = ContigVariants()
+    snv = SingleNucleotideVariant(
+        position1=500,
+        alt=Seq("T"),
+        genotype=np.array([1, 1]),
+        qual_score=30,
+    )
+    cv.add_variant(snv)
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             _all_span_targeted(), _nothing_discarded(),
+                             opts, None, "chr1", 0, 0)
+
+    reads_with_mutations = [r1 for r1, _ in results if r1.mutations]
+    assert len(reads_with_mutations) > 0
