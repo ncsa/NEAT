@@ -296,3 +296,83 @@ def test_sem_blacklist_prevents_duplicate_deletion_sites():
     locations = [e.location for e in result]
     # Deletions span multiple bases; no two errors at same index
     assert len(locations) == len(set(locations))
+
+
+# ===========================================================================
+# MarkovQualityModel — stub coverage (lines 112-118)
+# ===========================================================================
+
+def test_markov_quality_model_can_be_instantiated():
+    """MarkovQualityModel is a TODO stub; construction must not raise."""
+    from neat.models.error_models import MarkovQualityModel
+    m = MarkovQualityModel()
+    assert m is not None
+
+
+def test_markov_quality_model_get_quality_scores_returns_none():
+    """get_quality_scores is a TODO stub; calling it returns None."""
+    from neat.models.error_models import MarkovQualityModel
+    m = MarkovQualityModel()
+    result = m.get_quality_scores()
+    assert result is None
+
+
+# ===========================================================================
+# TraditionalQualityModel — score clamping (line 104)
+# ===========================================================================
+
+def test_tqm_score_clamped_to_minimum():
+    """Scores below 1 from rng.normal are clamped to 1 (line 104)."""
+    # Use qual_score_probs with a very negative mean so that rng.normal
+    # always returns a value that rounds to ≤ 0, forcing the clamp.
+    very_low_probs = np.array([[-50.0, 0.01]] * 151)
+    m = TraditionalQualityModel(qual_score_probs=very_low_probs)
+    rng = np.random.default_rng(0)
+    scores = m.get_quality_scores(151, 151, rng)
+    assert all(s == 1 for s in scores)
+
+
+def test_tqm_score_clamped_to_maximum():
+    """Scores above 42 from rng.normal are clamped to 42 (line 102)."""
+    very_high_probs = np.array([[200.0, 0.01]] * 151)
+    m = TraditionalQualityModel(qual_score_probs=very_high_probs)
+    rng = np.random.default_rng(0)
+    scores = m.get_quality_scores(151, 151, rng)
+    assert all(s == 42 for s in scores)
+
+
+# ===========================================================================
+# SequencingErrorModel — dead-code documentation
+# ===========================================================================
+# Lines 209-235, 252 (indel error branches) are unreachable because
+# `total_indel_length` starts at 0 and is only incremented inside the
+# branches that are gated by `total_indel_length > self.read_length // 4`.
+# This circular dependency means the variant_probs choice (line 209) is
+# never called and deletion/insertion errors are never produced.
+# The following test documents this behaviour.
+
+def test_sem_only_snv_errors_produced_regardless_of_variant_probs():
+    """Indel errors are never produced due to the total_indel_length gate."""
+    m = SequencingErrorModel(
+        avg_seq_error=0.9,
+        variant_probs={Insertion: 0.5, Deletion: 0.5, SingleNucleotideVariant: 0.0},
+    )
+    rng = np.random.default_rng(0)
+    quality_scores = np.array([1] * 151)
+    result, _ = m.get_sequencing_errors(50, _SEQ_RECORD, quality_scores, rng)
+    # All errors are SNVs because the indel branches are unreachable
+    error_types = {e.error_type for e in result}
+    assert error_types == {SingleNucleotideVariant}
+    # TODO (post-fix): Once the gate condition is corrected from
+    #   `total_indel_length > self.read_length // 4`
+    #   to
+    #   `total_indel_length <= self.read_length // 4`
+    # the following assertions should replace the one above:
+    #
+    #   del_errors = [e for e in result if e.error_type == Deletion]
+    #   ins_errors = [e for e in result if e.error_type == Insertion]
+    #   assert len(del_errors) + len(ins_errors) > 0, \
+    #       "Expected indel errors given variant_probs favours them"
+    #   # blacklist test: no two errors share a location
+    #   locations = [e.location for e in result]
+    #   assert len(locations) == len(set(locations))

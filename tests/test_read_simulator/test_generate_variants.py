@@ -333,3 +333,78 @@ def test_generate_variants_input_and_random_together():
     assert 5 in result
     # And at least some random variants were added
     assert len(result.variant_locations) > 1
+
+
+# ===========================================================================
+# generate_variants — N-handling paths (lines 139-157, 204)
+# ===========================================================================
+
+def test_generate_variants_n_in_mutation_region_completes():
+    """Sequence with N's in the mutation region runs to completion.
+
+    Uses many iterations so the N-avoidance logic (lines 139-157) is
+    exercised: window_start landing on N forces the search right/left.
+    """
+    # N's in the middle; valid non-N bases at both ends
+    seq = "ACGT" * 5 + "N" * 60 + "ACGT" * 45   # 280 bp
+    ref = _make_reference(seq)
+    model = _make_model()
+    opts = _make_options(seed=17)
+    opts.min_mutations = 30
+
+    result = generate_variants(ref, 0, _full_rate_regions(len(seq)), ContigVariants(), model, opts, 40)
+    assert isinstance(result, ContigVariants)
+
+
+def test_generate_variants_n_heavy_subsequence_skipped():
+    """When a slice is >10% N, map_non_n_regions returns empty and the
+    iteration is skipped (line 204 continue). The function still returns
+    a valid ContigVariants without crashing."""
+    # Almost all N — the window is very likely to span the N block,
+    # triggering the not-any(n_gaps) continue path.
+    seq = "ACGT" + "N" * 500 + "ACGT" * 10   # 544 bp, ~92% N overall
+    ref = _make_reference(seq)
+    model = _make_model()
+    opts = _make_options(seed=3)
+    opts.min_mutations = 0   # let poisson decide; main goal is no crash
+
+    result = generate_variants(ref, 0, _full_rate_regions(len(seq)), ContigVariants(), model, opts, 40)
+    assert isinstance(result, ContigVariants)
+
+
+def test_generate_variants_trinuc_with_n_skipped():
+    """SNV trinucleotide window containing N causes disallowed_chars skip
+    (lines 246-249). Completes without error."""
+    # Isolated N's among valid bases force the trinuc-disallowed path
+    seq = ("ACGT" * 3 + "N" + "ACGT" * 3) * 10   # 280 bp, ~3.6% N (valid)
+    ref = _make_reference(seq)
+    model = _make_model()
+    opts = _make_options(seed=55)
+    opts.min_mutations = 50
+
+    result = generate_variants(ref, 0, _full_rate_regions(len(seq)), ContigVariants(), model, opts, 40)
+    assert isinstance(result, ContigVariants)
+    # All returned variants must be within the reference bounds
+    for loc in result.variant_locations:
+        assert 0 <= loc < len(seq)
+
+
+def test_generate_variants_deletion_overlap_handling():
+    """If a new variant falls inside an existing deletion's span, the overlap
+    handling code (lines 291-295) adjusts or skips it without crashing."""
+    # Seed 0 with high mutation rate on a clean sequence — with enough
+    # iterations deletions are generated and later variants may overlap them.
+    seq = "ACGT" * 100   # 400 bp
+    ref = _make_reference(seq)
+    model_high = MutationModel(avg_mut_rate=0.05)
+    opts = _make_options(seed=0)
+    opts.min_mutations = 80
+
+    result = generate_variants(ref, 0, _full_rate_regions(len(seq), 0.05), ContigVariants(), model_high, opts, 40)
+    assert isinstance(result, ContigVariants)
+    # Variants at the same location are deduplicated correctly
+    for loc in result.variant_locations:
+        variants_here = result.contig_variants[loc]
+        genotypes = [tuple(v.genotype) for v in variants_here]
+        assert len(genotypes) == len(set(genotypes)), \
+            f"Duplicate genotype at location {loc}"
