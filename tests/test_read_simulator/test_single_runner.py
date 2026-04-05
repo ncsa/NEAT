@@ -434,3 +434,38 @@ class TestReadSimulatorSingle:
             [(0, 400, True)], [(0, 400, False)], [(0, 400, 0.01)],
         )
         assert file_dict["bam"] is None
+
+    def test_record_too_small_logs_and_continues(self, tmp_path, caplog, monkeypatch):
+        """When reference is shorter than read_len the debug log fires (single_runner.py line 85).
+
+        Covers:
+            if len(local_seq_record) < local_options.read_len:
+                _LOG.debug("Record too small for processing")
+
+        The downstream cover_dataset would loop infinitely on a span < read_len, so we
+        patch generate_reads and generate_variants to return immediately.
+        """
+        import logging
+        from unittest.mock import patch
+
+        short_seq = "ACGT" * 5  # 20 bp, shorter than read_len=50
+        _write_ref(tmp_path, seq=short_seq)
+
+        opts = _make_opts(tmp_path, rng_seed=0)
+        opts.read_len = 50
+        opts.coverage = 1
+        opts.produce_fastq = True
+        opts.fq1 = tmp_path / "out.fq1.gz"
+
+        with patch("neat.read_simulator.single_runner.generate_variants",
+                   return_value=ContigVariants()), \
+             patch("neat.read_simulator.single_runner.generate_reads",
+                   return_value=[]), \
+             caplog.at_level(logging.DEBUG, logger="neat.read_simulator.single_runner"):
+            result = read_simulator_single(
+                1, 0, opts, None, "chr1", 0, ContigVariants(),
+                [(0, 20, True)], [(0, 20, False)], [(0, 20, 0.01)],
+            )
+
+        assert "Record too small" in caplog.text
+        assert len(result) == 4

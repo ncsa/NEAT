@@ -235,6 +235,16 @@ def test_parse_single_bed_mutation_extra_metadata(tmp_path):
     assert result["chr1"][0][2] == pytest.approx(0.002)
 
 
+def test_parse_single_bed_mutation_high_rate_logs_warning(tmp_path, caplog):
+    """Mutation rate > 0.3 triggers a warning log (bed_func.py line 209)."""
+    import logging
+    bed = _write_bed(tmp_path, "mut.bed", ["chr1\t0\t500\tmut_rate=0.4"])
+    with caplog.at_level(logging.WARNING, logger="neat.read_simulator.utils.bed_func"):
+        result = parse_single_bed(str(bed), _REF, _MUT_KEY)
+    assert "0.3" in caplog.text or "unusual" in caplog.text.lower()
+    assert result["chr1"][0][2] == pytest.approx(0.4)
+
+
 def test_parse_single_bed_mutation_missing_mut_rate_exits(tmp_path):
     bed = _write_bed(tmp_path, "mut.bed", ["chr1\t0\t500\tno_rate_here"])
     with pytest.raises(SystemExit):
