@@ -49,9 +49,9 @@ def cover_dataset(
     number_reads_per_layer = ceil(span_length / fragment_model.fragment_mean)
     if options.paired_ended:
         # TODO use gc bias to skew this number. Calculate at the runner level.
-        number_reads = ceil(number_reads_per_layer * (options.coverage/2))
+        number_reads = ceil(span_length * options.coverage / (2 * options.read_len))
     else:
-        number_reads = ceil(number_reads_per_layer * options.coverage)
+        number_reads = ceil(span_length * options.coverage / options.read_len)
 
     # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
     # step 2: repeat above until number of reads exceeds number_reads

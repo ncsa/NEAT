@@ -183,6 +183,153 @@ def test_from_cli_paired_end_fragments(tmp_path: _PathAlias):
     assert opts.fq2 == outdir / "peprefix_r2.fastq.gz"
 
 
+def test_default_values():
+    opts = Options()
+    assert opts.read_len == 101
+    assert opts.coverage == 10
+    assert opts.ploidy == 2
+    assert opts.paired_ended is False
+    assert opts.produce_fastq is True
+    assert opts.produce_bam is False
+    assert opts.produce_vcf is False
+    assert opts.quality_offset == 33
+    assert opts.threads == 1
+    assert opts.parallel_mode == "contig"
+    assert opts.parallel_block_size == 500000
+    assert opts.cleanup_splits is True
+    assert opts.reuse_splits is False
+    assert opts.overwrite_output is False
+    assert opts.rescale_qualities is False
+    assert opts.min_mutations == 0
+    assert opts.output_prefix == "neat_sim"
+    assert opts.output_files == []
+
+
+def test_rng_seed_zero():
+    """Seed value 0 is valid and should not auto-generate a seed."""
+    opts = Options(rng_seed=0)
+    assert opts.rng_seed == 0
+    # Should produce deterministic output
+    a = opts.rng.integers(0, 1_000_000, size=5)
+    opts2 = Options(rng_seed=0)
+    b = opts2.rng.integers(0, 1_000_000, size=5)
+    assert (a == b).all()
+
+
+def test_copy_with_changes(tmp_path: _PathAlias):
+    ref = _project_root() / "data" / "H1N1.fa"
+    opts = Options(reference=ref, rng_seed=1)
+    new_ref = tmp_path / "other.fa"
+    new_fq1 = tmp_path / "r1.fastq.gz"
+
+    copy = opts.copy_with_changes(reference=new_ref, fq1=new_fq1)
+
+    assert copy.reference == new_ref
+    assert copy.fq1 == new_fq1
+    # Unchanged fields should carry over
+    assert copy.rng_seed == opts.rng_seed
+    assert copy.read_len == opts.read_len
+    # Original should be unmodified
+    assert opts.reference == ref
+    assert opts.fq1 is None
+
+
+def test_copy_with_changes_no_args():
+    ref = _project_root() / "data" / "H1N1.fa"
+    opts = Options(reference=ref, rng_seed=2)
+    copy = opts.copy_with_changes()
+    assert copy.reference == ref
+    assert copy.coverage == opts.coverage
+
+
+def test_check_and_log_error_none_passthrough():
+    """None value should not raise or exit."""
+    Options.check_and_log_error("any_key", None, 0, 100)  # no exception
+
+
+def test_check_and_log_error_numeric_in_range():
+    Options.check_and_log_error("coverage", 10, 1, 1000000)  # no exception
+
+
+def test_check_and_log_error_numeric_out_of_range(capsys):
+    with _pytest.raises(SystemExit):
+        Options.check_and_log_error("coverage", 0, 1, 1000000)
+
+
+def test_check_and_log_error_choice_valid():
+    Options.check_and_log_error("parallel_mode", "contig", "choice", ["size", "contig"])
+
+
+def test_check_and_log_error_choice_invalid():
+    with _pytest.raises(SystemExit):
+        Options.check_and_log_error("parallel_mode", "bad", "choice", ["size", "contig"])
+
+
+def test_check_options_no_output_files_exits():
+    opts = Options(rng_seed=0)
+    opts.produce_fastq = False
+    opts.produce_bam = False
+    opts.produce_vcf = False
+    with _pytest.raises(SystemExit):
+        opts.check_options()
+
+
+def test_check_options_paired_with_fragment_model_clears_mean_stdev():
+    opts = Options(rng_seed=0, paired_ended=True,
+                   fragment_model="some_model.pkl",
+                   fragment_mean=300.0, fragment_st_dev=30.0)
+    opts.check_options()
+    assert opts.fragment_mean is None
+    assert opts.fragment_st_dev is None
+
+
+def test_log_configuration_produces_bam_and_vcf(tmp_path: _PathAlias):
+    ref = _project_root() / "data" / "H1N1.fa"
+    opts = Options(reference=ref, output_dir=tmp_path, output_prefix="out",
+                   overwrite_output=True, produce_fastq=True,
+                   produce_bam=True, produce_vcf=True)
+    opts.log_configuration()
+    assert opts.bam == tmp_path / "out_golden.bam"
+    assert opts.vcf == tmp_path / "out_golden.vcf.gz"
+    assert opts.bam in opts.output_files
+    assert opts.vcf in opts.output_files
+
+
+def test_log_configuration_threads_one_forces_contig(tmp_path: _PathAlias):
+    ref = _project_root() / "data" / "H1N1.fa"
+    opts = Options(reference=ref, output_dir=tmp_path, output_prefix="out",
+                   overwrite_output=True, threads=1, parallel_mode="size")
+    opts.log_configuration()
+    assert opts.parallel_mode == "contig"
+
+
+def test_log_configuration_fragment_mean_less_than_read_len_exits(tmp_path: _PathAlias):
+    ref = _project_root() / "data" / "H1N1.fa"
+    opts = Options(reference=ref, output_dir=tmp_path, output_prefix="out",
+                   overwrite_output=True, read_len=150,
+                   fragment_mean=100.0, fragment_st_dev=10.0)
+    with _pytest.raises(SystemExit):
+        opts.log_configuration()
+
+
+def test_log_configuration_fragment_mean_without_stdev_exits(tmp_path: _PathAlias):
+    ref = _project_root() / "data" / "H1N1.fa"
+    opts = Options(reference=ref, output_dir=tmp_path, output_prefix="out",
+                   overwrite_output=True, read_len=100,
+                   fragment_mean=300.0, fragment_st_dev=None)
+    with _pytest.raises(SystemExit):
+        opts.log_configuration()
+
+
+def test_log_configuration_paired_without_model_or_mean_exits(tmp_path: _PathAlias):
+    ref = _project_root() / "data" / "H1N1.fa"
+    opts = Options(reference=ref, output_dir=tmp_path, output_prefix="out",
+                   overwrite_output=True, paired_ended=True,
+                   fragment_model=None, fragment_mean=None)
+    with _pytest.raises(SystemExit):
+        opts.log_configuration()
+
+
 def test_from_cli_reuse_splits_missing_dir_raises(tmp_path: _PathAlias):
     cfg = _textwrap.dedent(
         f"""
