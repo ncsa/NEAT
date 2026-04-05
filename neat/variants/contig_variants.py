@@ -150,11 +150,11 @@ class ContigVariants:
             return get_genotype_string(variant.genotype)
 
     def remove_variant(self, variant):
-        if variant.position in self.variant_locations:
-            if variant in self.contig_variants[variant.position]:
-                self.contig_variants[variant.position].remove(variant)
-            if not self.contig_variants[variant.position]:
-                self.variant_locations.remove(variant.position)
+        if variant.position1 in self.variant_locations:
+            if variant in self.contig_variants[variant.position1]:
+                self.contig_variants[variant.position1].remove(variant)
+            if not self.contig_variants[variant.position1]:
+                self.variant_locations.remove(variant.position1)
 
     def __getitem__(self, input_location: int) -> list:
         """
