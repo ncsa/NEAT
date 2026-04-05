@@ -161,7 +161,7 @@ def parse_input_vcf(
                         # Retrieve the GT from the first sample in the record
                         genotype = retrieve_genotype(record)
 
-                    elif "WP" in [x.split('=') for x in record[7].split(';')]:
+                    elif "WP" in [x.split('=')[0] for x in record[7].split(';')]:
                         """
                         "WP" is the legacy code NEAT used for genotype it added. It was found in the INFO field.
                         We're just going to make a sample column in this version of NEAT
@@ -182,7 +182,7 @@ def parse_input_vcf(
                         gt_field = get_genotype_string(genotype)
                         normal_sample_field = f'{gt_field}:{record[9]}'
 
-                elif "WP" in [x.split('=') for x in record[7].split(';')]:
+                elif "WP" in [x.split('=')[0] for x in record[7].split(';')]:
                     """
                     "WP" is the legacy code NEAT used for genotype it added. It was found in the INFO field.
                     We're just going to make a sample column in this version of NEAT
