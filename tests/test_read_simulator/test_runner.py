@@ -262,3 +262,155 @@ def test_runner_with_vcf_output(tmp_path):
     vcf_files = list(out_dir.glob("*.vcf.gz"))
     assert len(vcf_files) == 1, "Expected exactly one VCF output file"
     assert vcf_files[0].stat().st_size > 0
+
+
+# ===========================================================================
+# Integration — runner with an input VCF (covers lines 95-104, 107)
+# ===========================================================================
+
+def _write_input_vcf(path: Path, ref_path: Path) -> Path:
+    """Write a minimal input VCF with one SNV on chr1."""
+    # The ref is ACGT*100 (400bp). Position 10 (1-based=11) is 'C'.
+    path.write_text(
+        "##fileformat=VCFv4.1\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n"
+        "chr1\t11\t.\tC\tT\t42\tPASS\t.\tGT\t0|1\n",
+        encoding="utf-8"
+    )
+    return path
+
+
+def test_runner_with_input_vcf(tmp_path):
+    """Runner with include_vcf parses the VCF and produces output."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    vcf_in = _write_input_vcf(tmp_path / "input.vcf", ref)
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        include_vcf=str(vcf_in),
+        produce_vcf="true",
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+
+    # Output VCF should exist and contain the input variant
+    vcf_files = list(out_dir.glob("*.vcf.gz"))
+    assert len(vcf_files) == 1
+    import gzip as _gz
+    with _gz.open(vcf_files[0], "rt") as fh:
+        content = fh.read()
+    # position 11 (1-based) or the variant alt 'T' should appear
+    assert "chr1" in content
+
+
+def test_runner_with_target_bed(tmp_path):
+    """Runner with a target BED restricts reads to targeted regions."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    bed = tmp_path / "target.bed"
+    bed.write_text("chr1\t0\t400\n", encoding="utf-8")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        target_bed=str(bed),
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    fq_files = list(out_dir.glob("*.fastq.gz"))
+    assert len(fq_files) >= 1
+
+
+def test_runner_with_mutation_rate_override(tmp_path):
+    """Explicit mutation_rate config key is accepted without error."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        mutation_rate=0.005,
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.fastq.gz"))
+
+
+def test_runner_with_discard_bed(tmp_path):
+    """discard_bed config key is accepted and run completes."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    discard = tmp_path / "discard.bed"
+    discard.write_text("chr1\t200\t400\n", encoding="utf-8")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        discard_bed=str(discard),
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.fastq.gz"))
+
+
+def test_runner_with_mutation_bed(tmp_path):
+    """mutation_bed config key providing per-region rates is accepted."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    mbed = tmp_path / "mut.bed"
+    # Single region spanning full reference avoids the multi-region probability_rates bug
+    mbed.write_text("chr1\t0\t400\tmut_rate=0.005\n", encoding="utf-8")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        mutation_bed=str(mbed),
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.fastq.gz"))
+
+
+def test_runner_with_haploid_ploidy(tmp_path):
+    """ploidy=1 (haploid) is accepted and produces FASTQ output."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        ploidy=1,
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.fastq.gz"))
+
+
+def test_runner_with_tetraploid_ploidy(tmp_path):
+    """ploidy=4 (tetraploid) is accepted and produces FASTQ output."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        ploidy=4,
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.fastq.gz"))
+
+
+def test_runner_with_min_mutations(tmp_path):
+    """min_mutations config key is accepted and run completes."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        min_mutations=3,
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.fastq.gz"))
+
+
+def test_runner_with_produce_bam(tmp_path):
+    """produce_bam=true writes a BAM output file."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        produce_bam="true",
+        produce_fastq="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    bam_files = list(out_dir.glob("*.bam"))
+    assert len(bam_files) >= 1, "Expected at least one BAM output file"

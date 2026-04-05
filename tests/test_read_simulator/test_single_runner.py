@@ -388,3 +388,44 @@ class TestReadSimulatorSingle:
     def test_vcf_not_produced_when_produce_vcf_false(self, tmp_path):
         _, _, _, file_dict = self._run(tmp_path, produce_fastq=True, produce_vcf=False)
         assert file_dict["vcf"] is None
+
+    def test_bam_output_written(self, tmp_path):
+        """produce_bam=True writes reads through the BAM path (lines 127-152)."""
+        import pysam
+        ref_seq = "ACGT" * 100
+        _write_ref(tmp_path, seq=ref_seq)
+
+        opts = _make_opts(tmp_path, rng_seed=7)
+        opts.read_len = 50
+        opts.coverage = 2
+        opts.produce_fastq = False
+        opts.produce_bam = True
+        opts.fq1 = None
+        opts.bam = tmp_path / "out.bam"
+        opts.reference = str(tmp_path / "ref.fa")
+        opts.threads = 1
+
+        bam_header = {"chr1": 400}
+
+        _, _, _, file_dict = read_simulator_single(
+            1, 0, opts, bam_header, "chr1", 0, ContigVariants(),
+            [(0, 400, True)], [(0, 400, False)], [(0, 400, 0.01)],
+        )
+        assert file_dict["bam"] == opts.bam
+
+    def test_bam_key_is_none_when_not_requested(self, tmp_path):
+        """When produce_bam=False, file_dict['bam'] should be None."""
+        opts = _make_opts(tmp_path, rng_seed=7)
+        opts.read_len = 50
+        opts.coverage = 2
+        opts.produce_fastq = True
+        opts.produce_bam = False
+        opts.fq1 = tmp_path / "out.fq1.gz"
+        opts.bam = None
+        opts.reference = str(_write_ref(tmp_path))
+
+        _, _, _, file_dict = read_simulator_single(
+            1, 0, opts, None, "chr1", 0, ContigVariants(),
+            [(0, 400, True)], [(0, 400, False)], [(0, 400, 0.01)],
+        )
+        assert file_dict["bam"] is None
