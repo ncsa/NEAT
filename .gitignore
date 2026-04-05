@@ -1,6 +1,31 @@
 # Ignore filetypes
 *.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Virtual environments
 /python2env/
+/.venv/
+/venv/
+/env/
+
+# IDEs
 /.ipynb_checkpoints/
 /.vscode/
 /.idea/
+
+# Test & coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# NEAT log files
+*.log
+
+# Build / packaging
+dist/
+build/
+*.egg-info/
+*.egg
