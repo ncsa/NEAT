@@ -169,11 +169,12 @@ def parse_input_vcf(
                         Most but not all fields also have an '=', so split there too, then look for "WP"
                         """
                         format_column = f"GT:{record[8]}"
-                        for record in record[7].split(';'):
-                            if record.startswith('WP'):
-                                genotype = record.split('=')[1].replace('/', '|').split('|')
+                        sample_field = record[9]
+                        for info_item in record[7].split(';'):
+                            if info_item.startswith('WP'):
+                                genotype = info_item.split('=')[1].replace('/', '|').split('|')
                                 genotype = np.array([int(x) for x in genotype])
-                                normal_sample_field = f"{get_genotype_string(genotype)}:{record[9]}"
+                                normal_sample_field = f"{get_genotype_string(genotype)}:{sample_field}"
 
                     else:
                         format_column = 'GT:' + record[8]
@@ -190,10 +191,9 @@ def parse_input_vcf(
                     Most but not all fields also have an '=', so split there too, then look for "WP"
                     """
                     format_column = "GT"
-                    info_split = record[7].split(';')
-                    for record in info_split:
-                        if record.startswith('WP'):
-                            genotype = record.split('=')[1].replace('/', '|').split('|')
+                    for info_item in record[7].split(';'):
+                        if info_item.startswith('WP'):
+                            genotype = info_item.split('=')[1].replace('/', '|').split('|')
                             genotype = np.array([int(x) for x in genotype])
                             normal_sample_field = get_genotype_string(genotype)
 
