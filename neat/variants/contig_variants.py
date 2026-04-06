@@ -49,7 +49,7 @@ class ContigVariants:
 
     def check_if_ins(self, other):
         for insert in self.all_ins:
-            if np.array_equal(other.genotype, insert.genotype) and insert.contains(other):
+            if np.array_equal(other.genotype, insert.genotype) and insert.contains(other.position1):
                 return insert
         return None
 
