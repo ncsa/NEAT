@@ -77,8 +77,9 @@ def generate_variants(
             for variant in input_variants.contig_variants[variant_location]:
                 return_variants.add_variant(variant)
 
-    # pase out the mutation rates
-    mutation_rates = np.array([x[2] for x in mutation_rate_regions])
+    # pase out the mutation rates; substitute None with the model average
+    mutation_rates = np.array([x[2] if x[2] is not None else mutation_model.avg_mut_rate
+                               for x in mutation_rate_regions])
 
     # Trying to use a random window to keep memory under control. May need to adjust this number.
     max_window_size = 1000
