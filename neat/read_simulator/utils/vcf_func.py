@@ -161,7 +161,7 @@ def parse_input_vcf(
                         # Retrieve the GT from the first sample in the record
                         genotype = retrieve_genotype(record)
 
-                    elif "WP" in [x.split('=') for x in record[7].split(';')]:
+                    elif "WP" in [x.split('=')[0] for x in record[7].split(';')]:
                         """
                         "WP" is the legacy code NEAT used for genotype it added. It was found in the INFO field.
                         We're just going to make a sample column in this version of NEAT
@@ -169,11 +169,12 @@ def parse_input_vcf(
                         Most but not all fields also have an '=', so split there too, then look for "WP"
                         """
                         format_column = f"GT:{record[8]}"
-                        for record in record[7].split(';'):
-                            if record.startswith('WP'):
-                                genotype = record.split('=')[1].replace('/', '|').split('|')
+                        sample_field = record[9]
+                        for info_item in record[7].split(';'):
+                            if info_item.startswith('WP'):
+                                genotype = info_item.split('=')[1].replace('/', '|').split('|')
                                 genotype = np.array([int(x) for x in genotype])
-                                normal_sample_field = f"{get_genotype_string(genotype)}:{record[9]}"
+                                normal_sample_field = f"{get_genotype_string(genotype)}:{sample_field}"
 
                     else:
                         format_column = 'GT:' + record[8]
@@ -182,7 +183,7 @@ def parse_input_vcf(
                         gt_field = get_genotype_string(genotype)
                         normal_sample_field = f'{gt_field}:{record[9]}'
 
-                elif "WP" in [x.split('=') for x in record[7].split(';')]:
+                elif "WP" in [x.split('=')[0] for x in record[7].split(';')]:
                     """
                     "WP" is the legacy code NEAT used for genotype it added. It was found in the INFO field.
                     We're just going to make a sample column in this version of NEAT
@@ -190,10 +191,9 @@ def parse_input_vcf(
                     Most but not all fields also have an '=', so split there too, then look for "WP"
                     """
                     format_column = "GT"
-                    info_split = record[7].split(';')
-                    for record in info_split:
-                        if record.startswith('WP'):
-                            genotype = record.split('=')[1].replace('/', '|').split('|')
+                    for info_item in record[7].split(';'):
+                        if info_item.startswith('WP'):
+                            genotype = info_item.split('=')[1].replace('/', '|').split('|')
                             genotype = np.array([int(x) for x in genotype])
                             normal_sample_field = get_genotype_string(genotype)
 
