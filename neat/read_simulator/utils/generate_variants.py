@@ -9,7 +9,7 @@ import time
 import numpy as np
 import re
 import sys
-
+import pdb
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from numpy.random import Generator
@@ -283,7 +283,7 @@ def generate_variants(
                     genotype = np.zeros(options.ploidy)
                     genotype[ploid] = 1
                     temp_variant.genotype = genotype
-
+                    # pdb.set_trace()
             # Make sure this new variant doesn't overlap an existing insertion or deletion
             in_deletion = return_variants.check_if_del(temp_variant)
             in_insertion = return_variants.check_if_ins(temp_variant)
