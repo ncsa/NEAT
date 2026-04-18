@@ -36,6 +36,7 @@ def test_basic_cli():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            cwd=str(td),
         )
         assert proc.returncode == 0, f"STDERR:\n{proc.stderr}"
         assert out.exists()
