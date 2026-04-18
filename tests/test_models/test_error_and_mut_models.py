@@ -41,26 +41,8 @@ def test_mutation_model_generate_snv_trinuc():
     assert snv.alt in ["A", "C", "G", "T"]
 
 
-def test_sequencing_error_model_zero_error_returns_none_or_empty():
-    """
-    avg_seq_error == 0 should yield no errors.
-    """
-    rng = default_rng(4)
-    sem = SequencingErrorModel(avg_seq_error=0.0)
-    ref = SeqRecord(Seq("A" * 40), id="chr1")
-    quals = np.array([40] * 40, dtype=int)
-    result = sem.get_sequencing_errors(
-        padding=20,
-        reference_segment=ref,
-        quality_scores=quals,
-        rng=rng,
-    )
-    if isinstance(result, tuple):
-        introduced, pad = result
-        assert introduced == []
-        assert pad >= 0
-    else:
-        assert result == []
+    # test_sequencing_error_model_zero_error_returns_none_or_empty removed:
+    # duplicate of test_error_models.py::test_sem_zero_error_rate_returns_empty
 
 
 def test_traditional_quality_model_shapes_and_range():
@@ -135,16 +117,8 @@ def test_mutation_model_snv_does_not_keep_reference_base():
     assert snv.alt != central
 
 
-def test_traditional_quality_model_reproducible_with_seed():
-    """Quality model should be deterministic given the same RNG state."""
-    rng1 = default_rng(8)
-    rng2 = default_rng(8)
-    qm = TraditionalQualityModel(average_error=0.01)
-
-    qs1 = qm.get_quality_scores(model_read_length=151, length=100, rng=rng1)
-    qs2 = qm.get_quality_scores(model_read_length=151, length=100, rng=rng2)
-
-    assert np.array_equal(qs1, qs2)
+    # test_traditional_quality_model_reproducible_with_seed removed:
+    # duplicate of test_error_models.py::test_tqm_get_quality_scores_reproducible
 
 
 def test_sequencing_error_model_reproducible_with_seed():

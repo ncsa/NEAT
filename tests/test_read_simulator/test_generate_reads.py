@@ -515,3 +515,45 @@ def test_generate_reads_variants_populated_on_reads():
 
     reads_with_mutations = [r1 for r1, _ in results if r1.mutations]
     assert len(reads_with_mutations) > 0
+
+
+# ---------------------------------------------------------------------------
+# generate_reads — paired-end discard logic (lines 234-236, 241-243)
+# ---------------------------------------------------------------------------
+
+def test_generate_reads_paired_discard_region_removes_all():
+    """Paired-end run with a full-span active discard region discards all reads.
+
+    Exercises the read2 branch of the discard check (generate_reads.py lines 234-236):
+        if any(read2):
+            if overlaps(read2, (region[0], region[1])):
+                discard_read = True
+    """
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=True)
+    cv = ContigVariants()
+    discard_all = [(0, _SPAN, True)]
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             _all_span_targeted(), discard_all,
+                             opts, None, "chr1", 0, 0)
+
+    assert results == []
+
+
+def test_generate_reads_paired_no_discard_produces_read_pairs():
+    """Paired-end run without discard produces (Read, Read) pairs (regression guard)."""
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=True)
+    cv = ContigVariants()
+
+    results = generate_reads(0, ref, err, qual, frag, cv,
+                             _all_span_targeted(), _nothing_discarded(),
+                             opts, None, "chr1", 0, 0)
+
+    assert len(results) > 0
+    for read1, read2 in results:
+        assert isinstance(read1, Read)
+        assert isinstance(read2, Read)

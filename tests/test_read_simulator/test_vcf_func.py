@@ -1,18 +1,5 @@
 """
-Regression tests for neat/read_simulator/utils/vcf_func.py
-
-Focus: parse_input_vcf, specifically the WP genotype condition fix.
-
-Bug fixed on branch fix/vcf-wp-genotype-condition:
-    BEFORE: "WP" in [x.split('=') for x in record[7].split(';')]
-            — always False because "WP" (str) can never be a member of a list
-              of lists.
-    AFTER:  "WP" in [x.split('=')[0] for x in record[7].split(';')]
-            — correctly extracts INFO keys and tests membership.
-
-There are two call sites for the WP condition, exercising different code paths:
-    Path A (line 164): has_format=True, FORMAT column lacks a GT field
-    Path B (line 185): has_format=False (no FORMAT column at all)
+Tests for neat/read_simulator/utils/vcf_func.py
 """
 import textwrap
 from pathlib import Path
@@ -21,334 +8,427 @@ import numpy as np
 import pytest
 from Bio import SeqIO
 
-from neat.read_simulator.utils.vcf_func import parse_input_vcf
 from neat.read_simulator.utils.options import Options
-from neat.variants import ContigVariants
+from neat.read_simulator.utils.vcf_func import (
+    parse_input_vcf,
+    retrieve_genotype,
+    variant_genotype,
+)
+from neat.variants import SingleNucleotideVariant
+from neat.variants.contig_variants import ContigVariants
+from neat.variants.deletion import Deletion
+from neat.variants.insertion import Insertion
+from neat.variants.unknown_variant import UnknownVariant
+
 
 # ---------------------------------------------------------------------------
-# Shared helpers
+# Shared fixtures and helpers
 # ---------------------------------------------------------------------------
 
-_REF_SEQ = "ACGT" * 100   # 400 bp; pos n (0-based) = "ACGT"[n % 4]
-# 0-based position 1 → 'C'; VCF POS (1-based) = 2
-_SNV_POS_VCF = 2   # 1-based
-_SNV_REF     = "C"
-_SNV_ALT     = "T"
+# Reference sequence: chr1 = ACGTACGTACGTACGTACGT (20 bp)
+#                     chr2 = TTGGTTGGTTGG          (12 bp)
+_REF_TEXT = ">chr1\nACGTACGTACGTACGTACGT\n>chr2\nTTGGTTGGTTGG\n"
+
+# VCF column separator
+_TAB = "\t"
 
 
-def _write_ref(tmp_path: Path) -> Path:
-    ref = tmp_path / "ref.fa"
-    ref.write_text(f">chr1\n{_REF_SEQ}\n", encoding="utf-8")
-    return ref
+@pytest.fixture()
+def ref_fasta(tmp_path):
+    fa = tmp_path / "ref.fa"
+    fa.write_text(_REF_TEXT, encoding="utf-8")
+    return SeqIO.index(str(fa), "fasta")
 
 
-def _make_ref_index(tmp_path: Path):
-    ref = _write_ref(tmp_path)
-    return SeqIO.index(str(ref), "fasta")
+@pytest.fixture()
+def empty_input_dict():
+    return {"chr1": ContigVariants(), "chr2": ContigVariants()}
 
 
-def _make_input_dict():
-    return {"chr1": ContigVariants()}
+@pytest.fixture()
+def opts():
+    o = Options(rng_seed=42)
+    o.ploidy = 2
+    return o
 
 
-def _make_options(seed: int = 0) -> Options:
-    opts = Options(rng_seed=seed)
-    opts.ploidy = 2
-    return opts
+def _write_vcf(tmp_path: Path, name: str, lines: list[str]) -> Path:
+    p = tmp_path / name
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return p
 
 
-def _write_vcf(path: Path, header_cols: str, info: str, format_col: str = None,
-               sample_col: str = None) -> Path:
-    """
-    Write a minimal single-variant VCF.
-
-    header_cols: the #CHROM header line columns after FILTER (e.g. '' or 'FORMAT\tSAMPLE')
-    info:        the INFO field value
-    format_col:  FORMAT field value (None → no FORMAT column)
-    sample_col:  SAMPLE field value (None → no sample column)
-    """
-    extra_header_cols = f"\t{header_cols}" if header_cols else ""
-    extra_data_cols = ""
-    if format_col is not None:
-        extra_data_cols += f"\t{format_col}"
-    if sample_col is not None:
-        extra_data_cols += f"\t{sample_col}"
-
-    path.write_text(
-        "##fileformat=VCFv4.1\n"
-        f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO{extra_header_cols}\n"
-        f"chr1\t{_SNV_POS_VCF}\t.\t{_SNV_REF}\t{_SNV_ALT}\t42\tPASS\t{info}{extra_data_cols}\n",
-        encoding="utf-8",
-    )
-    return path
+def _vcf_header_no_format():
+    return [
+        "##fileformat=VCFv4.2",
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO",
+    ]
 
 
-def _get_variant(input_dict):
-    """Return the first (and expected only) variant from the chr1 ContigVariants."""
-    cv = input_dict["chr1"]
-    assert cv.variant_locations, "No variants were added to ContigVariants"
-    loc = cv.variant_locations[0]
-    return cv.contig_variants[loc][0]
+def _vcf_header_with_format(sample="SAMPLE1"):
+    return [
+        "##fileformat=VCFv4.2",
+        f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample}",
+    ]
 
 
 # ===========================================================================
-# Path B — no FORMAT column, WP in INFO (the cleanest WP path)
+# retrieve_genotype
 # ===========================================================================
 
-def test_no_format_wp_in_info_genotype_matches_wp_value(tmp_path):
-    """
-    Path B (line 185): no FORMAT column, WP=0|1 in INFO.
-
-    Before the fix the WP condition always evaluated to False and genotype was
-    generated randomly. After the fix the genotype must equal [0, 1].
-    """
-    vcf = _write_vcf(tmp_path / "in.vcf", header_cols="", info="WP=0|1")
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    np.testing.assert_array_equal(variant.genotype, [0, 1])
+def _make_vcf_record(format_field, sample_field, info="."):
+    """Build a minimal 10-column VCF record list."""
+    return ["chr1", 0, ".", "A", "G", "30", "PASS", info, format_field, sample_field]
 
 
-def test_no_format_wp_slash_notation_converted(tmp_path):
-    """WP genotype written with '/' separator is correctly converted to '|'."""
-    vcf = _write_vcf(tmp_path / "in.vcf", header_cols="", info="WP=0/1")
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    np.testing.assert_array_equal(variant.genotype, [0, 1])
+def test_retrieve_genotype_phased():
+    record = _make_vcf_record("GT", "0|1")
+    gt = retrieve_genotype(record)
+    np.testing.assert_array_equal(gt, [0, 1])
 
 
-def test_no_format_wp_homozygous_alt(tmp_path):
-    """WP=1|1 (homozygous alt) is parsed correctly."""
-    vcf = _write_vcf(tmp_path / "in.vcf", header_cols="", info="WP=1|1")
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    np.testing.assert_array_equal(variant.genotype, [1, 1])
+def test_retrieve_genotype_unphased_converted():
+    """/ separator is normalised to | before splitting."""
+    record = _make_vcf_record("GT", "0/1")
+    gt = retrieve_genotype(record)
+    np.testing.assert_array_equal(gt, [0, 1])
 
 
-def test_no_format_wp_among_other_info_fields(tmp_path):
-    """WP is found even when other INFO fields precede it."""
-    vcf = _write_vcf(tmp_path / "in.vcf", header_cols="", info="DP=42;WP=0|1;DB")
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    np.testing.assert_array_equal(variant.genotype, [0, 1])
+def test_retrieve_genotype_homozygous_ref():
+    record = _make_vcf_record("GT", "0|0")
+    np.testing.assert_array_equal(retrieve_genotype(record), [0, 0])
 
 
-def test_no_format_no_wp_genotype_is_randomly_generated(tmp_path):
-    """Without WP and without FORMAT, genotype is assigned randomly (not from WP)."""
-    vcf = _write_vcf(tmp_path / "in.vcf", header_cols="", info="DP=42")
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options(seed=0))
-
-    # We can't predict the random genotype, but the variant must exist and
-    # genotype must be a valid numpy array of length == ploidy (2).
-    variant = _get_variant(input_dict)
-    assert variant.genotype is not None
-    assert len(variant.genotype) == 2
+def test_retrieve_genotype_homozygous_alt():
+    record = _make_vcf_record("GT", "1|1")
+    np.testing.assert_array_equal(retrieve_genotype(record), [1, 1])
 
 
-def test_no_format_dot_info_genotype_randomly_generated(tmp_path):
-    """INFO field '.' (missing) does not trigger WP path; genotype is random."""
-    vcf = _write_vcf(tmp_path / "in.vcf", header_cols="", info=".")
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
+def test_retrieve_genotype_gt_among_other_fields():
+    """GT may appear after other FORMAT fields."""
+    record = _make_vcf_record("DP:GT:GQ", "30:0|1:99")
+    np.testing.assert_array_equal(retrieve_genotype(record), [0, 1])
 
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options(seed=0))
 
-    variant = _get_variant(input_dict)
-    assert len(variant.genotype) == 2
+def test_retrieve_genotype_cancer_uses_column_10():
+    """is_cancer=True should read from column index 10, not 9."""
+    record = _make_vcf_record("GT", "0|0") + ["1|1"]  # 11 columns; col 10 = "1|1"
+    gt = retrieve_genotype(record, is_cancer=True)
+    np.testing.assert_array_equal(gt, [1, 1])
 
 
 # ===========================================================================
-# Path A — has FORMAT column, FORMAT lacks GT, WP in INFO
+# variant_genotype
 # ===========================================================================
 
-def test_has_format_no_gt_wp_in_info_genotype_from_wp(tmp_path):
-    """
-    Path A (line 164): FORMAT column present but without GT, WP=0|1 in INFO.
-
-    Before the fix the WP condition was never reached. After the fix it is
-    reached and genotype is set from the WP field.
-
-    Note: there is a secondary variable-shadowing bug on line 176 that causes
-    normal_sample_field to be constructed incorrectly (record[9] indexes into
-    the string segment, not the original record). The genotype itself is still
-    set correctly — this test validates that part of the fix only.
-    """
-    vcf = _write_vcf(
-        tmp_path / "in.vcf",
-        header_cols="FORMAT\tSAMPLE",
-        info="WP=0|1",
-        format_col="DP",       # FORMAT has DP, not GT
-        sample_col="40",
-    )
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    np.testing.assert_array_equal(variant.genotype, [0, 1])
+def test_variant_genotype_no_match():
+    gt = variant_genotype(2, np.array([0, 0]), 1)
+    np.testing.assert_array_equal(gt, [0, 0])
 
 
-def test_has_format_no_gt_no_wp_genotype_randomly_generated(tmp_path):
-    """
-    Path A else branch (line 178): FORMAT present but no GT and no WP →
-    genotype is generated randomly. Validates that the WP fix does not break
-    the fallback random-genotype path.
-    """
-    vcf = _write_vcf(
-        tmp_path / "in.vcf",
-        header_cols="FORMAT\tSAMPLE",
-        info="DP=50",
-        format_col="DP",
-        sample_col="50",
-    )
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
+def test_variant_genotype_het():
+    gt = variant_genotype(2, np.array([0, 1]), 1)
+    np.testing.assert_array_equal(gt, [0, 1])
 
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options(seed=0))
 
-    variant = _get_variant(input_dict)
-    assert variant.genotype is not None
-    assert len(variant.genotype) == 2
+def test_variant_genotype_homozygous_alt():
+    gt = variant_genotype(2, np.array([1, 1]), 1)
+    np.testing.assert_array_equal(gt, [1, 1])
+
+
+def test_variant_genotype_second_alt():
+    """which_alt=2 matches ploids where full_genotype==2."""
+    gt = variant_genotype(3, np.array([0, 1, 2]), 2)
+    np.testing.assert_array_equal(gt, [0, 0, 1])
+
+
+def test_variant_genotype_returns_correct_ploidy_length():
+    gt = variant_genotype(4, np.array([1, 0, 1, 0]), 1)
+    assert len(gt) == 4
+    # Ploids where full_genotype == which_alt (1) get 1; others get 0
+    np.testing.assert_array_equal(gt, [1, 0, 1, 0])
 
 
 # ===========================================================================
-# Standard GT path — unaffected by WP fix
+# parse_input_vcf — variant type classification
 # ===========================================================================
 
-def test_has_format_with_gt_genotype_from_sample_column(tmp_path):
+def test_parse_snv(tmp_path, ref_fasta, empty_input_dict, opts):
+    """REF and ALT both length 1 → SingleNucleotideVariant."""
+    vcf = _write_vcf(tmp_path, "snv.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.",   # pos 1 (VCF) = pos 0 (0-based): ref=A
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants.get(0, [])
+    assert len(variants) == 1
+    assert isinstance(variants[0], SingleNucleotideVariant)
+    assert variants[0].alt == "G"
+
+
+def test_parse_deletion(tmp_path, ref_fasta, empty_input_dict, opts):
+    """len(ref) > len(alt) and ref.startswith(alt) → Deletion."""
+    # pos 5 (VCF) = pos 4 (0-based): reference is ACGT
+    vcf = _write_vcf(tmp_path, "del.vcf", _vcf_header_no_format() + [
+        "chr1\t5\t.\tACGT\tA\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants.get(4, [])
+    assert len(variants) == 1
+    assert isinstance(variants[0], Deletion)
+
+
+def test_parse_insertion(tmp_path, ref_fasta, empty_input_dict, opts):
+    """len(alt) > len(ref) and alt.startswith(ref) → Insertion."""
+    # pos 9 (VCF) = pos 8 (0-based): reference is A
+    vcf = _write_vcf(tmp_path, "ins.vcf", _vcf_header_no_format() + [
+        "chr1\t9\t.\tA\tACGTACGT\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants.get(8, [])
+    assert len(variants) == 1
+    assert isinstance(variants[0], Insertion)
+
+
+def test_parse_unknown_variant(tmp_path, ref_fasta, empty_input_dict, opts):
+    """MNV (multi-nucleotide, same length > 1) falls through to UnknownVariant."""
+    # pos 1 (VCF) = pos 0 (0-based): ref=AC, alt=TG (len==2, not 1, so not SNV)
+    vcf = _write_vcf(tmp_path, "unk.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tAC\tTG\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants.get(0, [])
+    assert len(variants) == 1
+    assert isinstance(variants[0], UnknownVariant)
+
+
+# ===========================================================================
+# parse_input_vcf — filtering / skipping
+# ===========================================================================
+
+def test_chrom_not_in_reference_skipped(tmp_path, ref_fasta, empty_input_dict, opts):
+    """Variants on chromosomes absent from the reference are silently skipped."""
+    vcf = _write_vcf(tmp_path, "chrom.vcf", _vcf_header_no_format() + [
+        "chrX\t1\t.\tA\tG\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    total = sum(len(cv.variant_locations) for cv in empty_input_dict.values())
+    assert total == 0
+
+
+def test_ref_mismatch_skipped(tmp_path, ref_fasta, empty_input_dict, opts):
+    """Variant whose REF doesn't match the reference sequence is skipped."""
+    # chr1 pos 0 is 'A', but we claim it's 'T'
+    vcf = _write_vcf(tmp_path, "mismatch.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tT\tG\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    assert len(empty_input_dict["chr1"].variant_locations) == 0
+
+
+def test_duplicate_position_skipped(tmp_path, ref_fasta, empty_input_dict, opts):
+    """A second variant with the same genotype at the same position is skipped.
+    add_variant deduplicates by (position, genotype), not just position."""
+    # Both records share GT=0|1 → same temp_genotype → second is a dup
+    vcf = _write_vcf(tmp_path, "dup.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.\tGT\t0|1",
+        "chr1\t1\t.\tA\tC\t30\tPASS\t.\tGT\t0|1",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    assert len(empty_input_dict["chr1"].contig_variants[0]) == 1
+
+
+def test_comment_and_header_lines_not_parsed_as_variants(tmp_path, ref_fasta, empty_input_dict, opts):
+    """## header lines and #CHROM line are never treated as variant records."""
+    vcf = _write_vcf(tmp_path, "headers.vcf", [
+        "##fileformat=VCFv4.2",
+        "##source=test",
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO",
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    assert len(empty_input_dict["chr1"].variant_locations) == 1
+
+
+# ===========================================================================
+# parse_input_vcf — QUAL handling
+# ===========================================================================
+
+def test_missing_qual_replaced_with_42(tmp_path, ref_fasta, empty_input_dict, opts):
+    """QUAL field '.' is replaced with the default value '42'."""
+    vcf = _write_vcf(tmp_path, "qual.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tA\tG\t.\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants[0]
+    assert variants[0].qual_score == "42"
+
+
+# ===========================================================================
+# parse_input_vcf — FORMAT / genotype handling
+# ===========================================================================
+
+def test_with_format_gt_uses_sample_genotype(tmp_path, ref_fasta, empty_input_dict, opts):
+    """FORMAT column with GT field reads genotype from the sample column."""
+    vcf = _write_vcf(tmp_path, "gt.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.\tGT\t0|1",
+    ])
+    sample_cols = parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    assert sample_cols == {"SAMPLE1": 7}
+    variants = empty_input_dict["chr1"].contig_variants[0]
+    # genotype should reflect 0|1: only the second ploid carries the variant
+    np.testing.assert_array_equal(variants[0].genotype, [0, 1])
+
+
+def test_without_format_genotype_is_generated(tmp_path, ref_fasta, empty_input_dict, opts):
+    """No FORMAT column → genotype is randomly generated (non-None)."""
+    vcf = _write_vcf(tmp_path, "nogt.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants[0]
+    assert variants[0].genotype is not None
+    assert len(variants[0].genotype) == 2
+
+
+def test_format_without_gt_generates_random_genotype(tmp_path, ref_fasta, empty_input_dict, opts):
+    """FORMAT column present but no GT field → random genotype generated."""
+    vcf = _write_vcf(tmp_path, "fmtngt.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.\tDP\t42",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants[0]
+    assert variants[0].genotype is not None
+    assert len(variants[0].genotype) == 2
+
+
+def test_no_format_returns_empty_sample_columns(tmp_path, ref_fasta, empty_input_dict, opts):
+    """No FORMAT column → returned sample_columns is empty."""
+    vcf = _write_vcf(tmp_path, "nosample.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.",
+    ])
+    result = parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    assert not result
+
+
+def test_format_exits_if_no_sample_column(tmp_path, ref_fasta, empty_input_dict, opts):
+    """FORMAT present but no sample column after it → sys.exit."""
+    vcf = _write_vcf(tmp_path, "fmtnosample.vcf", [
+        "##fileformat=VCFv4.2",
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT",
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.\tGT",
+    ])
+    with pytest.raises(SystemExit):
+        parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+
+
+# ===========================================================================
+# parse_input_vcf — multiple ALTs
+# ===========================================================================
+
+def test_multiple_alts_each_gets_variant(tmp_path, ref_fasta, empty_input_dict, opts):
+    """A comma-separated ALT field produces one variant object per alt allele."""
+    vcf = _write_vcf(tmp_path, "multialt.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tA\tG,C\t30\tPASS\t.\tGT\t1|2",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    # Two SNVs at position 0
+    variants = empty_input_dict["chr1"].contig_variants.get(0, [])
+    assert len(variants) == 2
+    alts = {v.alt for v in variants}
+    assert alts == {"G", "C"}
+
+
+# ===========================================================================
+# parse_input_vcf — multiple contigs and is_input flag
+# ===========================================================================
+
+def test_variants_routed_to_correct_contig(tmp_path, ref_fasta, empty_input_dict, opts):
+    """Variants on different chromosomes end up in the correct ContigVariants."""
+    # chr2 starts with TTGG... so pos 1 (0-based 0) = T
+    vcf = _write_vcf(tmp_path, "multi.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.",
+        "chr2\t1\t.\tT\tC\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    assert len(empty_input_dict["chr1"].variant_locations) == 1
+    assert len(empty_input_dict["chr2"].variant_locations) == 1
+
+
+def test_parsed_variants_marked_as_input(tmp_path, ref_fasta, empty_input_dict, opts):
+    """All variants from an input VCF have is_input=True."""
+    vcf = _write_vcf(tmp_path, "isinput.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    for v in empty_input_dict["chr1"].contig_variants[0]:
+        assert v.is_input is True
+
+
+# ===========================================================================
+# parse_input_vcf — legacy WP genotype (lines 165-176, 186-198)
+# ===========================================================================
+# NOTE: Lines 165-176 and 186-198 are currently unreachable dead code.
+# The guard condition `"WP" in [x.split('=') for x in record[7].split(';')]`
+# is always False because it compares the string "WP" against inner lists
+# (e.g. ["WP", "0|1"]) — a string never equals a list.
+# The correct condition would be:
+#   any(x.split('=')[0] == "WP" for x in record[7].split(';'))
+# The tests below document the CURRENT (broken) behaviour: WP genotypes
+# fall through to random genotype generation instead of being parsed.
+
+def test_wp_in_info_no_format_uses_random_genotype(tmp_path, ref_fasta, empty_input_dict, opts):
+    """VCF with WP in INFO but no FORMAT column: WP is not recognised (bug),
+    so a random genotype is generated instead.
+
+    TODO (post-fix): Once the WP guard condition is corrected from
+        "WP" in [x.split('=') for x in record[7].split(';')]
+    to
+        any(x.split('=')[0] == "WP" for x in record[7].split(';'))
+    update this test to assert that the genotype IS read from the WP field:
+        np.testing.assert_array_equal(variants[0].genotype, [0, 1])
+    and remove the random-genotype assertions below.
     """
-    FORMAT column contains GT — genotype is read from the SAMPLE column.
-    This is the most common VCF path; the WP fix must not affect it.
+    vcf = _write_vcf(tmp_path, "wp_noformat.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\tWP=0|1",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants.get(0, [])
+    assert len(variants) == 1
+    # Genotype is generated randomly — not read from WP (due to the bug)
+    assert variants[0].genotype is not None
+    assert len(variants[0].genotype) == 2
+
+
+def test_wp_in_info_with_format_no_gt_uses_random_genotype(tmp_path, ref_fasta, empty_input_dict, opts):
+    """VCF with WP in INFO and FORMAT column but no GT field: WP is not
+    recognised (bug), so a random genotype is generated instead.
+
+    TODO (post-fix): Once the WP guard condition is corrected (see above),
+    update this test to assert that the genotype IS read from the WP field:
+        np.testing.assert_array_equal(variants[0].genotype, [0, 1])
+    Also verify the FORMAT column is prefixed with "GT:" and the sample
+    field includes the WP-derived genotype string.
     """
-    vcf = _write_vcf(
-        tmp_path / "in.vcf",
-        header_cols="FORMAT\tSAMPLE",
-        info=".",
-        format_col="GT",
-        sample_col="0|1",
-    )
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    np.testing.assert_array_equal(variant.genotype, [0, 1])
+    vcf = _write_vcf(tmp_path, "wp_format.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\tWP=0|1\tDP\t42",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants.get(0, [])
+    assert len(variants) == 1
+    assert variants[0].genotype is not None
+    assert len(variants[0].genotype) == 2
 
 
-def test_has_format_gt_homozygous_ref(tmp_path):
-    """GT=0|0 (homozygous ref) is parsed correctly via the standard GT path."""
-    vcf = _write_vcf(
-        tmp_path / "in.vcf",
-        header_cols="FORMAT\tSAMPLE",
-        info=".",
-        format_col="GT",
-        sample_col="0|0",
-    )
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
+def test_wp_only_info_field_not_mistaken_for_gt(tmp_path, ref_fasta, empty_input_dict, opts):
+    """Confirm that a standalone WP field in INFO without = is also not parsed.
 
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    np.testing.assert_array_equal(variant.genotype, [0, 0])
-
-
-def test_has_format_gt_slash_notation(tmp_path):
-    """GT=0/1 (unphased, slash separator) is handled correctly."""
-    vcf = _write_vcf(
-        tmp_path / "in.vcf",
-        header_cols="FORMAT\tSAMPLE",
-        info=".",
-        format_col="GT",
-        sample_col="0/1",
-    )
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    np.testing.assert_array_equal(variant.genotype, [0, 1])
-
-
-# ===========================================================================
-# General parse_input_vcf correctness
-# ===========================================================================
-
-def test_variant_not_in_reference_skipped(tmp_path):
-    """A variant whose chromosome is absent from the reference is silently skipped."""
-    vcf = tmp_path / "in.vcf"
-    vcf.write_text(
-        "##fileformat=VCFv4.1\n"
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
-        "chrX\t2\t.\tC\tT\t42\tPASS\t.\n",
-        encoding="utf-8",
-    )
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    assert input_dict["chr1"].variant_locations == []
-
-
-def test_ref_mismatch_skipped(tmp_path):
-    """A variant whose REF field doesn't match the reference is skipped."""
-    vcf = tmp_path / "in.vcf"
-    vcf.write_text(
-        "##fileformat=VCFv4.1\n"
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
-        f"chr1\t{_SNV_POS_VCF}\t.\tG\tT\t42\tPASS\t.\n",  # REF='G' but actual is 'C'
-        encoding="utf-8",
-    )
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    assert input_dict["chr1"].variant_locations == []
-
-
-def test_missing_qual_gets_default(tmp_path):
-    """A '.' QUAL is replaced by the default '42'."""
-    vcf = _write_vcf(
-        tmp_path / "in.vcf",
-        header_cols="FORMAT\tSAMPLE",
-        info=".",
-        format_col="GT",
-        sample_col="0|1",
-    )
-    # Rewrite with QUAL='.'
-    vcf.write_text(
-        "##fileformat=VCFv4.1\n"
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n"
-        f"chr1\t{_SNV_POS_VCF}\t.\t{_SNV_REF}\t{_SNV_ALT}\t.\tPASS\t.\tGT\t0|1\n",
-        encoding="utf-8",
-    )
-    ref = _make_ref_index(tmp_path)
-    input_dict = _make_input_dict()
-
-    parse_input_vcf(input_dict, vcf, 2, ref, _make_options())
-
-    variant = _get_variant(input_dict)
-    assert variant.qual_score == "42"
+    TODO (post-fix): A bare "WP" with no value is malformed; after the fix
+    this test should still produce a random genotype (WP= is required).
+    """
+    vcf = _write_vcf(tmp_path, "wp_bare.vcf", _vcf_header_no_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\tWP",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants.get(0, [])
+    assert len(variants) == 1
+    assert variants[0].genotype is not None

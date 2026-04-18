@@ -161,7 +161,7 @@ def parse_input_vcf(
                         # Retrieve the GT from the first sample in the record
                         genotype = retrieve_genotype(record)
 
-                    elif "WP" in [x.split('=')[0] for x in record[7].split(';')]:
+                    elif "WP" in [x.split('=')[0] for x in record[7].split(';') if '=' in x]:
                         """
                         "WP" is the legacy code NEAT used for genotype it added. It was found in the INFO field.
                         We're just going to make a sample column in this version of NEAT
@@ -171,10 +171,13 @@ def parse_input_vcf(
                         format_column = f"GT:{record[8]}"
                         sample_field = record[9]
                         for info_item in record[7].split(';'):
-                            if info_item.startswith('WP'):
+                            if info_item.startswith('WP') and '=' in info_item:
                                 genotype = info_item.split('=')[1].replace('/', '|').split('|')
                                 genotype = np.array([int(x) for x in genotype])
                                 normal_sample_field = f"{get_genotype_string(genotype)}:{sample_field}"
+                            elif info_item.startswith('WP'):
+                                _LOG.error(f'Malformed WP field in INFO (missing value): {record[7]}')
+                                sys.exit(1)
 
                     else:
                         format_column = 'GT:' + record[8]
@@ -183,7 +186,7 @@ def parse_input_vcf(
                         gt_field = get_genotype_string(genotype)
                         normal_sample_field = f'{gt_field}:{record[9]}'
 
-                elif "WP" in [x.split('=')[0] for x in record[7].split(';')]:
+                elif "WP" in [x.split('=')[0] for x in record[7].split(';') if '=' in x]:
                     """
                     "WP" is the legacy code NEAT used for genotype it added. It was found in the INFO field.
                     We're just going to make a sample column in this version of NEAT
@@ -192,10 +195,13 @@ def parse_input_vcf(
                     """
                     format_column = "GT"
                     for info_item in record[7].split(';'):
-                        if info_item.startswith('WP'):
+                        if info_item.startswith('WP') and '=' in info_item:
                             genotype = info_item.split('=')[1].replace('/', '|').split('|')
                             genotype = np.array([int(x) for x in genotype])
                             normal_sample_field = get_genotype_string(genotype)
+                        elif info_item.startswith('WP'):
+                            _LOG.error(f'Malformed WP field in INFO (missing value): {record[7]}')
+                            sys.exit(1)
 
                 else:
                     # If there was no format column, there's no sample column, so we'll generate one
