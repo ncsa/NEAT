@@ -197,15 +197,12 @@ def test_check_if_del_no_match_returns_none():
 
 
 def test_check_if_ins_with_int_position():
-    """check_if_ins passes the variant object to Insertion.contains() which
-    expects an int — so it always returns None (known bug). Test documents
-    actual behaviour."""
+    """check_if_ins correctly returns the insertion when the SNV position falls inside it."""
     cv = ContigVariants()
     ins = _ins(10, "ACGTT", 4, gt=np.array([0, 1]))
     cv.add_variant(ins)
     snv = _snv(11, "T", gt=np.array([0, 1]))
-    # Due to the bug, result is None even though position is inside insertion
-    assert cv.check_if_ins(snv) is None
+    assert cv.check_if_ins(snv) is ins
 
 
 def test_check_if_ins_no_match_returns_none():
