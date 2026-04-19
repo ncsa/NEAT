@@ -60,43 +60,43 @@ NEAT has changed significantly since the release of version 2.0 in 2016. The cod
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 | #  | Feature Name          | Prior Implementation (2.0)                  | Updated Implementation (4.3)                         |
 +====+=======================+=============================================+======================================================+
-| 1  | GC Bias Computation   | Used custom model of GC bias                | Removed, pending further investigation               |
+| **1**  | GC Bias Computation   | Used custom model of GC bias                | Removed, pending further investigation               |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 2  | Read Generation       | Sliding-window approach                     | Coordinate-based read selection                      |
+| **2**  | Read Generation       | Sliding-window approach                     | Coordinate-based read selection                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 3  | Variant Input         | Partial data loss from input variants       | Preserves all input data                             |
+| **3**  | Variant Input         | Partial data loss from input variants       | Preserves all input data                             |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 4  | Variant Modeling      | Two variant types supported                 | Framework to expand variant types                    |
+| **4**  | Variant Modeling      | Two variant types supported                 | Framework to expand variant types                    |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 5  | Automated Testing     | No formal testing framework                 | Unit tests and automated continuous integration      |
+| **5**  | Automated Testing     | No formal testing framework                 | Unit tests and automated continuous integration      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 6  | Configuration Files   | Command line interface only                 | Structured configuration files for reproducibility   |
+| **6**  | Configuration Files   | Command line interface only                 | Structured configuration files for reproducibility   |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 7  | Detailed Logging      | Minimal error logging                       | Extensive logs to recreate runs and describe errors  |
+| **7**  | Detailed Logging      | Minimal error logging                       | Extensive logs to recreate runs and describe errors  |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 8  | Friendly Installation | Clone repository and install                | pip installable                                      |
+| **8**  | Friendly Installation | Clone repository and install                | pip installable                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 9  | Parallelization       | Single-threaded                             | Multi-threaded                                       |
+| **9**  | Parallelization       | Single-threaded                             | Multi-threaded                                       |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 |    |                       |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| 10 | Refactored Unit       | None                                        | Added for all major functions                        |
+| **10** | Refactored Unit       | None                                        | Added for all major functions                        |
 |    | Testing               |                                             |                                                      |
 +----+-----------------------+---------------------------------------------+------------------------------------------------------+
 
@@ -119,7 +119,7 @@ Documentation of software robustness, user experience, parallelization performan
 
 # State of the field
 
-Even as long-read sequencing advances, short-read, bulk sequencing remains prominent due to its comparatively low cost and high throughput. Simulating short-read datasets can replicate sequencing pipelines used in a wide variety of research settings. Investigations of read simulators have analyzed use cases across whole genomes, exomes, or metagenomes [@Escalona:2016; @Zhao:2017] and whether empirical error-profile learning improves realism [@Alosaimi:2020; @Milhaven:2023; @Schmeing:2021]. While many short-read simulators have appeared in these studies (ART, CuReSim, DWGSIM, GemSIM, InSilicoSeq, Mason, NEAT, pIRS, ReSeq, SInC, and wgsim [@Huang:2012; @Caboche:2014; @Homer:2010; @McElroy:2012; @Gourle:2019; @Holtgrewe:2010; @Hu:2012; @Schmeing:2021; @Pattnaik:2014; @Li:2011]), only a subset were found to produce sequencing data with explicit ground truth suitable for benchmarking [@Alosaimi:2020], including NEAT [@Milhaven:2023].
+Even as long-read sequencing advances, short-read, bulk sequencing remains prominent due to its comparatively low cost and high throughput. Simulating short-read datasets can replicate sequencing pipelines used in a wide variety of research settings. Investigations of read simulators have analyzed use cases across whole genomes, exomes, and metagenomes [@Escalona:2016; @Zhao:2017] and whether empirical error-profile learning improves realism [@Alosaimi:2020; @Milhaven:2023; @Schmeing:2021]. While many short-read simulators have appeared in these studies (ART, CuReSim, DWGSIM, GemSIM, InSilicoSeq, Mason, NEAT, pIRS, ReSeq, SInC, and wgsim [@Huang:2012; @Caboche:2014; @Homer:2010; @McElroy:2012; @Gourle:2019; @Holtgrewe:2010; @Hu:2012; @Schmeing:2021; @Pattnaik:2014; @Li:2011]), only a subset were found to produce sequencing data with explicit ground truth suitable for benchmarking [@Alosaimi:2020], including NEAT [@Milhaven:2023].
 
 Additionally, in their benchmark of twenty DNA read simulators that use reference genomes and produce FASTQ files, Alosaimi et al. (2020) found that NEAT’s suite of features compares favorably to other tools. Although NEAT achieved the second-highest mapping sensitivity and precision on a human chromosome 22 test set, NEAT’s runtimes were the second-longest [@Alosaimi:2020]. Milhaven and Pfeifer also noted NEAT’s realism in sequencing—but also its slow simulation runtimes [@Milhaven:2023]. NEAT is noteworthy for its ability to combine mutation and sequencing models in a single framework and accept user-specified mutation models [@Stephens:2016]. The latest version of NEAT maintains these strengths and addresses some of these weaknesses with multi-threading and algorithmic updates, as outlined above.
 
