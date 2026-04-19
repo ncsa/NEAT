@@ -57,48 +57,30 @@ NEAT has changed significantly since the release of version 2.0 in 2016. The cod
 
 ### Table 1. Methodological, software robustness, and user experience updates in NEAT 4.3
 
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| #  | Feature Name          | Prior Implementation (2.0)                  | Updated Implementation (4.3)                         |
-+====+=======================+=============================================+======================================================+
-| **1**  | GC Bias Computation   | Used custom model of GC bias                | Removed, pending further investigation               |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **2**  | Read Generation       | Sliding-window approach                     | Coordinate-based read selection                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **3**  | Variant Input         | Partial data loss from input variants       | Preserves all input data                             |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **4**  | Variant Modeling      | Two variant types supported                 | Framework to expand variant types                    |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **5**  | Automated Testing     | No formal testing framework                 | Unit tests and automated continuous integration      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **6**  | Configuration Files   | Command line interface only                 | Structured configuration files for reproducibility   |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **7**  | Detailed Logging      | Minimal error logging                       | Extensive logs to recreate runs and describe errors  |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **8**  | Friendly Installation | Clone repository and install                | pip installable                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **9**  | Parallelization       | Single-threaded                             | Multi-threaded                                       |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-|    |                       |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
-| **10** | Refactored Unit       | None                                        | Added for all major functions                        |
-|    | Testing               |                                             |                                                      |
-+----+-----------------------+---------------------------------------------+------------------------------------------------------+
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| #    | Feature Name          | Prior Implementation (2.0)                  | Updated Implementation (4.3)                         |
++======+=======================+=============================================+======================================================+
+| **1** | GC Bias Computation   | Used custom model of GC bias                | Removed, pending further investigation               |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **2** | Read Generation       | Sliding-window approach                     | Coordinate-based read selection                      |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **3** | Variant Input         | Partial data loss from input variants       | Preserves all input data                             |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **4** | Variant Modeling      | Two variant types supported                 | Framework to expand variant types                    |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **5** | Automated Testing     | No formal testing framework                 | Unit tests and automated continuous integration      |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **6** | Configuration Files   | Command line interface only                 | Structured configuration files for reproducibility   |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **7** | Detailed Logging      | Minimal error logging                       | Extensive logs to recreate runs and describe errors  |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **8** | Friendly Installation | Clone repository and install                | pip installable                                      |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **9** | Parallelization       | Single-threaded                             | Multi-threaded                                       |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
+| **10**| Refactored Unit       | None                                        | Added for all major functions                        |
+|      | Testing               |                                             |                                                      |
++------+-----------------------+---------------------------------------------+------------------------------------------------------+
 
 Below, we summarize methodological changes (**Table 1**) present in NEAT 4.3:
 
@@ -115,19 +97,19 @@ Below, we summarize methodological changes (**Table 1**) present in NEAT 4.3:
 - [**4**] NEAT 4.3 uses the same variants as NEAT 2.0, but the code has been updated to allow for additional variant types in future releases.
 
 
-Documentation of software robustness, user experience, parallelization performance benchmarks, and more future improvements [**5**–**10**] is available on the project’s online repository.
+Documentation of software robustness, user experience, parallelization performance benchmarks, and more future improvements [**5**–**10**] is available on the project's online repository.
 
 # State of the field
 
 Even as long-read sequencing advances, short-read, bulk sequencing remains prominent due to its comparatively low cost and high throughput. Simulating short-read datasets can replicate sequencing pipelines used in a wide variety of research settings. Investigations of read simulators have analyzed use cases across whole genomes, exomes, and metagenomes [@Escalona:2016; @Zhao:2017] and whether empirical error-profile learning improves realism [@Alosaimi:2020; @Milhaven:2023; @Schmeing:2021]. While many short-read simulators have appeared in these studies (ART, CuReSim, DWGSIM, GemSIM, InSilicoSeq, Mason, NEAT, pIRS, ReSeq, SInC, and wgsim [@Huang:2012; @Caboche:2014; @Homer:2010; @McElroy:2012; @Gourle:2019; @Holtgrewe:2010; @Hu:2012; @Schmeing:2021; @Pattnaik:2014; @Li:2011]), only a subset were found to produce sequencing data with explicit ground truth suitable for benchmarking [@Alosaimi:2020], including NEAT [@Milhaven:2023].
 
-Additionally, in their benchmark of twenty DNA read simulators that use reference genomes and produce FASTQ files, Alosaimi et al. (2020) found that NEAT’s suite of features compares favorably to other tools. Although NEAT achieved the second-highest mapping sensitivity and precision on a human chromosome 22 test set, NEAT’s runtimes were the second-longest [@Alosaimi:2020]. Milhaven and Pfeifer also noted NEAT’s realism in sequencing—but also its slow simulation runtimes [@Milhaven:2023]. NEAT is noteworthy for its ability to combine mutation and sequencing models in a single framework and accept user-specified mutation models [@Stephens:2016]. The latest version of NEAT maintains these strengths and addresses some of these weaknesses with multi-threading and algorithmic updates, as outlined above.
+Additionally, in their benchmark of twenty DNA read simulators that use reference genomes and produce FASTQ files, Alosaimi et al. (2020) found that NEAT's suite of features compares favorably to other tools. Although NEAT achieved the second-highest mapping sensitivity and precision on a human chromosome 22 test set, NEAT's runtimes were the second-longest [@Alosaimi:2020]. Milhaven and Pfeifer also noted NEAT's realism in sequencing—but also its slow simulation runtimes [@Milhaven:2023]. NEAT is noteworthy for its ability to combine mutation and sequencing models in a single framework and accept user-specified mutation models [@Stephens:2016]. The latest version of NEAT maintains these strengths and addresses some of these weaknesses with multi-threading and algorithmic updates, as outlined above.
 
 # Research impact statement
 
 NEAT is notable for producing ground-truth BAM and VCF outputs suitable for systematic benchmarking pipelines using custom mutation and sequencing models [@Alosaimi:2020; @Schmeing:2021; @Stephens:2016; @Milhaven:2023]. Researchers have been using NEAT since its initial release—from assisting benchmarks in the sequencing of the human Y chromosome [@Rhie:2023] to evaluating other bioinformatics tools [@Lefouili:2022; @Zhao:2020]. NEAT supports method development across a range of bioinformatics tasks, including optimization of high-throughput variant-calling workflows [@Ahmed:2019; @Kendig:2019], feasibility studies of exome sequencing [@RuizSchultz:2021], pan-genome mapping [@Jandrasits:2019], Bayesian approaches for resolving ambiguously mapped reads [@Shah:2021], and ultra-sensitive multi-sample variant calling [@Delhomme:2020].
 
-The updates described here (NEAT 4.3) highlight NEAT’s practicality for future work in the field. The source code for NEAT is freely available on GitHub [@Stephens:2016].
+The updates described here (NEAT 4.3) highlight NEAT's practicality for future work in the field. The source code for NEAT is freely available on GitHub [@Stephens:2016].
 
 # Acknowledgements
 
@@ -135,6 +117,6 @@ We thank the original creators of NEAT: Zachary D. Stephens, Matthew E. Hudson, 
 
 We also thank Varenya Jain, Meredith Pudlewski, Karen H. Xiong, and other contributors for their work on updating NEAT.
 
-Portions of this project were funded by the National Center for Supercomputing Applications’ Students Pushing Innovation (SPIN) program and the Illinois Computes project through the University of Illinois Urbana-Champaign.
+Portions of this project were funded by the National Center for Supercomputing Applications' Students Pushing Innovation (SPIN) program and the Illinois Computes project through the University of Illinois Urbana-Champaign.
 
 # References
