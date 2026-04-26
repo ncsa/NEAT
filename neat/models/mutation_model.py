@@ -108,9 +108,19 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         # First determine which matrix to use
         transition_matrix = self.trinuc_trans_matrices[DINUC_IND[trinucleotide[0] + "_" + trinucleotide[2]]]
         # then determine the trans probs based on the middle nucleotide
-        transition_probs = transition_matrix[NUC_IND[trinucleotide[1]]]
-        # Creating probabilities from the weights
+        transition_probs = list(transition_matrix[NUC_IND[trinucleotide[1]]])
+        # Zero the ref-base probability so that we never pick REF==ALT, even with custom models with trans matrices
+        # that have non-zero diagonal entries (edge case)
+        ref_base_idx = NUC_IND[trinucleotide[1]]
+        transition_probs[ref_base_idx] = 0.0
         transition_sum = sum(transition_probs)
+        if transition_sum == 0.0:
+            _LOG.warning(
+                f"Transition matrix row for '{trinucleotide[1]}' has all weight on the reference base. "
+                f"Falling back to uniform sampling of non-ref bases."
+            )
+            transition_probs = [1.0 if i != ref_base_idx else 0.0 for i in range(len(ALLOWED_NUCL))]
+            transition_sum = sum(transition_probs)
         transition_probs = [x/transition_sum for x in transition_probs]
         # Now pick a random alternate, weighted by the probabilities
         alt = rng.choice(ALLOWED_NUCL, p=transition_probs)

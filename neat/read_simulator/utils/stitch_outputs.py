@@ -24,11 +24,20 @@ def concat(files_to_join: List[Path], dest_file: gzip.GzipFile) -> None:
 
 def merge_vcfs(vcfs: List[Path], ofw: OutputFileWriter) -> None:
     dest = ofw.files_to_write[ofw.vcf]
+    seen: set[str] = set()
+    n_duplicates = 0
     for vcf in vcfs:
         with gzip.open(vcf, 'rt') as fh:
             for line in fh:
                 if not line.startswith("#"):
+                    normalized = line.rstrip("\r\n")
+                    if normalized in seen:
+                        n_duplicates += 1
+                        continue
+                    seen.add(normalized)
                     dest.write(line)
+    if n_duplicates:
+        _LOG.warning(f"merge_vcfs: removed {n_duplicates} duplicate VCF line(s) during merge.")
 
 def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int):
     merged_file = ofw.tmp_dir / "temp_merged.bam"

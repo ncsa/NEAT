@@ -94,13 +94,26 @@ class ContigVariants:
 
     def find_dups(self, variant):
         """
-        Checks if the given genotype is already present in a list of variants.
+        Checks if an equivalent variant already exists at this position.
+        Two variants are duplicates when they share the same type and ALT allele.
+        Genotype-only comparison was insufficient: two variants with identical ALT
+        but different genotypes would produce two identical VCF output lines.
 
         :param variant: A variant to check for duplicates
-        :return: True or False if found or not
+        :return: True if a duplicate exists, False otherwise
         """
+        try:
+            variant_alt = variant.get_alt()
+        except (KeyError, AttributeError):
+            variant_alt = None
+
         for existing_var in self.contig_variants[variant.position1]:
-            if np.array_equal(variant.genotype, existing_var.genotype):
+            try:
+                existing_alt = existing_var.get_alt()
+            except (KeyError, AttributeError):
+                existing_alt = None
+
+            if type(variant) == type(existing_var) and variant_alt == existing_alt:
                 return True
 
         return False
