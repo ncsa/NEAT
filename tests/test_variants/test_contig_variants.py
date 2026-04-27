@@ -11,9 +11,7 @@ from neat.variants.contig_variants import ContigVariants
 from neat.variants import Deletion, Insertion, SingleNucleotideVariant
 from neat.variants.unknown_variant import UnknownVariant
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 _SEQ = "ACGTACGTACGTACGT"   # 16 bp
 _REC = SeqRecord(Seq(_SEQ), id="chr1", name="chr1", description="")
@@ -32,9 +30,7 @@ def _ins(pos, alt="ACGT", length=3, gt=None):
     return Insertion(pos, length, alt, gt if gt is not None else _GT.copy(), "42")
 
 
-# ===========================================================================
 # get_ref_alt — SNV
-# ===========================================================================
 
 def test_get_ref_alt_snv_ref_is_single_base():
     snv = _snv(2, "T")
@@ -55,9 +51,7 @@ def test_get_ref_alt_snv_with_block_start_offset():
     assert ref == _SEQ[2]   # local index = 6 - 4 = 2
 
 
-# ===========================================================================
 # get_ref_alt — Deletion
-# ===========================================================================
 
 def test_get_ref_alt_deletion_ref_spans_length():
     d = _del(1, 3)
@@ -72,9 +66,7 @@ def test_get_ref_alt_deletion_alt_is_single_base():
     assert alt == _SEQ[1]
 
 
-# ===========================================================================
 # get_ref_alt — Insertion
-# ===========================================================================
 
 def test_get_ref_alt_insertion_ref_is_single_base():
     ins = _ins(3, "ACGTT", 4)
@@ -88,9 +80,7 @@ def test_get_ref_alt_insertion_alt_from_variant():
     assert alt == "ACGTT"
 
 
-# ===========================================================================
 # get_ref_alt — UnknownVariant
-# ===========================================================================
 
 def test_get_ref_alt_unknown_uses_metadata():
     uv = UnknownVariant(5, _GT.copy(), "42", is_input=True,
@@ -103,9 +93,7 @@ def test_get_ref_alt_unknown_uses_metadata():
     assert alt == "ACGT"
 
 
-# ===========================================================================
 # get_sample_info
-# ===========================================================================
 
 def test_get_sample_info_with_neat_sample_metadata():
     snv = _snv(2, "T")
@@ -120,9 +108,7 @@ def test_get_sample_info_without_metadata_uses_genotype_string():
     assert "|" in result or "/" in result
 
 
-# ===========================================================================
 # remove_variant
-# ===========================================================================
 
 def test_remove_variant_method_exists():
     """remove_variant silently no-ops due to variant.position bug.
@@ -140,9 +126,7 @@ def test_remove_variant_method_exists():
     assert callable(cv.remove_variant)
 
 
-# ===========================================================================
 # compile_genotypes_for_location
-# ===========================================================================
 
 def test_compile_genotypes_two_variants_different_ploids():
     cv = ContigVariants()
@@ -162,9 +146,7 @@ def test_compile_genotypes_single_variant():
     assert list(result) == [0, 1]
 
 
-# ===========================================================================
 # generate_field
-# ===========================================================================
 
 def test_generate_field_uses_metadata_when_present():
     cv = ContigVariants()
@@ -179,9 +161,7 @@ def test_generate_field_falls_back_to_default():
     assert cv.generate_field(snv, "ID") == "."
 
 
-# ===========================================================================
 # check_if_del / check_if_ins
-# ===========================================================================
 
 def test_check_if_del_finds_containing_deletion():
     cv = ContigVariants()

@@ -228,6 +228,13 @@ def parse_input_vcf(
                 count = 0
                 for alt in alts:
                     count += 1
+                    if ref == alt:
+                        _LOG.warning(
+                            f"Skipping variant at {chrom}:{location + 1} — REF == ALT ({ref!r}). "
+                            f"This is not a valid variant."
+                        )
+                        n_skipped += 1
+                        continue
                     # This temp genotype teases out only the ploids with this particular variant
                     temp_genotype = variant_genotype(options.ploidy, genotype, count)
                     if len(ref) == len(alt) == 1:

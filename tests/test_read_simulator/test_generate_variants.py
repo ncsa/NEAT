@@ -16,9 +16,7 @@ from neat.read_simulator.utils.options import Options
 from neat.variants import ContigVariants, SingleNucleotideVariant, Insertion, Deletion
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 _CLEAN_SEQ = "ACGT" * 50          # 200 bp, no N's
 _N_HEAVY   = "N" * 95 + "ACGT"    # 99 bases, >10% N
@@ -44,9 +42,7 @@ def _full_rate_regions(seq_len: int, rate: float = 0.01, offset: int = 0):
     return [(offset, offset + seq_len, rate)]
 
 
-# ===========================================================================
 # find_random_non_n
-# ===========================================================================
 
 def test_find_random_non_n_returns_valid_index():
     rng = np.random.default_rng(0)
@@ -77,9 +73,7 @@ def test_find_random_non_n_single_element():
     assert find_random_non_n(rng, safe_zones) == 0
 
 
-# ===========================================================================
 # map_non_n_regions
-# ===========================================================================
 
 def test_map_non_n_regions_clean_sequence():
     result = map_non_n_regions("ACGTACGTACGT")
@@ -88,7 +82,7 @@ def test_map_non_n_regions_clean_sequence():
 
 
 def test_map_non_n_regions_single_n():
-    # 1 N in 50 bases = 2% N → valid map returned
+    # 1 N in 50 bases = 2% N (valid map returned)
     seq = "A" * 24 + "N" + "A" * 25
     result = map_non_n_regions(seq)
     assert len(result) == 50
@@ -106,7 +100,7 @@ def test_map_non_n_regions_too_many_ns_returns_empty():
 
 def test_map_non_n_regions_exactly_at_threshold():
     """Exactly 10% N → should return empty (condition is <= 0.90 non-N)."""
-    # 10 N's + 90 ACGT → 90% non-N, average == 0.90, which hits the <= boundary
+    # 10 N's + 90 ACGT (90% non-N, average == 0.90, which hits the <= boundary)
     seq = "N" * 10 + "A" * 90
     result = map_non_n_regions(seq)
     assert len(result) == 0
@@ -118,7 +112,7 @@ def test_map_non_n_regions_all_n_returns_empty():
 
 
 def test_map_non_n_regions_run_of_ns():
-    seq = "ACGT" + "NNNN" + "ACGT"  # 12 bp, 4/12 ≈ 33% N → empty
+    seq = "ACGT" + "NNNN" + "ACGT"  # 12 bp, 4/12 ≈ 33% N (empty)
     result = map_non_n_regions(seq)
     assert len(result) == 0
 
@@ -133,9 +127,7 @@ def test_map_non_n_regions_short_n_run_in_long_sequence():
     assert result[0] == 1
 
 
-# ===========================================================================
 # generate_variants — input variants are copied into output
-# ===========================================================================
 
 def test_generate_variants_returns_contig_variants():
     ref = _make_reference()
@@ -206,9 +198,7 @@ def test_generate_variants_input_variant_before_offset_excluded():
     assert 50 not in result
 
 
-# ===========================================================================
 # generate_variants — random mutation generation
-# ===========================================================================
 
 def test_generate_variants_adds_at_least_min_mutations():
     """With min_mutations=1, at least 1 variant should be added."""
@@ -339,9 +329,7 @@ def test_generate_variants_input_and_random_together():
     assert len(result.variant_locations) > 1
 
 
-# ===========================================================================
 # generate_variants — N-handling paths (lines 139-157, 204)
-# ===========================================================================
 
 def test_generate_variants_n_in_mutation_region_completes():
     """Sequence with N's in the mutation region runs to completion.
@@ -370,7 +358,7 @@ def test_generate_variants_n_heavy_subsequence_skipped():
     ref = _make_reference(seq)
     model = _make_model()
     opts = _make_options(seed=3)
-    opts.min_mutations = 0   # let poisson decide; main goal is no crash
+    opts.min_mutations = 0   # let Poisson decide; main goal is no crash
 
     result = generate_variants(ref, 0, _full_rate_regions(len(seq)), ContigVariants(), model, opts, 40)
     assert isinstance(result, ContigVariants)
@@ -406,9 +394,16 @@ def test_generate_variants_deletion_overlap_handling():
 
     result = generate_variants(ref, 0, _full_rate_regions(len(seq), 0.05), ContigVariants(), model_high, opts, 40)
     assert isinstance(result, ContigVariants)
-    # Variants at the same location are deduplicated correctly
+    # Variants at the same location are deduplicated by (type, ALT) — not genotype.
+    # Two variants of the same type with the same ALT at the same position are duplicates.
     for loc in result.variant_locations:
         variants_here = result.contig_variants[loc]
-        genotypes = [tuple(v.genotype) for v in variants_here]
-        assert len(genotypes) == len(set(genotypes)), \
-            f"Duplicate genotype at location {loc}"
+        type_alt_keys = []
+        for v in variants_here:
+            try:
+                alt = v.get_alt()
+            except (KeyError, AttributeError):
+                alt = None
+            type_alt_keys.append((type(v).__name__, alt))
+        assert len(type_alt_keys) == len(set(type_alt_keys)), \
+            f"Duplicate (type, ALT) pair at location {loc}: {type_alt_keys}"

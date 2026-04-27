@@ -7,14 +7,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, call
 
+import numpy as np
 import pytest
 
 from neat.read_simulator.utils.stitch_outputs import concat, merge_vcfs, merge_bam, main
+from neat.variants import SingleNucleotideVariant
+from neat.variants.contig_variants import ContigVariants
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 def _write_gz(path: Path, text: str) -> Path:
     with gzip.open(path, "wt") as fh:
@@ -49,9 +50,7 @@ def _make_ofw(tmp_path: Path, vcf_path: Path = None):
     return ofw
 
 
-# ===========================================================================
 # concat
-# ===========================================================================
 
 def test_concat_single_file(tmp_path):
     src = _write_gz(tmp_path / "a.gz", "hello\n")
@@ -91,9 +90,7 @@ def test_concat_order_is_preserved(tmp_path):
     assert positions == sorted(positions)
 
 
-# ===========================================================================
 # merge_vcfs
-# ===========================================================================
 
 def test_merge_vcfs_skips_comment_lines(tmp_path):
     vcf_text = "##header line\n#CHROM\tPOS\n1\t100\tA\tT\n"
@@ -139,9 +136,70 @@ def test_merge_vcfs_preserves_data_line_order(tmp_path):
     assert positions == list(range(1, 6))
 
 
-# ===========================================================================
+def test_merge_vcfs_dedup_removes_identical_lines(tmp_path):
+    """Identical lines from two thread VCFs are collapsed to one (Issue #256)."""
+    line = "chr1\t100\t.\tA\tT\t42\tPASS\t.\tGT\t0|1\n"
+    v1 = _write_gz(tmp_path / "t0.vcf.gz", line)
+    v2 = _write_gz(tmp_path / "t1.vcf.gz", line)
+    ofw = _make_ofw(tmp_path)
+    merge_vcfs([v1, v2], ofw)
+    result = [l for l in ofw._vcf_buf.getvalue().splitlines() if l.strip()]
+    assert len(result) == 1
+
+
+def test_merge_vcfs_distinct_lines_are_all_kept(tmp_path):
+    """Distinct lines from two threads both appear in merged output."""
+    v1 = _write_gz(tmp_path / "t0.vcf.gz", "chr1\t100\t.\tA\tT\t42\tPASS\t.\tGT\t0|1\n")
+    v2 = _write_gz(tmp_path / "t1.vcf.gz", "chr1\t200\t.\tC\tG\t42\tPASS\t.\tGT\t0|1\n")
+    ofw = _make_ofw(tmp_path)
+    merge_vcfs([v1, v2], ofw)
+    result = [l for l in ofw._vcf_buf.getvalue().splitlines() if l.strip()]
+    assert len(result) == 2
+
+
+def test_merge_vcfs_partial_overlap_deduped(tmp_path):
+    """Three lines total, two of which are identical: result has two unique lines."""
+    line_a = "chr1\t100\t.\tA\tT\t42\tPASS\t.\tGT\t0|1\n"
+    line_b = "chr1\t200\t.\tC\tG\t42\tPASS\t.\tGT\t0|1\n"
+    v1 = _write_gz(tmp_path / "t0.vcf.gz", line_a + line_b)
+    v2 = _write_gz(tmp_path / "t1.vcf.gz", line_a)
+    ofw = _make_ofw(tmp_path)
+    merge_vcfs([v1, v2], ofw)
+    result = [l for l in ofw._vcf_buf.getvalue().splitlines() if l.strip()]
+    assert len(result) == 2
+
+
+# find_dups (ContigVariants deduplication, Issue #256)
+
+def test_find_dups_same_alt_different_genotype_rejected(tmp_path):
+    """Same position + same ALT is a duplicate regardless of genotype."""
+    cv = ContigVariants()
+    v1 = SingleNucleotideVariant(10, "T", np.array([1, 0]), 40)
+    v2 = SingleNucleotideVariant(10, "T", np.array([0, 1]), 40)
+    cv.add_variant(v1)
+    assert cv.add_variant(v2) == 1
+
+
+def test_find_dups_different_alt_same_position_accepted(tmp_path):
+    """Two SNVs at the same position with different ALTs are not duplicates."""
+    cv = ContigVariants()
+    v1 = SingleNucleotideVariant(10, "T", np.array([1, 0]), 40)
+    v2 = SingleNucleotideVariant(10, "G", np.array([0, 1]), 40)
+    cv.add_variant(v1)
+    assert cv.add_variant(v2) == 0
+    assert len(cv.contig_variants[10]) == 2
+
+
+def test_find_dups_exact_duplicate_rejected(tmp_path):
+    """Exact duplicates (same position, ALT, and genotype) are rejected."""
+    cv = ContigVariants()
+    v1 = SingleNucleotideVariant(10, "T", np.array([0, 1]), 40)
+    v2 = SingleNucleotideVariant(10, "T", np.array([0, 1]), 40)
+    cv.add_variant(v1)
+    assert cv.add_variant(v2) == 1
+
+
 # merge_bam
-# ===========================================================================
 
 def test_merge_bam_calls_pysam_merge_and_sort(tmp_path):
     ofw = _make_ofw(tmp_path)
@@ -191,9 +249,7 @@ def test_merge_bam_chunks_large_bam_list(tmp_path):
     assert mock_pysam.merge.call_count == 3
 
 
-# ===========================================================================
 # main
-# ===========================================================================
 
 def _file_dict(fq1=None, fq2=None, vcf=None, bam=None):
     return {"fq1": fq1, "fq2": fq2, "vcf": vcf, "bam": bam}
