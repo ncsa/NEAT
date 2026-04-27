@@ -124,6 +124,42 @@ def test_ofw_no_files_raises(tmp_path):
         OutputFileWriter(options=opts)
 
 
+def test_ofw_bam_only_with_header_is_accepted(tmp_path):
+    """BAM-only (no FASTQ, no VCF) with a bam_header opens the BAM handle."""
+    opts = _make_options(tmp_path, fq1=False, bam=True,
+                         produce_fastq=False, produce_bam=True)
+    ofw = OutputFileWriter(options=opts, bam_header={"chr1": 1000})
+    assert ofw.bam is not None
+    assert ofw.bam in ofw.files_to_write
+    assert ofw.fq1 is None
+    assert ofw.vcf is None
+    ofw.flush_and_close_files()
+
+
+def test_ofw_bam_only_no_header_is_accepted(tmp_path):
+    """BAM-only with bam_header=None (the runner's path) must not raise.
+    pysam manages the merged output file so no handle is opened here."""
+    opts = _make_options(tmp_path, fq1=False, bam=True,
+                         produce_fastq=False, produce_bam=True)
+    ofw = OutputFileWriter(options=opts, bam_header=None)
+    assert ofw.bam is not None
+    assert ofw.fq1 is None
+    assert ofw.vcf is None
+    assert ofw.bam not in ofw.files_to_write
+
+
+def test_ofw_vcf_only_is_accepted(tmp_path):
+    """VCF-only (no FASTQ, no BAM) should construct without error."""
+    opts = _make_options(tmp_path, fq1=False, vcf=True,
+                         produce_fastq=False, produce_vcf=True)
+    ofw = OutputFileWriter(options=opts, vcf_header={"chr1": 1000})
+    assert ofw.vcf is not None
+    assert ofw.vcf in ofw.files_to_write
+    assert ofw.fq1 is None
+    assert ofw.bam is None
+    ofw.flush_and_close_files()
+
+
 def test_ofw_fq1_is_none_when_not_requested(tmp_path):
     ofw = _make_ofw(tmp_path, fq1=True)
     assert ofw.fq2 is None

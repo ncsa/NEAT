@@ -117,7 +117,7 @@ class OutputFileWriter:
         self.vcf = vcf
         self.bam = bam
 
-        if not file_handles:
+        if not file_handles and self.bam is None:
             _LOG.error("output_file_writer received no files!")
             raise ValueError
 
