@@ -415,3 +415,47 @@ def test_runner_with_produce_bam(tmp_path):
     read_simulator_runner(str(cfg), str(out_dir), "test")
     bam_files = list(out_dir.glob("*.bam"))
     assert len(bam_files) >= 1, "Expected at least one BAM output file"
+
+
+def test_runner_bam_only_no_fastq(tmp_path):
+    """produce_bam=true + produce_fastq=false must write a BAM and no FASTQ."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        produce_fastq="false",
+        produce_bam="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.bam")), "Expected a BAM output file"
+    assert not list(out_dir.glob("*.fastq.gz")), "Expected no FASTQ output"
+
+
+def test_runner_vcf_only_no_fastq(tmp_path):
+    """produce_vcf=true + produce_fastq=false must write a VCF and no FASTQ."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        produce_fastq="false",
+        produce_vcf="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.vcf.gz")), "Expected a VCF output file"
+    assert not list(out_dir.glob("*.fastq.gz")), "Expected no FASTQ output"
+
+
+def test_runner_bam_and_vcf_no_fastq(tmp_path):
+    """produce_bam=true + produce_vcf=true + produce_fastq=false must write both."""
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(
+        tmp_path / "conf.yml", ref,
+        produce_fastq="false",
+        produce_bam="true",
+        produce_vcf="true",
+    )
+    out_dir = tmp_path / "out"
+    read_simulator_runner(str(cfg), str(out_dir), "test")
+    assert list(out_dir.glob("*.bam")), "Expected a BAM output file"
+    assert list(out_dir.glob("*.vcf.gz")), "Expected a VCF output file"
+    assert not list(out_dir.glob("*.fastq.gz")), "Expected no FASTQ output"
