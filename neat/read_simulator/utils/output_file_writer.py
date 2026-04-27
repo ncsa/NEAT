@@ -10,12 +10,16 @@ __all__ = [
 
 import os
 import re
+import shutil
+import time
 from struct import pack
 import logging
 from typing import Any
 
 from Bio import bgzf
+from Bio import SeqIO
 from pathlib import Path
+from numpy.random import Generator
 
 #gzip for temp outs, bgzip for final outs
 import gzip
