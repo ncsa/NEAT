@@ -1,7 +1,6 @@
 from neat.read_simulator.utils.options import Options
 
 from pathlib import Path as _PathAlias
-import logging as _logging
 import numpy as _np
 import textwrap as _textwrap
 import pytest as _pytest
@@ -9,42 +8,6 @@ import pytest as _pytest
 
 def _project_root() -> _PathAlias:
     return _PathAlias(__file__).resolve().parents[2]
-
-
-@_pytest.fixture(autouse=True)
-def _isolate_neat_logging():
-    """
-    Prevent flaky 'ValueError: I/O operation on closed file' logging errors under pytest.
-    """
-    # Clear handlers on NEAT and all child loggers
-    for name, logger in list(_logging.Logger.manager.loggerDict.items()):
-        if name == "neat" or name.startswith("neat."):
-            if isinstance(logger, _logging.Logger):
-                for h in list(logger.handlers):
-                    logger.removeHandler(h)
-                    try:
-                        h.close()
-                    except Exception:
-                        pass
-                logger.handlers.clear()
-                logger.propagate = True # child loggers will propagate to 'neat'
-
-    neat_logger = _logging.getLogger("neat")
-    neat_logger.handlers.clear()
-    neat_logger.addHandler(_logging.NullHandler())
-    neat_logger.propagate = False # stop at 'neat' (do not reach root)
-
-    yield
-
-    # Rremove NullHandler
-    for h in list(neat_logger.handlers):
-        neat_logger.removeHandler(h)
-        try:
-            h.close()
-        except Exception:
-            pass
-    neat_logger.handlers.clear()
-    neat_logger.propagate = True
 
 
 def test_basic_options():

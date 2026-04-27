@@ -183,6 +183,13 @@ def generate_reads(
     # _LOG.info(f'Sampling reads for thread {thread_index}...')
     start_time = time.time()
 
+    if len(reference) < options.read_len:
+        _LOG.warning(
+            f"Contig '{contig_name}' (length {len(reference)}) is shorter than read_len "
+            f"({options.read_len}). Skipping contig."
+        )
+        return []
+
     # _LOG.debug("Covering dataset.")
     t = time.time()
     reads = cover_dataset(

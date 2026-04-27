@@ -77,8 +77,9 @@ def generate_variants(
             for variant in input_variants.contig_variants[variant_location]:
                 return_variants.add_variant(variant)
 
-    # pase out the mutation rates
-    mutation_rates = np.array([x[2] for x in mutation_rate_regions])
+    # pase out the mutation rates; substitute None with the model average
+    mutation_rates = np.array([x[2] if x[2] is not None else mutation_model.avg_mut_rate
+                               for x in mutation_rate_regions])
 
     # Trying to use a random window to keep memory under control. May need to adjust this number.
     max_window_size = 1000
@@ -114,13 +115,12 @@ def generate_variants(
     # _LOG.info(f'Planning to add {how_many_mutations} mutations. The final number may be less.')
 
     while how_many_mutations > 0:
-        # Pick a region based on the mutation rates
-        # (default is one rate for the whole chromosome, so this will be trivial in that case
-        # for this selection, we'll normalize the mutation rates
-        probability_rates = mutation_rates / sum(mutation_rates)
         # We need to intersect our chosen mutation region with our block
         local_mut_regions = bed_func.intersect_regions(mutation_rate_regions, (ref_start, ref_start + len(reference)), options.mutation_rate)
         # For no input mutation regions bed, this will return the entire sequence.
+        # Build probability weights from the intersected regions so the lengths always match.
+        local_rates = np.array([r[2] if r[2] is not None else mutation_model.avg_mut_rate for r in local_mut_regions])
+        probability_rates = local_rates / sum(local_rates)
         mut_region = options.rng.choice(a=local_mut_regions, p=probability_rates)
         mut_region_offset = (int(mut_region[0]-ref_start), int(mut_region[1]-ref_start), mut_region[2])
 
