@@ -125,7 +125,6 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         # Now pick a random alternate, weighted by the probabilities
         alt = rng.choice(ALLOWED_NUCL, p=transition_probs)
         temp_snv = SingleNucleotideVariant(reference_location, alt=alt)
-        self.all_ins.append(temp_snv)
         return temp_snv
 
     def generate_insertion(self, location: int, ref: Seq, rng: Generator) -> Insertion:
