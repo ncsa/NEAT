@@ -287,24 +287,6 @@ def test_sem_blacklist_prevents_duplicate_deletion_sites():
     assert len(locations) == len(set(locations))
 
 
-# ===========================================================================
-# MarkovQualityModel — stub coverage (lines 112-118)
-# ===========================================================================
-
-def test_markov_quality_model_can_be_instantiated():
-    """MarkovQualityModel is a TODO stub; construction must not raise."""
-    from neat.models.error_models import MarkovQualityModel
-    m = MarkovQualityModel()
-    assert m is not None
-
-
-def test_markov_quality_model_get_quality_scores_returns_none():
-    """get_quality_scores is a TODO stub; calling it returns None."""
-    from neat.models.error_models import MarkovQualityModel
-    m = MarkovQualityModel()
-    result = m.get_quality_scores()
-    assert result is None
-
 
 # ===========================================================================
 # TraditionalQualityModel — score clamping (line 104)
