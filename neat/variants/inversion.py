@@ -20,6 +20,9 @@ class Inversion(BaseVariant):
     :param is_input: True if from an input vcf, in which case this variant will get priority.
     :param kwargs: can be used to store data from input vars or unused variables from the base class.
     """
+
+    is_structural = True
+
     def __init__(self,
                  position1: int,
                  length: int,

@@ -14,6 +14,8 @@ class BaseVariant(abc.ABC):
     A template for a variant to include in NEAT
     """
 
+    is_structural: bool = False
+
     @abc.abstractmethod
     def __init__(self, position1, length, position2, orientation, alt, genotype, qual_score, is_input, **kwargs):
         """

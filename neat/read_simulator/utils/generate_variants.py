@@ -208,7 +208,6 @@ def generate_variants(
 
         # Begin random mutations for this slice
         # Note that any new variant types will need code in this area to handle the functions.
-        debug = 0
         while variants_to_add_in_slice > 0:
             # We decrement now because we don't want to get stuck in a never ending loop
             variants_to_add_in_slice -= 1
@@ -256,34 +255,25 @@ def generate_variants(
             # pick which ploid is mutated
             temp_variant.genotype = pick_ploids(options.ploidy, mutation_model.homozygous_freq, 1, options.rng)
 
-            # There shouldn't be a ton of overlapping variants, but this is to handle those.
             if location in return_variants:
-                """
-                If the location already exists, then we'll need to force it to pick a ploid 
-                that currently doesn't have a variant. This overrides the default genotype
-                variable created above, but it shouldn't happen very often.
-                """
-                if return_variants.find_dups(temp_variant):
-                    # This compiles all the variants at this location, giving a 1 for every ploid that has a variant.
-                    composite_genotype = return_variants.compile_genotypes_for_location(location)
-                    if 0 not in composite_genotype:
-                        # Here's a counter to make sure we're not getting stuck on a single location
-                        debug += 1
-                        if debug > 1000000:
-                            _LOG.error("Check this if, as it may be causing an infinite loop.")
-                            sys.exit(999)
-                        # No suitable place to put this, so we skip.
-                        continue
-                    # This sets up a probability array with weights 1 for open spots (x==0) and 0 elsewhere
-                    probs = np.array([1 if x == 0 else 0 for x in composite_genotype])
-                    probs = probs / sum(probs)
-                    # Pick an index of a position to mutate based on the probabilities, which are uniform for 0s left
-                    # in the composite genotype
-                    ploid = options.rng.choice(list(range(len(composite_genotype))), p=probs)
-                    genotype = np.zeros(options.ploidy)
-                    genotype[ploid] = 1
-                    temp_variant.genotype = genotype
-                    # pdb.set_trace()
+                existing_variants = return_variants.contig_variants[location]
+                sv_involved = temp_variant.is_structural or any(
+                    v.is_structural for v in existing_variants
+                )
+                if not sv_involved:
+                    # Two independent point mutations at the same anchor occur with
+                    # probability p² — effectively impossible at realistic rates. Skip.
+                    continue
+                # SV compound-het: assign to a free ploid on the other haplotype.
+                composite_genotype = return_variants.compile_genotypes_for_location(location)
+                if 0 not in composite_genotype:
+                    continue
+                probs = np.array([1 if x == 0 else 0 for x in composite_genotype])
+                probs = probs / sum(probs)
+                ploid = options.rng.choice(list(range(len(composite_genotype))), p=probs)
+                genotype = np.zeros(options.ploidy)
+                genotype[ploid] = 1
+                temp_variant.genotype = genotype
             # Make sure this new variant doesn't overlap an existing insertion or deletion
             in_deletion = return_variants.check_if_del(temp_variant)
             in_insertion = return_variants.check_if_ins(temp_variant)
