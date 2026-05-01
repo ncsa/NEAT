@@ -1,10 +1,10 @@
 # The NEAT Project v4.4
 
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.4. This release of NEAT 4.4 includes several fixes and a little bit of restructuring, including a parallel process for running `neat read-simulator`, more options for quality score modeling, a bacterial genome wrapper, and more. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.4 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatibility, bug fixes, and testing. Future releases for the time being will be enumerations of 4.4.X.
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.4. NEAT 4.4 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatibility, bug fixes, and testing. Future releases for the time being will be enumerations of 4.4.X.
 
 ## NEAT v4.4
 
-NEAT 4.4 marked the officially 'complete' version of NEAT, fixing bugs related to parallelization. To add parallelization to your run, simply add the `threads` parameter in your configuration file and run `read-simulator` as normal. NEAT will take care of the rest. You can customize the parameters in your configuration file, as needed.
+NEAT 4.4 fixes a few bugs related to NEAT. This release of NEAT includes several fixes to bugs and a little bit of restructuring, including more options for quality score modeling, a bacterial genome wrapper, additional tests, and more. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. 
 
 We have completed major revisions on NEAT since 3.4 and consider NEAT 4.4 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 

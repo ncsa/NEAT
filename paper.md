@@ -23,7 +23,7 @@ authors:
     affiliation: 1
   - name: Yash Wasnik
     orcid: 0009-0006-0108-7445
-    affiliation: 3    
+    affiliation: 1    
   - name: Christina E. Fliege
     orcid: 0000-0001-8085-779X
     affiliation: 1
@@ -36,11 +36,8 @@ affiliations:
    
  - name: University of Illinois at Chicago, Chicago, IL, United States, 60607,
    index: 2
-
- - name: Blue Health Intelligence, Chicago, IL, United States, 60611
-   index: 3
    
-date: 15 April 2026
+date: 1 May 2026
 
 bibliography: paper.bib
 ---
