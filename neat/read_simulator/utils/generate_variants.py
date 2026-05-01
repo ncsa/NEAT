@@ -239,7 +239,7 @@ def generate_variants(
                 location = local_location + ref_start  # relative to overall contig
                 if local_location == 0:
                     continue
-                trinuc = reference[local_location: local_location+3].seq.upper()
+                trinuc = reference[local_location-1: local_location+2].seq.upper()
                 disallowed_chars = False
                 for letter in trinuc:
                     if letter not in ALLOWED_NUCL:

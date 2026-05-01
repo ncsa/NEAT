@@ -381,6 +381,31 @@ def test_generate_variants_trinuc_with_n_skipped():
         assert 0 <= loc < len(seq)
 
 
+def test_generate_variants_no_snv_ref_eq_alt():
+    """generate_variants must never produce an SNV whose ALT equals the reference base.
+
+    The trinucleotide slice is centered on local_location so that generate_snv
+    avoids the actual reference base (trinuc[1] == ref base). With the wrong
+    off-by-one slice (local_location: local_location+3), trinuc[1] is the 3'
+    flanking base and REF==ALT SNVs are generated ~11% of the time.
+    """
+    seq = "ACGT" * 75  # 300 bp, no N's
+    ref = _make_reference(seq)
+    model = _make_model()
+    opts = _make_options(seed=42)
+    opts.min_mutations = 50
+
+    result = generate_variants(ref, 0, _full_rate_regions(len(seq)), ContigVariants(), model, opts, 40)
+    seq_upper = seq.upper()
+    for loc in result.variant_locations:
+        for var in result.contig_variants[loc]:
+            if isinstance(var, SingleNucleotideVariant):
+                ref_base = seq_upper[loc]
+                assert var.get_alt().upper() != ref_base, (
+                    f"REF==ALT at position {loc}: ref={ref_base!r}, alt={var.get_alt()!r}"
+                )
+
+
 def test_generate_variants_deletion_overlap_handling():
     """If a new variant falls inside an existing deletion's span, the overlap
     handling code (lines 291-295) adjusts or skips it without crashing."""
