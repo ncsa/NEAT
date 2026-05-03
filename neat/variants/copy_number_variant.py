@@ -15,6 +15,8 @@ class CopyNumberVariant(BaseVariant):
     :param position1: location of the variant.
     """
 
+    is_structural = True
+
     def __init__(self,
                  position1: int,
                  length: int = None,

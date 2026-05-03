@@ -133,8 +133,7 @@ rng_seed: .
 # type: int | required = no
 min_mutations: .
 
-# Overwrite the output files, if they are named the same as the current run.
-# Default is to quit if files already exist to avoid data destruction
+# Overwrite output files if they already exist
 # type: bool | required = no | default = false
 overwrite_output: .
 
@@ -153,12 +152,12 @@ parallel_block_size: .
 threads: .
 
 # Delete the 'splits' directory after stitching completes
-# Note if threads == 1, this option has no effect.
+# Note: If threads == 1, this option has no effect.
 # type = bool | required: no | default = true
 cleanup_splits: .
 
 # Reuse existing files in '<out_dir>/splits' and skip the split step.
 # The directory must contain NEAT-generated files and must be in the output directory within "splits"
-# Note if threads == 1, this option has no effect.
+# Note: If threads == 1, this option has no effect.
 # type = bool | required: no | default = False
 reuse_splits: .

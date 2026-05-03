@@ -1,12 +1,12 @@
-# The NEAT Project v4.3.6
+# The NEAT Project v4.4
 
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.3.6. This release of NEAT 4.3.5 includes several fixes and a little bit of restructuring, including a parallel process for running `neat read-simulator`. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. NEAT 4.3.5 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatibility, bug fixes, and testing. Future releases for the time being will be enumerations of 4.3.X.
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.4. NEAT 4.4 is the official release of NEAT 4.0. It represents a lot of hard work from several contributors at NCSA and beyond. With the addition of parallel processing, we feel that the code is ready for production, and future releases will focus on compatibility, bug fixes, and testing. Future releases for the time being will be enumerations of 4.4.X.
 
-## NEAT v4.3.5
+## NEAT v4.4
 
-NEAT 4.3.5 marked the officially 'complete' version of NEAT 4.3, implementing parallelization. To add parallelization to your run, simply add the `threads` parameter in your configuration file and run `read-simulator` as normal. NEAT will take care of the rest. You can customize the parameters in your configuration file, as needed.
+NEAT 4.4 fixes a few bugs related to NEAT. This release of NEAT includes several fixes to bugs and a little bit of restructuring, including more options for quality score modeling, a bacterial genome wrapper, additional tests, and more. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. 
 
-We have completed major revisions on NEAT since 3.4 and consider NEAT 4.3.5 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
+We have completed major revisions on NEAT since 3.4 and consider NEAT 4.4 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 
 We've deprecated NEAT's command-line interface options for the most part, opting to simplify things with configuration files. If you require the CLI for legacy purposes, NEAT 3.4 was our last release to be fully supported via command-line interface. Please convert your CLI commands to the corresponding configuration file for future runs.
 
@@ -22,8 +22,8 @@ To cite this work, please use:
 
 ## Table of Contents
 
-* [The NEAT Project v4.3.6](#the-neat-project-v436)
-* [NEAT v4.3.5](#neat-v435)
+* [The NEAT Project v4.4](#the-neat-project-v436)
+* [NEAT v4.4](#neat-v435)
 * [Table of Contents](#table-of-contents)
   * [Prerequisites](#prerequisites)
   * [Installation](#installation)
@@ -246,7 +246,7 @@ Features:
 
 ### Estimated runtimes
 
-To give users a sense of how long `neat read-simulator` runs may take, we benchmarked NEAT 4.3.5 on several reference genomes. All runs were paired-end, with read length of 150 bp, coverage of 10, fragment mean of 300 bp, and fragment standard deviation of 50 bp. Runtimes are reported as the average across three unique runs (`Avg. time (ms)`) and the corresponding runtime in minutes. Cells marked with N/A indicate that NEAT was not able to run to completion.
+To give users a sense of how long `neat read-simulator` runs may take, we benchmarked NEAT 4.4 on several reference genomes. All runs were paired-end, with read length of 150 bp, coverage of 10, fragment mean of 300 bp, and fragment standard deviation of 50 bp. Runtimes are reported as the average across three unique runs (`Avg. time (ms)`) and the corresponding runtime in minutes. Cells marked with N/A indicate that NEAT was not able to run to completion.
 
 Benchmarks were run on a System76 Meerkat with a 13th Gen Intel Core i3-1315U (8 logical cores, up to 4.50 GHz) and 16 GiB RAM, using a 512 GB SSD and Ubuntu 24.04.3 LTS (Linux kernel 6.14). Actual runtimes will vary depending on your hardware.
 
@@ -440,7 +440,7 @@ neat gen-mut-model reference.fa input_variants.vcf   \
         -o /home/me/models
 ```
 
-Trinucleotides are identified in the reference genome and the variant file. The mutation model uses trinucleotide context and selects mutation sites and alternate alleles with a transition matrix. Frequencies of each trinucleotide transition are calculated and output as a pickle file. Mutations are simulated to reflect the same context-dependent biases as the training data. In NEAT 4.3.5, we have only made minor optimizations to improve the speed, and the underlying statistical models are similar to those described in the original NEAT manuscript.
+Trinucleotides are identified in the reference genome and the variant file. The mutation model uses trinucleotide context and selects mutation sites and alternate alleles with a transition matrix. Frequencies of each trinucleotide transition are calculated and output as a pickle file. Mutations are simulated to reflect the same context-dependent biases as the training data. As of NEAT 4.4, we have only made minor optimizations to improve the speed, and the underlying statistical models are similar to those described in the original NEAT manuscript.
 
 | Option          | Description                                                                   |
 |-----------------|-------------------------------------------------------------------------------|
@@ -510,7 +510,7 @@ Finally, `-o` is the output directory for the model file and `-p` is the prefix 
 
 ### `neat vcf_compare`
 
-Tool for comparing VCF files (Not yet implemented in NEAT 4.3.5).
+Tool for comparing VCF files (Not yet implemented in NEAT 4.4).
 
 ```bash
 neat vcf_compare

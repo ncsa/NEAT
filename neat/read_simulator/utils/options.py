@@ -249,7 +249,6 @@ class Options(SimpleNamespace):
         for key, (_, default, _, _) in defs.items():
             if key not in input_args:
                 input_args[key] = default
-
         base_options = Options(
             output_dir=output_dir,
             output_prefix=output_prefix
@@ -257,7 +256,6 @@ class Options(SimpleNamespace):
 
         # Read the config file using the definitions for validation
         base_options.read_yaml(config_file, defs)
-
         # Merge validated config values over defaults
         final_args = dict(input_args)
         for key, val in defs.items():
@@ -299,6 +297,8 @@ class Options(SimpleNamespace):
         But I'm not sure how else to accomplish this.
         """
         config = yaml.load(open(config_yaml, 'r'), Loader=Loader)
+
+
         for key, value in config.items():
             if key in args:
                 type_of_var, default, criteria1, criteria2 = args[key]
@@ -444,13 +444,18 @@ class Options(SimpleNamespace):
             _LOG.info(f'Splitting input by contig.')
         if self.reuse_splits:
             splits_dir = Path(f'{self.output_dir}/splits/')
+            _LOG.info(f'Reusing existing splits {splits_dir}.')
             if not splits_dir.is_dir():
                 raise FileNotFoundError(f"reuse_splits=True but splits dir not found: {splits_dir}")
-                _LOG.info(f'Reusing existing splits {splits_dir}.')
-                _LOG.info(f'Preserving splits for next run in directory {splits_dir}.')
+            else:
+                if self.reuse_splits:
+                    raise FileNotFoundError(f'reuse_splits=True')
+                else:
+                    _LOG.warning(f'Reused splits set to True, but splits dir not found: {splits_dir}. Creating new splits')
+            _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
         elif not self.cleanup_splits:
             splits_dir = Path(f'{self.output_dir}/splits/')
-            _LOG.info(f'Preserving splits for next run in directory {splits_dir}.')
+            _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
         else:
             splits_dir = self.temp_dir_path / "splits"
 

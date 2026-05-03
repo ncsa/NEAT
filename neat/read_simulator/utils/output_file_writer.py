@@ -10,12 +10,16 @@ __all__ = [
 
 import os
 import re
+import shutil
+import time
 from struct import pack
 import logging
 from typing import Any
 
 from Bio import bgzf
+from Bio import SeqIO
 from pathlib import Path
+from numpy.random import Generator
 
 #gzip for temp outs, bgzip for final outs
 import gzip
@@ -113,7 +117,7 @@ class OutputFileWriter:
         self.vcf = vcf
         self.bam = bam
 
-        if not file_handles:
+        if not file_handles and self.bam is None:
             _LOG.error("output_file_writer received no files!")
             raise ValueError
 
