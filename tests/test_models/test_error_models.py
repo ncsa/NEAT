@@ -145,6 +145,39 @@ def test_sem_custom_error_rate():
 # SequencingErrorModel — get_sequencing_errors
 # ===========================================================================
 
+def test_sem_num_errors_zero_produces_no_errors():
+    """num_errors=0 short-circuits the error loop even with a high error rate."""
+    m = SequencingErrorModel(avg_seq_error=0.9)
+    rng = np.random.default_rng(0)
+    quality_scores = np.array([1] * 151)  # score 1 → ~79% error rate per base
+    result, _ = m.get_sequencing_errors(20, _SEQ, quality_scores, 0, rng)
+    assert result == []
+
+
+def test_sem_num_errors_caps_output():
+    """Error list length never exceeds num_errors."""
+    m = SequencingErrorModel(avg_seq_error=0.9)
+    rng = np.random.default_rng(0)
+    quality_scores = np.array([1] * 151)
+    cap = 3
+    result, _ = m.get_sequencing_errors(20, _SEQ, quality_scores, cap, rng)
+    assert len(result) <= cap
+
+
+def test_sem_fallback_loop_fills_errors_with_uniform_high_quality():
+    """Fallback loop reaches num_errors when quality is too high for the main loop.
+
+    With quality score 40 (~0.01% error rate) and only 10 iterations, the main
+    loop almost certainly collects 0 errors. The fallback must make up the deficit.
+    Using uniform scores verifies the <= median guard prevents an infinite loop.
+    """
+    m = SequencingErrorModel(avg_seq_error=0.5)
+    rng = np.random.default_rng(0)
+    quality_scores = np.array([40] * 10)  # uniform high quality, 10 iterations max
+    result, _ = m.get_sequencing_errors(5, _SEQ[:10], quality_scores, 5, rng)
+    assert len(result) == 5
+
+
 def test_sem_zero_error_rate_returns_empty():
     m = SequencingErrorModel(avg_seq_error=0.0)
     rng = np.random.default_rng(0)

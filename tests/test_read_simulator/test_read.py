@@ -400,6 +400,19 @@ def test_convert_masking_replaces_ns():
 # finalize_read_and_write — produce_fastq=True
 # ---------------------------------------------------------------------------
 
+def test_finalize_read_and_write_returns_error_count():
+    """Return value equals the number of errors actually applied to the read."""
+    r = _make_read(reference=_PADDED_REF, padding=20)
+    err_model = SequencingErrorModel(read_length=_READ_LEN)
+    qual_model = TraditionalQualityModel()
+    rng = _make_rng()
+
+    error_count = r.finalize_read_and_write(err_model, qual_model, None, 33, False, 3, rng)
+
+    assert isinstance(error_count, int)
+    assert error_count == len(r.errors)
+
+
 def test_finalize_read_and_write_writes_fastq():
     r = _make_read(reference=_PADDED_REF, padding=20)
     err_model = SequencingErrorModel(read_length=_READ_LEN)

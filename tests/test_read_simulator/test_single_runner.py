@@ -417,6 +417,7 @@ class TestReadSimulatorSingle:
         _, _, _, file_dict = read_simulator_single(
             1, 0, opts, bam_header, "chr1", 0, ContigVariants(),
             [(0, 400, True)], [(0, 400, False)], [(0, 400, 0.01)],
+            3,
         )
         assert file_dict["bam"] == opts.bam
 
@@ -434,6 +435,7 @@ class TestReadSimulatorSingle:
         _, _, _, file_dict = read_simulator_single(
             1, 0, opts, None, "chr1", 0, ContigVariants(),
             [(0, 400, True)], [(0, 400, False)], [(0, 400, 0.01)],
+            3,
         )
         assert file_dict["bam"] is None
 

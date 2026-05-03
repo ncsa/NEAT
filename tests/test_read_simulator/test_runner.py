@@ -142,6 +142,45 @@ def test_filter_bed_regions_returns_list():
 
 
 # ===========================================================================
+# errors_per_contig distribution
+# ===========================================================================
+
+def test_errors_per_contig_proportional_to_contig_length():
+    """Longer contigs receive proportionally more errors and values sum to >= total_errors."""
+    from math import ceil
+    reference_keys_with_lens = {"chr1": 1000, "chr2": 3000}
+    average_error = 0.01
+    coverage = 10
+
+    total_reference_length = sum(reference_keys_with_lens.values())
+    total_errors = ceil(average_error * total_reference_length * coverage)
+    normalized_counts = {k: v / total_reference_length for k, v in reference_keys_with_lens.items()}
+    errors_per_contig = {k: ceil(v * total_errors) for k, v in normalized_counts.items()}
+
+    # chr2 is 3× longer so should receive more errors
+    assert errors_per_contig["chr2"] > errors_per_contig["chr1"]
+    # ceil can cause slight overshoot, but sum should be within one per contig of total
+    assert sum(errors_per_contig.values()) >= total_errors
+    assert sum(errors_per_contig.values()) <= total_errors + len(reference_keys_with_lens)
+
+
+def test_errors_per_contig_zero_for_zero_coverage():
+    """Zero coverage produces zero total errors and zero per contig."""
+    from math import ceil
+    reference_keys_with_lens = {"chr1": 1000, "chr2": 500}
+    average_error = 0.01
+    coverage = 0
+
+    total_reference_length = sum(reference_keys_with_lens.values())
+    total_errors = ceil(average_error * total_reference_length * coverage)
+    normalized_counts = {k: v / total_reference_length for k, v in reference_keys_with_lens.items()}
+    errors_per_contig = {k: ceil(v * total_errors) for k, v in normalized_counts.items()}
+
+    assert total_errors == 0
+    assert all(v == 0 for v in errors_per_contig.values())
+
+
+# ===========================================================================
 # Integration test — read_simulator_runner (FASTQ output only)
 # ===========================================================================
 

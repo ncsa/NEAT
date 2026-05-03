@@ -199,11 +199,12 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                     error_indexes.append(index)
                 i -= 1
             # Fallback: if quality scores are too high to naturally reach num_errors,
-            # force errors at positions with below-median quality scores
+            # force errors at positions with at-or-below-median quality scores.
+            # Using <= so that uniform quality arrays (all scores equal) always make progress.
             median_score = median(quality_scores)
             while len(error_indexes) < num_errors:
                 index = rng.integers(len(quality_scores))
-                if quality_scores[index] < median_score:
+                if quality_scores[index] <= median_score:
                     error_indexes.append(index)
 
         total_indel_length = 0
