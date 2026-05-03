@@ -9,7 +9,6 @@ import time
 import numpy as np
 import re
 import sys
-import pdb
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from numpy.random import Generator
@@ -238,6 +237,8 @@ def generate_variants(
                 location = local_location + ref_start  # relative to overall contig
                 if local_location == 0:
                     continue
+                # local_location is the center (mutated) base returned by sample_trinucs;
+                # shift slice left by 1 so trinuc[0]=5' flank, trinuc[1]=ref base, trinuc[2]=3' flank
                 trinuc = reference[local_location-1: local_location+2].seq.upper()
                 disallowed_chars = False
                 for letter in trinuc:

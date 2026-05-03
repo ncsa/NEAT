@@ -1,11 +1,15 @@
 """
 Runner for generate_reads task
 """
+import gzip
 import logging
+import os
+import pickle
 import shutil
 import subprocess
 import time
 import multiprocessing as mp
+from math import ceil
 
 from pathlib import Path
 
@@ -16,6 +20,7 @@ from Bio import SeqIO
 from .utils import Options, OutputFileWriter, parse_beds, parse_input_vcf
 from ..common import validate_input_path, validate_output_path
 from .single_runner import read_simulator_single
+from ..models import SequencingErrorModel
 from ..variants import ContigVariants
 from .utils.split_inputs import main as split_main
 from .utils.stitch_outputs import main as stitch_main
@@ -73,6 +78,31 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # Set up the recombination later
     reference_index = SeqIO.index(str(options.reference), "fasta")
     reference_keys_with_lens = {key: len(value) for key, value in reference_index.items()}
+
+    # We need sequencing errors to get the quality score attributes, even for the vcf
+    if options.avg_seq_error:
+        average_error = options.avg_seq_error
+    elif options.error_model:
+        error_models = pickle.load(gzip.open(options.error_model))
+        average_error = error_models["error_model1"].average_error
+        # We just need the error value
+        del error_models
+    else:
+        # Use the default value
+        average_error = 0.009228843915252066
+
+    # _LOG.debug('Sequencing error and quality score models loaded')
+    # We need to estimate how many total errors to add
+    total_reference_length = sum(reference_keys_with_lens.values())
+    # This is an estimate due to some random effects
+    number_of_bases_in_analysis = total_reference_length * options.coverage
+    # Each base called has an "average_error" chance of being an error
+    total_errors = ceil(average_error * number_of_bases_in_analysis)
+    # Normalization gives the percent value for each item with a sum of all values being 1.0
+    normalized_counts = {k: v / total_reference_length for (k, v) in reference_keys_with_lens.items()}
+    # Multiply the normalized count by the total errors. This gives the number of errors that should be
+    # introduced into the contig
+    errors_per_contig = {k: ceil(v * total_errors) for (k, v) in normalized_counts.items()}
 
     count = 0
     for contig in reference_keys_with_lens:
@@ -132,15 +162,20 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     output_opts: list = []
     output_files: list = []
-    # a dict with contig keys, then the thread index, and finally the applicable contig variants as the value
-    # TODO Remove if not needed
-    # all_variants: dict[str, dict[int, ContigVariants]] = {chrom: {} for chrom in reference_index.keys()}
     thread_idx = 1
     contig_list = list(reference_keys_with_lens.keys())
     contig_dict = {contig: contig_list.index(contig) for contig in reference_keys_with_lens.keys()}
     for contig in splits_files_dict:
         contig_index = contig_dict[contig]
         for ((start, length), splits_file) in splits_files_dict[contig].items():
+            block_percentage = length / reference_keys_with_lens[contig]
+            block_errors = errors_per_contig[contig] * block_percentage
+            estimated_number_of_reads = (length // options.read_len) * options.coverage
+            errors_per_read = round(block_errors / estimated_number_of_reads)
+            if errors_per_read < 1.0 and block_errors > 0:
+                # We know we need a few errors, but it's a small number total
+                if options.rng.random() < average_error:
+                    errors_per_read += 1
             current_output_dir = options.temp_dir_path / splits_file.stem
             current_output_dir.mkdir(parents=True, exist_ok=True)
             # Create local filenames based on fasta indexing scheme.
@@ -175,10 +210,9 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     target_regions_dict[contig],
                     discard_regions_dict[contig],
                     mutation_rate_dict[contig],
+                    errors_per_read,
                 )
                 _LOG.info(f"Completed simulating contig {contig}.")
-                # TODO Remove if not needed
-                # all_variants[contig][idx] = local_variants
                 output_files.append((thread_idx, files_written))
             else:
                 thread_input_variants = filter_thread_variants(input_variants_dict[contig], (start, start+length))
@@ -196,7 +230,8 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     thread_input_variants,
                     thread_target_regions,
                     thread_discard_regions,
-                    thread_mutation_regions
+                    thread_mutation_regions,
+                    errors_per_read,
                 ))
             thread_idx += 1
 
@@ -210,8 +245,6 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
         # Need to organize the results, as above
         for idx, contig, local_variants, files_written in results.get():
-            # TODO Remove if not needed
-            # all_variants[contig][idx] = local_variants
             output_files.append((idx, files_written))
 
     _LOG.info("Processing complete, writing output")

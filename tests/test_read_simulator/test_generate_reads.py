@@ -401,7 +401,7 @@ def test_generate_reads_single_ended_returns_read_none_pairs():
     opts = _make_options(paired=False)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -418,7 +418,7 @@ def test_generate_reads_paired_ended_returns_read_read_pairs():
     opts = _make_options(paired=True)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -434,7 +434,7 @@ def test_generate_reads_read_length_matches_options():
     opts = _make_options(paired=False)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -454,7 +454,7 @@ def test_generate_reads_targeted_region_flag_false_filters_all():
     cv = ContigVariants()
     no_target = [(0, _SPAN, False)]
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              no_target, _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -469,7 +469,7 @@ def test_generate_reads_discard_region_removes_all():
     cv = ContigVariants()
     discard_all = [(0, _SPAN, True)]
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              _all_span_targeted(), discard_all,
                              opts, None, "chr1", 0, 0)
 
@@ -483,7 +483,7 @@ def test_generate_reads_discard_flag_false_keeps_reads():
     opts = _make_options(paired=False)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -509,7 +509,7 @@ def test_generate_reads_variants_populated_on_reads():
     )
     cv.add_variant(snv)
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -535,7 +535,7 @@ def test_generate_reads_paired_discard_region_removes_all():
     cv = ContigVariants()
     discard_all = [(0, _SPAN, True)]
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              _all_span_targeted(), discard_all,
                              opts, None, "chr1", 0, 0)
 
@@ -549,7 +549,7 @@ def test_generate_reads_paired_no_discard_produces_read_pairs():
     opts = _make_options(paired=True)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 

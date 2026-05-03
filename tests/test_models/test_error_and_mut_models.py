@@ -5,7 +5,6 @@ Unit tests for MutationModel and SequencingErrorModel
 import numpy as np
 from numpy.random import default_rng
 from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 
 from neat.models.mutation_model import MutationModel
 from neat.models.error_models import SequencingErrorModel, TraditionalQualityModel
@@ -57,10 +56,10 @@ def test_traditional_quality_model_shapes_and_range():
 def test_sequencing_error_model_basic_snvs_only():
     rng = default_rng(6)
     sem = SequencingErrorModel(avg_seq_error=0.05)
-    ref = SeqRecord(Seq("ACGT" * 20), id="chr1")
+    ref = Seq("ACGT" * 20)
     quals = np.array([35] * 80, dtype=int)
     introduced, pad = sem.get_sequencing_errors(
-        padding=40, reference_segment=ref, quality_scores=quals, rng=rng
+        padding=40, reference_segment=ref, quality_scores=quals, num_errors=3, rng=rng
     )
     assert isinstance(introduced, list)
     assert pad >= 0
@@ -124,17 +123,17 @@ def test_mutation_model_snv_does_not_keep_reference_base():
 def test_sequencing_error_model_reproducible_with_seed():
     """Error placement should be deterministic given the same RNG state."""
     sem = SequencingErrorModel(avg_seq_error=0.05)
-    ref = SeqRecord(Seq("ACGT" * 30), id="chr1")
+    ref = Seq("ACGT" * 30)
     quals = np.array([30] * len(ref), dtype=int)
 
     rng1 = default_rng(9)
     rng2 = default_rng(9)
 
     introduced1, pad1 = sem.get_sequencing_errors(
-        padding=20, reference_segment=ref, quality_scores=quals, rng=rng1
+        padding=20, reference_segment=ref, quality_scores=quals, num_errors=3, rng=rng1
     )
     introduced2, pad2 = sem.get_sequencing_errors(
-        padding=20, reference_segment=ref, quality_scores=quals, rng=rng2
+        padding=20, reference_segment=ref, quality_scores=quals, num_errors=3, rng=rng2
     )
 
     assert pad1 == pad2
@@ -150,11 +149,11 @@ def test_sequencing_error_model_nonzero_error_introduces_in_bounds_errors():
     """
     rng = default_rng(10)
     sem = SequencingErrorModel(avg_seq_error=0.2)
-    ref = SeqRecord(Seq("ACGT" * 50), id="chr1")
+    ref = Seq("ACGT" * 50)
     quals = np.array([10] * len(ref), dtype=int)
 
     introduced, pad = sem.get_sequencing_errors(
-        padding=20, reference_segment=ref, quality_scores=quals, rng=rng
+        padding=20, reference_segment=ref, quality_scores=quals, num_errors=3, rng=rng
     )
 
     # At least one error is expected for these settings.

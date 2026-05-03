@@ -75,8 +75,6 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         self.variant_probs = variant_probs
         self.transition_matrix = transition_matrix
         self.is_cancer = is_cancer
-        self.all_dels = []
-        self.all_ins = []
 
     def get_mutation_type(self, rng: Generator) -> VariantTypes:
         """
@@ -125,7 +123,6 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         # Now pick a random alternate, weighted by the probabilities
         alt = rng.choice(ALLOWED_NUCL, p=transition_probs)
         temp_snv = SingleNucleotideVariant(reference_location, alt=alt)
-        self.all_ins.append(temp_snv)
         return temp_snv
 
     def generate_insertion(self, location: int, ref: Seq, rng: Generator) -> Insertion:
@@ -158,5 +155,4 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         # Plus one so we make sure to grab the first base too.
         # Note: if we happen to go past the end of the sequence, it will just be shorter.
         temp_del = Deletion(location, length)
-        self.all_dels.append(temp_del)
         return temp_del
