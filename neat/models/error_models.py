@@ -193,17 +193,17 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             return introduced_errors
         else:
             i = len(quality_scores)
-            while len(error_indexes) <= num_errors and i > 0:
+            while len(error_indexes) < num_errors and i > 0:
                 index = rng.choice(list(range(len(quality_scores))))
                 if rng.random() < quality_score_error_rate[quality_scores[index]]:
                     error_indexes.append(index)
                 i -= 1
-            # This should fill in any errors to make sure we aren't coming up short
+            # Fallback: if quality scores are too high to naturally reach num_errors,
+            # force errors at positions with below-median quality scores
             median_score = median(quality_scores)
             while len(error_indexes) < num_errors:
-                index = rng.choice(quality_scores)
-                score = quality_scores[index]
-                if score < median_score:
+                index = rng.integers(len(quality_scores))
+                if quality_scores[index] < median_score:
                     error_indexes.append(index)
 
         total_indel_length = 0
