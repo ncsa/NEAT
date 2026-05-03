@@ -4,7 +4,6 @@ Tests for sequencing error model in models
 
 import numpy as np
 
-from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
 
 from neat.models import SequencingErrorModel
@@ -17,8 +16,8 @@ def test_get_seq_error_snv_only():
     quality_scores = np.full_like(np.arange(10), 36)
     # Make at least one base very error-prone
     quality_scores[0] = 0
-    reference = SeqRecord(Seq('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), id="fake_1", name="fake", description="fake")
-    errors, _padding = model.get_sequencing_errors(padding=5, reference_segment=reference, quality_scores=quality_scores, rng=rng)
+    reference = Seq('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+    errors, _padding = model.get_sequencing_errors(padding=5, reference_segment=reference, quality_scores=quality_scores, num_errors=3, rng=rng)
     assert all(e.error_type == SingleNucleotideVariant for e in errors)
 
 

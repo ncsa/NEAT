@@ -304,6 +304,7 @@ class TestReadSimulatorSingle:
             target_regions,
             discard_regions,
             mutation_regions,
+            3,
         )
 
     def test_returns_four_element_tuple(self, tmp_path):
@@ -381,6 +382,7 @@ class TestReadSimulatorSingle:
             return read_simulator_single(
                 1, 0, opts, None, "chr1", 0, ContigVariants(),
                 [(0, 400, True)], [(0, 400, False)], [(0, 400, 0.01)],
+                3,
             )
 
         _run_in(tmp_a)
@@ -465,6 +467,7 @@ class TestReadSimulatorSingle:
             result = read_simulator_single(
                 1, 0, opts, None, "chr1", 0, ContigVariants(),
                 [(0, 20, True)], [(0, 20, False)], [(0, 20, 0.01)],
+                3,
             )
 
         assert "Record too small" in caplog.text

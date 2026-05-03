@@ -149,7 +149,7 @@ def test_sem_zero_error_rate_returns_empty():
     m = SequencingErrorModel(avg_seq_error=0.0)
     rng = np.random.default_rng(0)
     quality_scores = np.array([40] * 100)
-    result = m.get_sequencing_errors(20, _SEQ_RECORD, quality_scores, rng)
+    result = m.get_sequencing_errors(20, _SEQ, quality_scores, 0, rng)
     assert result == []
 
 
@@ -158,7 +158,7 @@ def test_sem_high_error_rate_returns_errors():
     m = SequencingErrorModel(avg_seq_error=0.5)
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 100)  # quality 1 → ~79% error rate
-    result, _ = m.get_sequencing_errors(20, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(20, _SEQ, quality_scores, 3, rng)
     assert len(result) > 0
 
 
@@ -166,7 +166,7 @@ def test_sem_returns_error_container_objects():
     m = SequencingErrorModel(avg_seq_error=0.5)
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 100)
-    result, _ = m.get_sequencing_errors(20, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(20, _SEQ, quality_scores, 3, rng)
     for err in result:
         assert isinstance(err, ErrorContainer)
 
@@ -175,7 +175,7 @@ def test_sem_errors_have_valid_locations():
     m = SequencingErrorModel(avg_seq_error=0.5)
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 100)
-    result, _ = m.get_sequencing_errors(20, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(20, _SEQ, quality_scores, 3, rng)
     for err in result:
         assert 0 <= err.location < len(quality_scores)
 
@@ -184,7 +184,7 @@ def test_sem_snv_errors_have_valid_alt():
     m = SequencingErrorModel(avg_seq_error=0.5)
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 100)
-    result, _ = m.get_sequencing_errors(20, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(20, _SEQ, quality_scores, 3, rng)
     snv_errors = [e for e in result if e.error_type == SingleNucleotideVariant]
     for err in snv_errors:
         assert err.alt in ("A", "C", "G", "T")
@@ -194,7 +194,7 @@ def test_sem_returns_updated_padding():
     m = SequencingErrorModel(avg_seq_error=0.5)
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 100)
-    _, padding = m.get_sequencing_errors(20, _SEQ_RECORD, quality_scores, rng)
+    _, padding = m.get_sequencing_errors(20, _SEQ, quality_scores, 3, rng)
     assert padding >= 0
 
 
@@ -202,7 +202,7 @@ def test_sem_high_quality_scores_produce_few_errors():
     m = SequencingErrorModel(avg_seq_error=0.009)
     rng = np.random.default_rng(0)
     quality_scores = np.array([40] * 151)  # q40 → 0.01% error rate
-    result, _ = m.get_sequencing_errors(20, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(20, _SEQ, quality_scores, 3, rng)
     # With q40 and length 151, very few errors expected
     assert len(result) < 10
 
@@ -250,7 +250,7 @@ def test_sem_deletion_variant_prob_has_no_effect():
     )
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 3, rng)
     del_errors = [e for e in result if e.error_type == Del]
     # No deletions produced due to the unreachable gate (see dead-code comment below)
     assert len(del_errors) == 0
@@ -265,7 +265,7 @@ def test_sem_insertion_variant_prob_has_no_effect():
     )
     rng = np.random.default_rng(7)
     quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 3, rng)
     ins_errors = [e for e in result if e.error_type == Ins]
     # No insertions produced due to the unreachable gate
     assert len(ins_errors) == 0
@@ -280,7 +280,7 @@ def test_sem_blacklist_prevents_duplicate_deletion_sites():
     )
     rng = np.random.default_rng(13)
     quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 3, rng)
     # All returned errors should be at unique locations (blacklist applied)
     locations = [e.location for e in result]
     # Deletions span multiple bases; no two errors at same index
@@ -330,7 +330,7 @@ def test_sem_only_snv_errors_produced_regardless_of_variant_probs():
     )
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ_RECORD, quality_scores, rng)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 3, rng)
     # All errors are SNVs because the indel branches are unreachable
     error_types = {e.error_type for e in result}
     assert error_types == {SingleNucleotideVariant}
