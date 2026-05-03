@@ -1,3 +1,21 @@
+# NEAT v4.4.1
+- Fixed inverted indel gate condition in the sequencing error model: indel errors were never generated due to a `>` vs `<=` logic error.
+- Fixed deletion blacklist bug: the anchor position of a deletion was incorrectly blacklisted, causing the deletion to remove itself during error cleanup.
+- Fixed quality array float promotion: applying a deletion error produced an empty quality slice (`np.array([])`), which defaulted to `float64` and broke quality string encoding.
+- Fixed fallback infinite loop in error selection when all quality scores are uniform.
+- Fixed off-by-one in the main error selection loop.
+- Added `errors_per_read` pre-calculation in the runner for more accurate per-contig error budgeting proportional to coverage and contig length.
+- Fixed trinucleotide context slice off-by-one in variant generation.
+- Removed debug `import pdb` statements from production code.
+- Replaced debug print sentinels in the mutation model with proper log warnings.
+- Expanded test coverage for the error model, runner, and read simulator.
+
+# NEAT v4.4
+- Official release of NEAT 4.0. Represents major contributions from NCSA and beyond.
+- Added parallel processing support, making NEAT production-ready for large genomes.
+- Includes more options for quality score modeling, a bacterial genome wrapper, additional tests, and performance improvements.
+- Future releases will focus on compatibility, bug fixes, and testing under the 4.4.X versioning scheme.
+
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
 
