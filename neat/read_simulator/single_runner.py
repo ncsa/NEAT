@@ -4,7 +4,6 @@ Runner for read-simulator in single-ended mode
 import gzip
 import os
 import pickle
-import pdb
 
 import pysam
 from Bio import SeqIO, bgzf

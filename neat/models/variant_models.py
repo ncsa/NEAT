@@ -2,7 +2,6 @@
 Classes for the variant models included in NEAT.
 Every Variant type in variants > variant_types must have a corresponding model in order to be fully implemented.
 """
-import pdb
 import re
 import logging
 import abc
@@ -165,10 +164,10 @@ class SnvModel(VariantModel):
                     for match in re.finditer(trinuc, str(sequence)):
                         # match.start() + 1 puts us at the center of the trinuc
                         if match.start() + 1 > len(self.local_trinuc_bias):
-                            print("???")
+                            _LOG.warning(f"Trinuc bias index out of range: {match.start() + 1} > {len(self.local_trinuc_bias)}")
                         self.local_trinuc_bias[match.start() + 1] = self.trinuc_mutation_bias[TRINUC_IND[trinuc]]
                         if len(self.local_trinuc_bias) != len(sequence):
-                            print("???")
+                            _LOG.warning(f"Trinuc bias length mismatch: {len(self.local_trinuc_bias)} != {len(sequence)}")
 
             # Now we normalize the bias
             self.local_trinuc_bias = self.local_trinuc_bias / sum(self.local_trinuc_bias)

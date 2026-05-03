@@ -9,7 +9,6 @@ import time
 import numpy as np
 import re
 import sys
-import pdb
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from numpy.random import Generator
