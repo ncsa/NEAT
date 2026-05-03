@@ -1,3 +1,6 @@
+# NEAT v4.4.1
+- Added `readme = "README.md"` to `pyproject.toml` so the project description appears correctly on PyPI.
+
 # NEAT v4.4
 - Official release of NEAT 4.0. Represents major contributions from NCSA and beyond.
 - Added parallel processing support, making NEAT production-ready for large genomes.
