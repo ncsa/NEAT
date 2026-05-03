@@ -162,9 +162,6 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
     output_opts: list = []
     output_files: list = []
-    # a dict with contig keys, then the thread index, and finally the applicable contig variants as the value
-    # TODO Remove if not needed
-    # all_variants: dict[str, dict[int, ContigVariants]] = {chrom: {} for chrom in reference_index.keys()}
     thread_idx = 1
     contig_list = list(reference_keys_with_lens.keys())
     contig_dict = {contig: contig_list.index(contig) for contig in reference_keys_with_lens.keys()}
@@ -216,8 +213,6 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     errors_per_read,
                 )
                 _LOG.info(f"Completed simulating contig {contig}.")
-                # TODO Remove if not needed
-                # all_variants[contig][idx] = local_variants
                 output_files.append((thread_idx, files_written))
             else:
                 thread_input_variants = filter_thread_variants(input_variants_dict[contig], (start, start+length))
@@ -250,8 +245,6 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
 
         # Need to organize the results, as above
         for idx, contig, local_variants, files_written in results.get():
-            # TODO Remove if not needed
-            # all_variants[contig][idx] = local_variants
             output_files.append((idx, files_written))
 
     _LOG.info("Processing complete, writing output")
