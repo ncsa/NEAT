@@ -149,6 +149,7 @@ def generate_reads(
         thread_index: int,
         reference: SeqRecord,
         error_model: SequencingErrorModel,
+        errors_per_read: int,
         qual_model: TraditionalQualityModel,
         fraglen_model: FragmentLengthModel,
         contig_variants: ContigVariants,
@@ -166,6 +167,7 @@ def generate_reads(
     :param thread_index: Index of current thread
     :param reference: The reference segment that reads will be drawn from.
     :param error_model: The error model for this run, the forward strand
+    :param errors_per_read: Total number of errors to add to contig
     :param qual_model: The quality score model for this run, forward strand
     :param fraglen_model: The fragment length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
@@ -285,9 +287,9 @@ def generate_reads(
             fastq_handle,
             options.quality_offset,
             options.produce_fastq,
+            errors_per_read,
             options.rng
         )
-
         # skip over read 2 for single ended reads.
         if options.paired_ended:
             # Padding, as above
@@ -313,7 +315,6 @@ def generate_reads(
             )
 
             read_2.mutations = find_applicable_mutations(read_2, contig_variants)
-
             if options.produce_fastq:
                 fastq_handle = ofw.files_to_write[ofw.fq2]
             else:
@@ -324,6 +325,7 @@ def generate_reads(
                 fastq_handle,
                 options.quality_offset,
                 options.produce_fastq,
+                errors_per_read,
                 options.rng
             )
             reads_to_write.append((read_1, read_2))

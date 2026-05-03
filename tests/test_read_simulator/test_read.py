@@ -400,6 +400,19 @@ def test_convert_masking_replaces_ns():
 # finalize_read_and_write — produce_fastq=True
 # ---------------------------------------------------------------------------
 
+def test_finalize_read_and_write_returns_error_count():
+    """Return value equals the number of errors actually applied to the read."""
+    r = _make_read(reference=_PADDED_REF, padding=20)
+    err_model = SequencingErrorModel(read_length=_READ_LEN)
+    qual_model = TraditionalQualityModel()
+    rng = _make_rng()
+
+    error_count = r.finalize_read_and_write(err_model, qual_model, None, 33, False, 3, rng)
+
+    assert isinstance(error_count, int)
+    assert error_count == len(r.errors)
+
+
 def test_finalize_read_and_write_writes_fastq():
     r = _make_read(reference=_PADDED_REF, padding=20)
     err_model = SequencingErrorModel(read_length=_READ_LEN)
@@ -407,7 +420,7 @@ def test_finalize_read_and_write_writes_fastq():
     rng = _make_rng()
     handle = io.StringIO()
 
-    r.finalize_read_and_write(err_model, qual_model, handle, 33, True, rng)
+    r.finalize_read_and_write(err_model, qual_model, handle, 33, True, 3, rng)
 
     output = handle.getvalue()
     assert output.startswith("@test_read")
@@ -424,7 +437,7 @@ def test_finalize_read_and_write_reverse_complement():
     qual_model = TraditionalQualityModel()
     rng = _make_rng()
 
-    r.finalize_read_and_write(err_model, qual_model, None, 33, False, rng)
+    r.finalize_read_and_write(err_model, qual_model, None, 33, False, 3, rng)
 
     assert len(r.read_sequence) == _READ_LEN
 
@@ -435,7 +448,7 @@ def test_finalize_sets_mapping_quality():
     qual_model = TraditionalQualityModel()
     rng = _make_rng()
 
-    r.finalize_read_and_write(err_model, qual_model, None, 33, False, rng)
+    r.finalize_read_and_write(err_model, qual_model, None, 33, False, 3, rng)
 
     assert r.mapping_quality == 70
 
@@ -450,7 +463,7 @@ def test_make_cigar_all_match():
     err_model = SequencingErrorModel(read_length=_READ_LEN)
     qual_model = TraditionalQualityModel()
     rng = _make_rng(seed=0)
-    r.finalize_read_and_write(err_model, qual_model, None, 33, False, rng)
+    r.finalize_read_and_write(err_model, qual_model, None, 33, False, 3, rng)
     cigar = r.make_cigar()
     assert cigar.endswith("M")
     assert "I" not in cigar or "D" not in cigar  # no complex indels for a clean read
@@ -462,7 +475,7 @@ def test_make_cigar_reverse_strand():
     err_model = SequencingErrorModel(read_length=_READ_LEN)
     qual_model = TraditionalQualityModel()
     rng = _make_rng(seed=0)
-    r.finalize_read_and_write(err_model, qual_model, None, 33, False, rng)
+    r.finalize_read_and_write(err_model, qual_model, None, 33, False, 3, rng)
     cigar = r.make_cigar()
     assert isinstance(cigar, str)
     assert len(cigar) > 0
