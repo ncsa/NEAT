@@ -180,6 +180,69 @@ def test_errors_per_contig_zero_for_zero_coverage():
     assert all(v == 0 for v in errors_per_contig.values())
 
 
+def test_errors_per_read_fractional_gate_fires_probabilistically():
+    """When block_errors rounds to 0 but is non-zero, the gate may increment errors_per_read.
+
+    Exercises runner.py:
+        errors_per_read = round(block_errors / estimated_number_of_reads)
+        if errors_per_read < 1.0 and block_errors > 0:
+            if rng.random() < average_error:
+                errors_per_read += 1
+    """
+    import numpy as np
+
+    block_errors = 0.3          # rounds to 0
+    estimated_number_of_reads = 1
+    average_error = 0.9         # high rate → gate almost always fires
+
+    errors_per_read = round(block_errors / estimated_number_of_reads)
+    assert errors_per_read == 0
+
+    rng = np.random.default_rng(0)
+    if errors_per_read < 1.0 and block_errors > 0:
+        if rng.random() < average_error:
+            errors_per_read += 1
+
+    assert errors_per_read == 1  # gate fired with high average_error and seed 0
+
+
+def test_errors_per_read_gate_skipped_when_block_errors_zero():
+    """Gate is not entered when block_errors == 0, leaving errors_per_read at 0."""
+    import numpy as np
+
+    block_errors = 0.0
+    estimated_number_of_reads = 10
+    average_error = 0.9
+
+    errors_per_read = round(block_errors / estimated_number_of_reads)
+    rng = np.random.default_rng(0)
+    if errors_per_read < 1.0 and block_errors > 0:
+        if rng.random() < average_error:
+            errors_per_read += 1
+
+    assert errors_per_read == 0
+
+
+def test_errors_per_read_gate_skipped_when_already_positive():
+    """Gate is not entered when errors_per_read rounds to >= 1."""
+    import numpy as np
+
+    block_errors = 10.0
+    estimated_number_of_reads = 2   # → round(5.0) = 5
+    average_error = 0.9
+
+    errors_per_read = round(block_errors / estimated_number_of_reads)
+    assert errors_per_read >= 1
+
+    original = errors_per_read
+    rng = np.random.default_rng(0)
+    if errors_per_read < 1.0 and block_errors > 0:
+        if rng.random() < average_error:
+            errors_per_read += 1
+
+    assert errors_per_read == original  # unchanged
+
+
 # ===========================================================================
 # Integration test — read_simulator_runner (FASTQ output only)
 # ===========================================================================

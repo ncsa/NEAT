@@ -266,15 +266,14 @@ def test_error_container_insertion_type():
 
 
 # ===========================================================================
-# SequencingErrorModel — indel error paths (lines 209, 213-235)
+# SequencingErrorModel — indel error paths
 # ===========================================================================
 
-def test_sem_deletion_variant_prob_has_no_effect():
-    """variant_probs favouring Deletion still produces only SNVs (dead-code bug).
+def test_sem_deletion_errors_produced_with_deletion_variant_probs():
+    """variant_probs favouring Deletion should produce deletion errors.
 
-    The indel gate condition is circular, so deletion errors are never produced
-    regardless of variant_probs. See test_sem_only_snv_errors_produced_regardless_of_variant_probs
-    for the full documentation test.
+    The gate condition `total_indel_length <= read_length // 4` allows indels
+    until they fill a quarter of the read, then switches back to SNVs.
     """
     from neat.variants import Deletion as Del, Insertion as Ins
     m = SequencingErrorModel(
@@ -283,14 +282,13 @@ def test_sem_deletion_variant_prob_has_no_effect():
     )
     rng = np.random.default_rng(0)
     quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 3, rng)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 5, rng)
     del_errors = [e for e in result if e.error_type == Del]
-    # No deletions produced due to the unreachable gate (see dead-code comment below)
-    assert len(del_errors) == 0
+    assert len(del_errors) > 0, "Expected deletion errors given variant_probs favours them"
 
 
-def test_sem_insertion_variant_prob_has_no_effect():
-    """variant_probs favouring Insertion still produces only SNVs (dead-code bug)."""
+def test_sem_insertion_errors_produced_with_insertion_variant_probs():
+    """variant_probs favouring Insertion should produce insertion errors."""
     from neat.variants import Insertion as Ins, Deletion as Del
     m = SequencingErrorModel(
         avg_seq_error=0.9,
@@ -298,14 +296,30 @@ def test_sem_insertion_variant_prob_has_no_effect():
     )
     rng = np.random.default_rng(7)
     quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 3, rng)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 5, rng)
     ins_errors = [e for e in result if e.error_type == Ins]
-    # No insertions produced due to the unreachable gate
-    assert len(ins_errors) == 0
+    assert len(ins_errors) > 0, "Expected insertion errors given variant_probs favours them"
+
+
+def test_sem_indel_cap_limits_total_indel_length():
+    """Total indel length in errors should not exceed read_length // 4."""
+    from neat.variants import Deletion as Del, Insertion as Ins
+    read_length = 151
+    m = SequencingErrorModel(
+        avg_seq_error=0.9,
+        read_length=read_length,
+        variant_probs={Ins: 0.0, Del: 1.0, SingleNucleotideVariant: 0.0},
+    )
+    rng = np.random.default_rng(0)
+    quality_scores = np.array([1] * read_length)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 20, rng)
+    del_errors = [e for e in result if e.error_type == Del]
+    total_indel_length = sum(e.length for e in del_errors)
+    assert total_indel_length <= read_length // 4
 
 
 def test_sem_blacklist_prevents_duplicate_deletion_sites():
-    """Errors at blacklisted positions from a deletion are removed."""
+    """Errors at positions spanned by a deletion are removed via the blacklist."""
     from neat.variants import Deletion as Del, Insertion as Ins
     m = SequencingErrorModel(
         avg_seq_error=0.9,
@@ -313,12 +327,23 @@ def test_sem_blacklist_prevents_duplicate_deletion_sites():
     )
     rng = np.random.default_rng(13)
     quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 3, rng)
-    # All returned errors should be at unique locations (blacklist applied)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 5, rng)
     locations = [e.location for e in result]
-    # Deletions span multiple bases; no two errors at same index
     assert len(locations) == len(set(locations))
 
+
+def test_sem_snv_only_probs_produces_no_indels():
+    """variant_probs with SNV=1.0 should produce zero indel errors."""
+    from neat.variants import Deletion as Del, Insertion as Ins
+    m = SequencingErrorModel(
+        avg_seq_error=0.9,
+        variant_probs={Ins: 0.0, Del: 0.0, SingleNucleotideVariant: 1.0},
+    )
+    rng = np.random.default_rng(0)
+    quality_scores = np.array([1] * 151)
+    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 5, rng)
+    indel_errors = [e for e in result if e.error_type in (Del, Ins)]
+    assert len(indel_errors) == 0
 
 
 # ===========================================================================
@@ -345,38 +370,3 @@ def test_tqm_score_clamped_to_maximum():
     assert all(s == 42 for s in scores)
 
 
-# ===========================================================================
-# SequencingErrorModel — dead-code documentation
-# ===========================================================================
-# Lines 209-235, 252 (indel error branches) are unreachable because
-# `total_indel_length` starts at 0 and is only incremented inside the
-# branches that are gated by `total_indel_length > self.read_length // 4`.
-# This circular dependency means the variant_probs choice (line 209) is
-# never called and deletion/insertion errors are never produced.
-# The following test documents this behaviour.
-
-def test_sem_only_snv_errors_produced_regardless_of_variant_probs():
-    """Indel errors are never produced due to the total_indel_length gate."""
-    m = SequencingErrorModel(
-        avg_seq_error=0.9,
-        variant_probs={Insertion: 0.5, Deletion: 0.5, SingleNucleotideVariant: 0.0},
-    )
-    rng = np.random.default_rng(0)
-    quality_scores = np.array([1] * 151)
-    result, _ = m.get_sequencing_errors(50, _SEQ, quality_scores, 3, rng)
-    # All errors are SNVs because the indel branches are unreachable
-    error_types = {e.error_type for e in result}
-    assert error_types == {SingleNucleotideVariant}
-    # TODO (post-fix): Once the gate condition is corrected from
-    #   `total_indel_length > self.read_length // 4`
-    #   to
-    #   `total_indel_length <= self.read_length // 4`
-    # the following assertions should replace the one above:
-    #
-    #   del_errors = [e for e in result if e.error_type == Deletion]
-    #   ins_errors = [e for e in result if e.error_type == Insertion]
-    #   assert len(del_errors) + len(ins_errors) > 0, \
-    #       "Expected indel errors given variant_probs favours them"
-    #   # blacklist test: no two errors share a location
-    #   locations = [e.location for e in result]
-    #   assert len(locations) == len(set(locations))

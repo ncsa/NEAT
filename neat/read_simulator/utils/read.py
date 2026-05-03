@@ -71,7 +71,7 @@ class Read:
         self.read_sequence: Seq = Seq("")  # initialize to empty sequence
         self.errors: list[ErrorContainer] = []  # initialize
         self.mutations: dict[int, list] = {}  # initialize
-        self.quality_array: np.ndarray = np.zeros(self.run_read_length)  # this will have the correct memory length
+        self.quality_array: np.ndarray = np.zeros(self.run_read_length, dtype=int)  # this will have the correct memory length
         self.mapping_quality: int = 0  # initialize at 0
         self.read_quality_string: str = ""  # This will hold the read quality string
         self.num_ns = 0
@@ -161,7 +161,7 @@ class Read:
         # Replace the given quality score with the new one
         self.quality_array = \
             np.concatenate((self.quality_array[:location],
-                            np.array(new_quality_score),
+                            np.array(new_quality_score, dtype=int),
                             self.quality_array[location+ref_length:]))
 
     def apply_errors(self, quality_model: TraditionalQualityModel):

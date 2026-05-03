@@ -281,7 +281,7 @@ def generate_reads(
             fastq_handle = ofw.files_to_write[ofw.fq1]
         else:
             fastq_handle = None
-        num_errors = read_1.finalize_read_and_write(
+        read_1.finalize_read_and_write(
             error_model,
             qual_model,
             fastq_handle,
@@ -319,7 +319,7 @@ def generate_reads(
                 fastq_handle = ofw.files_to_write[ofw.fq2]
             else:
                 fastq_handle = None
-            num_errors = read_2.finalize_read_and_write(
+            read_2.finalize_read_and_write(
                 error_model,
                 qual_model,
                 fastq_handle,

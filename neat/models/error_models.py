@@ -219,7 +219,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
 
             # This is to prevent deletion error collisions and to keep there from being too many indel errors.
             if 0 < index < self.read_length - max(
-                    self.deletion_len_model) and total_indel_length > self.read_length // 4:
+                    self.deletion_len_model) and total_indel_length <= self.read_length // 4:
                 error_type = rng.choice(a=list(self.variant_probs), p=list(self.variant_probs.values()))
 
             # Deletion error
@@ -235,11 +235,11 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
                 )
                 total_indel_length += deletion_length
 
-                del_blacklist.extend(list(range(index, index + deletion_length)))
+                del_blacklist.extend(list(range(index + 1, index + deletion_length + 1)))
                 padding -= deletion_length
 
             elif error_type == Insertion:
-                insertion_length = self.get_insertion_length()
+                insertion_length = self.get_insertion_length(rng)
                 insertion_reference = reference_segment[index]
                 insert_string = ''.join(rng.choice(ALLOWED_NUCL, size=insertion_length))
                 insertion_alternate = insertion_reference + insert_string
