@@ -75,8 +75,6 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         self.variant_probs = variant_probs
         self.transition_matrix = transition_matrix
         self.is_cancer = is_cancer
-        self.all_dels = []
-        self.all_ins = []
 
     def get_mutation_type(self, rng: Generator) -> VariantTypes:
         """
@@ -157,5 +155,4 @@ class MutationModel(SnvModel, InsertionModel, DeletionModel):
         # Plus one so we make sure to grab the first base too.
         # Note: if we happen to go past the end of the sequence, it will just be shorter.
         temp_del = Deletion(location, length)
-        self.all_dels.append(temp_del)
         return temp_del
