@@ -1,9 +1,10 @@
 [tool.poetry]
-name = "neat"
+name = "neat-genreads"
 version = "4.4.1"
 description = "NGS Simulation toolkit"
 authors = ["Joshua Allen <jallen17@illinois.edu>"]
 license = "BSD 3-Clause License"
+packages = [{include = "neat"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
