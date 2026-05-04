@@ -18,7 +18,7 @@ authors:
     equal-contrib: true
     corresponding: true
     affiliation: "1, 2"
-  - name: Raghid Alhamzy
+  - name: Raghid Alhazmy
     orcid: 0009-0005-6614-7050
     affiliation: 1
   - name: Yash Wasnik
