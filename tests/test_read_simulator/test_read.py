@@ -479,3 +479,140 @@ def test_make_cigar_reverse_strand():
     cigar = r.make_cigar()
     assert isinstance(cigar, str)
     assert len(cigar) > 0
+
+
+# ---------------------------------------------------------------------------
+# segment_start — indel position in reverse reads (PR 276 regression)
+#
+# For read2 (reverse), the reference segment starts `padding` bases BEFORE
+# self.position to allow room for deletions before reverse-complementing.
+# Variant positions must be offset from segment_start, not position.
+# ---------------------------------------------------------------------------
+
+# Build a 120-base segment (read_len=100 + padding=20) for reverse-read tests.
+_SEG_LEN = _READ_LEN + 20
+_REV_SEG = "ACGT" * (_SEG_LEN // 4 + 1)
+_REV_SEG = _REV_SEG[:_SEG_LEN]  # exactly 120 bases
+
+_SEGMENT_START = 80   # reference coord where segment begins
+_READ2_POS    = 100   # reference coord of read2's nominal start (= segment_start + padding)
+_PADDING      = _READ2_POS - _SEGMENT_START  # 20
+
+
+def _make_read2(segment=_REV_SEG, segment_start=_SEGMENT_START, position=_READ2_POS,
+                padding=_PADDING, read_len=_READ_LEN):
+    """Return a reverse read mimicking a real read2 where segment_start < position."""
+    r = Read(
+        name="test_read2",
+        raw_read=(segment_start, segment_start + len(segment), position + 150, position + 150 + read_len),
+        reference_segment=Seq(segment),
+        reference_id="chr1",
+        ref_id_index=0,
+        position=position,
+        end_point=position + read_len,
+        padding=padding,
+        run_read_len=read_len,
+        segment_start=segment_start,
+        is_reverse=True,
+        is_paired=True,
+    )
+    r.read_sequence = Seq(segment)
+    r.quality_array = np.array([30] * len(segment), dtype=float)
+    return r
+
+
+def test_segment_start_defaults_to_position():
+    """When segment_start is omitted, it falls back to position."""
+    r = _make_read(position=50)
+    assert r.segment_start == 50
+
+
+def test_segment_start_stored_independently_from_position():
+    """segment_start is kept separate from position for reverse reads."""
+    r = _make_read2()
+    assert r.segment_start == _SEGMENT_START
+    assert r.position == _READ2_POS
+    assert r.segment_start < r.position
+
+
+def test_apply_mutations_snv_reverse_read_uses_segment_start():
+    """
+    Regression for PR 276: an SNV at reference position V must land at index
+    V - segment_start in the segment, not V - position.
+
+    With segment_start=80 and position=100, a variant at ref pos 110 must go
+    to segment index 30 (correct) not index 10 (old, wrong).
+    """
+    r = _make_read2()
+    variant_ref_pos = 110
+    correct_idx = variant_ref_pos - _SEGMENT_START  # 30
+    wrong_idx    = variant_ref_pos - _READ2_POS      # 10
+
+    # "ACGT"*30 — index 30 is 'G', index 10 is also 'G'; use alt='T' to detect placement
+    assert str(r.read_sequence[correct_idx]) == "G"
+    assert str(r.read_sequence[wrong_idx]) == "G"
+
+    snv = SingleNucleotideVariant(position1=variant_ref_pos, alt=Seq("T"),
+                                  genotype=np.array([1, 1]), qual_score=30)
+    r.mutations = {variant_ref_pos: [snv]}
+    r.apply_mutations([30], _make_rng())
+
+    assert str(r.read_sequence[correct_idx]) == "T", "SNV not at V - segment_start"
+    assert str(r.read_sequence[wrong_idx]) == "G",   "SNV incorrectly placed at V - position"
+
+
+def test_apply_mutations_snv_reverse_read_variant_before_position():
+    """
+    A variant in the padded region (segment_start <= V < position) must also
+    be placed correctly. The old code (V - position) would give a negative index.
+    """
+    r = _make_read2()
+    variant_ref_pos = 85  # before position=100, inside segment starting at 80
+    correct_idx = variant_ref_pos - _SEGMENT_START  # 5
+
+    # "ACGT"*30 — index 5 is 'C'
+    assert str(r.read_sequence[correct_idx]) == "C"
+
+    snv = SingleNucleotideVariant(position1=variant_ref_pos, alt=Seq("T"),
+                                  genotype=np.array([1, 1]), qual_score=30)
+    r.mutations = {variant_ref_pos: [snv]}
+    r.apply_mutations([30], _make_rng())
+
+    assert str(r.read_sequence[correct_idx]) == "T"
+
+
+def test_apply_mutations_insertion_reverse_read_correct_position():
+    """Insertion in a reverse read is placed at V - segment_start."""
+    r = _make_read2()
+    variant_ref_pos = 115
+    correct_idx = variant_ref_pos - _SEGMENT_START  # 35
+
+    ins = Insertion(position1=variant_ref_pos, length=2, alt=Seq("TTT"),
+                    genotype=np.array([1, 1]), qual_score=30)
+    r.mutations = {variant_ref_pos: [ins]}
+    r.apply_mutations([30], _make_rng())
+
+    # The three bases starting at correct_idx should now be "TTT"
+    assert str(r.read_sequence[correct_idx: correct_idx + 3]) == "TTT"
+
+
+def test_apply_mutations_deletion_reverse_read_correct_position():
+    """Deletion in a reverse read removes bases starting at V - segment_start."""
+    r = _make_read2()
+    variant_ref_pos = 105
+    correct_idx = variant_ref_pos - _SEGMENT_START  # 25
+    del_len = 3
+
+    # "ACGT"*30: indices 25,26,27 = 'C','G','T'; index 28 = 'A'
+    pre_at_28 = str(r.read_sequence[correct_idx + del_len])  # 'A'
+    pre_len = len(r.read_sequence)
+
+    deletion = Deletion(position1=variant_ref_pos, length=del_len,
+                        genotype=np.array([1, 1]), qual_score=30)
+    r.mutations = {variant_ref_pos: [deletion]}
+    r.apply_mutations([30], _make_rng())
+
+    # Sequence is shorter by del_len - 1 (one base kept at position, rest removed)
+    assert len(r.read_sequence) == pre_len - (del_len - 1)
+    # The base that was at correct_idx + del_len is now at correct_idx + 1
+    assert str(r.read_sequence[correct_idx + 1]) == pre_at_28
