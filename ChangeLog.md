@@ -1,5 +1,26 @@
+# NEAT v4.4.1
+- Added `readme = "README.md"` to `pyproject.toml` so the project description appears correctly on PyPI.
+
+# NEAT v4.4
+- Official release of NEAT 4.0. Represents major contributions from NCSA and beyond.
+- Added parallel processing support, making NEAT production-ready for large genomes.
+- Includes more options for quality score modeling, a bacterial genome wrapper, additional tests, and performance improvements.
+- Fixed inverted indel gate condition in the sequencing error model: indel errors were never generated due to a `>` vs `<=` logic error.
+- Fixed deletion blacklist bug: the anchor position of a deletion was incorrectly blacklisted, causing the deletion to remove itself during error cleanup.
+- Fixed quality array float promotion: applying a deletion error produced an empty quality slice (`np.array([])`), which defaulted to `float64` and broke quality string encoding.
+- Fixed fallback infinite loop in error selection when all quality scores are uniform.
+- Fixed off-by-one in the main error selection loop.
+- Added `errors_per_read` pre-calculation in the runner for more accurate per-contig error budgeting proportional to coverage and contig length.
+- Fixed trinucleotide context slice off-by-one in variant generation.
+- Removed debug `import pdb` statements from production code.
+- Replaced debug print sentinels in the mutation model with proper log warnings.
+- Expanded test coverage for the error model, runner, and read simulator.
+
 # NEAT has a new home
 NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
+
+# NEAT v4.3.6
+- Multiple bug fixes, fixes to outputs. See release for full notes.
 
 # NEAT v4.3.5
 - An improvement rather than a bug fix this time. We moved vcf processing into the threaded portion, as our speeds were better than single threaded, but very slow on the vcf writing portion. This sped things up considerably, so we tested and confirmed that it is working as desired and are updating to a new version with improved VCF production in parallel mode.

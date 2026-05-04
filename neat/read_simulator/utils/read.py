@@ -71,7 +71,7 @@ class Read:
         self.read_sequence: Seq = Seq("")  # initialize to empty sequence
         self.errors: list[ErrorContainer] = []  # initialize
         self.mutations: dict[int, list] = {}  # initialize
-        self.quality_array: np.ndarray = np.zeros(self.run_read_length)  # this will have the correct memory length
+        self.quality_array: np.ndarray = np.zeros(self.run_read_length, dtype=int)  # this will have the correct memory length
         self.mapping_quality: int = 0  # initialize at 0
         self.read_quality_string: str = ""  # This will hold the read quality string
         self.num_ns = 0
@@ -161,7 +161,7 @@ class Read:
         # Replace the given quality score with the new one
         self.quality_array = \
             np.concatenate((self.quality_array[:location],
-                            np.array(new_quality_score),
+                            np.array(new_quality_score, dtype=int),
                             self.quality_array[location+ref_length:]))
 
     def apply_errors(self, quality_model: TraditionalQualityModel):
@@ -308,6 +308,7 @@ class Read:
             fastq_handle,
             quality_offset: int,
             produce_fastq: bool,
+            num_errors: int,
             rng: Generator,
     ):
         """
@@ -319,6 +320,7 @@ class Read:
         :param quality_offset: the quality offset for this run
         :param produce_fastq: If true, this will write out the temp fastqs. If false, this will only write out the tsams
             to create the bam files.
+        :param num_errors: Estimated number of errors to add to this read.
         :param rng: the random number generator for this run
         """
 
@@ -336,11 +338,12 @@ class Read:
         # set the read sequence to match the reference, then modify
         self.read_sequence = deepcopy(self.reference_segment)
 
-        # Get errors for the rea and update the quality score
+        # Get errors for the read and update the quality score
         self.errors, self.padding = err_model.get_sequencing_errors(
             self.padding,
             self.reference_segment,
             self.quality_array,
+            num_errors,
             rng
         )
 
@@ -361,6 +364,8 @@ class Read:
         if produce_fastq:
             fastq_record = f'@{self.name}\n{str(self.read_sequence)}\n+\n{self.read_quality_string}\n'
             fastq_handle.write(fastq_record)
+
+        return len(self.errors)
 
 
     def convert_masking(self, quality_model: TraditionalQualityModel):

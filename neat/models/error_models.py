@@ -10,6 +10,7 @@ import logging
 
 from Bio.Seq import Seq
 from Bio import SeqRecord
+from numpy import median
 
 from neat import variants
 
@@ -165,8 +166,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
     def get_sequencing_errors(
             self,
             padding: int,
-            reference_segment: SeqRecord,
+            reference_segment: Seq,
             quality_scores: np.ndarray,
+            num_errors,
             rng
     ):
         """
@@ -175,8 +177,9 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         :param padding: this is the amount of space we have in the read for deletions.
         :param reference_segment: The section of the reference from which the read is drawn
         :param quality_scores: Array of quality scores for the read
-        :return: Modified sequence and associated quality scores
+        :param num_errors: The estimated number of errors to add.
         :param rng: random number generator.
+        :return: Modified sequence and associated quality scores
         """
 
         error_indexes = []
@@ -189,9 +192,20 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         if self.average_error == 0:
             return introduced_errors
         else:
-            for i in range(len(quality_scores)):
-                if rng.random() < quality_score_error_rate[quality_scores[i]]:
-                    error_indexes.append(i)
+            i = len(quality_scores)
+            while len(error_indexes) < num_errors and i > 0:
+                index = rng.choice(list(range(len(quality_scores))))
+                if rng.random() < quality_score_error_rate[quality_scores[index]]:
+                    error_indexes.append(index)
+                i -= 1
+            # Fallback: if quality scores are too high to naturally reach num_errors,
+            # force errors at positions with at-or-below-median quality scores.
+            # Using <= so that uniform quality arrays (all scores equal) always make progress.
+            median_score = median(quality_scores)
+            while len(error_indexes) < num_errors:
+                index = rng.integers(len(quality_scores))
+                if quality_scores[index] <= median_score:
+                    error_indexes.append(index)
 
         total_indel_length = 0
         # To prevent deletion collisions
@@ -205,27 +219,27 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
 
             # This is to prevent deletion error collisions and to keep there from being too many indel errors.
             if 0 < index < self.read_length - max(
-                    self.deletion_len_model) and total_indel_length > self.read_length // 4:
+                    self.deletion_len_model) and total_indel_length <= self.read_length // 4:
                 error_type = rng.choice(a=list(self.variant_probs), p=list(self.variant_probs.values()))
 
             # Deletion error
             if error_type == Deletion:
-                deletion_length = self.get_deletion_length()
+                deletion_length = self.get_deletion_length(rng)
                 if padding - deletion_length < 0:
                     # No space in this read to add this deletion
                     continue
-                deletion_reference = reference_segment.seq[index: index + deletion_length + 1]
+                deletion_reference = reference_segment[index: index + deletion_length + 1]
                 deletion_alternate = deletion_reference[0]
                 introduced_errors.append(
                     ErrorContainer(Deletion, index, deletion_length, deletion_reference, deletion_alternate)
                 )
                 total_indel_length += deletion_length
 
-                del_blacklist.extend(list(range(index, index + deletion_length)))
+                del_blacklist.extend(list(range(index + 1, index + deletion_length + 1)))
                 padding -= deletion_length
 
             elif error_type == Insertion:
-                insertion_length = self.get_insertion_length()
+                insertion_length = self.get_insertion_length(rng)
                 insertion_reference = reference_segment[index]
                 insert_string = ''.join(rng.choice(ALLOWED_NUCL, size=insertion_length))
                 insertion_alternate = insertion_reference + insert_string

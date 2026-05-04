@@ -1,7 +1,6 @@
 import logging
 import pickle
 import time
-
 from math import ceil
 from pathlib import Path
 
@@ -49,9 +48,9 @@ def cover_dataset(
     number_reads_per_layer = ceil(span_length / fragment_model.fragment_mean)
     if options.paired_ended:
         # TODO use gc bias to skew this number. Calculate at the runner level.
-        number_reads = ceil(number_reads_per_layer * (options.coverage/2))
+        number_reads = ceil(span_length * options.coverage / (2 * options.read_len))
     else:
-        number_reads = ceil(number_reads_per_layer * options.coverage)
+        number_reads = ceil(span_length * options.coverage / options.read_len)
 
     # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
     # step 2: repeat above until number of reads exceeds number_reads
@@ -149,6 +148,7 @@ def generate_reads(
         thread_index: int,
         reference: SeqRecord,
         error_model: SequencingErrorModel,
+        errors_per_read: int,
         qual_model: TraditionalQualityModel,
         fraglen_model: FragmentLengthModel,
         contig_variants: ContigVariants,
@@ -166,6 +166,7 @@ def generate_reads(
     :param thread_index: Index of current thread
     :param reference: The reference segment that reads will be drawn from.
     :param error_model: The error model for this run, the forward strand
+    :param errors_per_read: Total number of errors to add to contig
     :param qual_model: The quality score model for this run, forward strand
     :param fraglen_model: The fragment length model for this run
     :param contig_variants: An object containing all input and randomly generated variants to be included.
@@ -182,6 +183,13 @@ def generate_reads(
     """
     # _LOG.info(f'Sampling reads for thread {thread_index}...')
     start_time = time.time()
+
+    if len(reference) < options.read_len:
+        _LOG.warning(
+            f"Contig '{contig_name}' (length {len(reference)}) is shorter than read_len "
+            f"({options.read_len}). Skipping contig."
+        )
+        return []
 
     # _LOG.debug("Covering dataset.")
     t = time.time()
@@ -278,9 +286,9 @@ def generate_reads(
             fastq_handle,
             options.quality_offset,
             options.produce_fastq,
+            errors_per_read,
             options.rng
         )
-
         # skip over read 2 for single ended reads.
         if options.paired_ended:
             # Padding, as above
@@ -306,7 +314,6 @@ def generate_reads(
             )
 
             read_2.mutations = find_applicable_mutations(read_2, contig_variants)
-
             if options.produce_fastq:
                 fastq_handle = ofw.files_to_write[ofw.fq2]
             else:
@@ -317,6 +324,7 @@ def generate_reads(
                 fastq_handle,
                 options.quality_offset,
                 options.produce_fastq,
+                errors_per_read,
                 options.rng
             )
             reads_to_write.append((read_1, read_2))

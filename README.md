@@ -4,7 +4,7 @@ Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, ve
 
 ## NEAT v4.4
 
-NEAT 4.4 fixes a few bugs related to NEAT. This release of NEAT includes several fixes to bugs and a little bit of restructuring, including more options for quality score modeling, a bacterial genome wrapper, additional tests, and more. Our tests show much improved performance. If the logs seem excessive, you might try using the `--log-level ERROR` to reduce the output from the logs. See the [ChangeLog](ChangeLog.md) for notes. 
+NEAT 4.4 is the official release of NEAT 4.0, including parallel processing support and significant bug fixes to the sequencing error model. See the [ChangeLog](ChangeLog.md) for details. 
 
 We have completed major revisions on NEAT since 3.4 and consider NEAT 4.4 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 
@@ -22,8 +22,8 @@ To cite this work, please use:
 
 ## Table of Contents
 
-* [The NEAT Project v4.4](#the-neat-project-v436)
-* [NEAT v4.4](#neat-v435)
+* [The NEAT Project v4.4](#the-neat-project-v44)
+* [NEAT v4.4](#neat-v44)
 * [Table of Contents](#table-of-contents)
   * [Prerequisites](#prerequisites)
   * [Installation](#installation)

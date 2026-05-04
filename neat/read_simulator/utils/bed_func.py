@@ -21,6 +21,9 @@ _LOG = logging.getLogger(__name__)
 
 def intersect_regions(mutation_regions: list, block_tuple: tuple[int, int], default_value: float) -> list:
     """
+    Clips each mutation region to the block window and returns only the overlapping
+    sub-intervals, preserving each region's mutation rate.
+
     Our assumption here is that mutation regions is a continuous list, such that
     for each region, the end of the previous region is the start of the next region,
     and there are no gaps. This should be true of anything generated from parse_beds, but
@@ -28,23 +31,19 @@ def intersect_regions(mutation_regions: list, block_tuple: tuple[int, int], defa
     """
     ret_list = []
     block_start, block_end = block_tuple
-    for i in range(len(mutation_regions)):
-        region = mutation_regions[i]
-        if region[0] <= block_start < region[1]:
-            # We found the first region covering the block
-            if block_end <= region[1]:
-                # If the block spans the entire region, we have a special case
-                ret_list.append((block_start, block_end, region[2]))
-                # nothing more to do
-                return ret_list
-            ret_list.append((block_start, region[1], region[2]))
-        elif region[0] <= block_end < region[1]:
-            # We found the last region covering the block
-            ret_list.append((region[0], block_end, region[2]))
-            # nothing more to do
-            return ret_list
-    # If we haven't returned yet, then we did not find the end in our mutations list
-    ret_list.append((mutation_regions[-1][1], block_end, default_value))
+    for region in mutation_regions:
+        overlap_start = max(region[0], block_start)
+        overlap_end = min(region[1], block_end)
+        if overlap_start < overlap_end:
+            ret_list.append((overlap_start, overlap_end, region[2]))
+
+    if not ret_list:
+        # Block is entirely outside all provided regions
+        ret_list.append((block_start, block_end, default_value))
+    elif ret_list[-1][1] < block_end:
+        # Block extends past the last region; fill the tail with the default rate
+        ret_list.append((ret_list[-1][1], block_end, default_value))
+
     return ret_list
 
 def parse_beds(options: Options, ref_keys_counts: dict) -> list:

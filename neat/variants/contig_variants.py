@@ -49,7 +49,7 @@ class ContigVariants:
 
     def check_if_ins(self, other):
         for insert in self.all_ins:
-            if np.array_equal(other.genotype, insert.genotype) and insert.contains(other):
+            if np.array_equal(other.genotype, insert.genotype) and insert.contains(other.position1):
                 return insert
         return None
 
@@ -94,13 +94,26 @@ class ContigVariants:
 
     def find_dups(self, variant):
         """
-        Checks if the given genotype is already present in a list of variants.
+        Checks if an equivalent variant already exists at this position.
+        Two variants are duplicates when they share the same type and ALT allele.
+        Genotype-only comparison was insufficient: two variants with identical ALT
+        but different genotypes would produce two identical VCF output lines.
 
         :param variant: A variant to check for duplicates
-        :return: True or False if found or not
+        :return: True if a duplicate exists, False otherwise
         """
+        try:
+            variant_alt = variant.get_alt()
+        except (KeyError, AttributeError):
+            variant_alt = None
+
         for existing_var in self.contig_variants[variant.position1]:
-            if np.array_equal(variant.genotype, existing_var.genotype):
+            try:
+                existing_alt = existing_var.get_alt()
+            except (KeyError, AttributeError):
+                existing_alt = None
+
+            if type(variant) == type(existing_var) and variant_alt == existing_alt:
                 return True
 
         return False
@@ -150,11 +163,11 @@ class ContigVariants:
             return get_genotype_string(variant.genotype)
 
     def remove_variant(self, variant):
-        if variant.position in self.variant_locations:
-            if variant in self.contig_variants[variant.position]:
-                self.contig_variants[variant.position].remove(variant)
-            if not self.contig_variants[variant.position]:
-                self.variant_locations.remove(variant.position)
+        if variant.position1 in self.variant_locations:
+            if variant in self.contig_variants[variant.position1]:
+                self.contig_variants[variant.position1].remove(variant)
+            if not self.contig_variants[variant.position1]:
+                self.variant_locations.remove(variant.position1)
 
     def __getitem__(self, input_location: int) -> list:
         """

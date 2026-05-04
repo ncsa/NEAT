@@ -9,7 +9,6 @@ import time
 import numpy as np
 import re
 import sys
-
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from numpy.random import Generator
@@ -77,8 +76,9 @@ def generate_variants(
             for variant in input_variants.contig_variants[variant_location]:
                 return_variants.add_variant(variant)
 
-    # pase out the mutation rates
-    mutation_rates = np.array([x[2] for x in mutation_rate_regions])
+    # pase out the mutation rates; substitute None with the model average
+    mutation_rates = np.array([x[2] if x[2] is not None else mutation_model.avg_mut_rate
+                               for x in mutation_rate_regions])
 
     # Trying to use a random window to keep memory under control. May need to adjust this number.
     max_window_size = 1000
@@ -114,13 +114,12 @@ def generate_variants(
     # _LOG.info(f'Planning to add {how_many_mutations} mutations. The final number may be less.')
 
     while how_many_mutations > 0:
-        # Pick a region based on the mutation rates
-        # (default is one rate for the whole chromosome, so this will be trivial in that case
-        # for this selection, we'll normalize the mutation rates
-        probability_rates = mutation_rates / sum(mutation_rates)
         # We need to intersect our chosen mutation region with our block
         local_mut_regions = bed_func.intersect_regions(mutation_rate_regions, (ref_start, ref_start + len(reference)), options.mutation_rate)
         # For no input mutation regions bed, this will return the entire sequence.
+        # Build probability weights from the intersected regions so the lengths always match.
+        local_rates = np.array([r[2] if r[2] is not None else mutation_model.avg_mut_rate for r in local_mut_regions])
+        probability_rates = local_rates / sum(local_rates)
         mut_region = options.rng.choice(a=local_mut_regions, p=probability_rates)
         mut_region_offset = (int(mut_region[0]-ref_start), int(mut_region[1]-ref_start), mut_region[2])
 
@@ -208,7 +207,6 @@ def generate_variants(
 
         # Begin random mutations for this slice
         # Note that any new variant types will need code in this area to handle the functions.
-        debug = 0
         while variants_to_add_in_slice > 0:
             # We decrement now because we don't want to get stuck in a never ending loop
             variants_to_add_in_slice -= 1
@@ -239,7 +237,9 @@ def generate_variants(
                 location = local_location + ref_start  # relative to overall contig
                 if local_location == 0:
                     continue
-                trinuc = reference[local_location: local_location+3].seq.upper()
+                # local_location is the center (mutated) base returned by sample_trinucs;
+                # shift slice left by 1 so trinuc[0]=5' flank, trinuc[1]=ref base, trinuc[2]=3' flank
+                trinuc = reference[local_location-1: local_location+2].seq.upper()
                 disallowed_chars = False
                 for letter in trinuc:
                     if letter not in ALLOWED_NUCL:
@@ -256,34 +256,25 @@ def generate_variants(
             # pick which ploid is mutated
             temp_variant.genotype = pick_ploids(options.ploidy, mutation_model.homozygous_freq, 1, options.rng)
 
-            # There shouldn't be a ton of overlapping variants, but this is to handle those.
             if location in return_variants:
-                """
-                If the location already exists, then we'll need to force it to pick a ploid 
-                that currently doesn't have a variant. This overrides the default genotype
-                variable created above, but it shouldn't happen very often.
-                """
-                if return_variants.find_dups(temp_variant):
-                    # This compiles all the variants at this location, giving a 1 for every ploid that has a variant.
-                    composite_genotype = return_variants.compile_genotypes_for_location(location)
-                    if 0 not in composite_genotype:
-                        # Here's a counter to make sure we're not getting stuck on a single location
-                        debug += 1
-                        if debug > 1000000:
-                            _LOG.error("Check this if, as it may be causing an infinite loop.")
-                            sys.exit(999)
-                        # No suitable place to put this, so we skip.
-                        continue
-                    # This sets up a probability array with weights 1 for open spots (x==0) and 0 elsewhere
-                    probs = np.array([1 if x == 0 else 0 for x in composite_genotype])
-                    probs = probs / sum(probs)
-                    # Pick an index of a position to mutate based on the probabilities, which are uniform for 0s left
-                    # in the composite genotype
-                    ploid = options.rng.choice(list(range(len(composite_genotype))), p=probs)
-                    genotype = np.zeros(options.ploidy)
-                    genotype[ploid] = 1
-                    temp_variant.genotype = genotype
-
+                existing_variants = return_variants.contig_variants[location]
+                sv_involved = temp_variant.is_structural or any(
+                    v.is_structural for v in existing_variants
+                )
+                if not sv_involved:
+                    # Two independent point mutations at the same anchor occur with
+                    # probability p² — effectively impossible at realistic rates. Skip.
+                    continue
+                # SV compound-het: assign to a free ploid on the other haplotype.
+                composite_genotype = return_variants.compile_genotypes_for_location(location)
+                if 0 not in composite_genotype:
+                    continue
+                probs = np.array([1 if x == 0 else 0 for x in composite_genotype])
+                probs = probs / sum(probs)
+                ploid = options.rng.choice(list(range(len(composite_genotype))), p=probs)
+                genotype = np.zeros(options.ploidy)
+                genotype[ploid] = 1
+                temp_variant.genotype = genotype
             # Make sure this new variant doesn't overlap an existing insertion or deletion
             in_deletion = return_variants.check_if_del(temp_variant)
             in_insertion = return_variants.check_if_ins(temp_variant)

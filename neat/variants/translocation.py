@@ -16,6 +16,8 @@ class Translocation(BaseVariant):
     :param kwargs: can be used to store data from input vars.
     """
 
+    is_structural = True
+
     def __init__(self,
                  position1: int,
                  length: int,
