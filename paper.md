@@ -59,7 +59,7 @@ NEAT has changed significantly since the release of version 2.0 in 2016. The cod
 ### Table 1. Methodological, software robustness, and user experience updates in NEAT 4.4
 
 +--------+-----------------------+---------------------------------------------+------------------------------------------------------+
-| #      | Feature Name          | Prior Implementation (2.0)                  | Updated Implementation (4.4)                         |
+| No.    | Feature Name          | Prior Implementation (2.0)                  | Updated Implementation (4.4)                         |
 +========+=======================+=============================================+======================================================+
 | **1**  | GC Bias Computation   | Used custom model of GC bias                | Removed, pending further investigation               |
 +--------+-----------------------+---------------------------------------------+------------------------------------------------------+
