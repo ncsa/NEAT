@@ -20,7 +20,7 @@ To cite this work, please use both of the following:
 
 1. > Stephens, Z. D., Hudson, M. E., Mainzer, L. S., Taschuk, M., Weber, M. R., & Iyer, R. K. (2016). Simulating Next-Generation Sequencing Datasets from Empirical Mutation and Sequencing Models. _PLOS ONE_, _11_(11), e0167047. https://doi.org/10.1371/journal.pone.0167047
 
-2. > Allen, J. M., Gandhi, K. R., Alhamzy, R., Wasnik, Y., & Fliege, C. E. (2026). Enhancing next-generation sequencing simulation: Updates to NEAT. _Journal of Open Source Software_, _11_(121), 9056. https://doi.org/10.21105/joss.09056
+2. > Allen, J. M., Gandhi, K. R., Alhazmy, R., Wasnik, Y., & Fliege, C. E. (2026). Enhancing next-generation sequencing simulation: Updates to NEAT. _Journal of Open Source Software_, _11_(121), 9056. https://doi.org/10.21105/joss.09056
 
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.09056/status.svg)](https://doi.org/10.21105/joss.09056)
 
