@@ -50,6 +50,7 @@ class Read:
                  end_point: int,
                  padding: int,
                  run_read_len: int,
+                 segment_start: int = None,
                  is_reverse: bool = False,
                  is_paired: bool = False):
 
@@ -63,6 +64,9 @@ class Read:
         self.end_point = end_point
         self.padding = padding
         self.run_read_length = run_read_len
+        # segment_start is the reference coordinate of reference_segment[0], which may be
+        # earlier than self.position for reverse reads (padding prepended for deletion headroom).
+        self.segment_start = segment_start if segment_start is not None else position
         self.is_reverse = is_reverse
         self.is_paired = is_paired
 
@@ -202,8 +206,10 @@ class Read:
 
             # Fetch parameters
             qual_score = variant_to_apply.get_qual_score()
-            # Find the position within the read for this variant, cast as a python int, instead of a numpy int
-            position = int(variant_to_apply.get_0_location() - self.position)
+            # Find the position within the reference_segment for this variant. Use segment_start rather
+            # than self.position because for reverse reads the segment begins padding bases before
+            # self.position (leading padding for deletion headroom after reverse_complement).
+            position = int(variant_to_apply.get_0_location() - self.segment_start)
             # Figure out if the variant is in this read. If 'to_mutate' selects any 1, then it is mutated.
             # For diploid animals, for example, this should result in approximately 50% of reads having a
             # given heterozygous mutation and 100% for homozygous mutations.
