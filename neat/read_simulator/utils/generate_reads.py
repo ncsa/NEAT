@@ -272,6 +272,7 @@ def generate_reads(
             end_point=read1[1] + ref_start,
             padding=actual_padding,
             run_read_len=options.read_len,
+            segment_start=read1[0] + ref_start,
             is_paired=options.paired_ended,
         )
 
@@ -309,6 +310,7 @@ def generate_reads(
                 end_point=read2[1] + ref_start,
                 padding=actual_padding,
                 run_read_len=options.read_len,
+                segment_start=start_coordinate + ref_start,
                 is_reverse=True,
                 is_paired=options.paired_ended
             )
