@@ -16,9 +16,13 @@ Developing and validating bioinformatics pipelines depends on access to genomic 
 
 NEAT is a fine-grained read simulator that simulates real-looking data using models learned from specific datasets. It was originally designed to simulate short reads and is adaptable to different machines, with custom error models and the capability to handle single-base substitutions, indel errors, and other types of mutations. Unlike simulators that rely solely on fixed error profiles, NEAT can learn empirical mutation and sequencing models from real datasets and use these models to generate realistic sequencing data, providing outputs in several common file formats (e.g., FASTQ, BAM, and VCF). There are several supporting utilities for generating models used for simulation and for comparing the outputs of alignment and variant calling to the golden BAM and golden VCF produced by NEAT.
 
-To cite this work, please use:
+To cite this work, please use both of the following:
 
-> Stephens, Z. D., Hudson, M. E., Mainzer, L. S., Taschuk, M., Weber, M. R., & Iyer, R. K. (2016). Simulating Next-Generation Sequencing Datasets from Empirical Mutation and Sequencing Models. _PLOS ONE_, _11_(11), e0167047. https://doi.org/10.1371/journal.pone.0167047
+1. > Stephens, Z. D., Hudson, M. E., Mainzer, L. S., Taschuk, M., Weber, M. R., & Iyer, R. K. (2016). Simulating Next-Generation Sequencing Datasets from Empirical Mutation and Sequencing Models. _PLOS ONE_, _11_(11), e0167047. https://doi.org/10.1371/journal.pone.0167047
+
+2. > Allen, J. M., Gandhi, K. R., Alhazmy, R., Wasnik, Y., & Fliege, C. E. (2026). Enhancing next-generation sequencing simulation: Updates to NEAT. _Journal of Open Source Software_, _11_(121), 9056. https://doi.org/10.21105/joss.09056
+
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.09056/status.svg)](https://doi.org/10.21105/joss.09056)
 
 ## Table of Contents
 
