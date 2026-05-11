@@ -1,0 +1,64 @@
+cff-version: "1.2.0"
+authors:
+- family-names: Allen
+  given-names: Joshua M.
+  orcid: "https://orcid.org/0009-0008-0002-5239"
+- email: krg3@uic.edu
+  family-names: Gandhi
+  given-names: Keshav R.
+  orcid: "https://orcid.org/0009-0000-1718-1862"
+- family-names: Alhazmy
+  given-names: Raghid
+  orcid: "https://orcid.org/0009-0005-6614-7050"
+- family-names: Wasnik
+  given-names: Yash
+  orcid: "https://orcid.org/0009-0006-0108-7445"
+- email: cfliege2@illinois.edu
+  family-names: Fliege
+  given-names: Christina E.
+  orcid: "https://orcid.org/0000-0001-8085-779X"
+contact:
+- email: krg3@uic.edu
+  family-names: Gandhi
+  given-names: Keshav R.
+  orcid: "https://orcid.org/0009-0000-1718-1862"
+- email: cfliege2@illinois.edu
+  family-names: Fliege
+  given-names: Christina E.
+  orcid: "https://orcid.org/0000-0001-8085-779X"
+doi: 10.5281/zenodo.19662441
+message: If you use this software, please cite both the original publication of NEAT in PLOS One (2016) as well as our
+  article from the Journal of Open Source Software (2026). You can find both citations at the top of README.md, with
+  DOIs provided that link to the original papers.
+preferred-citation:
+  authors:
+  - family-names: Allen
+    given-names: Joshua M.
+    orcid: "https://orcid.org/0009-0008-0002-5239"
+  - email: krg3@uic.edu
+    family-names: Gandhi
+    given-names: Keshav R.
+    orcid: "https://orcid.org/0009-0000-1718-1862"
+  - family-names: Alhazmy
+    given-names: Raghid
+    orcid: "https://orcid.org/0009-0005-6614-7050"
+  - family-names: Wasnik
+    given-names: Yash
+    orcid: "https://orcid.org/0009-0006-0108-7445"
+  - email: cfliege2@illinois.edu
+    family-names: Fliege
+    given-names: Christina E.
+    orcid: "https://orcid.org/0000-0001-8085-779X"
+  date-published: 2026-05-04
+  doi: 10.21105/joss.09056
+  issn: 2475-9066
+  issue: 121
+  journal: Journal of Open Source Software
+  publisher:
+    name: Open Journals
+  start: 9056
+  title: "Enhancing short-read sequencing simulation: Updates to NEAT"
+  type: article
+  url: "https://joss.theoj.org/papers/10.21105/joss.09056"
+  volume: 11
+title: "Enhancing short-read sequencing simulation: Updates to NEAT"
