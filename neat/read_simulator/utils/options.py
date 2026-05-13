@@ -243,7 +243,8 @@ class Options(SimpleNamespace):
             'parallel_block_size': (int, 500000, None, None),
             'threads': (int, 1, 1, 1000),
             'cleanup_splits': (bool, True, None, None),
-            'reuse_splits': (bool, False, None, None)
+            'reuse_splits': (bool, False, None, None),
+            'gc_model': (Path, None, 'exists', None)
         }
 
         input_args = {}

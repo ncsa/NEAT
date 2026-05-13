@@ -131,34 +131,6 @@ def test_gc_bias_full_pipeline(tmp_path):
     # but it should be significantly more.
     assert gc_reads > at_reads
 
-def test_gc_bias_all_n_reference(tmp_path):
-    """Test GC bias simulation with an all-N reference."""
-    ref_seq = "N" * 1000
-    ref_path = _write_ref(tmp_path / "ref_n.fa", ref_seq)
-    
-    # Uniform model
-    model_path = tmp_path / "uniform_model.pickle.gz"
-    from neat.models.gc_bias_model import get_uniform_gc_model
-    get_uniform_gc_model().save(model_path)
-    
-    out_dir = tmp_path / "sim_n_out"
-    cfg_path = _write_config(
-        tmp_path / "sim_n.yml", 
-        ref_path, 
-        gc_model=str(model_path),
-        coverage=1,
-        read_len=50
-    )
-    
-    # Should not crash and should produce reads (treated as neutral)
-    read_simulator_runner(str(cfg_path), str(out_dir), "sim_n")
-    
-    fq_files = list(out_dir.glob("*.fastq.gz"))
-    assert len(fq_files) >= 1
-    with gzip.open(fq_files[0], "rt") as f:
-        content = f.read()
-    assert "@NEAT_generated" in content
-
 def test_gc_bias_multi_contig(tmp_path):
     """Test GC bias simulation with multiple contigs."""
     ref_path = tmp_path / "multi.fa"

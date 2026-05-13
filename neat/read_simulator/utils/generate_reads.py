@@ -4,6 +4,7 @@ import time
 from math import ceil
 from pathlib import Path
 
+import numpy as np
 from Bio.SeqRecord import SeqRecord
 from bisect import bisect_left, bisect_right
 
@@ -42,61 +43,140 @@ def cover_dataset(
     final_reads = []
     span_length = len(reference)
     # sanity check
-    if span_length/fragment_model.fragment_mean < 5:
+    if span_length / fragment_model.fragment_mean < 5:
         _LOG.warning("The fragment mean is relatively large compared to the chromosome size. You may need to increase "
                      "standard deviation, or decrease fragment mean, if NEAT cannot complete successfully.")
+
     # precompute how many reads we want
     # The numerator is the total number of base pair calls needed.
     # Divide that by read length gives the number of reads needed
-    number_reads_per_layer = ceil(span_length / fragment_model.fragment_mean)
     if options.paired_ended:
         # TODO use gc bias to skew this number. Calculate at the runner level.
         number_reads = ceil(span_length * options.coverage / (2 * options.read_len))
     else:
         number_reads = ceil(span_length * options.coverage / options.read_len)
 
-    # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
-    # step 2: repeat above until number of reads exceeds number_reads
-    # step 3: shuffle pool, then draw number_reads (or number_reads/2 for paired ended) reads to be our reads
-    read_count = 0
-    loop_count = 0
+    if gc_model and not gc_model.is_uniform:
+        # CDF-based sampling for GC bias
+        window_size = gc_model.window_size
+        if span_length <= window_size:
+            # Fallback to uniform if region is too short
+            return _uniform_sampling(span_length, number_reads, options, fragment_model)
 
-    while read_count < number_reads:
-        start = options.rng.integers(0, span_length)
-        loop_count += 1
-        # We use fragments to model the DNA
-        fragment_pool = fragment_model.generate_fragments(number_reads_per_layer, options.rng)
-
-        # Mapping random fragments onto genome
-        i = 0
-        # We take the first element and put it back on the end to create an endless pool of fragments to draw from
-        fragment = fragment_pool[i]
-        i = (i + 1) % len(fragment_pool)
-        end = min(start + fragment, span_length)
-        
-        # If the fragment is too close to the end, wrap around or just clip? 
-        # Original code seems to clip. Let's stick to simple.
-        if end - start < options.read_len:
-            continue
-
-        # GC bias rejection sampling
-        if gc_model and not gc_model.is_uniform:
-            # Calculate GC of the window
-            window_start = start
-            window_end = min(start + gc_model.window_size, span_length)
-            window_seq = str(reference.seq[window_start:window_end])
-            weight = gc_model.get_weight_for_sequence(window_seq)
+        # Build prefix sum of weights
+        # We need weights for every possible start position that can produce a read.
+        # For single-ended, start must be in [0, span_length - read_len]
+        max_start = span_length - options.read_len
+        if max_start < 0:
+            return []
             
-            # Rejection sampling
-            if options.rng.random() * gc_model.max_weight > weight:
+        n_positions = max_start + 1
+        weights = np.zeros(n_positions, dtype=float)
+        
+        # Initial window GC count
+        seq_str = str(reference.seq).upper()
+        effective_window = min(window_size, span_length)
+        
+        # The window for start position i is [i, i + effective_window]
+        # BUT we must ensure i + effective_window does not exceed span_length.
+        # Sliding window logic:
+        # i = 0: window [0, effective_window]
+        # last i = n_positions - 1: window [max_start, max_start + effective_window]
+        # max_start + effective_window = span_length - read_len + min(window_size, span_length)
+        # If window_size > read_len, then max_start + window_size > span_length!
+        
+        # We need to cap the window end at span_length.
+        
+        gc_count = seq_str[:effective_window].count('G') + seq_str[:effective_window].count('C')
+        n_count = seq_str[:effective_window].count('N')
+        
+        def get_weight(gc, n, win_len):
+            called = win_len - n
+            if called <= 0:
+                return 1.0
+            return gc_model.get_weight(gc / called)
+
+        weights[0] = get_weight(gc_count, n_count, effective_window)
+        
+        # Sliding window
+        for i in range(1, n_positions):
+            # Start position i means window [i, min(i + window_size, span_length)]
+            # Previous window was [i-1, min(i-1 + window_size, span_length)]
+            
+            # Outgoing base is always i-1
+            outgoing = seq_str[i-1]
+            if outgoing in 'GC':
+                gc_count -= 1
+            elif outgoing == 'N':
+                n_count -= 1
+                
+            # Incoming base depends on whether the window is still expanding or sliding
+            # current_window_end = min(i + window_size, span_length)
+            # prev_window_end = min(i - 1 + window_size, span_length)
+            
+            current_window_len = effective_window
+            if i + window_size <= span_length:
+                # Still sliding full window
+                incoming = seq_str[i + window_size - 1]
+                if incoming in 'GC':
+                    gc_count += 1
+                elif incoming == 'N':
+                    n_count += 1
+            else:
+                # Window is shrinking at the end of the span
+                current_window_len = span_length - i
+                # No new base incoming, outgoing already removed
+                
+            weights[i] = get_weight(gc_count, n_count, current_window_len)
+            
+        prefix_sum = np.cumsum(weights)
+        total_weight = prefix_sum[-1]
+        
+        if total_weight == 0:
+            _LOG.debug("All positions in region have zero GC bias weight; no fragments generated.")
+            return []
+            
+        mean_weight = total_weight / n_positions
+        
+        # Coverage adjustment: match rejection-sampling behavior where probability
+        # of picking a position was weight/max_weight.
+        number_reads = ceil(number_reads * mean_weight / gc_model.max_weight)
+        
+        if number_reads == 0:
+            return []
+
+        # Sampling
+        read_count = 0
+        # Increased attempts for edge cases
+        max_attempts = number_reads * 100
+        attempts = 0
+        
+        while read_count < number_reads and attempts < max_attempts:
+            attempts += 1
+            v = options.rng.random() * total_weight
+            start = np.searchsorted(prefix_sum, v)
+            
+            # Generate fragment length
+            fragment_len = fragment_model.generate_fragments(1, options.rng)[0]
+            
+            # If the fragment is too close to the end, wrap around or just clip? 
+            # Original code seems to clip. Let's stick to simple.
+            if start + options.read_len > span_length:
                 continue
 
-        # Ensure the read is long enough to form a read, else we will not use it.
-        if (end > options.read_len) and (end - start > options.read_len + 10):
+            end = min(start + fragment_len, span_length)
+            
+            # Ensure the read is long enough to form a read
+            if end - start < options.read_len:
+                continue
+                
             read_start = start
             read_end = read_start + options.read_len
             read1 = (read_start, read_end)
             if options.paired_ended:
+                # For paired ended, we need enough room for both reads
+                if end - start < options.read_len + 10:
+                    continue
                 read2 = (end - options.read_len, end)
             else:
                 read2 = (0, 0)
@@ -104,12 +184,58 @@ def cover_dataset(
             read = read1 + read2
             final_reads.append(read)
             read_count += 1
+            
+        if read_count < number_reads:
+             _LOG.warning(f"GC-weighted fragment generation placed {read_count}/{number_reads} fragments after {attempts} attempts.")
+             
+    else:
+        # Uniform sampling
+        final_reads = _uniform_sampling(span_length, number_reads, options, fragment_model)
 
-    _LOG.debug(f"Coverage required {loop_count} loops")
     # Now we shuffle them to add some randomness
     options.rng.shuffle(final_reads)
-    # And only return the number we needed
-    return final_reads[:number_reads]
+    return final_reads
+
+
+def _uniform_sampling(span_length, number_reads, options, fragment_model):
+    final_reads = []
+    read_count = 0
+    # Increase max attempts to handle small spans where many random choices might be invalid
+    max_attempts = number_reads * 100
+    attempts = 0
+    while read_count < number_reads and attempts < max_attempts:
+        attempts += 1
+        # Use random sampling that respects span boundaries better
+        # For single-ended, we need start in [0, span_length - read_len]
+        if span_length <= options.read_len:
+            # Region too small for a full read
+            break
+
+        start = options.rng.integers(0, span_length - options.read_len + 1)
+        # Generate fragment length
+        fragment_len = fragment_model.generate_fragments(1, options.rng)[0]
+        
+        end = min(start + fragment_len, span_length)
+        
+        # Ensure the read is long enough to form a read
+        if end - start < options.read_len:
+            continue
+            
+        read_start = start
+        read_end = read_start + options.read_len
+        read1 = (read_start, read_end)
+        if options.paired_ended:
+            # For paired ended, we need enough room for both reads
+            if end - start < options.read_len + 10:
+                continue
+            read2 = (end - options.read_len, end)
+        else:
+            read2 = (0, 0)
+        
+        read = read1 + read2
+        final_reads.append(read)
+        read_count += 1
+    return final_reads
 
 
 def find_applicable_mutations(my_read: Read, all_variants: ContigVariants) -> dict:

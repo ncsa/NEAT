@@ -39,8 +39,14 @@ class GCBiasModel:
         The pickle file is expected to contain [GC_SCALE_COUNT, GC_SCALE_VAL]
         where GC_SCALE_COUNT[-1] is the window size and GC_SCALE_VAL is the weights.
         """
-        with open(path, 'rb') as f:
-            data = pickle.load(f)
+        import gzip
+        try:
+            with gzip.open(path, 'rb') as f:
+                data = pickle.load(f)
+        except (OSError, EOFError, pickle.UnpicklingError):
+            # Fallback for non-gzipped files
+            with open(path, 'rb') as f:
+                data = pickle.load(f)
             
         if isinstance(data, list) and len(data) == 2:
             gc_scale_count, weights = data
@@ -53,9 +59,10 @@ class GCBiasModel:
         """
         Saves GC bias model to a pickle file in the format compatible with NEAT 2.1.
         """
+        import gzip
         gc_scale_count = list(range(1, 101)) + [self.window_size]
         data = [gc_scale_count, self.weights.tolist()]
-        with open(path, 'wb') as f:
+        with gzip.open(path, 'wb') as f:
             pickle.dump(data, f)
 
     def get_weight(self, gc_fraction: float) -> float:
