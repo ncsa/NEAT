@@ -25,6 +25,11 @@ coverage: .
 # type = string | required: no | default: <NEAT_DIR>/neat/models/defaults/default_error_model.pickle.gz
 error_model: .
 
+# Absolute path to file containing GC-bias model.
+# GC-bias models can be produced by neat model-gc-bias (learned from BAM alignments and reference)
+# type = string | required: no | default: None (no GC bias)
+gc_model: .
+
 # Average sequencing error rate for the sequencing machine
 # type = float | required = no | must be between 0.0 and 0.3
 avg_seq_error: .

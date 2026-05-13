@@ -63,7 +63,13 @@ def open_input(path: str | Path) -> Iterator[TextIO]:
     # - https://github.com/python/mypy/issues/12053
     open_: Callable[..., TextIO]
     if is_compressed(path):
-        handle = bgzf.BgzfReader(path, 'r')
+        try:
+            handle = bgzf.BgzfReader(path, 'r')
+            # Trigger reading a block to verify it IS actually a BGZF file
+            handle.read(0)
+        except ValueError:
+            # Fall back to regular gzip if it's not BGZF
+            handle = gzip.open(path, 'rt', encoding='utf-8')
     else:
         handle = open(path, 'rt', encoding='utf-8')
     try:
