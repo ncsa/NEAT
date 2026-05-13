@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from neat.models import FragmentLengthModel, SequencingErrorModel, TraditionalQualityModel
+from neat.models import FragmentLengthModel, SequencingErrorModel, TraditionalQualityModel, GCBiasModel, get_uniform_gc_model
 from neat.read_simulator.utils import Options
 from neat.read_simulator.utils.generate_reads import cover_dataset, overlaps, find_applicable_mutations, generate_reads
 from neat.read_simulator.utils.read import Read
@@ -44,6 +44,7 @@ def _compute_avg_coverage(reads, span_length, paired):
 def test_cover_dataset():
     """Test that a cover is successfully generated for different coverage values"""
     span_length = 5000
+    reference = SeqRecord(Seq("A" * span_length), id="chr1")
     options = Options(rng_seed=0)
     options.read_len = 100
     options.paired_ended = False
@@ -53,7 +54,7 @@ def test_cover_dataset():
     coverage_values = [1, 2, 5]
     for coverage in coverage_values:
         options.coverage = coverage
-        reads = cover_dataset(span_length, options, fragment_model)
+        reads = cover_dataset(reference, options, fragment_model, None)
         coverage_check = []
         for i in range(span_length):
             # Single-ended test, only need read1
@@ -72,6 +73,7 @@ def test_cover_dataset():
 def test_paired_cover_dataset():
     """Test that a cover is successfully generated for different coverage values"""
     span_length = 10000
+    reference = SeqRecord(Seq("A" * span_length), id="chr1")
     options = Options(rng_seed=0)
     options.read_len = 100
     options.paired_ended = True
@@ -86,7 +88,7 @@ def test_paired_cover_dataset():
 
     for coverage in coverage_values:
         options.coverage = coverage
-        reads = cover_dataset(span_length, options, fragment_model)
+        reads = cover_dataset(reference, options, fragment_model, None)
 
         expected_pairs = coverage * (span_length / fragment_model.fragment_mean)
         expected_reads = 2.0 * expected_pairs
@@ -123,7 +125,8 @@ def test_various_read_lengths():
 
     for read_len in range(10, 251, 10):
         options.read_len = read_len
-        reads = cover_dataset(span_length, options, fragment_model)
+        reference = SeqRecord(Seq("A" * span_length), id="chr1")
+        reads = cover_dataset(reference, options, fragment_model, None)
         assert isinstance(reads, list)
 
 
@@ -145,9 +148,10 @@ def test_coverage_ploidy_combinations():
     for ploidy in ploidy_values:
         options.ploidy = ploidy
         prev_n_reads = None
+        reference = SeqRecord(Seq("A" * span_length), id="chr1")
         for coverage in coverage_values:
             options.coverage = coverage
-            reads = cover_dataset(span_length, options, fragment_model)
+            reads = cover_dataset(reference, options, fragment_model, None)
 
             assert isinstance(reads, list)
             for read in reads:
@@ -162,6 +166,7 @@ def test_coverage_ploidy_combinations():
 def test_single_ended_mode():
     """Test cover_dataset in single-ended mode for various configurations"""
     span_length = 100
+    reference = SeqRecord(Seq("A" * span_length), id="chr1")
     options = Options(rng_seed=0)
     options.read_len = 50
     options.paired_ended = False
@@ -171,7 +176,7 @@ def test_single_ended_mode():
     options.overwrite_output = True
     fragment_model = FragmentLengthModel(40, 10)
 
-    reads = cover_dataset(span_length, options, fragment_model)
+    reads = cover_dataset(reference, options, fragment_model, None)
     coverage_check = []
     for i in range(span_length):
         # Single-ended test, only need read1
@@ -204,7 +209,8 @@ def test_single_ended_coverage_accuracy(fragment_mean, target_coverage):
     options.coverage = target_coverage
     options.overwrite_output = True
 
-    reads = cover_dataset(span_length, options, fragment_model)
+    reference = SeqRecord(Seq("A" * span_length), id="chr1")
+    reads = cover_dataset(reference, options, fragment_model, None)
     avg = _compute_avg_coverage(reads, span_length, paired=False)
 
     assert abs(avg - target_coverage) / target_coverage < 0.10, (
@@ -235,7 +241,8 @@ def test_paired_ended_coverage_accuracy(fragment_mean, target_coverage):
     options.coverage = target_coverage
     options.overwrite_output = True
 
-    reads = cover_dataset(span_length, options, fragment_model)
+    reference = SeqRecord(Seq("A" * span_length), id="chr1")
+    reads = cover_dataset(reference, options, fragment_model, None)
     avg = _compute_avg_coverage(reads, span_length, paired=True)
 
     assert abs(avg - target_coverage) / target_coverage < 0.10, (
@@ -401,7 +408,7 @@ def test_generate_reads_single_ended_returns_read_none_pairs():
     opts = _make_options(paired=False)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -418,7 +425,7 @@ def test_generate_reads_paired_ended_returns_read_read_pairs():
     opts = _make_options(paired=True)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -434,7 +441,7 @@ def test_generate_reads_read_length_matches_options():
     opts = _make_options(paired=False)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -454,7 +461,7 @@ def test_generate_reads_targeted_region_flag_false_filters_all():
     cv = ContigVariants()
     no_target = [(0, _SPAN, False)]
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              no_target, _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -469,7 +476,7 @@ def test_generate_reads_discard_region_removes_all():
     cv = ContigVariants()
     discard_all = [(0, _SPAN, True)]
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              _all_span_targeted(), discard_all,
                              opts, None, "chr1", 0, 0)
 
@@ -483,7 +490,7 @@ def test_generate_reads_discard_flag_false_keeps_reads():
     opts = _make_options(paired=False)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -509,7 +516,7 @@ def test_generate_reads_variants_populated_on_reads():
     )
     cv.add_variant(snv)
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 
@@ -535,7 +542,7 @@ def test_generate_reads_paired_discard_region_removes_all():
     cv = ContigVariants()
     discard_all = [(0, _SPAN, True)]
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              _all_span_targeted(), discard_all,
                              opts, None, "chr1", 0, 0)
 
@@ -549,7 +556,7 @@ def test_generate_reads_paired_no_discard_produces_read_pairs():
     opts = _make_options(paired=True)
     cv = ContigVariants()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, cv,
+    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
                              _all_span_targeted(), _nothing_discarded(),
                              opts, None, "chr1", 0, 0)
 

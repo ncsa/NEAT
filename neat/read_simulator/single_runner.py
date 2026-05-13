@@ -16,7 +16,8 @@ from .utils import OutputFileWriter, \
     generate_variants, generate_reads, Options, recalibrate_mutation_regions
 from ..variants import ContigVariants
 
-from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
+from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel, \
+    GCBiasModel, get_uniform_gc_model
 
 __all__ = ["read_simulator_single"]
 
@@ -71,7 +72,8 @@ def read_simulator_single(
         mut_model,
         seq_error_model,
         qual_score_model,
-        fraglen_model
+        fraglen_model,
+        gc_model
     ) = initialize_all_models(local_options)
 
     """
@@ -117,6 +119,7 @@ def read_simulator_single(
             errors_per_read,
             qual_score_model,
             fraglen_model,
+            gc_model,
             local_variants,
             target_regions,
             discard_regions,
@@ -251,9 +254,14 @@ def initialize_all_models(options: Options):
         fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev)
 
     # _LOG.debug("Fragment length model loaded")
+    if options.gc_model:
+        gc_model = GCBiasModel.from_file(options.gc_model)
+    else:
+        gc_model = get_uniform_gc_model()
 
     return \
         mut_model, \
         error_model, \
         quality_score_model, \
-        fraglen_model
+        fraglen_model, \
+        gc_model

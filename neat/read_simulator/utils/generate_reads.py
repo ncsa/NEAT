@@ -9,7 +9,7 @@ from bisect import bisect_left, bisect_right
 
 from .output_file_writer import OutputFileWriter
 from ...common import open_output
-from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
+from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel, GCBiasModel
 from .options import Options
 from ...variants import ContigVariants
 from .read import Read
@@ -24,20 +24,23 @@ _LOG = logging.getLogger(__name__)
 
 
 def cover_dataset(
-        span_length: int,
+        reference: SeqRecord,
         options: Options,
         fragment_model: FragmentLengthModel | None,
+        gc_model: GCBiasModel | None,
 ) -> list:
     """
     Covers a dataset to the desired depth in the paired ended case. This is the main algorithm for creating the reads
     to the proper coverage depth. It uses an abstract representation of the reads, by end points.
 
-    :param span_length: The total length the cover needs to span
+    :param reference: The reference sequence for this block
     :param options: The options for the run
     :param fragment_model: The fragment model used for to generate random fragment lengths
+    :param gc_model: The GC bias model used for fragment selection
     """
 
     final_reads = []
+    span_length = len(reference)
     # sanity check
     if span_length/fragment_model.fragment_mean < 5:
         _LOG.warning("The fragment mean is relatively large compared to the chromosome size. You may need to increase "
@@ -58,42 +61,46 @@ def cover_dataset(
     read_count = 0
     loop_count = 0
 
-    while read_count <= number_reads:
-        start = 0
+    while read_count < number_reads:
+        start = options.rng.integers(0, span_length)
         loop_count += 1
         # We use fragments to model the DNA
         fragment_pool = fragment_model.generate_fragments(number_reads_per_layer, options.rng)
 
-        temp_fragments = []
         # Mapping random fragments onto genome
         i = 0
-        while start < span_length:
-            # We take the first element and put it back on the end to create an endless pool of fragments to draw from
-            fragment = fragment_pool[i]
-            i = (i + 1) % len(fragment_pool)
-            end = min(start + fragment, span_length)
+        # We take the first element and put it back on the end to create an endless pool of fragments to draw from
+        fragment = fragment_pool[i]
+        i = (i + 1) % len(fragment_pool)
+        end = min(start + fragment, span_length)
+        
+        # If the fragment is too close to the end, wrap around or just clip? 
+        # Original code seems to clip. Let's stick to simple.
+        if end - start < options.read_len:
+            continue
 
-            # Ensure the read is long enough to form a read, else we will not use it.
-            if (end > options.read_len) and (end - start > options.read_len + 10):
-                temp_fragments.append((start, end))
-            start = end
+        # GC bias rejection sampling
+        if gc_model and not gc_model.is_uniform:
+            # Calculate GC of the window
+            window_start = start
+            window_end = min(start + gc_model.window_size, span_length)
+            window_seq = str(reference.seq[window_start:window_end])
+            weight = gc_model.get_weight_for_sequence(window_seq)
+            
+            # Rejection sampling
+            if options.rng.random() * gc_model.max_weight > weight:
+                continue
 
-        # Generating reads from fragments
-        for fragment in temp_fragments:
-            read_start = fragment[0]
+        # Ensure the read is long enough to form a read, else we will not use it.
+        if (end > options.read_len) and (end - start > options.read_len + 10):
+            read_start = start
             read_end = read_start + options.read_len
             read1 = (read_start, read_end)
             if options.paired_ended:
-                # This will be valid because of the check above
-                read2 = (fragment[1] - options.read_len, fragment[1])
+                read2 = (end - options.read_len, end)
             else:
                 read2 = (0, 0)
-            # The structure for these reads will be (left_start, left_end, right_start, right_end)
-            # where start and end are ints with end > start. Reads can overlap, so right_start < left_end
-            # is possible, but the reads cannot extend past each other, so right_start < left_start and
-            # left_end > right_end are not possible.
-
-            # sanity check that we haven't created an unrealistic read:
+            
             read = read1 + read2
             final_reads.append(read)
             read_count += 1
@@ -151,6 +158,7 @@ def generate_reads(
         errors_per_read: int,
         qual_model: TraditionalQualityModel,
         fraglen_model: FragmentLengthModel,
+        gc_model: GCBiasModel,
         contig_variants: ContigVariants,
         targeted_regions: list,
         discarded_regions: list,
@@ -194,9 +202,10 @@ def generate_reads(
     # _LOG.debug("Covering dataset.")
     t = time.time()
     reads = cover_dataset(
-        len(reference),
+        reference,
         options,
         fraglen_model,
+        gc_model,
     )
     # _LOG.debug(f"Dataset coverage took: {(time.time() - t)/60:.2f} m")
 
