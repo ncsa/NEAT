@@ -4,7 +4,7 @@ Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, ve
 
 ## NEAT v4.4
 
-NEAT 4.4 is the official release of NEAT 4.0, including parallel processing support and significant bug fixes to the sequencing error model. See the [ChangeLog](ChangeLog.md) for details. 
+NEAT 4.4 is the current official release of NEAT 4.0, including parallel processing support and significant bug fixes to the sequencing error model. See the [ChangeLog](ChangeLog.md) for details. 
 
 We have completed major revisions on NEAT since 3.4 and consider NEAT 4.4 to be a stable release, in that we will continue to update and provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, no problem! Just review the [license](LICENSE.md), first.
 
