@@ -1,5 +1,5 @@
 # NEAT v4.4.2
-- Added GC bias modeling to generate reads, and a function to create a GC bias model from real data.
+- Added GC bias modeling to generate reads and a function to create a GC bias model from real data.
 - Added improvements and efficiency upgrades to generate-reads.
 
 # NEAT v4.4.1
