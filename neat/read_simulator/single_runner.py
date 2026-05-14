@@ -80,9 +80,12 @@ def read_simulator_single(
     Process Inputs
     """
     # _THREAD_LOG.info(f'Reading {local_options.reference}.')
-    local_ref_index = SeqIO.index(str(local_options.reference), "fasta")
-    local_ref_name = list(local_ref_index.keys())[0]
-    local_seq_record = local_ref_index[local_ref_name]
+    ref_path = str(local_options.reference)
+    _opener = bgzf.open if ref_path.endswith('.gz') else open
+    with _opener(ref_path, 'rt') as _fh:
+        local_seq_record = next(SeqIO.parse(_fh, "fasta"))
+    local_ref_name = local_seq_record.id
+    local_ref_index = {local_ref_name: local_seq_record}
 
     if len(local_seq_record) < local_options.read_len:
         _LOG.debug("Record too small for processing")

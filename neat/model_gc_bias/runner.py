@@ -2,16 +2,10 @@
 Creates a model of GC bias in a dataset
 """
 
-import gzip
-import pickle
-import numpy as np
 import logging
-import sys
-import pysam
 from pathlib import Path
-from Bio import SeqIO
 
-from .utils import calculate_gc_content, get_gc_bias_weights
+from .utils import get_gc_bias_weights
 from ..models import GCBiasModel
 from ..common import validate_output_path
 
@@ -49,13 +43,10 @@ def compute_gc_bias_runner(
     # 3. Normalize to get weights.
     
     weights = get_gc_bias_weights(bam_file, reference_file, window_size)
-    
+
     model = GCBiasModel(weights, window_size)
-    
+
     _LOG.info(f"Saving model: {output_file}")
-    with gzip.open(output_file, 'wb') as outfile:
-        # Saving in NEAT 2.1 compatible format [GC_SCALE_COUNT, GC_SCALE_VAL]
-        gc_scale_count = list(range(1, 101)) + [window_size]
-        pickle.dump([gc_scale_count, model.weights.tolist()], outfile)
+    model.save(output_file)
 
     _LOG.info("Modeling complete.")

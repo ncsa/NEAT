@@ -75,10 +75,6 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         config,
     )
 
-    # Set up the recombination later
-    reference_index = SeqIO.index(str(options.reference), "fasta")
-    reference_keys_with_lens = {key: len(value) for key, value in reference_index.items()}
-
     # We need sequencing errors to get the quality score attributes, even for the vcf
     if options.avg_seq_error:
         average_error = options.avg_seq_error
@@ -91,10 +87,17 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         # Use the default value
         average_error = 0.009228843915252066
 
-    # _LOG.debug('Sequencing error and quality score models loaded')
+    # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
+    _LOG.info("Splitting reference...")
+    (splits_files_dict, count, reference_keys_with_lens) = split_main(
+        options
+    )
+
+    reference_index = None
+
     # We need to estimate how many total errors to add
-    total_reference_length = sum(reference_keys_with_lens.values())
     # This is an estimate due to some random effects
+    total_reference_length = sum(reference_keys_with_lens.values())
     number_of_bases_in_analysis = total_reference_length * options.coverage
     # Each base called has an "average_error" chance of being an error
     total_errors = ceil(average_error * number_of_bases_in_analysis)
@@ -104,10 +107,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # introduced into the contig
     errors_per_contig = {k: ceil(v * total_errors) for (k, v) in normalized_counts.items()}
 
-    count = 0
-    for contig in reference_keys_with_lens:
-        count += reference_keys_with_lens[contig]
-    _LOG.debug(f"Length of total reference: {count / 1_000_000:.2f} Mb")
+    _LOG.debug(f"Length of total reference: {total_reference_length / 1_000_000:.2f} Mb")
 
     # Note that parse_beds will return None for any empty or non-input files
     # parse input targeted regions, if present.
@@ -123,6 +123,12 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     input_variants_dict = {x: ContigVariants() for x in reference_keys_with_lens}
     if options.include_vcf:
         _LOG.info(f"Reading input VCF: {options.include_vcf}.")
+        # To avoid loading full reference again, we might need a way to pass the reference path
+        # or use a lazy loader inside parse_input_vcf too.
+        # For now, let's see if we can use SeqIO.index just for this if needed, 
+        # or if parse_input_vcf can be improved too.
+        # Actually, let's just use SeqIO.index here locally if we MUST.
+        reference_index = SeqIO.index(str(options.reference), "fasta")
         parse_input_vcf(
             input_variants_dict,
             options.include_vcf,
@@ -130,8 +136,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             reference_index,
             options
         )
-
-        _LOG.debug("Finished reading input vcf file")
+        del reference_index
 
     if any((options.target_bed, options.discard_bed, options.mutation_bed)):
         _LOG.debug("Finished reading input beds.")
@@ -147,13 +152,6 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # Also creates headers for bam and vcf. We create the overall bam with no header, as it will get a header from
     # merging the smaller bams.
     output_file_writer = OutputFileWriter(options=options, vcf_header = reference_keys_with_lens, bam_header=None)
-
-    # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
-    _LOG.info("Splitting reference...")
-    (splits_files_dict, count) = split_main(
-        options,
-        reference_index
-    )
 
     if options.threads > 1:
         _LOG.info(f"[parallel] Launching {count} NEAT job(s) (max {options.threads} in parallel)...")

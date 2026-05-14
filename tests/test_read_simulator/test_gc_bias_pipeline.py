@@ -125,7 +125,6 @@ def test_gc_bias_full_pipeline(tmp_path):
                 else:
                     gc_reads += 1
                     
-    print(f"Simulated AT reads: {at_reads}, GC reads: {gc_reads}")
     # Since our model was trained on 10x more GC reads, we expect more GC reads here too.
     # It won't be exactly 10x because of how cover_dataset works and smoothing in the model, 
     # but it should be significantly more.

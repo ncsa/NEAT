@@ -40,7 +40,7 @@ def test_gc_biased_sampling():
         else:
             gc_half_count += 1
             
-    print(f"AT half reads: {at_half_count}, GC half reads: {gc_half_count}")
-    
     # We expect significantly more reads in the GC half
-    assert gc_half_count > at_half_count * 4
+    assert gc_half_count > at_half_count * 4, (
+        f"Expected GC half to dominate: AT={at_half_count}, GC={gc_half_count}"
+    )

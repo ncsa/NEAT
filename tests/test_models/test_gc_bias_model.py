@@ -63,3 +63,77 @@ def test_uniform_gc_model():
     assert model.window_size == 200
     assert model.is_uniform
     assert model.get_weight(0.3) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# get_gc_bias_weights
+# ---------------------------------------------------------------------------
+
+import pysam
+from neat.model_gc_bias.utils import get_gc_bias_weights
+
+
+def _make_biased_bam(bam_path, read_count_at=5, read_count_gc=200):
+    """Write a tiny BAM: 10 000 bp ref (5000 A + 5000 G), biased toward GC region."""
+    header = {"HD": {"VN": "1.0"}, "SQ": [{"LN": 10000, "SN": "chr1"}]}
+    with pysam.AlignmentFile(str(bam_path), "wb", header=header) as bam:
+        for i in range(read_count_at):
+            a = pysam.AlignedSegment()
+            a.query_name = f"at_{i}"
+            a.query_sequence = "A" * 50
+            a.reference_id = 0
+            a.reference_start = 500 + i
+            a.cigar = ((0, 50),)
+            a.qual = "B" * 50
+            bam.write(a)
+        for i in range(read_count_gc):
+            a = pysam.AlignedSegment()
+            a.query_name = f"gc_{i}"
+            a.query_sequence = "G" * 50
+            a.reference_id = 0
+            a.reference_start = 6000 + i
+            a.cigar = ((0, 50),)
+            a.qual = "B" * 50
+            bam.write(a)
+    pysam.index(str(bam_path))
+
+
+def test_get_gc_bias_weights_returns_101_values(tmp_path):
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\n" + "A" * 5000 + "G" * 5000 + "\n")
+    bam = tmp_path / "in.bam"
+    _make_biased_bam(bam)
+
+    weights = get_gc_bias_weights(str(bam), str(ref), window_size=100)
+    assert len(weights) == 101
+
+
+def test_get_gc_bias_weights_all_positive(tmp_path):
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\n" + "A" * 5000 + "G" * 5000 + "\n")
+    bam = tmp_path / "in.bam"
+    _make_biased_bam(bam)
+
+    weights = get_gc_bias_weights(str(bam), str(ref), window_size=100)
+    assert all(w > 0 for w in weights), "Every weight should be positive after fill"
+
+
+def test_get_gc_bias_weights_max_is_one(tmp_path):
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\n" + "A" * 5000 + "G" * 5000 + "\n")
+    bam = tmp_path / "in.bam"
+    _make_biased_bam(bam)
+
+    weights = get_gc_bias_weights(str(bam), str(ref), window_size=100)
+    assert abs(max(weights) - 1.0) < 1e-9
+
+
+def test_get_gc_bias_weights_gc_rich_heavier_than_at_rich(tmp_path):
+    """100% GC region (bin 100) should have higher weight than 0% GC region (bin 0)."""
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\n" + "A" * 5000 + "G" * 5000 + "\n")
+    bam = tmp_path / "in.bam"
+    _make_biased_bam(bam, read_count_at=5, read_count_gc=200)
+
+    weights = get_gc_bias_weights(str(bam), str(ref), window_size=100)
+    assert weights[100] > weights[0]

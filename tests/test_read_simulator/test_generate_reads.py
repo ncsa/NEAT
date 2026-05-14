@@ -564,3 +564,72 @@ def test_generate_reads_paired_no_discard_produces_read_pairs():
     for read1, read2 in results:
         assert isinstance(read1, Read)
         assert isinstance(read2, Read)
+
+
+# ---------------------------------------------------------------------------
+# cover_dataset — GC bias edge cases
+# ---------------------------------------------------------------------------
+
+def test_cover_dataset_gc_span_shorter_than_window_falls_back_to_uniform():
+    """When span_length <= window_size, cover_dataset falls back to uniform sampling."""
+    window_size = 200
+    span_length = 150  # shorter than window
+    reference = SeqRecord(Seq("A" * span_length), id="chr1")
+
+    weights = [0.0] * 101
+    weights[100] = 1.0
+    weights[0] = 0.01
+    gc_model = GCBiasModel(weights, window_size=window_size)
+
+    opts = Options(rng_seed=0)
+    opts.read_len = 50
+    opts.paired_ended = False
+    opts.coverage = 5
+    opts.overwrite_output = True
+    frag = FragmentLengthModel(80, 10)
+
+    reads = cover_dataset(reference, opts, frag, gc_model)
+    # Fallback to uniform: should still produce reads (span > read_len)
+    assert isinstance(reads, list)
+    assert len(reads) > 0
+
+
+def test_cover_dataset_gc_max_start_negative_returns_empty():
+    """When span_length < read_len, cover_dataset returns [] without error."""
+    span_length = 30
+    read_len = 50  # longer than span
+    reference = SeqRecord(Seq("A" * span_length), id="chr1")
+
+    weights = [0.5] * 101
+    gc_model = GCBiasModel(weights, window_size=100)
+
+    opts = Options(rng_seed=0)
+    opts.read_len = read_len
+    opts.paired_ended = False
+    opts.coverage = 5
+    opts.overwrite_output = True
+    frag = FragmentLengthModel(80, 10)
+
+    reads = cover_dataset(reference, opts, frag, gc_model)
+    assert reads == []
+
+
+def test_cover_dataset_gc_zero_total_weight_returns_empty():
+    """When all positions have zero GC bias weight, cover_dataset returns []."""
+    span_length = 1000
+    reference = SeqRecord(Seq("A" * span_length), id="chr1")  # 0% GC everywhere
+
+    # Only weight GC% = 50; a pure-A sequence scores 0% GC → weight 0
+    weights = [0.0] * 101
+    weights[50] = 1.0
+    gc_model = GCBiasModel(weights, window_size=100)
+
+    opts = Options(rng_seed=0)
+    opts.read_len = 50
+    opts.paired_ended = False
+    opts.coverage = 5
+    opts.overwrite_output = True
+    frag = FragmentLengthModel(150, 20)
+
+    reads = cover_dataset(reference, opts, frag, gc_model)
+    assert reads == []

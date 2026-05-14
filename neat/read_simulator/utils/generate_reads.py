@@ -135,58 +135,45 @@ def cover_dataset(
         if total_weight == 0:
             _LOG.debug("All positions in region have zero GC bias weight; no fragments generated.")
             return []
-            
+
         mean_weight = total_weight / n_positions
-        
-        # Coverage adjustment: match rejection-sampling behavior where probability
-        # of picking a position was weight/max_weight.
+
+        # Scale total reads by the mean/max ratio so that GC-rich regions receive
+        # proportionally more reads than AT-rich regions across the genome.
+        # For a uniform model mean_weight == max_weight, so this is a no-op.
         number_reads = ceil(number_reads * mean_weight / gc_model.max_weight)
-        
+
         if number_reads == 0:
             return []
 
-        # Sampling
-        read_count = 0
-        # Increased attempts for edge cases
-        max_attempts = number_reads * 100
-        attempts = 0
-        
-        while read_count < number_reads and attempts < max_attempts:
-            attempts += 1
-            v = options.rng.random() * total_weight
-            start = np.searchsorted(prefix_sum, v)
-            
-            # Generate fragment length
-            fragment_len = fragment_model.generate_fragments(1, options.rng)[0]
-            
-            # If the fragment is too close to the end, wrap around or just clip? 
-            # Original code seems to clip. Let's stick to simple.
-            if start + options.read_len > span_length:
-                continue
+        # Batch CDF sampling: oversample so fragment-length filtering still leaves
+        # enough reads. All operations are vectorized.
+        n_candidates = number_reads * 10
+        uniform_vals = options.rng.random(n_candidates) * total_weight
+        starts = np.searchsorted(prefix_sum, uniform_vals).astype(int)
+        starts = np.clip(starts, 0, max_start)
 
-            end = min(start + fragment_len, span_length)
-            
-            # Ensure the read is long enough to form a read
-            if end - start < options.read_len:
-                continue
-                
-            read_start = start
-            read_end = read_start + options.read_len
-            read1 = (read_start, read_end)
-            if options.paired_ended:
-                # For paired ended, we need enough room for both reads
-                if end - start < options.read_len + 10:
-                    continue
-                read2 = (end - options.read_len, end)
-            else:
-                read2 = (0, 0)
-            
-            read = read1 + read2
-            final_reads.append(read)
-            read_count += 1
-            
-        if read_count < number_reads:
-             _LOG.warning(f"GC-weighted fragment generation placed {read_count}/{number_reads} fragments after {attempts} attempts.")
+        frag_lengths = np.array(fragment_model.generate_fragments(n_candidates, options.rng))
+        ends = np.minimum(starts + frag_lengths, span_length)
+
+        valid = ends - starts >= options.read_len
+        if options.paired_ended:
+            valid &= ends - starts >= options.read_len + 10
+
+        valid_starts = starts[valid][:number_reads]
+        valid_ends = ends[valid][:number_reads]
+
+        placed = len(valid_starts)
+        if placed < number_reads:
+            _LOG.warning(
+                f"GC-weighted fragment generation placed {placed}/{number_reads} fragments "
+                f"(short fragments filtered)."
+            )
+
+        for s, e in zip(valid_starts.tolist(), valid_ends.tolist()):
+            read1 = (s, s + options.read_len)
+            read2 = (e - options.read_len, e) if options.paired_ended else (0, 0)
+            final_reads.append(read1 + read2)
              
     else:
         # Uniform sampling
@@ -198,43 +185,29 @@ def cover_dataset(
 
 
 def _uniform_sampling(span_length, number_reads, options, fragment_model):
-    final_reads = []
-    read_count = 0
-    # Increase max attempts to handle small spans where many random choices might be invalid
-    max_attempts = number_reads * 100
-    attempts = 0
-    while read_count < number_reads and attempts < max_attempts:
-        attempts += 1
-        # Use random sampling that respects span boundaries better
-        # For single-ended, we need start in [0, span_length - read_len]
-        if span_length <= options.read_len:
-            # Region too small for a full read
-            break
+    if span_length <= options.read_len:
+        return []
 
-        start = options.rng.integers(0, span_length - options.read_len + 1)
-        # Generate fragment length
-        fragment_len = fragment_model.generate_fragments(1, options.rng)[0]
-        
-        end = min(start + fragment_len, span_length)
-        
-        # Ensure the read is long enough to form a read
-        if end - start < options.read_len:
-            continue
-            
-        read_start = start
-        read_end = read_start + options.read_len
-        read1 = (read_start, read_end)
-        if options.paired_ended:
-            # For paired ended, we need enough room for both reads
-            if end - start < options.read_len + 10:
-                continue
-            read2 = (end - options.read_len, end)
-        else:
-            read2 = (0, 0)
-        
-        read = read1 + read2
-        final_reads.append(read)
-        read_count += 1
+    max_start = span_length - options.read_len
+    # Oversample by 100x so fragment-length filtering (e.g. when frag mean < read_len)
+    # still yields enough valid reads. All operations are vectorized.
+    n_candidates = number_reads * 100
+    starts = options.rng.integers(0, max_start + 1, size=n_candidates)
+    frag_lengths = np.array(fragment_model.generate_fragments(n_candidates, options.rng))
+    ends = np.minimum(starts + frag_lengths, span_length)
+
+    valid = ends - starts >= options.read_len
+    if options.paired_ended:
+        valid &= ends - starts >= options.read_len + 10
+
+    valid_starts = starts[valid][:number_reads]
+    valid_ends = ends[valid][:number_reads]
+
+    final_reads = []
+    for s, e in zip(valid_starts.tolist(), valid_ends.tolist()):
+        read1 = (s, s + options.read_len)
+        read2 = (e - options.read_len, e) if options.paired_ended else (0, 0)
+        final_reads.append(read1 + read2)
     return final_reads
 
 
