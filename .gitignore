@@ -31,4 +31,4 @@ build/
 *.egg
 
 # gitnexus stuff
-.gitnexus/
+/.gitnexus/
