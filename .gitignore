@@ -33,3 +33,5 @@ build/
 # gitnexus stuff
 /.gitnexus/
 /.claude/
+AGENTS.md
+CLAUDE.md
