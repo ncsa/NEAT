@@ -32,3 +32,4 @@ build/
 
 # gitnexus stuff
 /.gitnexus/
+/.claude/
