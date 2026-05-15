@@ -4,12 +4,13 @@ import time
 from math import ceil
 from pathlib import Path
 
+import numpy as np
 from Bio.SeqRecord import SeqRecord
 from bisect import bisect_left, bisect_right
 
 from .output_file_writer import OutputFileWriter
 from ...common import open_output
-from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
+from ...models import SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel, GCBiasModel
 from .options import Options
 from ...variants import ContigVariants
 from .read import Read
@@ -24,85 +25,156 @@ _LOG = logging.getLogger(__name__)
 
 
 def cover_dataset(
-        span_length: int,
+        reference: SeqRecord,
         options: Options,
         fragment_model: FragmentLengthModel | None,
+        gc_model: GCBiasModel | None,
 ) -> list:
     """
     Covers a dataset to the desired depth in the paired ended case. This is the main algorithm for creating the reads
     to the proper coverage depth. It uses an abstract representation of the reads, by end points.
 
-    :param span_length: The total length the cover needs to span
+    :param reference: The reference sequence for this block
     :param options: The options for the run
     :param fragment_model: The fragment model used for to generate random fragment lengths
+    :param gc_model: The GC bias model used for fragment selection
     """
 
     final_reads = []
+    span_length = len(reference)
     # sanity check
-    if span_length/fragment_model.fragment_mean < 5:
+    if span_length / fragment_model.fragment_mean < 5:
         _LOG.warning("The fragment mean is relatively large compared to the chromosome size. You may need to increase "
                      "standard deviation, or decrease fragment mean, if NEAT cannot complete successfully.")
+
     # precompute how many reads we want
     # The numerator is the total number of base pair calls needed.
     # Divide that by read length gives the number of reads needed
-    number_reads_per_layer = ceil(span_length / fragment_model.fragment_mean)
     if options.paired_ended:
         # TODO use gc bias to skew this number. Calculate at the runner level.
         number_reads = ceil(span_length * options.coverage / (2 * options.read_len))
     else:
         number_reads = ceil(span_length * options.coverage / options.read_len)
 
-    # step 1: Divide the span up into segments drawn from the fragment pool. Assign reads based on that.
-    # step 2: repeat above until number of reads exceeds number_reads
-    # step 3: shuffle pool, then draw number_reads (or number_reads/2 for paired ended) reads to be our reads
-    read_count = 0
-    loop_count = 0
+    if gc_model and not gc_model.is_uniform:
+        # CDF-based sampling for GC bias
+        window_size = gc_model.window_size
+        if span_length <= window_size:
+            # Fallback to uniform if region is too short
+            return _uniform_sampling(span_length, number_reads, options, fragment_model)
 
-    while read_count <= number_reads:
-        start = 0
-        loop_count += 1
-        # We use fragments to model the DNA
-        fragment_pool = fragment_model.generate_fragments(number_reads_per_layer, options.rng)
+        # Build prefix sum of weights
+        # We need weights for every possible start position that can produce a read.
+        # For single-ended, start must be in [0, span_length - read_len]
+        max_start = span_length - options.read_len
+        if max_start < 0:
+            return []
+            
+        n_positions = max_start + 1
 
-        temp_fragments = []
-        # Mapping random fragments onto genome
-        i = 0
-        while start < span_length:
-            # We take the first element and put it back on the end to create an endless pool of fragments to draw from
-            fragment = fragment_pool[i]
-            i = (i + 1) % len(fragment_pool)
-            end = min(start + fragment, span_length)
+        # Vectorized sliding window via cumulative sums — O(n) numpy, no Python loop.
+        seq_arr = np.frombuffer(str(reference.seq).upper().encode(), dtype=np.uint8)
+        gc_mask = (seq_arr == ord('G')) | (seq_arr == ord('C'))
+        n_mask  = seq_arr == ord('N')
+        gc_cumsum = np.empty(span_length + 1, dtype=np.int32)
+        n_cumsum  = np.empty(span_length + 1, dtype=np.int32)
+        gc_cumsum[0] = 0;  np.cumsum(gc_mask, out=gc_cumsum[1:])
+        n_cumsum[0]  = 0;  np.cumsum(n_mask,  out=n_cumsum[1:])
 
-            # Ensure the read is long enough to form a read, else we will not use it.
-            if (end > options.read_len) and (end - start > options.read_len + 10):
-                temp_fragments.append((start, end))
-            start = end
+        positions   = np.arange(n_positions, dtype=np.int32)
+        window_ends = np.minimum(positions + window_size, span_length)
+        gc_counts_arr = (gc_cumsum[window_ends] - gc_cumsum[positions]).astype(np.float32)
+        n_counts_arr  = (n_cumsum[window_ends]  - n_cumsum[positions]).astype(np.float32)
+        window_lens   = (window_ends - positions).astype(np.float32)
+        called        = np.maximum(window_lens - n_counts_arr, 1.0)
+        gc_indices    = np.clip(np.rint(gc_counts_arr / called * 100).astype(np.int16), 0, 100)
+        weights       = np.asarray(gc_model.weights, dtype=np.float32)[gc_indices]
 
-        # Generating reads from fragments
-        for fragment in temp_fragments:
-            read_start = fragment[0]
-            read_end = read_start + options.read_len
-            read1 = (read_start, read_end)
-            if options.paired_ended:
-                # This will be valid because of the check above
-                read2 = (fragment[1] - options.read_len, fragment[1])
-            else:
-                read2 = (0, 0)
-            # The structure for these reads will be (left_start, left_end, right_start, right_end)
-            # where start and end are ints with end > start. Reads can overlap, so right_start < left_end
-            # is possible, but the reads cannot extend past each other, so right_start < left_start and
-            # left_end > right_end are not possible.
+        prefix_sum = np.cumsum(weights)
+        total_weight = prefix_sum[-1]
+        
+        if total_weight == 0:
+            _LOG.debug("All positions in region have zero GC bias weight; no fragments generated.")
+            return []
 
-            # sanity check that we haven't created an unrealistic read:
-            read = read1 + read2
-            final_reads.append(read)
-            read_count += 1
+        mean_weight = total_weight / n_positions
 
-    _LOG.debug(f"Coverage required {loop_count} loops")
+        # Scale total reads by the mean/max ratio so that GC-rich regions receive
+        # proportionally more reads than AT-rich regions across the genome.
+        # For a uniform model mean_weight == max_weight, so this is a no-op.
+        number_reads = ceil(number_reads * mean_weight / gc_model.max_weight)
+
+        if number_reads == 0:
+            return []
+
+        # Batch CDF sampling with adaptive retry (same pattern as _uniform_sampling).
+        min_frag = options.read_len + (10 if options.paired_ended else 0)
+        acc_starts: list[np.ndarray] = []
+        acc_ends:   list[np.ndarray] = []
+        collected = 0
+        n_batch = number_reads * 2
+
+        while collected < number_reads:
+            uv = options.rng.random(n_batch) * total_weight
+            s = np.clip(np.searchsorted(prefix_sum, uv).astype(int), 0, max_start)
+            fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
+            e = np.minimum(s + fl, span_length)
+            mask = e - s >= min_frag
+            acc_starts.append(s[mask])
+            acc_ends.append(e[mask])
+            collected += int(mask.sum())
+            n_batch = max(10, (number_reads - collected) * 5)
+
+        valid_starts = np.concatenate(acc_starts)[:number_reads]
+        valid_ends   = np.concatenate(acc_ends)[:number_reads]
+
+        for s, e in zip(valid_starts.tolist(), valid_ends.tolist()):
+            read1 = (s, s + options.read_len)
+            read2 = (e - options.read_len, e) if options.paired_ended else (0, 0)
+            final_reads.append(read1 + read2)
+             
+    else:
+        # Uniform sampling
+        final_reads = _uniform_sampling(span_length, number_reads, options, fragment_model)
+
     # Now we shuffle them to add some randomness
     options.rng.shuffle(final_reads)
-    # And only return the number we needed
-    return final_reads[:number_reads]
+    return final_reads
+
+
+def _uniform_sampling(span_length, number_reads, options, fragment_model):
+    if span_length <= options.read_len:
+        return []
+
+    max_start = span_length - options.read_len
+    min_frag = options.read_len + (10 if options.paired_ended else 0)
+
+    # First batch: 2× candidates covers >99 % of cases when frag_mean >> read_len.
+    # Retry in small increments only when fragment_mean < read_len (rare).
+    acc_starts: list[np.ndarray] = []
+    acc_ends:   list[np.ndarray] = []
+    collected = 0
+    n_batch = number_reads * 2
+
+    while collected < number_reads:
+        s = options.rng.integers(0, max_start + 1, size=n_batch)
+        fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
+        e = np.minimum(s + fl, span_length)
+        mask = e - s >= min_frag
+        acc_starts.append(s[mask])
+        acc_ends.append(e[mask])
+        collected += int(mask.sum())
+        n_batch = max(10, (number_reads - collected) * 5)
+
+    all_starts = np.concatenate(acc_starts)[:number_reads]
+    all_ends   = np.concatenate(acc_ends)[:number_reads]
+
+    final_reads = []
+    for s, e in zip(all_starts.tolist(), all_ends.tolist()):
+        read1 = (s, s + options.read_len)
+        read2 = (e - options.read_len, e) if options.paired_ended else (0, 0)
+        final_reads.append(read1 + read2)
+    return final_reads
 
 
 def find_applicable_mutations(my_read: Read, all_variants: ContigVariants) -> dict:
@@ -151,6 +223,7 @@ def generate_reads(
         errors_per_read: int,
         qual_model: TraditionalQualityModel,
         fraglen_model: FragmentLengthModel,
+        gc_model: GCBiasModel,
         contig_variants: ContigVariants,
         targeted_regions: list,
         discarded_regions: list,
@@ -194,9 +267,10 @@ def generate_reads(
     # _LOG.debug("Covering dataset.")
     t = time.time()
     reads = cover_dataset(
-        len(reference),
+        reference,
         options,
         fraglen_model,
+        gc_model,
     )
     # _LOG.debug(f"Dataset coverage took: {(time.time() - t)/60:.2f} m")
 

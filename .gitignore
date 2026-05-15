@@ -29,3 +29,9 @@ dist/
 build/
 *.egg-info/
 *.egg
+
+# gitnexus stuff
+/.gitnexus/
+/.claude/
+AGENTS.md
+CLAUDE.md

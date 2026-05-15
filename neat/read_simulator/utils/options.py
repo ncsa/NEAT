@@ -86,6 +86,7 @@ class Options(SimpleNamespace):
                  cleanup_splits: bool = True,
                  splits_dir: Path | None = None,
                  reuse_splits: bool = False,
+                 gc_model: Path | None = None,
                  **kwargs: Any
                  ):
         """
@@ -173,6 +174,7 @@ class Options(SimpleNamespace):
         self.cleanup_splits: bool = cleanup_splits
         self.splits_dir: Path | None = splits_dir
         self.reuse_splits: bool = reuse_splits
+        self.gc_model: Path | None = Path(gc_model) if gc_model else None
 
         # Actual output files
         self.fq1: Path | None = fq1
@@ -241,7 +243,8 @@ class Options(SimpleNamespace):
             'parallel_block_size': (int, 500000, None, None),
             'threads': (int, 1, 1, 1000),
             'cleanup_splits': (bool, True, None, None),
-            'reuse_splits': (bool, False, None, None)
+            'reuse_splits': (bool, False, None, None),
+            'gc_model': (Path, None, 'exists', None)
         }
 
         input_args = {}

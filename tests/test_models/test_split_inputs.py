@@ -27,16 +27,15 @@ def _make_options(tmp_path, mode="contig", read_len=50, block_size=200):
     opts.parallel_mode = mode
     opts.parallel_block_size = block_size
     opts.splits_dir = tmp_path / "splits"
-    opts.splits_dir.mkdir()
+    opts.splits_dir.mkdir(exist_ok=True)
+    opts.reference = tmp_path / "ref.fa"
     return opts
 
 
-def _make_ref(*contigs: tuple[str, str]) -> dict:
-    """Build a reference_index dict from (name, sequence) pairs."""
-    return {
-        name: SeqRecord(Seq(seq), id=name, name=name, description="")
-        for name, seq in contigs
-    }
+def _make_ref_file(path, *contigs: tuple[str, str]):
+    with open(path, "w") as f:
+        for name, seq in contigs:
+            f.write(f">{name}\n{seq}\n")
 
 
 def _read_fasta_gz(path) -> tuple[str, str]:
@@ -193,16 +192,17 @@ def test_write_fasta_custom_width(tmp_path):
 
 def test_main_contig_mode_one_file_per_contig(tmp_path):
     opts = _make_options(tmp_path, mode="contig")
-    ref = _make_ref(("chr1", "ACGT" * 50), ("chr2", "TTGG" * 30))
-    result, written = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", "ACGT" * 50), ("chr2", "TTGG" * 30))
+    result, written, ref_lens = main(opts)
     assert written == 2
     assert set(result.keys()) == {"chr1", "chr2"}
+    assert ref_lens == {"chr1": 200, "chr2": 120}
 
 
 def test_main_contig_mode_dict_keyed_by_full_span(tmp_path):
     opts = _make_options(tmp_path, mode="contig")
-    ref = _make_ref(("chr1", "ACGT" * 25))  # 100 bp
-    result, _ = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", "ACGT" * 25))  # 100 bp
+    result, _, _ = main(opts)
     keys = list(result["chr1"].keys())
     assert len(keys) == 1
     assert keys[0] == (0, 100)
@@ -210,8 +210,8 @@ def test_main_contig_mode_dict_keyed_by_full_span(tmp_path):
 
 def test_main_contig_mode_files_exist(tmp_path):
     opts = _make_options(tmp_path, mode="contig")
-    ref = _make_ref(("chr1", "ACGT" * 10), ("chr2", "TTGG" * 10))
-    result, _ = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", "ACGT" * 10), ("chr2", "TTGG" * 10))
+    result, _, _ = main(opts)
     for contig, spans in result.items():
         for path in spans.values():
             assert path.exists(), f"Expected {path} to exist"
@@ -219,16 +219,16 @@ def test_main_contig_mode_files_exist(tmp_path):
 
 def test_main_contig_mode_filename_contains_contig(tmp_path):
     opts = _make_options(tmp_path, mode="contig")
-    ref = _make_ref(("mychr", "ACGT" * 10))
-    result, _ = main(opts, ref)
+    _make_ref_file(opts.reference, ("mychr", "ACGT" * 10))
+    result, _, _ = main(opts)
     path = list(result["mychr"].values())[0]
     assert "mychr" in path.name
 
 
 def test_main_contig_mode_filename_zero_padded(tmp_path):
     opts = _make_options(tmp_path, mode="contig")
-    ref = _make_ref(("chr1", "A" * 40), ("chr2", "T" * 40))
-    result, _ = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", "A" * 40), ("chr2", "T" * 40))
+    result, _, _ = main(opts)
     names = sorted(p.name for spans in result.values() for p in spans.values())
     # First file index should be zero-padded to width 10
     assert names[0].startswith("0000000001")
@@ -239,8 +239,8 @@ def test_main_contig_mode_fasta_content(tmp_path):
     """Files written in contig mode should contain the correct uppercased sequence."""
     seq = "acgtACGT" * 5  # mixed case
     opts = _make_options(tmp_path, mode="contig")
-    ref = _make_ref(("chr1", seq))
-    result, _ = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", seq))
+    result, _, _ = main(opts)
     path = list(result["chr1"].values())[0]
     _, recovered = _read_fasta_gz(path)
     assert recovered == seq.upper()
@@ -254,24 +254,24 @@ def test_main_block_mode_produces_multiple_chunks(tmp_path):
     """A sequence much longer than block_size should produce multiple chunks."""
     opts = _make_options(tmp_path, mode="size", read_len=10, block_size=50)
     seq = "ACGT" * 50  # 200 bp — should produce several 50 bp blocks
-    ref = _make_ref(("chr1", seq))
-    result, written = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", seq))
+    result, written, _ = main(opts)
     assert written > 1
     assert len(result["chr1"]) > 1
 
 
 def test_main_block_mode_written_count_matches_dict(tmp_path):
     opts = _make_options(tmp_path, mode="size", read_len=10, block_size=50)
-    ref = _make_ref(("chr1", "A" * 200), ("chr2", "T" * 200))
-    result, written = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", "A" * 200), ("chr2", "T" * 200))
+    result, written, _ = main(opts)
     total_spans = sum(len(spans) for spans in result.values())
     assert written == total_spans
 
 
 def test_main_block_mode_files_exist(tmp_path):
     opts = _make_options(tmp_path, mode="size", read_len=10, block_size=50)
-    ref = _make_ref(("chr1", "ACGT" * 50))
-    result, _ = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", "ACGT" * 50))
+    result, _, _ = main(opts)
     for spans in result.values():
         for path in spans.values():
             assert path.exists()
@@ -281,8 +281,8 @@ def test_main_block_mode_span_keys_cover_sequence(tmp_path):
     """Span keys should cover positions 0 through len(seq), with overlaps."""
     opts = _make_options(tmp_path, mode="size", read_len=10, block_size=50)
     seq = "A" * 200
-    ref = _make_ref(("chr1", seq))
-    result, _ = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", seq))
+    result, _, _ = main(opts)
     spans = sorted(result["chr1"].keys())
     assert spans[0][0] == 0
     # Last span should end at or cover the full sequence length
@@ -292,7 +292,7 @@ def test_main_block_mode_span_keys_cover_sequence(tmp_path):
 def test_main_block_mode_sequence_shorter_than_block(tmp_path):
     """A short sequence produces exactly one chunk even in block mode."""
     opts = _make_options(tmp_path, mode="size", read_len=10, block_size=500)
-    ref = _make_ref(("chr1", "ACGT" * 10))  # 40 bp < 500
-    result, written = main(opts, ref)
+    _make_ref_file(opts.reference, ("chr1", "ACGT" * 10))  # 40 bp < 500
+    result, written, _ = main(opts)
     assert written == 1
     assert len(result["chr1"]) == 1
