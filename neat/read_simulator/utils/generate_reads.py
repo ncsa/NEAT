@@ -71,64 +71,25 @@ def cover_dataset(
             return []
             
         n_positions = max_start + 1
-        weights = np.zeros(n_positions, dtype=float)
-        
-        # Initial window GC count
-        seq_str = str(reference.seq).upper()
-        effective_window = min(window_size, span_length)
-        
-        # The window for start position i is [i, i + effective_window]
-        # BUT we must ensure i + effective_window does not exceed span_length.
-        # Sliding window logic:
-        # i = 0: window [0, effective_window]
-        # last i = n_positions - 1: window [max_start, max_start + effective_window]
-        # max_start + effective_window = span_length - read_len + min(window_size, span_length)
-        # If window_size > read_len, then max_start + window_size > span_length!
-        
-        # We need to cap the window end at span_length.
-        
-        gc_count = seq_str[:effective_window].count('G') + seq_str[:effective_window].count('C')
-        n_count = seq_str[:effective_window].count('N')
-        
-        def get_weight(gc, n, win_len):
-            called = win_len - n
-            if called <= 0:
-                return 1.0
-            return gc_model.get_weight(gc / called)
 
-        weights[0] = get_weight(gc_count, n_count, effective_window)
-        
-        # Sliding window
-        for i in range(1, n_positions):
-            # Start position i means window [i, min(i + window_size, span_length)]
-            # Previous window was [i-1, min(i-1 + window_size, span_length)]
-            
-            # Outgoing base is always i-1
-            outgoing = seq_str[i-1]
-            if outgoing in 'GC':
-                gc_count -= 1
-            elif outgoing == 'N':
-                n_count -= 1
-                
-            # Incoming base depends on whether the window is still expanding or sliding
-            # current_window_end = min(i + window_size, span_length)
-            # prev_window_end = min(i - 1 + window_size, span_length)
-            
-            current_window_len = effective_window
-            if i + window_size <= span_length:
-                # Still sliding full window
-                incoming = seq_str[i + window_size - 1]
-                if incoming in 'GC':
-                    gc_count += 1
-                elif incoming == 'N':
-                    n_count += 1
-            else:
-                # Window is shrinking at the end of the span
-                current_window_len = span_length - i
-                # No new base incoming, outgoing already removed
-                
-            weights[i] = get_weight(gc_count, n_count, current_window_len)
-            
+        # Vectorized sliding window via cumulative sums — O(n) numpy, no Python loop.
+        seq_arr = np.frombuffer(str(reference.seq).upper().encode(), dtype=np.uint8)
+        gc_mask = (seq_arr == ord('G')) | (seq_arr == ord('C'))
+        n_mask  = seq_arr == ord('N')
+        gc_cumsum = np.empty(span_length + 1, dtype=np.int32)
+        n_cumsum  = np.empty(span_length + 1, dtype=np.int32)
+        gc_cumsum[0] = 0;  np.cumsum(gc_mask, out=gc_cumsum[1:])
+        n_cumsum[0]  = 0;  np.cumsum(n_mask,  out=n_cumsum[1:])
+
+        positions   = np.arange(n_positions, dtype=np.int32)
+        window_ends = np.minimum(positions + window_size, span_length)
+        gc_counts_arr = (gc_cumsum[window_ends] - gc_cumsum[positions]).astype(np.float32)
+        n_counts_arr  = (n_cumsum[window_ends]  - n_cumsum[positions]).astype(np.float32)
+        window_lens   = (window_ends - positions).astype(np.float32)
+        called        = np.maximum(window_lens - n_counts_arr, 1.0)
+        gc_indices    = np.clip(np.rint(gc_counts_arr / called * 100).astype(np.int16), 0, 100)
+        weights       = np.asarray(gc_model.weights, dtype=np.float32)[gc_indices]
+
         prefix_sum = np.cumsum(weights)
         total_weight = prefix_sum[-1]
         
@@ -146,29 +107,26 @@ def cover_dataset(
         if number_reads == 0:
             return []
 
-        # Batch CDF sampling: oversample so fragment-length filtering still leaves
-        # enough reads. All operations are vectorized.
-        n_candidates = number_reads * 10
-        uniform_vals = options.rng.random(n_candidates) * total_weight
-        starts = np.searchsorted(prefix_sum, uniform_vals).astype(int)
-        starts = np.clip(starts, 0, max_start)
+        # Batch CDF sampling with adaptive retry (same pattern as _uniform_sampling).
+        min_frag = options.read_len + (10 if options.paired_ended else 0)
+        acc_starts: list[np.ndarray] = []
+        acc_ends:   list[np.ndarray] = []
+        collected = 0
+        n_batch = number_reads * 2
 
-        frag_lengths = np.array(fragment_model.generate_fragments(n_candidates, options.rng))
-        ends = np.minimum(starts + frag_lengths, span_length)
+        while collected < number_reads:
+            uv = options.rng.random(n_batch) * total_weight
+            s = np.clip(np.searchsorted(prefix_sum, uv).astype(int), 0, max_start)
+            fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
+            e = np.minimum(s + fl, span_length)
+            mask = e - s >= min_frag
+            acc_starts.append(s[mask])
+            acc_ends.append(e[mask])
+            collected += int(mask.sum())
+            n_batch = max(10, (number_reads - collected) * 5)
 
-        valid = ends - starts >= options.read_len
-        if options.paired_ended:
-            valid &= ends - starts >= options.read_len + 10
-
-        valid_starts = starts[valid][:number_reads]
-        valid_ends = ends[valid][:number_reads]
-
-        placed = len(valid_starts)
-        if placed < number_reads:
-            _LOG.warning(
-                f"GC-weighted fragment generation placed {placed}/{number_reads} fragments "
-                f"(short fragments filtered)."
-            )
+        valid_starts = np.concatenate(acc_starts)[:number_reads]
+        valid_ends   = np.concatenate(acc_ends)[:number_reads]
 
         for s, e in zip(valid_starts.tolist(), valid_ends.tolist()):
             read1 = (s, s + options.read_len)
@@ -189,22 +147,30 @@ def _uniform_sampling(span_length, number_reads, options, fragment_model):
         return []
 
     max_start = span_length - options.read_len
-    # Oversample by 100x so fragment-length filtering (e.g. when frag mean < read_len)
-    # still yields enough valid reads. All operations are vectorized.
-    n_candidates = number_reads * 100
-    starts = options.rng.integers(0, max_start + 1, size=n_candidates)
-    frag_lengths = np.array(fragment_model.generate_fragments(n_candidates, options.rng))
-    ends = np.minimum(starts + frag_lengths, span_length)
+    min_frag = options.read_len + (10 if options.paired_ended else 0)
 
-    valid = ends - starts >= options.read_len
-    if options.paired_ended:
-        valid &= ends - starts >= options.read_len + 10
+    # First batch: 2× candidates covers >99 % of cases when frag_mean >> read_len.
+    # Retry in small increments only when fragment_mean < read_len (rare).
+    acc_starts: list[np.ndarray] = []
+    acc_ends:   list[np.ndarray] = []
+    collected = 0
+    n_batch = number_reads * 2
 
-    valid_starts = starts[valid][:number_reads]
-    valid_ends = ends[valid][:number_reads]
+    while collected < number_reads:
+        s = options.rng.integers(0, max_start + 1, size=n_batch)
+        fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
+        e = np.minimum(s + fl, span_length)
+        mask = e - s >= min_frag
+        acc_starts.append(s[mask])
+        acc_ends.append(e[mask])
+        collected += int(mask.sum())
+        n_batch = max(10, (number_reads - collected) * 5)
+
+    all_starts = np.concatenate(acc_starts)[:number_reads]
+    all_ends   = np.concatenate(acc_ends)[:number_reads]
 
     final_reads = []
-    for s, e in zip(valid_starts.tolist(), valid_ends.tolist()):
+    for s, e in zip(all_starts.tolist(), all_ends.tolist()):
         read1 = (s, s + options.read_len)
         read2 = (e - options.read_len, e) if options.paired_ended else (0, 0)
         final_reads.append(read1 + read2)

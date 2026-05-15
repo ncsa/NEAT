@@ -20,9 +20,6 @@
 - Replaced debug print sentinels in the mutation model with proper log warnings.
 - Expanded test coverage for the error model, runner, and read simulator.
 
-# NEAT has a new home
-NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
-
 # NEAT v4.3.6
 - Multiple bug fixes, fixes to outputs. See release for full notes.
 
@@ -99,3 +96,5 @@ For improvements, we have a lot of great ideas for general improvements aimed at
 - Transposable Elements - model transposons within the sequence
 - Repeat regions - will bring a variety of interesting applications
 
+# NEAT has a new home
+NEAT is now a part of the NCSA github and active development will continue here. Please direct issues, comments, and requests to the NCSA issue tracker. Submit pull requests here insead of the old repo.
