@@ -45,16 +45,20 @@ def merge_vcfs(vcfs: List[Path], ofw: OutputFileWriter) -> None:
         _LOG.warning(f"merge_vcfs: removed {n_duplicates} duplicate VCF line(s) during merge.")
 
 def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int):
-    merged_file = ofw.tmp_dir / "temp_merged.bam"
+    # Per-worker BAMs are coordinate-sorted by single_runner. pysam.merge does a
+    # k-way heap merge of coordinate-sorted inputs and produces coordinate-sorted
+    # output, so no separate sort pass is needed. Avoiding samtools sort here
+    # eliminates a ~1 GB sort-buffer allocation that previously dominated peak
+    # memory at stitch time.
+    # The batching loop bounds the number of file handles passed to pysam.merge
+    # at once (samtools defaults around ulimit).
     intermediate_files = []
-    # Note 1000 is arbitrary. May need to be a user parameter/adjustable/a function
     for i in range(0, len(bam_files), 500):
         temp_file = str(ofw.tmp_dir / f"temp_merged_{i}.bam")
         pysam.merge("--no-PG", "-f", temp_file, *map(str, bam_files[i:i+500]))
         intermediate_files.append(temp_file)
-    pysam.merge("--no-PG", "-f", str(merged_file), *intermediate_files)
-    pysam.sort("-@", str(threads), "-m", "1G", "-o", str(ofw.bam), str(merged_file))
-    merged_file.unlink(missing_ok=True)
+    pysam.merge("--no-PG", "-@", str(threads), "-f", str(ofw.bam), *intermediate_files)
+    # The .bai index is produced by runner.py after stitching.
 
 def main(
         ofw: OutputFileWriter,
