@@ -137,8 +137,11 @@ def cover_dataset(
         # Uniform sampling
         final_reads = _uniform_sampling(span_length, number_reads, options, fragment_model)
 
-    # Now we shuffle them to add some randomness
-    options.rng.shuffle(final_reads)
+    # FASTQ is written in the natural fragment-sampling order (no explicit shuffle).
+    # The BAM is sorted to coordinate order at the BAM-write boundary in single_runner,
+    # which interleaves PE mate reads correctly. Users who want randomized FASTQ
+    # ordering can pipe the output through `seqkit shuffle` — see README "FASTQ
+    # output order".
     return final_reads
 
 

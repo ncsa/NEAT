@@ -251,6 +251,21 @@ Features:
 - Output a BAM file with the 'golden' set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
 - Create paired tumour/normal datasets using characteristics learned from real tumour data
 
+### Output ordering
+
+The BAM file NEAT produces is coordinate-sorted (by construction at write time — no separate sort pass is run, which used to allocate ~1 GB of sort buffer at stitch time).
+
+The FASTQ files are written in the natural fragment-sampling order. This is *roughly* random — fragments are drawn from batched random positions — but is not a strict uniform shuffle. If your downstream tooling assumes a real-sequencer-style shuffle, pipe the FASTQ through [`seqkit shuffle`](https://bioinf.shenwei.me/seqkit/usage/#shuffle):
+
+```sh
+# Single-end
+seqkit shuffle reads.fastq.gz -o reads.shuffled.fastq.gz
+
+# Paired-end — use a shared seed so the two files stay mate-aligned
+seqkit shuffle -s 42 reads_r1.fastq.gz -o reads_r1.shuffled.fastq.gz
+seqkit shuffle -s 42 reads_r2.fastq.gz -o reads_r2.shuffled.fastq.gz
+```
+
 ### Estimated runtimes
 
 To give users a sense of how long `neat read-simulator` runs may take, we benchmarked NEAT 4.4 on several reference genomes. All runs were paired-end, with read length of 150 bp, coverage of 10, fragment mean of 300 bp, and fragment standard deviation of 50 bp. Runtimes are reported as the average across three unique runs (`Avg. time (ms)`) and the corresponding runtime in minutes. Cells marked with N/A indicate that NEAT was not able to run to completion.
