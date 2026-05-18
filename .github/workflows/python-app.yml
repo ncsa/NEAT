@@ -28,9 +28,15 @@ jobs:
       - name: Run unit tests
         shell: bash -l {0}
         run: |
-          micromamba run -n neat pytest -q tests
+          micromamba run -n neat pytest --cov=neat --cov-report=xml --cov-report=term tests
 
       - name: Run CLI integration test
         shell: bash -l {0}
         run: |
           micromamba run -n neat pytest -q tests/test_cli
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false

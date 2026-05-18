@@ -11,6 +11,7 @@ produce_vcf: .
 produce_fastq: .
 
 error_model: .
+gc_model: .
 mutation_model: .
 fragment_model: .
 

@@ -16,7 +16,8 @@ from .utils import OutputFileWriter, \
     generate_variants, generate_reads, Options, recalibrate_mutation_regions
 from ..variants import ContigVariants
 
-from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel
+from ..models import MutationModel, SequencingErrorModel, FragmentLengthModel, TraditionalQualityModel, \
+    GCBiasModel, get_uniform_gc_model
 
 __all__ = ["read_simulator_single"]
 
@@ -71,16 +72,20 @@ def read_simulator_single(
         mut_model,
         seq_error_model,
         qual_score_model,
-        fraglen_model
+        fraglen_model,
+        gc_model
     ) = initialize_all_models(local_options)
 
     """
     Process Inputs
     """
     # _THREAD_LOG.info(f'Reading {local_options.reference}.')
-    local_ref_index = SeqIO.index(str(local_options.reference), "fasta")
-    local_ref_name = list(local_ref_index.keys())[0]
-    local_seq_record = local_ref_index[local_ref_name]
+    ref_path = str(local_options.reference)
+    _opener = bgzf.open if ref_path.endswith('.gz') else open
+    with _opener(ref_path, 'rt') as _fh:
+        local_seq_record = next(SeqIO.parse(_fh, "fasta"))
+    local_ref_name = local_seq_record.id
+    local_ref_index = {local_ref_name: local_seq_record}
 
     if len(local_seq_record) < local_options.read_len:
         _LOG.debug("Record too small for processing")
@@ -117,6 +122,7 @@ def read_simulator_single(
             errors_per_read,
             qual_score_model,
             fraglen_model,
+            gc_model,
             local_variants,
             target_regions,
             discard_regions,
@@ -251,9 +257,14 @@ def initialize_all_models(options: Options):
         fraglen_model = FragmentLengthModel(fragment_mean, fragment_st_dev)
 
     # _LOG.debug("Fragment length model loaded")
+    if options.gc_model:
+        gc_model = GCBiasModel.from_file(options.gc_model)
+    else:
+        gc_model = get_uniform_gc_model()
 
     return \
         mut_model, \
         error_model, \
         quality_score_model, \
-        fraglen_model
+        fraglen_model, \
+        gc_model

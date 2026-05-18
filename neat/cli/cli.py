@@ -1,7 +1,8 @@
 """Implements command line interface used by the package."""
 
-__all__ = ['Cli', 'main', 'run']
-__version__ = "4.3.6"
+from .. import __version__
+
+__all__ = ['Cli', 'main', 'run', '__version__']
 __author__ = "Joshua Allen"
 __email__ = "jallen17@illinois.edu"
 

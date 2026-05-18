@@ -21,6 +21,7 @@ from neat.models import (
     MutationModel,
     SequencingErrorModel,
     TraditionalQualityModel,
+    GCBiasModel,
 )
 from neat.read_simulator.single_runner import (
     initialize_all_models,
@@ -94,10 +95,10 @@ def _make_contig_variants(positions_alts: list, genotype_ploidy: int = 2) -> Con
 
 class TestInitializeAllModels:
 
-    def test_returns_four_objects(self, tmp_path):
+    def test_returns_five_objects(self, tmp_path):
         opts = _make_opts(tmp_path)
         result = initialize_all_models(opts)
-        assert len(result) == 4
+        assert len(result) == 5
 
     def test_default_mut_model_type(self, tmp_path):
         opts = _make_opts(tmp_path)
@@ -106,18 +107,23 @@ class TestInitializeAllModels:
 
     def test_default_seq_error_model_type(self, tmp_path):
         opts = _make_opts(tmp_path)
-        _, seq_error_model, _, _ = initialize_all_models(opts)
+        _, seq_error_model, _, _, _ = initialize_all_models(opts)
         assert isinstance(seq_error_model, SequencingErrorModel)
 
     def test_default_qual_score_model_type(self, tmp_path):
         opts = _make_opts(tmp_path)
-        _, _, qual_score_model, _ = initialize_all_models(opts)
+        _, _, qual_score_model, _, _ = initialize_all_models(opts)
         assert isinstance(qual_score_model, TraditionalQualityModel)
 
     def test_default_fraglen_model_type(self, tmp_path):
         opts = _make_opts(tmp_path)
-        _, _, _, fraglen_model = initialize_all_models(opts)
+        _, _, _, fraglen_model, _ = initialize_all_models(opts)
         assert isinstance(fraglen_model, FragmentLengthModel)
+
+    def test_default_gc_model_type(self, tmp_path):
+        opts = _make_opts(tmp_path)
+        _, _, _, _, gc_model = initialize_all_models(opts)
+        assert isinstance(gc_model, GCBiasModel)
 
     def test_mut_model_rng_is_set(self, tmp_path):
         opts = _make_opts(tmp_path)
@@ -141,21 +147,21 @@ class TestInitializeAllModels:
         opts = _make_opts(tmp_path)
         opts.fragment_mean = 200.0
         opts.fragment_st_dev = 40.0
-        _, _, _, fraglen_model = initialize_all_models(opts)
+        _, _, _, fraglen_model, _ = initialize_all_models(opts)
         assert fraglen_model.fragment_mean == pytest.approx(200.0)
 
     def test_no_fragment_mean_uses_read_len_times_two(self, tmp_path):
         opts = _make_opts(tmp_path)
         opts.fragment_mean = None
         opts.read_len = 75
-        _, _, _, fraglen_model = initialize_all_models(opts)
+        _, _, _, fraglen_model, _ = initialize_all_models(opts)
         assert fraglen_model.fragment_mean == pytest.approx(75 * 2.0)
 
     def test_fraglen_model_std_dev_set_from_fragment_mean(self, tmp_path):
         opts = _make_opts(tmp_path)
         opts.fragment_mean = None
         opts.read_len = 100
-        _, _, _, fraglen_model = initialize_all_models(opts)
+        _, _, _, fraglen_model, _ = initialize_all_models(opts)
         expected_std = 100 * 2.0 * 0.2
         assert fraglen_model.fragment_st_dev == pytest.approx(expected_std)
 

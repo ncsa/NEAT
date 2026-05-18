@@ -107,6 +107,8 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
     _LOG.debug(f'Assuming read length of {read_length}')
 
     temp_q_count = np.zeros((read_length, len(quality_scores)), dtype=int)
+    # Create a mapping from quality score to index in temp_q_count
+    qual_to_idx = {q: i for i, q in enumerate(quality_scores)}
     qual_score_counter = {x: 0 for x in quality_scores}
     if max_reads == np.inf:
         _LOG.info("Reading all records...")
@@ -147,8 +149,12 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
 
             for j in range(read_length):
                 # The qualities of each read_position_scores
-                temp_q_count[j][qualities_to_check[j]] += 1
-                qual_score_counter[qualities_to_check[j]] += 1
+                q_score = qualities_to_check[j]
+                if q_score in qual_to_idx:
+                    temp_q_count[j][qual_to_idx[q_score]] += 1
+                    qual_score_counter[q_score] += 1
+                else:
+                    _LOG.debug(f"Quality score {q_score} not in expected range")
 
             records_read += 1
 

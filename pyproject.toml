@@ -1,9 +1,9 @@
 [tool.poetry]
 name = "neat-genreads"
-version = "4.4.1"
+version = "4.4.2"
 description = "NGS Simulation toolkit"
 readme = "README.md"
-authors = ["Joshua Allen <jallen17@illinois.edu>"]
+authors = ["Joshua Allen <jallen17@illinois.edu>", "Keshav Gandhi <krg3@illinois.edu>"]
 license = "BSD 3-Clause License"
 packages = [{include = "neat"}]
 
@@ -24,6 +24,7 @@ optional = true
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
+pytest-cov = "^6.0"
 
 [tool.poetry.scripts]
 neat = 'neat.cli.cli:run'

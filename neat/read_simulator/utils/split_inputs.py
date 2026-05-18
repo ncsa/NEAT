@@ -13,7 +13,7 @@ import logging
 
 __all__ = ["main"]
 
-from Bio import bgzf
+from Bio import bgzf, SeqIO
 from Bio.Seq import Seq
 
 from neat.read_simulator.utils import Options
@@ -31,31 +31,31 @@ def print_stderr(msg: str, *, exit_: bool = False) -> None:
 def disk_bytes_free(path: Path) -> int:
     return shutil.disk_usage(path).free
 
-def write_fasta(contig: str, rec: Seq, out_fa: Path, width: int = 80) -> None:
+def write_fasta(contig: str, seq: str, out_fa: Path, width: int = 80) -> None:
     """Write a sequence record to a FASTA file, wrapping lines at a given width."""
     with bgzf.BgzfWriter(out_fa) as fh:
         fh.write(f">{contig}\n")
-        for chunk in wrap(str(rec), width):
-            fh.write(chunk + "\n")
+        # Ensure seq is a string for bgzf.BgzfWriter.write()
+        seq_str = str(seq)
+        for i in range(0, len(seq_str), width):
+            fh.write(seq_str[i:i+width] + "\n")
 
 # Chunk generators
-def chunk_record(record: Seq, chunk_len: int, overlap: int) -> Iterator[tuple[int, Seq]]:
+def chunk_record(seq: str, chunk_len: int, overlap: int) -> Iterator[tuple[int, str]]:
     """
     Yield overlapping slices of a record.
     """
-    seq_len = len(record)
+    seq_len = len(seq)
     start: int = 0
-    chunkid = 0
     while start < seq_len:
         end = min(start + chunk_len, seq_len)
-        sub_seq = record[start:end]
+        sub_seq = seq[start:end]
         yield start, sub_seq
         if end == seq_len:
             break
         start = end - overlap
-        chunkid += 1
 
-def main(options: Options, reference_index: dict) -> tuple[dict, int]:
+def main(options: Options) -> tuple[dict, int, dict]:
     """Perform the splitting of a FASTA and NEAT configuration."""
 
     overlap = int(options.read_len) * 2
@@ -65,17 +65,24 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
 
     written = 0
     # We'll keep track of chunks by contig, to help us out later
-    split_fasta_dict: dict[str, dict[tuple[int, int], Path]] = {key: {} for key in reference_index.keys()}
-    for contig, seq_record in reference_index.items():
+    split_fasta_dict: dict[str, dict[tuple[int, int], Path]] = {}
+    reference_keys_with_lens: dict[str, int] = {}
+
+    for seq_record in SeqIO.parse(str(options.reference), "fasta"):
+        contig = seq_record.id
+        seq_str = str(seq_record.seq).upper()
+        reference_keys_with_lens[contig] = len(seq_str)
+        split_fasta_dict[contig] = {}
+        
         if options.parallel_mode == "contig":
             stem = f"{idx:0{pad}d}__{contig}"
             fa = options.splits_dir / f"{stem}.fa.gz"
-            write_fasta(contig, seq_record.seq.upper(), fa)
-            split_fasta_dict[contig][(0, len(seq_record))] = fa
+            write_fasta(contig, seq_str, fa)
+            split_fasta_dict[contig][(0, len(seq_str))] = fa
             idx += 1
             written += 1
         else:
-            for start, subseq in chunk_record(seq_record.seq.upper(), options.parallel_block_size, overlap):
+            for start, subseq in chunk_record(seq_str, options.parallel_block_size, overlap):
                 stem = f"{idx:0{pad}d}__{contig}"
                 fa = options.splits_dir / f"{stem}.fa.gz"
                 write_fasta(contig, subseq, fa)
@@ -83,12 +90,6 @@ def main(options: Options, reference_index: dict) -> tuple[dict, int]:
                 idx += 1
                 written += 1
 
-    # soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
-    # # plus one for the final file to write
-    # if hard_limit > written + 1 >= soft_limit:
-    #     resource.setrlimit(resource.RLIMIT_NOFILE, (written + 1, hard_limit))
-    # elif written + 1 >= hard_limit:
-    #     raise ValueError("Too many files for psyam merge to work successfully, increase Size parameter and try again.")
     # Report success via the logger instead of printing to stderr
     _LOG.info(f"Generated {written} FASTAs in {options.splits_dir}")
-    return split_fasta_dict, written
+    return split_fasta_dict, written, reference_keys_with_lens
