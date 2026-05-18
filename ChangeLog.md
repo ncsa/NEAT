@@ -21,6 +21,25 @@ chunk size now auto-tuning by default).
 - SE: 12:28 → 1:57 (6.4× faster, 53% less CPU)
 - PE: 20:12 → 1:44 (11.6× faster, 70% less CPU)
 
+**Scale-test (c_elegans 10× coverage, 4 threads, 100 Mb genome — ~7× the
+ecoli reference):**
+
+| Metric                  | Value                                                   |
+|-------------------------|---------------------------------------------------------|
+| Wall time               | 19:16                                                   |
+| Total CPU               | 4,085 s                                                 |
+| Peak resident memory    | 304 MB                                                  |
+| BAM records             | 6,685,764                                               |
+| BAM sort violations     | 0                                                       |
+| Stitch step (parallel)  | 5.3 s                                                   |
+| Auto-tuned chunk size   | 3.1 Mb (35 chunks)                                      |
+
+Scaling behaviour vs ecoli is ~linear in genome size as expected. The stitch
+step is bounded by raw disk I/O via `pysam.cat`, so it stays at single-digit
+seconds even as the BAM grows. Per-worker peak RSS is 304 MB ÷ 4 ≈ 76 MB,
+which is the reference segment + models — independent of chunk size and
+coverage.
+
 **What changed in the hot path:**
 - Vectorized error sampling in `get_sequencing_errors` — replaced a ~150-iteration
   per-read Python loop with batched numpy. Eliminated 28M `np.prod` calls per
@@ -30,6 +49,13 @@ chunk size now auto-tuning by default).
 - Replaced per-read `PairwiseAligner.align()` in `make_cigar` with a direct
   walker that builds the CIGAR from known error/mutation positions in O(L).
   99% of reads now skip alignment entirely.
+- Rewrote `apply_errors` as a single ascending-position pass. The previous
+  implementation did one `np.concatenate` and one `MutableSeq` slice/concat
+  per error — quadratic in errors-per-read. The new pass is linear regardless
+  of error count.
+- Removed redundant `deepcopy(self.reference_segment)` calls in
+  `convert_masking` and `finalize_read_and_write`. Biopython `Seq` is
+  immutable; the downstream operations make their own working copies.
 
 **What changed in the I/O path:**
 - Removed both `pysam.sort` calls. Per-worker BAMs are emitted coordinate-sorted
@@ -46,7 +72,11 @@ chunk size now auto-tuning by default).
   Workers no longer accumulate `reads_to_write` — per-worker memory is now
   bounded by reference segment + models, not by chunk size × coverage.
 - Stitch steps (FASTQ concat, VCF dedup, BAM cat) now run concurrently in
-  threads.
+  threads. On a single-disk system the wall is bounded by the BAM cat alone;
+  on parallel filesystems the overlap is more pronounced.
+- FASTQ stitch is now byte-level: per-chunk gzip streams are concatenated
+  without decompression / re-encode (concatenated gzip streams form a valid
+  gzip file per the spec).
 
 **Defaults and ergonomics:**
 - `parallel_block_size` now auto-tunes from genome length and thread count
