@@ -2,10 +2,8 @@
 Runner for read-simulator in single-ended mode
 """
 import gzip
-import os
 import pickle
 
-import pysam
 from Bio import SeqIO, bgzf
 import logging
 from pathlib import Path
@@ -133,30 +131,27 @@ def read_simulator_single(
             coords[0],
         )
         if local_options.produce_bam:
-            # Writing an intermediate bam that is sorted, to make compiling them together at the end easier.
+            # Flatten the (read1, read2) pairs and sort by leftmost reference position so
+            # the per-worker BAM is coordinate-sorted by construction. For paired-end runs
+            # this correctly interleaves mate records by position, which a fragment-level
+            # sort would not. Downstream merge_bam relies on per-worker BAMs being sorted.
             bam_handle = local_output_file_writer.files_to_write[local_output_file_writer.bam]
-            for read_data in reads_to_write:
-                read1 = read_data[0]
-                read2 = read_data[1]
+            flat_reads = []
+            for read1, read2 in reads_to_write:
                 if read1:
-                    local_output_file_writer.write_bam_record(
-                        read1,
-                        contig_index,
-                        bam_handle,
-                        local_options.read_len
-                    )
+                    flat_reads.append(read1)
                 if read2:
-                    local_output_file_writer.write_bam_record(
-                        read2,
-                        contig_index,
-                        bam_handle,
-                        local_options.read_len
-                    )
+                    flat_reads.append(read2)
+            flat_reads.sort(key=lambda r: r.position)
+            for read in flat_reads:
+                local_output_file_writer.write_bam_record(
+                    read,
+                    contig_index,
+                    bam_handle,
+                    local_options.read_len
+                )
             bam_handle.flush()
             bam_handle.close()
-            sorted_bam = local_output_file_writer.bam.with_suffix(".sorted.bam")
-            pysam.sort("-@", str(local_options.threads), "-o", str(sorted_bam), str(local_output_file_writer.bam))
-            os.rename(str(sorted_bam), str(local_output_file_writer.bam))
             _LOG.info(f"bam for thread {thread_idx} written")
 
     if local_options.produce_vcf:
