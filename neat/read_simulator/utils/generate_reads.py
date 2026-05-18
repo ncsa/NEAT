@@ -1,3 +1,4 @@
+import heapq
 import logging
 import pickle
 import time
@@ -255,7 +256,8 @@ def generate_reads(
     :param contig_index: The index of the above chromosome within the overall bam header
     :param ref_start: The start point for this reference segment. Default is 0 and this is currently not fully
         implemented, to be used for parallelization.
-    :return: A tuple of the filenames for the temp files created
+    :return: None. FASTQ and BAM records are streamed directly to the output handles
+        on `ofw` as reads are generated; no per-chunk accumulation of Read objects.
     """
     # _LOG.info(f'Sampling reads for thread {thread_index}...')
     start_time = time.time()
@@ -265,7 +267,7 @@ def generate_reads(
             f"Contig '{contig_name}' (length {len(reference)}) is shorter than read_len "
             f"({options.read_len}). Skipping contig."
         )
-        return []
+        return
 
     # _LOG.debug("Covering dataset.")
     t = time.time()
@@ -277,10 +279,20 @@ def generate_reads(
     )
     # _LOG.debug(f"Dataset coverage took: {(time.time() - t)/60:.2f} m")
 
+    # Process fragments in read1-start order so the BAM emerges coordinate-sorted by
+    # construction. In paired-end mode the read2 of each fragment is at a different
+    # (typically later) position, so we hold those in a min-heap keyed by position and
+    # flush each one before writing the next read1 that would precede it. The heap is
+    # bounded by ~(fragment_length / read_length) entries — single-digit reads in
+    # practice — so per-worker memory stays constant in chunk size and coverage.
+    reads.sort(key=lambda r: r[0])
+
     # _LOG.debug("Writing fastq(s) and optional bam, if indicated")
     t = time.time()
 
-    reads_to_write = []
+    bam_handle = ofw.files_to_write[ofw.bam] if options.produce_bam else None
+    r2_buffer: list[tuple[int, int, "Read"]] = []  # (position, counter, read)
+    r2_counter = 0
 
     for i in range(len(reads)):
         # First thing we'll do is check to see if this read is filtered out by a bed file
@@ -367,6 +379,16 @@ def generate_reads(
             errors_per_read,
             options.rng
         )
+
+        # Stream BAM in coordinate order: flush any buffered read2 records whose
+        # position lies before this read1, then write read1 itself. Since fragments
+        # are sorted by read1.position, read1 positions arrive monotonically.
+        if bam_handle is not None:
+            while r2_buffer and r2_buffer[0][0] < read_1.position:
+                _, _, buffered_r2 = heapq.heappop(r2_buffer)
+                ofw.write_bam_record(buffered_r2, contig_index, bam_handle, options.read_len)
+            ofw.write_bam_record(read_1, contig_index, bam_handle, options.read_len)
+
         # skip over read 2 for single ended reads.
         if options.paired_ended:
             # Padding, as above
@@ -406,9 +428,16 @@ def generate_reads(
                 errors_per_read,
                 options.rng
             )
-            reads_to_write.append((read_1, read_2))
-        else:
-            reads_to_write.append((read_1, None))
+            if bam_handle is not None:
+                heapq.heappush(r2_buffer, (read_2.position, r2_counter, read_2))
+                r2_counter += 1
+
+    # Flush any read2 records still in the buffer — these all have positions at or
+    # after the last read1 we wrote, so popping them in heap order gives the correct
+    # coordinate-sorted tail.
+    if bam_handle is not None:
+        while r2_buffer:
+            _, _, buffered_r2 = heapq.heappop(r2_buffer)
+            ofw.write_bam_record(buffered_r2, contig_index, bam_handle, options.read_len)
 
     _LOG.info(f"Finished sampling reads for thread {thread_index} in {(time.time() - start_time)/60:.2f} m")
-    return reads_to_write

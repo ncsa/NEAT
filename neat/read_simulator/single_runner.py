@@ -113,7 +113,11 @@ def read_simulator_single(
     )
 
     if local_options.produce_fastq or local_options.produce_bam:
-        reads_to_write = generate_reads(
+        # generate_reads streams FASTQ and (if requested) BAM records directly to the
+        # output handles on local_output_file_writer. It no longer accumulates Read
+        # objects per chunk — the coordinate-sorted BAM is emitted inline using a
+        # bounded min-heap to interleave PE mate records. See generate_reads docstring.
+        generate_reads(
             thread_idx,
             local_seq_record,
             seq_error_model,
@@ -130,29 +134,6 @@ def read_simulator_single(
             contig_index,
             coords[0],
         )
-        if local_options.produce_bam:
-            # Flatten the (read1, read2) pairs and sort by leftmost reference position so
-            # the per-worker BAM is coordinate-sorted by construction. For paired-end runs
-            # this correctly interleaves mate records by position, which a fragment-level
-            # sort would not. Downstream merge_bam relies on per-worker BAMs being sorted.
-            bam_handle = local_output_file_writer.files_to_write[local_output_file_writer.bam]
-            flat_reads = []
-            for read1, read2 in reads_to_write:
-                if read1:
-                    flat_reads.append(read1)
-                if read2:
-                    flat_reads.append(read2)
-            flat_reads.sort(key=lambda r: r.position)
-            for read in flat_reads:
-                local_output_file_writer.write_bam_record(
-                    read,
-                    contig_index,
-                    bam_handle,
-                    local_options.read_len
-                )
-            bam_handle.flush()
-            bam_handle.close()
-            _LOG.info(f"bam for thread {thread_idx} written")
 
     if local_options.produce_vcf:
         write_block_vcf(local_variants, contig_name, block_start, local_ref_index, local_output_file_writer)
