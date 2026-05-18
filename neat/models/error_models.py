@@ -194,7 +194,7 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         else:
             i = len(quality_scores)
             while len(error_indexes) < num_errors and i > 0:
-                index = rng.choice(list(range(len(quality_scores))))
+                index = rng.integers(len(quality_scores))
                 if rng.random() < quality_score_error_rate[quality_scores[index]]:
                     error_indexes.append(index)
                 i -= 1

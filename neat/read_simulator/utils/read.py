@@ -406,6 +406,18 @@ class Read:
         """
         Aligns the reference and mutated sequences.
         """
+        # Fast path: if no insertion or deletion was applied to this read, the CIGAR is
+        # purely matches and we can skip the pairwise alignment entirely. NEAT generates the
+        # read itself, so we know definitively whether any indel was introduced — by error
+        # or by mutation — without aligning.
+        if not any(e.error_type is Insertion or e.error_type is Deletion for e in self.errors) \
+                and not any(
+                    type(v) is Insertion or type(v) is Deletion
+                    for variants_at_loc in self.mutations.values()
+                    for v in variants_at_loc
+                ):
+            return f"{self.run_read_length}M"
+
         # These parameters were set to minimize breaks in the mutated sequence and find the best
         # alignment from there.
 
