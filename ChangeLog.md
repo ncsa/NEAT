@@ -1,3 +1,70 @@
+# NEAT v4.4.3
+Major performance and memory overhaul focused on making NEAT viable for large
+genomes on supercomputing hardware. No user-visible API changes (other than
+chunk size now auto-tuning by default).
+
+**Benchmark (ecoli 10× coverage, 4 threads, identical configs):**
+
+| Metric                  | v4.4.2     | v4.4.3     | Improvement     |
+|-------------------------|------------|------------|-----------------|
+| ecoli SE wall time      | 14:55      | 1:57       | 7.6× faster     |
+| ecoli PE wall time      | 14:46      | 1:44       | 8.5× faster     |
+| ecoli SE total CPU      | 3,227 s    | 356 s      | 9.1× less       |
+| ecoli PE total CPU      | 3,168 s    | 368 s      | 8.6× less       |
+| Peak resident memory    | 549 MB     | 175 MB     | 3.1× less       |
+| Peak heap (memray)      | 1.27 GB    | 0.32 GB    | 4× less         |
+| Per-worker memory       | O(N×cov)   | O(1)       | bounded         |
+| `pysam.sort` calls      | 2          | 0          | gone            |
+| BAM correctness         | 0.06% dups | strict     | fixed           |
+
+**Versus NEAT 2.1 (single-threaded baseline):**
+- SE: 12:28 → 1:57 (6.4× faster, 53% less CPU)
+- PE: 20:12 → 1:44 (11.6× faster, 70% less CPU)
+
+**What changed in the hot path:**
+- Vectorized error sampling in `get_sequencing_errors` — replaced a ~150-iteration
+  per-read Python loop with batched numpy. Eliminated 28M `np.prod` calls per
+  185k-read run.
+- Vectorized `get_quality_scores` — replaced per-base scalar `rng.normal` with
+  one batched call.
+- Replaced per-read `PairwiseAligner.align()` in `make_cigar` with a direct
+  walker that builds the CIGAR from known error/mutation positions in O(L).
+  99% of reads now skip alignment entirely.
+
+**What changed in the I/O path:**
+- Removed both `pysam.sort` calls. Per-worker BAMs are emitted coordinate-sorted
+  by construction; `pysam.merge` of sorted inputs already produces sorted output.
+  The final sort allocated a 1 GB buffer that dominated peak memory.
+- Replaced `pysam.merge` with `pysam.cat` for the final stitch. cat does a raw
+  BGZF concatenation (no decompression / re-encode), bounded by raw disk I/O
+  instead of BGZF rate. At human-30× scale this is the difference between a
+  multi-hour stitch and a multi-minute one.
+- Each chunk now owns a non-overlapping reference range for read1 placement
+  (`responsibility_length`), enabling the cat-based stitch and eliminating
+  ~0.06% over-coverage in chunk-overlap regions.
+- Streamed FASTQ and BAM records directly to output during read generation.
+  Workers no longer accumulate `reads_to_write` — per-worker memory is now
+  bounded by reference segment + models, not by chunk size × coverage.
+- Stitch steps (FASTQ concat, VCF dedup, BAM cat) now run concurrently in
+  threads.
+
+**Defaults and ergonomics:**
+- `parallel_block_size` now auto-tunes from genome length and thread count
+  (target: ~8 chunks per thread). For small bacterial genomes this matches the
+  old hardcoded 500 kb; for human-scale genomes it produces ~6 Mb chunks
+  instead of ~500 kb, dramatically reducing stitch overhead. Specify the option
+  explicitly to override.
+- FASTQ output is no longer shuffled; reads come out in the natural sampling
+  order. Pipe through `seqkit shuffle` if you need a uniform shuffle (documented
+  in README).
+- Added a "Multi-node deployment on HPC clusters" section to the README
+  showing a SLURM array-job pattern for whole-genome simulation across nodes.
+
+**Caveats:**
+- Several of the vectorization fixes change how the PRNG stream is consumed.
+  Same seed will produce statistically equivalent reads, but not bit-identical
+  to v4.4.2. Re-baseline any regression tests that compared exact output.
+
 # NEAT v4.4.2
 - Added GC bias modeling to generate reads and a function to create a GC bias model from real data.
 - Added improvements and efficiency upgrades to generate-reads.

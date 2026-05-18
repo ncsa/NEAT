@@ -362,7 +362,7 @@ neat read-simulator                 \
 
 ```
 ### Parallelizing simulation
-In this case, you would want to split the contig into blocks, rather than reading by contig. Even in single-threaded mode, this is likely to be faster. The default block size of 500,000 yields results quickly on a variety of datasets and can be easily modified to meet your requirements.
+Split the contig into blocks rather than reading by contig. Even in single-threaded mode this is likely to be faster. The chunk size auto-tunes from total genome length and thread count, targeting roughly 8 chunks per thread for good load balancing — on small bacterial genomes you get ~500 kb chunks (similar to NEAT's old hardcoded default), on human-scale genomes you get ~6 Mb chunks (a few hundred total instead of thousands). Specify `parallel_block_size` explicitly if you want to override.
 
 Also, we demonstrate the situation where you do not want any logs produced:
 
@@ -376,7 +376,8 @@ fragment_mean: 350
 fragment_st_dev: 50
 threads: 12
 parallel_mode: size
-parallel_block_size: 500000
+# parallel_block_size omitted: auto-tuned from genome length and thread count.
+# Set explicitly (e.g. parallel_block_size: 1000000) only if you have a reason.
 ```
 Then run with the command:
 ```
@@ -385,6 +386,61 @@ neat read-simulator                 \
         -c neat_config.yml          \
         -o /home/me/simulated_reads/
 ```
+
+### Multi-node deployment on HPC clusters
+
+NEAT runs on a single node using Python's `multiprocessing`. To use multiple nodes on a supercomputer, dispatch one NEAT job per contig (or contig group) as a job-array element and concatenate the outputs afterwards. Each array task gets its own node and uses all available cores on it. NEAT itself doesn't need to know about the cluster.
+
+SLURM example with one task per human chromosome (24 tasks):
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=neat-array
+#SBATCH --array=1-24
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=64G
+#SBATCH --time=04:00:00
+
+CHROM=$(awk "NR==$SLURM_ARRAY_TASK_ID" chroms.txt)   # e.g. chr1, chr2, ...
+samtools faidx hg38.fa "$CHROM" > "ref_${CHROM}.fa"   # one chromosome per task
+
+cat > "config_${CHROM}.yml" <<YAML
+reference: ref_${CHROM}.fa
+read_len: 150
+coverage: 30
+paired_ended: true
+fragment_mean: 400
+fragment_st_dev: 50
+produce_bam: true
+produce_fastq: true
+produce_vcf: true
+threads: ${SLURM_CPUS_PER_TASK}
+parallel_mode: size
+YAML
+
+neat read-simulator -c "config_${CHROM}.yml" \
+                    -o "out/${CHROM}/" \
+                    -p "${CHROM}"
+```
+
+After the array completes, concatenate the per-chromosome outputs:
+
+```bash
+# BAMs are already coordinate-sorted within each chromosome; cat in chromosome order
+# produces a globally-sorted whole-genome BAM with no further sort needed.
+samtools cat -o all.bam out/chr1/chr1_golden.bam out/chr2/chr2_golden.bam ... out/chrY/chrY_golden.bam
+samtools index all.bam
+
+# FASTQs: gzip-concat preserves a valid gzip stream
+cat out/*/chr*_r1.fastq.gz > all_r1.fastq.gz
+cat out/*/chr*_r2.fastq.gz > all_r2.fastq.gz
+
+# VCFs: use bcftools concat for proper merging
+bcftools concat -o all.vcf.gz -Oz out/*/chr*_golden.vcf.gz
+bcftools index all.vcf.gz
+```
+
+This gives you whole-genome simulation in roughly `single-chromosome-time / nodes` wall time. For a 30× human genome with 24 nodes (each 64 cores), a per-chromosome run takes ~10 min and the array finishes in ~10 min wall, plus a few minutes for the final concat.
 
 ### Insert specific variants
 Simulate a whole genome dataset with only the variants in the provided VCF file using `-v` and setting mutation rate to 0 with `-M`.
