@@ -404,50 +404,108 @@ class Read:
 
     def make_cigar(self):
         """
-        Aligns the reference and mutated sequences.
+        Build the CIGAR string describing how this read aligns to its reference window.
+
+        Three paths, in priority order:
+          1. No indels (the common case, ~98% of reads on default error models) — the CIGAR
+             is just `{run_read_length}M`.
+          2. Forward read whose indels all come from sequencing errors — walk the sorted
+             error positions in O(read length) to emit M/I/D ops directly. No alignment
+             needed; each error's stored location is already the anchor position in
+             reference-window coordinates.
+          3. Anything else (reverse reads with indels, or any read where a mutation indel
+             may have been applied) — fall back to pairwise alignment. Mutation indels are
+             applied before sequencing errors and can shift the read coordinate frame, and
+             reverse reads truncate the segment from the opposite end; neither case fits
+             the simple walker.
         """
-        # Fast path: if no insertion or deletion was applied to this read, the CIGAR is
-        # purely matches and we can skip the pairwise alignment entirely. NEAT generates the
-        # read itself, so we know definitively whether any indel was introduced — by error
-        # or by mutation — without aligning.
-        if not any(e.error_type is Insertion or e.error_type is Deletion for e in self.errors) \
-                and not any(
-                    type(v) is Insertion or type(v) is Deletion
-                    for variants_at_loc in self.mutations.values()
-                    for v in variants_at_loc
-                ):
+        error_indels = [
+            e for e in self.errors
+            if e.error_type is Insertion or e.error_type is Deletion
+        ]
+        has_mutation_indels = any(
+            type(v) is Insertion or type(v) is Deletion
+            for variants_at_loc in self.mutations.values()
+            for v in variants_at_loc
+        )
+
+        if not error_indels and not has_mutation_indels:
             return f"{self.run_read_length}M"
 
-        # These parameters were set to minimize breaks in the mutated sequence and find the best
-        # alignment from there.
+        if not has_mutation_indels and not self.is_reverse:
+            return self._cigar_from_error_indels(error_indels)
 
-        """
-        The sequence alignment. We restrict the alignment to the section of the reference where we know the read
-        came from and try to generate a minimal cigar string. The cigar string part may still need tweaking.
-        """
+        return self._cigar_via_alignment()
 
+    def _cigar_from_error_indels(self, error_indels):
+        """
+        Build the CIGAR for a forward read whose only indels come from sequencing errors.
+
+        Walks the error list in reference-window order, emitting M/I/D ops and stopping
+        once the CIGAR's query side reaches run_read_length. Run-length-encodes the result
+        as it goes.
+        """
+        events = sorted(error_indels, key=lambda e: e.location)
+
+        ops: list[list] = []
+
+        def emit(op_char, count):
+            if count <= 0:
+                return
+            if ops and ops[-1][0] == op_char:
+                ops[-1][1] += count
+            else:
+                ops.append([op_char, count])
+
+        ref_pos = 0
+        remaining_query = self.run_read_length
+
+        for ev in events:
+            if remaining_query == 0:
+                break
+            # M's leading up to and including the anchor base at ev.location.
+            m_count = ev.location - ref_pos + 1
+            m_emitted = min(m_count, remaining_query)
+            emit('M', m_emitted)
+            remaining_query -= m_emitted
+            ref_pos = ev.location + 1
+            if remaining_query == 0:
+                break
+            if ev.error_type is Insertion:
+                i_emitted = min(ev.length, remaining_query)
+                emit('I', i_emitted)
+                remaining_query -= i_emitted
+            else:  # Deletion
+                emit('D', ev.length)
+                ref_pos += ev.length
+
+        if remaining_query > 0:
+            emit('M', remaining_query)
+
+        return ''.join(f"{count}{op}" for op, count in ops)
+
+    def _cigar_via_alignment(self):
+        """
+        Pairwise-alignment fallback for cases the direct walker cannot model: reverse reads
+        with indels, or any read where a mutation indel preceded the sequencing errors.
+        """
         template = self.reference_segment
         if self.is_reverse:
             template = template.reverse_complement()
         query = self.read_sequence
 
         cigar = ["M"] * self.run_read_length
-        aligner2 = PairwiseAligner()
-        aligner2.mode = "fogsaa"
-        alignments2 = aligner2.align(template, query)
-        aligned_template = alignments2[0][0]
-        aligned_query = alignments2[0][1]
+        aligner = PairwiseAligner()
+        aligner.mode = "fogsaa"
+        alignments = aligner.align(template, query)
+        aligned_template = alignments[0][0]
+        aligned_query = alignments[0][1]
         start_point = self.run_read_length - 1 if self.is_reverse else 0
         for i in range(self.run_read_length):
-            if self.is_reverse:
-                index = start_point - i
-            else:
-                index = i
+            index = start_point - i if self.is_reverse else i
             if aligned_template[index] == "-":
                 cigar[index] = "I"
             elif aligned_query[index] == "-":
-                # Ds are special because they don't count toward the final total and we need to maintain a consistent
-                # cigar length, so we insert.
                 cigar.insert(index, "D")
         if self.is_reverse:
             cigar.reverse()

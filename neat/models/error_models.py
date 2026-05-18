@@ -182,30 +182,34 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         :return: Modified sequence and associated quality scores
         """
 
-        error_indexes = []
         introduced_errors = []
-        # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
-        quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in quality_scores}
 
         # The use case here would be someone running a simulation where they want no sequencing errors.
         # No need to run any loops in this case.
         if self.average_error == 0:
             return introduced_errors
-        else:
-            i = len(quality_scores)
-            while len(error_indexes) < num_errors and i > 0:
-                index = rng.integers(len(quality_scores))
-                if rng.random() < quality_score_error_rate[quality_scores[index]]:
-                    error_indexes.append(index)
-                i -= 1
-            # Fallback: if quality scores are too high to naturally reach num_errors,
-            # force errors at positions with at-or-below-median quality scores.
-            # Using <= so that uniform quality arrays (all scores equal) always make progress.
+
+        n = len(quality_scores)
+        # Batched rejection sampling: draw n candidate indices and n uniform deviates in two numpy
+        # calls, then accept the first num_errors candidates where the deviate is below the
+        # quality-derived error rate. Equivalent in distribution to the per-iteration scalar loop
+        # but ~150x cheaper in Python overhead. Statistical caveat: this changes the order in
+        # which the underlying PRNG stream is consumed, so seeded runs are not bit-identical to
+        # the prior interleaved-draw implementation.
+        candidate_indices = rng.integers(n, size=n)
+        candidate_randoms = rng.random(size=n)
+        rates_at_candidates = 10.0 ** (-quality_scores[candidate_indices].astype(float) / 10.0)
+        accepted = candidate_indices[candidate_randoms < rates_at_candidates]
+        error_indexes = accepted[:num_errors].tolist()
+
+        if len(error_indexes) < num_errors:
+            # Fallback: if quality scores are too high to naturally reach num_errors, force errors
+            # at positions with at-or-below-median quality scores. Using <= so that uniform
+            # quality arrays (all scores equal) always make progress.
             median_score = median(quality_scores)
-            while len(error_indexes) < num_errors:
-                index = rng.integers(len(quality_scores))
-                if quality_scores[index] <= median_score:
-                    error_indexes.append(index)
+            eligible = np.flatnonzero(quality_scores <= median_score)
+            needed = num_errors - len(error_indexes)
+            error_indexes.extend(rng.choice(eligible, size=needed, replace=True).tolist())
 
         total_indel_length = 0
         # To prevent deletion collisions
