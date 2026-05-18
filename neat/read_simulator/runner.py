@@ -87,6 +87,26 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         # Use the default value
         average_error = 0.009228843915252066
 
+    # Auto-tune the chunk size from total genome length and thread count when the user
+    # left it at the default (parallel_block_size <= 0). Target ~8 chunks per thread —
+    # enough chunks to balance load across workers when chunk durations vary, few enough
+    # that the stitch step doesn't drown in file-handle overhead. Clamp to [100 kb, 50 Mb]
+    # to avoid pathological cases on very small or very large genomes. The FASTA index
+    # (.fai) gives us per-contig lengths without parsing sequences; pysam.FastaFile
+    # builds the .fai on first access if needed.
+    if (options.threads > 1
+            and options.parallel_mode == "size"
+            and options.parallel_block_size <= 0):
+        with pysam.FastaFile(str(options.reference)) as _fa:
+            total_bp = sum(_fa.get_reference_length(c) for c in _fa.references)
+        target_chunks = options.threads * 8
+        auto_size = max(100_000, min(50_000_000, total_bp // max(1, target_chunks)))
+        _LOG.info(
+            f"Auto-tuned parallel_block_size to {auto_size:,} bp "
+            f"({total_bp:,} bp genome / {options.threads} threads x 8 chunks/thread)"
+        )
+        options.parallel_block_size = auto_size
+
     # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
     _LOG.info("Splitting reference...")
     (splits_files_dict, count, reference_keys_with_lens) = split_main(

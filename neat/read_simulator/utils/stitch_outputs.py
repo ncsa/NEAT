@@ -4,6 +4,8 @@ Stitch NEAT split‑run outputs into one dataset.
 import resource
 import shutil
 import pysam
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List
 
@@ -75,14 +77,27 @@ def main(
             vcf_list.append(file_dict["vcf"])
         if file_dict["bam"]:
             bam_list.append(file_dict["bam"])
-    # concatenate all files of each type. An empty list will result in no action
+    # Run the per-output-type stitches concurrently. They write to independent files and
+    # spend most of their time in I/O (raw gzip/BGZF byte copy for FASTQ/BAM, gzip read
+    # for VCF dedup) — Python's GIL is released during those calls, so threads overlap.
+    # Total stitch wall ≈ max(fq, vcf, bam) instead of their sum. At supercomputer scale
+    # where BAM dominates and FASTQ/VCF are small, the saving is bounded by the BAM cat
+    # alone, but on smaller-output workloads (or many small chunks) the overlap matters.
+    stitch_start = time.time()
+    work = []
     if fq1_list:
-        concat(fq1_list, ofw.files_to_write[ofw.fq1])
+        work.append(("fq1", lambda: concat(fq1_list, ofw.files_to_write[ofw.fq1])))
     if fq2_list:
-        concat(fq2_list, ofw.files_to_write[ofw.fq2])
+        work.append(("fq2", lambda: concat(fq2_list, ofw.files_to_write[ofw.fq2])))
     if vcf_list:
-        merge_vcfs(vcf_list, ofw)
+        work.append(("vcf", lambda: merge_vcfs(vcf_list, ofw)))
     if bam_list:
-        merge_bam(bam_list, ofw, threads)
-    # Final success message via logging
-    _LOG.info("Stitching complete!")
+        work.append(("bam", lambda: merge_bam(bam_list, ofw, threads)))
+
+    if work:
+        with ThreadPoolExecutor(max_workers=len(work)) as exe:
+            futures = {exe.submit(fn): label for label, fn in work}
+            for future in futures:
+                # .result() re-raises any exception from the worker.
+                future.result()
+    _LOG.info(f"Stitching complete! ({time.time() - stitch_start:.1f} s parallel stitch)")

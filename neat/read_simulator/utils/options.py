@@ -82,7 +82,7 @@ class Options(SimpleNamespace):
                  produce_fastq: bool = True,
                  min_mutations: int = 0,
                  parallel_mode: str = "contig",
-                 parallel_block_size: int = 500000,
+                 parallel_block_size: int = 0,
                  cleanup_splits: bool = True,
                  splits_dir: Path | None = None,
                  reuse_splits: bool = False,
@@ -134,7 +134,9 @@ class Options(SimpleNamespace):
         :param produce_fastq: False to turn off default fastq creation
         :param min_mutations: If you wish to have a minimunm number of mutations per block, enter it here
         :param parallel_mode: If you wish to use block size method, enter 'size' here
-        :param parallel_block_size: If you use size method, specify any value but 500000 to change the block size
+        :param parallel_block_size: If you use size method, specify a positive integer to set the per-chunk
+            size in basepairs. The default (0) auto-tunes from total genome length and thread count, targeting
+            ~8 chunks per thread. Specify a value explicitly to override.
         :param cleanup_splits: Set to False in order to preserve splits after run
         :param reuse_splits: Attempts to reuse existing splits file
         """
@@ -240,7 +242,7 @@ class Options(SimpleNamespace):
             'min_mutations': (int, 0, None, None),
             'overwrite_output': (bool, False, None, None),
             'parallel_mode': (str, 'size', 'choice', ['size', 'contig']),
-            'parallel_block_size': (int, 500000, None, None),
+            'parallel_block_size': (int, 0, None, None),
             'threads': (int, 1, 1, 1000),
             'cleanup_splits': (bool, True, None, None),
             'reuse_splits': (bool, False, None, None),
@@ -446,7 +448,10 @@ class Options(SimpleNamespace):
 
         if self.parallel_mode == 'size':
             _LOG.info(f'Splitting reference into chunks.')
-            _LOG.info(f'  - splitting input into size {self.parallel_block_size}')
+            if self.parallel_block_size > 0:
+                _LOG.info(f'  - splitting input into size {self.parallel_block_size}')
+            else:
+                _LOG.info(f'  - chunk size will be auto-tuned from genome length and thread count')
         elif self.parallel_mode == 'contig':
             _LOG.info(f'Splitting input by contig.')
         if self.reuse_splits:
