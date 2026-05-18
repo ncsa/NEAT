@@ -81,32 +81,27 @@ class TraditionalQualityModel:
         :return: An array of quality scores.
         """
         if self.uniform_quality_score:
-            return np.array([self.uniform_quality_score] * length)
+            return np.full(length, self.uniform_quality_score, dtype=int)
+
+        # Map each position in the read onto a row of the (model_read_length, 2) score
+        # parameters table. When read length matches the model exactly this is just an
+        # identity; otherwise we evenly spread the model distribution across the read.
+        if length == model_read_length:
+            quality_index_map = np.arange(model_read_length, dtype=np.int64)
         else:
-            if length == model_read_length:
-                quality_index_map = np.arange(model_read_length)
-            else:
-                # This is basically a way to evenly spread the distribution across the number of bases in the read
-                quality_index_map = np.array(
-                    [max([0, model_read_length * n // length]) for n in range(length)]
-                )
+            quality_index_map = np.maximum(
+                0, (model_read_length * np.arange(length, dtype=np.int64)) // length
+            )
 
-            temp_qual_array = []
-            for i in quality_index_map:
-                score = rng.normal(
-                    self.quality_score_probabilities[i][0],
-                    scale=self.quality_score_probabilities[i][1]
-                )
-                # make sure score is in range and an int
-                score = round(score)
-                if score > 42:
-                    score = 42
-                if score < 1:
-                    score = 1
-
-                temp_qual_array.append(score)
-
-            return np.array(temp_qual_array)
+        # Batched per-position normal draws — one rng.normal call returning `length` draws
+        # with element-wise (mean, scale) parameters. Replaces a ~150-iteration Python
+        # loop calling rng.normal scalar-per-base. Same statistical distribution but the
+        # PRNG stream is consumed in a different order, so seeded outputs are not
+        # bit-identical to the prior scalar-loop implementation.
+        means = self.quality_score_probabilities[quality_index_map, 0]
+        scales = self.quality_score_probabilities[quality_index_map, 1]
+        scores = rng.normal(means, scales)
+        return np.clip(np.rint(scores).astype(int), 1, 42)
 
 
 class MarkovQualityModel:
