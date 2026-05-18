@@ -170,26 +170,49 @@ class Read:
 
     def apply_errors(self, quality_model: TraditionalQualityModel):
         """
-        This function applies errors to a sequence and calls the update_quality_array function after
+        Apply this read's stored sequencing errors to read_sequence and quality_array in
+        a single pass.
 
-        :param quality_model: The error model for this run,
-        :return: None, The sequence, with errors applied
+        self.errors is in descending position order (set up by get_sequencing_errors).
+        The original implementation iterated in that order, doing one np.concatenate +
+        one MutableSeq slice/concat per error — quadratic in errors-per-read. Here we
+        iterate ascending and append unchanged ranges plus error alternates into chunk
+        lists, then join once at the end. The result preserves the prior per-error
+        quality-array semantics (including the convention that insertion anchors lose
+        their original quality and gain alt_len-1 low-quality scores).
         """
-        mutated_sequence = MutableSeq(self.read_sequence)
-        for error in self.errors:
-            # Replace the entire ref sequence with the entire alt sequence
-            mutated_sequence = \
-                mutated_sequence[:error.location] + error.alt + mutated_sequence[error.location+len(error.ref):]
-            # update quality score for error
-            self.update_quality_array(
-                len(error.ref),
-                error.alt,
-                error.location,
-                "error",
-                list(quality_model.quality_scores),
-            )
+        if not self.errors:
+            return
 
-        self.read_sequence = Seq(mutated_sequence)
+        errors_asc = list(reversed(self.errors))
+        low_score = min(quality_model.quality_scores)
+
+        seq_str = str(self.read_sequence)
+        seq_chunks: list[str] = []
+        q_chunks: list[np.ndarray] = []
+        prev_end = 0
+
+        for error in errors_asc:
+            loc = error.location
+            ref_len = len(error.ref)
+            alt_str = str(error.alt)
+            alt_len = len(alt_str)
+            seq_chunks.append(seq_str[prev_end:loc])
+            q_chunks.append(self.quality_array[prev_end:loc])
+            seq_chunks.append(alt_str)
+            if alt_len > 1:
+                q_chunks.append(np.full(alt_len - 1, low_score, dtype=int))
+            elif ref_len > 1 and alt_len == 1:
+                pass  # deletion — no new quality scores
+            else:
+                q_chunks.append(np.array([low_score], dtype=int))
+            prev_end = loc + ref_len
+
+        seq_chunks.append(seq_str[prev_end:])
+        q_chunks.append(self.quality_array[prev_end:])
+
+        self.read_sequence = Seq(''.join(seq_chunks))
+        self.quality_array = np.concatenate(q_chunks)
 
     def apply_mutations(self, quality_scores: list, rng: Generator):
         """
@@ -341,8 +364,10 @@ class Read:
         # It updates the quality array and reference segment in place, including reversing them, if appropriate
         self.convert_masking(qual_model)
 
-        # set the read sequence to match the reference, then modify
-        self.read_sequence = deepcopy(self.reference_segment)
+        # Start the read sequence as an alias of the masked reference. Biopython Seq is
+        # immutable; apply_mutations and apply_errors below produce new Seq objects via
+        # their own working copies, so no independent deepcopy is needed here.
+        self.read_sequence = self.reference_segment
 
         # Get errors for the read and update the quality score
         self.errors, self.padding = err_model.get_sequencing_errors(
@@ -385,7 +410,9 @@ class Read:
         bad_score = min(quality_model.quality_scores)
         # we'll use generic human repeats, as commonly found in masked regions. We may refine this to make configurable
         repeat_bases = list("TTAGGG")
-        raw_sequence = deepcopy(self.reference_segment)
+        # Immutable Biopython Seq; the MutableSeq below is the working copy, so no
+        # deepcopy needed here.
+        raw_sequence = self.reference_segment
 
         start = raw_sequence.find('N')
         if start != -1:

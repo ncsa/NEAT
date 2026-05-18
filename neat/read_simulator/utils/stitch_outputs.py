@@ -19,15 +19,24 @@ from neat.read_simulator.utils import OutputFileWriter
 
 _LOG = logging.getLogger(__name__)
 
-def concat(files_to_join: List[Path], dest_file: gzip.GzipFile) -> None:
-    if not files_to_join:
-        # Nothing to do, and no error to throw
-        _LOG.warning(f"Concat called but there are no files to join: {files_to_join}" )
-        return
+def concat(files_to_join: List[Path], dest_path: Path) -> None:
+    """
+    Byte-level concatenation of gzip-compressed inputs into dest_path.
 
-    for f in files_to_join:
-        with gzip.open(f, 'rt') as in_f:
-            shutil.copyfileobj(in_f, dest_file)
+    Concatenated gzip streams are themselves a valid gzip file (gzip spec section 2.2 —
+    a gzip file is a sequence of "members"; decompression yields the concatenation of
+    contents). Skipping zlib entirely is much faster than the prior path that
+    decompressed each input and re-compressed into the destination. The caller must
+    ensure any gzip handle on dest_path is closed before invoking this (we open
+    dest_path in 'wb' mode, which truncates).
+    """
+    if not files_to_join:
+        _LOG.warning(f"Concat called but there are no files to join: {files_to_join}")
+        return
+    with open(dest_path, 'wb') as out:
+        for f in files_to_join:
+            with open(f, 'rb') as in_f:
+                shutil.copyfileobj(in_f, out, length=4 * 1024 * 1024)
 
 def merge_vcfs(vcfs: List[Path], ofw: OutputFileWriter) -> None:
     dest = ofw.files_to_write[ofw.vcf]
@@ -77,18 +86,28 @@ def main(
             vcf_list.append(file_dict["vcf"])
         if file_dict["bam"]:
             bam_list.append(file_dict["bam"])
+    # The byte-level FASTQ concat opens dest_path in 'wb' mode (truncates), so we close
+    # any existing gzip handles on those paths first. flush_and_close_files (called later
+    # from runner) will skip handles it finds already closed.
+    for path_attr in (ofw.fq1, ofw.fq2):
+        if path_attr is not None and path_attr in ofw.files_to_write:
+            try:
+                ofw.files_to_write[path_attr].close()
+            except Exception:
+                pass
+
     # Run the per-output-type stitches concurrently. They write to independent files and
-    # spend most of their time in I/O (raw gzip/BGZF byte copy for FASTQ/BAM, gzip read
-    # for VCF dedup) — Python's GIL is released during those calls, so threads overlap.
-    # Total stitch wall ≈ max(fq, vcf, bam) instead of their sum. At supercomputer scale
-    # where BAM dominates and FASTQ/VCF are small, the saving is bounded by the BAM cat
-    # alone, but on smaller-output workloads (or many small chunks) the overlap matters.
+    # spend most of their time in I/O (raw byte copy for FASTQ/BAM, gzip read for VCF
+    # dedup) — Python's GIL is released during those calls, so threads overlap. Total
+    # stitch wall ≈ max(fq, vcf, bam) instead of their sum. At supercomputer scale where
+    # BAM dominates and FASTQ/VCF are small, the saving is bounded by the BAM cat alone,
+    # but on smaller-output workloads the overlap matters.
     stitch_start = time.time()
     work = []
     if fq1_list:
-        work.append(("fq1", lambda: concat(fq1_list, ofw.files_to_write[ofw.fq1])))
+        work.append(("fq1", lambda: concat(fq1_list, ofw.fq1)))
     if fq2_list:
-        work.append(("fq2", lambda: concat(fq2_list, ofw.files_to_write[ofw.fq2])))
+        work.append(("fq2", lambda: concat(fq2_list, ofw.fq2)))
     if vcf_list:
         work.append(("vcf", lambda: merge_vcfs(vcf_list, ofw)))
     if bam_list:
