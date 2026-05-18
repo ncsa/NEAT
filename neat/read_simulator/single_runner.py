@@ -33,6 +33,7 @@ def read_simulator_single(
         discard_regions: list,
         mutation_regions: list,
         errors_per_read: int,
+        responsibility_length: int | None = None,
 ) -> tuple[int, str, ContigVariants, dict[str, Path], ]:
     """
     inputs:
@@ -133,6 +134,7 @@ def read_simulator_single(
             contig_name,
             contig_index,
             coords[0],
+            responsibility_length,
         )
 
     if local_options.produce_vcf:

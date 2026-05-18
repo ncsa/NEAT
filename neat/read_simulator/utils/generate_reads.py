@@ -30,6 +30,8 @@ def cover_dataset(
         options: Options,
         fragment_model: FragmentLengthModel | None,
         gc_model: GCBiasModel | None,
+        *,
+        responsibility_length: int | None = None,
 ) -> list:
     """
     Covers a dataset to the desired depth in the paired ended case. This is the main algorithm for creating the reads
@@ -39,35 +41,48 @@ def cover_dataset(
     :param options: The options for the run
     :param fragment_model: The fragment model used for to generate random fragment lengths
     :param gc_model: The GC bias model used for fragment selection
+    :param responsibility_length: The number of bases at the start of `reference` that this
+        chunk is responsible for placing read1 starts in. Reads still extend into the
+        trailing overlap region for context. Defaults to len(reference) (the chunk owns
+        its full reference). For non-final chunks under sub-contig parallelism, this is
+        the chunk step (chunk_size - overlap) — restricting read1 positions to the
+        non-overlapping range so that per-chunk BAMs can be byte-concatenated into a
+        coordinate-sorted whole without re-sorting.
     """
 
     final_reads = []
     span_length = len(reference)
+    # Number of bases this chunk owns for read1 placement. Defaults to the full chunk.
+    if responsibility_length is None:
+        responsibility_length = span_length
+    # Last valid read1 start position. Bounded by both the chunk's responsibility (so
+    # reads don't appear in the next chunk's range) and by the requirement that the read
+    # fit in available reference (so a read of length read_len has its tail in-bounds).
+    max_start = min(responsibility_length - 1, span_length - options.read_len)
     # sanity check
     if span_length / fragment_model.fragment_mean < 5:
         _LOG.warning("The fragment mean is relatively large compared to the chromosome size. You may need to increase "
                      "standard deviation, or decrease fragment mean, if NEAT cannot complete successfully.")
 
     # precompute how many reads we want
-    # The numerator is the total number of base pair calls needed.
-    # Divide that by read length gives the number of reads needed
+    # The numerator is the total number of base pair calls needed. Coverage is scaled by
+    # responsibility_length, not span_length, so chunks don't over-sample their overlap
+    # region (which is also covered by the next chunk).
     if options.paired_ended:
         # TODO use gc bias to skew this number. Calculate at the runner level.
-        number_reads = ceil(span_length * options.coverage / (2 * options.read_len))
+        number_reads = ceil(responsibility_length * options.coverage / (2 * options.read_len))
     else:
-        number_reads = ceil(span_length * options.coverage / options.read_len)
+        number_reads = ceil(responsibility_length * options.coverage / options.read_len)
 
     if gc_model and not gc_model.is_uniform:
         # CDF-based sampling for GC bias
         window_size = gc_model.window_size
         if span_length <= window_size:
             # Fallback to uniform if region is too short
-            return _uniform_sampling(span_length, number_reads, options, fragment_model)
+            return _uniform_sampling(span_length, number_reads, options, fragment_model,
+                                     max_start=max_start)
 
-        # Build prefix sum of weights
-        # We need weights for every possible start position that can produce a read.
-        # For single-ended, start must be in [0, span_length - read_len]
-        max_start = span_length - options.read_len
+        # Build prefix sum of weights only over the positions this chunk owns.
         if max_start < 0:
             return []
             
@@ -110,6 +125,15 @@ def cover_dataset(
 
         # Batch CDF sampling with adaptive retry (same pattern as _uniform_sampling).
         min_frag = options.read_len + (10 if options.paired_ended else 0)
+        # For PE, the read2 record must stay within this chunk's responsibility so the
+        # cat-stitched output remains coordinate-sorted (read2.position = e - read_len).
+        # Cap e at responsibility_length + read_len so read2.position <= responsibility_length,
+        # which lies at-or-before the next chunk's first read1 position. Falls back to
+        # span_length for SE and for the final chunk (where responsibility = span_length).
+        if options.paired_ended:
+            e_limit = min(responsibility_length + options.read_len, span_length)
+        else:
+            e_limit = span_length
         acc_starts: list[np.ndarray] = []
         acc_ends:   list[np.ndarray] = []
         collected = 0
@@ -119,7 +143,7 @@ def cover_dataset(
             uv = options.rng.random(n_batch) * total_weight
             s = np.clip(np.searchsorted(prefix_sum, uv).astype(int), 0, max_start)
             fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
-            e = np.minimum(s + fl, span_length)
+            e = np.minimum(s + fl, e_limit)
             mask = e - s >= min_frag
             acc_starts.append(s[mask])
             acc_ends.append(e[mask])
@@ -136,7 +160,10 @@ def cover_dataset(
              
     else:
         # Uniform sampling
-        final_reads = _uniform_sampling(span_length, number_reads, options, fragment_model)
+        final_reads = _uniform_sampling(
+            span_length, number_reads, options, fragment_model,
+            max_start=max_start, responsibility_length=responsibility_length,
+        )
 
     # FASTQ is written in the natural fragment-sampling order (no explicit shuffle).
     # The BAM is sorted to coordinate order at the BAM-write boundary in single_runner,
@@ -146,12 +173,26 @@ def cover_dataset(
     return final_reads
 
 
-def _uniform_sampling(span_length, number_reads, options, fragment_model):
+def _uniform_sampling(span_length, number_reads, options, fragment_model, *,
+                      max_start=None, responsibility_length=None):
     if span_length <= options.read_len:
         return []
 
-    max_start = span_length - options.read_len
+    # If caller didn't restrict the read1 placement range, default to the full
+    # in-bounds span (last valid r1.position = span_length - read_len).
+    if max_start is None:
+        max_start = span_length - options.read_len
+    if max_start < 0:
+        return []
+    if responsibility_length is None:
+        responsibility_length = span_length
     min_frag = options.read_len + (10 if options.paired_ended else 0)
+    # For PE, cap e so read2.position stays within this chunk's responsibility (see GC path
+    # for the full rationale).
+    if options.paired_ended:
+        e_limit = min(responsibility_length + options.read_len, span_length)
+    else:
+        e_limit = span_length
 
     # First batch: 2× candidates covers >99 % of cases when frag_mean >> read_len.
     # Retry in small increments only when fragment_mean < read_len (rare).
@@ -163,7 +204,7 @@ def _uniform_sampling(span_length, number_reads, options, fragment_model):
     while collected < number_reads:
         s = options.rng.integers(0, max_start + 1, size=n_batch)
         fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
-        e = np.minimum(s + fl, span_length)
+        e = np.minimum(s + fl, e_limit)
         mask = e - s >= min_frag
         acc_starts.append(s[mask])
         acc_ends.append(e[mask])
@@ -236,6 +277,7 @@ def generate_reads(
         contig_name: str,
         contig_index: int,
         ref_start: int,
+        responsibility_length: int | None = None,
 ):
     """
     This will generate reads given a set of parameters for the run. The reads will output in a fastq.
@@ -276,6 +318,7 @@ def generate_reads(
         options,
         fraglen_model,
         gc_model,
+        responsibility_length=responsibility_length,
     )
     # _LOG.debug(f"Dataset coverage took: {(time.time() - t)/60:.2f} m")
 

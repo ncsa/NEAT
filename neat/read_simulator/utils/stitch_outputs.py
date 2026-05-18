@@ -45,19 +45,14 @@ def merge_vcfs(vcfs: List[Path], ofw: OutputFileWriter) -> None:
         _LOG.warning(f"merge_vcfs: removed {n_duplicates} duplicate VCF line(s) during merge.")
 
 def merge_bam(bam_files: List[Path], ofw: OutputFileWriter, threads: int):
-    # Per-worker BAMs are coordinate-sorted by single_runner. pysam.merge does a
-    # k-way heap merge of coordinate-sorted inputs and produces coordinate-sorted
-    # output, so no separate sort pass is needed. Avoiding samtools sort here
-    # eliminates a ~1 GB sort-buffer allocation that previously dominated peak
-    # memory at stitch time.
-    # The batching loop bounds the number of file handles passed to pysam.merge
-    # at once (samtools defaults around ulimit).
-    intermediate_files = []
-    for i in range(0, len(bam_files), 500):
-        temp_file = str(ofw.tmp_dir / f"temp_merged_{i}.bam")
-        pysam.merge("--no-PG", "-f", temp_file, *map(str, bam_files[i:i+500]))
-        intermediate_files.append(temp_file)
-    pysam.merge("--no-PG", "-@", str(threads), "-f", str(ofw.bam), *intermediate_files)
+    # Per-worker BAMs are coordinate-sorted within themselves, and each chunk owns a
+    # non-overlapping reference range for r1 placement (see cover_dataset's
+    # responsibility_length), so the BAMs concatenate into a globally coordinate-sorted
+    # output without any sort or k-way merge. pysam.cat does a raw BGZF concatenation —
+    # no decompression / re-encode — and is typically 10-30x faster than pysam.merge on
+    # large outputs. At supercomputer scale this is the difference between the stitch
+    # step being I/O-bound (fast) and BGZF-bound (slow).
+    pysam.cat("-o", str(ofw.bam), *map(str, bam_files))
     # The .bai index is produced by runner.py after stitching.
 
 def main(

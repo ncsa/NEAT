@@ -165,10 +165,25 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     contig_dict = {contig: contig_list.index(contig) for contig in reference_keys_with_lens.keys()}
     for contig in splits_files_dict:
         contig_index = contig_dict[contig]
-        for ((start, length), splits_file) in splits_files_dict[contig].items():
-            block_percentage = length / reference_keys_with_lens[contig]
+        contig_chunks = list(splits_files_dict[contig].items())
+        # Precompute each chunk's non-overlapping responsibility length: the distance from
+        # this chunk's start to the next chunk's start, or the chunk's full length for the
+        # last chunk of the contig. Reads with r1.position in [0, responsibility_length)
+        # belong to this chunk; the trailing overlap region (if any) provides reference
+        # context for boundary-spanning reads but is owned by the next chunk for placement.
+        # This is what lets the stitch step be a raw BGZF concatenation rather than a sort.
+        chunk_responsibility = {}
+        for i, ((c_start, c_end), _) in enumerate(contig_chunks):
+            if i + 1 < len(contig_chunks):
+                next_start = contig_chunks[i + 1][0][0]
+                chunk_responsibility[(c_start, c_end)] = next_start - c_start
+            else:
+                chunk_responsibility[(c_start, c_end)] = c_end - c_start
+        for ((start, length), splits_file) in contig_chunks:
+            responsibility_length = chunk_responsibility[(start, length)]
+            block_percentage = responsibility_length / reference_keys_with_lens[contig]
             block_errors = errors_per_contig[contig] * block_percentage
-            estimated_number_of_reads = (length // options.read_len) * options.coverage
+            estimated_number_of_reads = (responsibility_length // options.read_len) * options.coverage
             errors_per_read = round(block_errors / estimated_number_of_reads)
             if errors_per_read < 1.0 and block_errors > 0:
                 # We know we need a few errors, but it's a small number total
@@ -209,6 +224,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     discard_regions_dict[contig],
                     mutation_rate_dict[contig],
                     errors_per_read,
+                    responsibility_length,
                 )
                 _LOG.info(f"Completed simulating contig {contig}.")
                 output_files.append((thread_idx, files_written))
@@ -230,6 +246,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
                     thread_discard_regions,
                     thread_mutation_regions,
                     errors_per_read,
+                    responsibility_length,
                 ))
             thread_idx += 1
 
