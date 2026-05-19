@@ -34,7 +34,7 @@ ecoli reference):**
 | Stitch step (parallel)  | 5.3 s                                                   |
 | Auto-tuned chunk size   | 3.1 Mb (35 chunks)                                      |
 
-Scaling behaviour vs ecoli is ~linear in genome size as expected. The stitch
+Scaling behavior vs ecoli is ~linear in genome size as expected. The stitch
 step is bounded by raw disk I/O via `pysam.cat`, so it stays at single-digit
 seconds even as the BAM grows. Per-worker peak RSS is 304 MB ÷ 4 ≈ 76 MB,
 which is the reference segment + models — independent of chunk size and
