@@ -1,3 +1,60 @@
+# NEAT v4.4.4
+Follow-up perf release on top of v4.4.3, targeting the three biggest remaining
+single-thread hot paths: variant overlap checks, trinucleotide bias mapping,
+and BAM record encoding. All changes are behavior-preserving (same output for
+the same seed); no user-visible API changes.
+
+**Benchmark (ecoli 10× coverage, 4 threads, identical configs):**
+
+| Metric                       | v4.4.3   | v4.4.4   | Improvement     |
+|------------------------------|----------|----------|-----------------|
+| ecoli SE wall time           | 1:35     | **1:07** | 1.42× faster    |
+| ecoli PE wall time           | 1:34     | **1:06** | 1.43× faster    |
+| ecoli SE total CPU           | 331 s    | 244 s    | 26% less        |
+| ecoli PE total CPU           | 338 s    | 248 s    | 27% less        |
+| Worker CPU utilization (PE)  | 359%/400 | **378%** | 94.5% of theory |
+| Peak resident memory         | 175 MB   | 175 MB   | unchanged       |
+
+Cumulative vs the v4.4.2 baseline at the start of this performance arc:
+SE 14:55 → 1:07 (**13.3× faster**), PE 14:46 → 1:06 (**13.4× faster**).
+
+**Hot-path fixes:**
+
+- `ContigVariants.check_if_del` / `check_if_ins` — replace O(N) linear scans
+  of `all_dels` / `all_ins` with O(1) lookups into per-position bucket dicts.
+  Each indel is indexed at every reference position it covers when added;
+  total memory cost is O(sum of indel lengths). Single-thread profile on
+  14 k calls: `check_if_del` 3.62 s → 0.011 s (325×); `check_if_ins` 3.70 s →
+  0.007 s (530×). Removes O(N²) scaling that would have hurt larger genomes.
+
+- `variant_models.map_local_trinuc_bias` — replace 64 regex scans per call
+  (one `re.finditer` per trinucleotide) with a single vectorized numpy
+  expression. The cache check is also tightened from `==` (O(N) byte
+  compare) to `is` (O(1) identity), since callers pass different slice
+  objects each time anyway. Single-thread profile on 14 k calls: 13.5 s →
+  0.81 s (16×). The entire `generate_variants` call dropped from 24.9 s
+  cumulative to 4.2 s.
+
+- `OutputFileWriter.write_bam_record` — vectorize BAM record encoding:
+  - Sequence encoding replaces the per-byte Python loop (28 M
+    `Seq.__getitem__` calls in the old code) with a 256-entry numpy lookup
+    plus a single `((codes[0::2] << 4) | codes[1::2]).tobytes()`.
+  - Quality encoding replaces `"".join([chr(n) for n in quality_array])`
+    with one `np.asarray(...).astype(np.uint8).tobytes()` call.
+  - CIGAR ops are now packed in one `struct.pack(f'<{n}I', ...)` instead of
+    one pack-per-op + `bytearray.extend`. The CIGAR string is parsed in a
+    single linear pass (the previous code did `re.split` + `re.findall`).
+  - The fixed-size BAM record header is now one
+    `struct.pack('<iiiIIiiii', ...)` instead of nine separate pack calls
+    glued with `+`.
+  Single-thread profile: self time 12.0 s → 3.2 s, cumtime 58.1 s → 8.1 s
+  (7.2× cumulative). This was the single biggest hot path of the release.
+
+All 599 unit/integration tests pass. The vectorized sequence and CIGAR
+encodings produce byte-identical BAM records to the prior implementation
+(verified by `pysam.AlignmentFile` read-back and sort-order checks on the
+4-thread ecoli benchmark).
+
 # NEAT v4.4.3
 Major performance and memory overhaul focused on making NEAT viable for large
 genomes on supercomputing hardware. No user-visible API changes (other than
