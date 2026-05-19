@@ -1,15 +1,16 @@
-# NEAT v4.5.0
+# NEAT v4.4.4
 Follow-up release on top of v4.4.3 bundling three lines of work: another perf
 pass over the remaining single-thread hot paths (variant overlap checks,
 trinucleotide bias mapping, BAM record encoding), a coverage-semantics fix
 for the GC bias model added earlier in the 4.4 line, and removal of the
 `parallel_mode` config key. The perf changes are behavior-preserving for a
 given seed; the GC bias fix changes output bytes when a non-uniform `gc_model`
-is configured, which is the reason for the minor version bump.
+is configured (a typical model with mean weight ~0.7 previously delivered
+~70 % of the requested coverage; v4.4.4 delivers the full coverage).
 
 **Benchmark (ecoli 10× coverage, 4 threads, identical configs):**
 
-| Metric                       | v4.4.3   | v4.5.0   | Improvement     |
+| Metric                       | v4.4.3   | v4.4.4   | Improvement     |
 |------------------------------|----------|----------|-----------------|
 | ecoli SE wall time           | 1:35     | **1:07** | 1.42× faster    |
 | ecoli PE wall time           | 1:34     | **1:06** | 1.43× faster    |
