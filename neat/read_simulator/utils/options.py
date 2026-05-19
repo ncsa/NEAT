@@ -81,7 +81,6 @@ class Options(SimpleNamespace):
                  produce_vcf: bool = False,
                  produce_fastq: bool = True,
                  min_mutations: int = 0,
-                 parallel_mode: str = "contig",
                  parallel_block_size: int = 0,
                  cleanup_splits: bool = True,
                  splits_dir: Path | None = None,
@@ -133,10 +132,10 @@ class Options(SimpleNamespace):
         :param produce_vcf: True to produce a VCF of neat-added variants
         :param produce_fastq: False to turn off default fastq creation
         :param min_mutations: If you wish to have a minimunm number of mutations per block, enter it here
-        :param parallel_mode: If you wish to use block size method, enter 'size' here
-        :param parallel_block_size: If you use size method, specify a positive integer to set the per-chunk
-            size in basepairs. The default (0) auto-tunes from total genome length and thread count, targeting
-            ~8 chunks per thread. Specify a value explicitly to override.
+        :param parallel_block_size: Per-chunk size in basepairs when threads > 1 (contigs are split into
+            chunks of this size). Default 0 auto-tunes from total genome length and thread count, targeting
+            ~8 chunks per thread. Specify a positive integer to override. Ignored when threads == 1, where
+            one chunk per contig is used.
         :param cleanup_splits: Set to False in order to preserve splits after run
         :param reuse_splits: Attempts to reuse existing splits file
         """
@@ -170,13 +169,22 @@ class Options(SimpleNamespace):
         self.produce_fastq: bool = produce_fastq
         self.min_mutations: int = min_mutations
 
-        # Parallel features
-        self.parallel_mode: str = parallel_mode
+        # Parallel features. The splitting strategy is no longer user-configurable: with
+        # threads > 1, contigs are split into chunks of `parallel_block_size`; with
+        # threads == 1, each contig is processed as a single chunk.
         self.parallel_block_size: int = parallel_block_size
         self.cleanup_splits: bool = cleanup_splits
         self.splits_dir: Path | None = splits_dir
         self.reuse_splits: bool = reuse_splits
         self.gc_model: Path | None = Path(gc_model) if gc_model else None
+        # Genome-wide mean GC bias weight, computed once at the runner level when
+        # gc_model is loaded. cover_dataset divides per-chunk reads by this rather
+        # than by gc_model.max_weight so that target coverage means *average*
+        # coverage across the genome (matching the documented contract), not peak
+        # coverage at the GC bias maximum. None when no gc_model is configured or
+        # when cover_dataset is called outside the runner (e.g., direct unit tests),
+        # in which case scaling falls back to the per-chunk mean (no rescaling).
+        self.gc_global_mean_weight: float | None = None
 
         # Actual output files
         self.fq1: Path | None = fq1
@@ -241,7 +249,6 @@ class Options(SimpleNamespace):
             'rng_seed': (int, None, None, None),
             'min_mutations': (int, 0, None, None),
             'overwrite_output': (bool, False, None, None),
-            'parallel_mode': (str, 'size', 'choice', ['size', 'contig']),
             'parallel_block_size': (int, 0, None, None),
             'threads': (int, 1, 1, 1000),
             'cleanup_splits': (bool, True, None, None),
@@ -300,6 +307,13 @@ class Options(SimpleNamespace):
                 _LOG.error(f'`{keyname}` must be between {crit1} and {crit2} (input: {value_to_check}).')
                 sys.exit(1)
 
+    # YAML keys that have been removed from the schema but which we still want to accept
+    # silently (with a one-line deprecation warning) so older user configs keep parsing.
+    # Map: deprecated key -> short reason shown to the user.
+    DEPRECATED_KEYS = {
+        "parallel_mode": "splitting strategy is now derived from `threads`",
+    }
+
     def read_yaml(self, config_yaml: Path, args: dict):
         """
         This sets up the option attributes. It's not perfect, because it sort of kills type hints.
@@ -307,6 +321,9 @@ class Options(SimpleNamespace):
         """
         config = yaml.load(open(config_yaml, 'r'), Loader=Loader)
 
+        for dep_key, reason in self.DEPRECATED_KEYS.items():
+            if dep_key in config:
+                _LOG.warning(f"`{dep_key}` is deprecated and ignored; {reason}.")
 
         for key, value in config.items():
             if key in args:
@@ -442,18 +459,14 @@ class Options(SimpleNamespace):
         if self.threads > 1:
             _LOG.info(f'Running read simulator in parallel mode.')
             _LOG.info(f'Multithreading - {self.threads} threads (or CPU Max)')
-        else:
-            _LOG.info(f"Single threading - 1 thread.")
-            self.parallel_mode = 'contig'
-
-        if self.parallel_mode == 'size':
-            _LOG.info(f'Splitting reference into chunks.')
+            _LOG.info('Splitting reference into chunks.')
             if self.parallel_block_size > 0:
                 _LOG.info(f'  - splitting input into size {self.parallel_block_size}')
             else:
-                _LOG.info(f'  - chunk size will be auto-tuned from genome length and thread count')
-        elif self.parallel_mode == 'contig':
-            _LOG.info(f'Splitting input by contig.')
+                _LOG.info('  - chunk size will be auto-tuned from genome length and thread count')
+        else:
+            _LOG.info('Single threading - 1 thread.')
+            _LOG.info('Splitting input by contig.')
         if self.reuse_splits:
             splits_dir = Path(f'{self.output_dir}/splits/')
             _LOG.info(f'Reusing existing splits {splits_dir}.')

@@ -19,7 +19,7 @@ from .constants import VCF_DEFAULT_POP_FREQ, DEF_HOMOZYGOUS_FRQ, DEF_MUT_SUB_MAT
 from ..common import validate_output_path, validate_input_path, open_input, open_output, \
     ALLOWED_NUCL, ALL_TRINUCS, HUMAN_WHITELIST
 from .utils import extract_header, read_and_filter_variants,\
-    cluster_list, count_trinucleotides, find_caf, convert_trinuc_transition_matrix, \
+    count_trinucleotides, convert_trinuc_transition_matrix, \
     convert_snp_transition_matrix, convert_trinuc_mutation_dict, check_homozygous
 
 __all__ = [
@@ -68,10 +68,6 @@ def runner(reference_index,
     indel_count = {}
     # Total homozygous variants detected
     homozygous_count = 0
-    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
-    common_variants = []
-    # identify regions that have significantly higher local mutation rates than the average
-    high_mut_regions = []
 
     # Clean up and simplify reference index
     # simplify naming and filter out actual human genomes from scaffolding
@@ -122,9 +118,6 @@ def runner(reference_index,
         # Running total of how many non-N bases there are in the reference
         total_reflen += len(reference_index[contig].seq) - reference_index[contig].seq.upper().count('N')
 
-        # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
-        vcf_common = {}
-
         # Create a list of variants to process
         variants_to_process = [x for x in matching_variants if x[0] == contig]
 
@@ -171,51 +164,7 @@ def runner(reference_index,
                     indel_count[indel_len] = 0
                 indel_count[indel_len] += 1
 
-            my_pop_freq = find_caf(variant[4])
             homozygous_count += check_homozygous(variant[4])
-            vcf_common[tuple(variant[1:5])] = my_pop_freq
-
-        # identify common mutations
-        percentile_var = 95
-        min_value = np.percentile([vcf_common[n] for n in vcf_common], percentile_var)
-        for variant, allele_freq in sorted(vcf_common.items()):
-            if allele_freq >= min_value:
-                common_variants.append(variant)
-                # TODO figure out what to do with these common variants
-
-        # Identify areas that have contained significantly higher random mutation rates.
-        # Added a potential for smaller deltas to handle smaller datasets in 4.0
-        dist_thresh = min(2000, int(len(ref_sequence) * 0.01))
-        percentile_clust = 97
-        # Adjusted the scalar for smaller deltas in 4.0
-        scaler = min(1000, dist_thresh//2)
-        # identify regions with disproportionately more variants in them
-        variant_pos = sorted([int(n[0]) for n in vcf_common])
-        clustered_pos = cluster_list(variant_pos, dist_thresh)
-        # Since the list is sorted, taking the first and last position gives us the min and max
-        by_len = [(len(clustered_pos[i]), clustered_pos[i][0], clustered_pos[i][-1], i)
-                  for i in range(len(clustered_pos))]
-
-        candidate_regions = []
-        for n in by_len:
-            ref_scalar = int((n[1] - dist_thresh) / float(scaler)) * scaler
-            alt_scalar = int((n[2] + dist_thresh) / float(scaler)) * scaler
-            candidate_regions.append((n[0] / float(alt_scalar - ref_scalar), max([0, ref_scalar]),
-                                      min([len(ref_sequence), alt_scalar])))
-        minimum_value = np.percentile([n[0] for n in candidate_regions], percentile_clust)
-        for n in candidate_regions:
-            if n[0] >= minimum_value:
-                high_mut_regions.append((contig, n[1], n[2], n[0]))
-        # collapse overlapping regions
-        for i in range(len(high_mut_regions) - 1, 0, -1):
-            if high_mut_regions[i - 1][2] >= high_mut_regions[i][1] and \
-                    high_mut_regions[i - 1][0] == high_mut_regions[i][0]:
-                # Might need to research a more accurate way to get the mutation rate for this region
-                avg_mut_rate = 0.5 * high_mut_regions[i - 1][3] + 0.5 * high_mut_regions[i][3]
-                high_mut_regions[i - 1] = (
-                    high_mut_regions[i - 1][0], high_mut_regions[i - 1][1], high_mut_regions[i][2], avg_mut_rate
-                )
-                del high_mut_regions[i]
 
     # if for some reason we didn't find any valid input variants, exit gracefully...
     total_var = snp_count + sum([abs(x) for x in indel_count.values()])

@@ -27,7 +27,6 @@ rng_seed: .
 min_mutations: .
 overwrite_output: .
 
-parallel_mode: .
 parallel_block_size: .
 threads: .
 cleanup_splits: .

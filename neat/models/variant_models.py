@@ -2,7 +2,6 @@
 Classes for the variant models included in NEAT.
 Every Variant type in variants > variant_types must have a corresponding model in order to be fully implemented.
 """
-import re
 import logging
 import abc
 
@@ -148,30 +147,54 @@ class SnvModel(VariantModel):
         :param ngaps: A list of dictionaries, each describing an ngap.
         :return: A list of the bias factors by position.
         """
-        # If the sequence is unchanged, we don't want to process again.
-        if not self.local_sequence == sequence:
+        # Cache-hit short-circuit. The old equality check `self.local_sequence == sequence`
+        # did a full bytewise compare on every call (O(N) per call); identity check is
+        # O(1) and covers the case where the caller reuses the same Seq object. A new
+        # slice each call will miss either way, so we don't pay extra for the miss.
+        if self.local_sequence is sequence:
+            return
 
-            # start by assuming no bias. Each of the 64 valid trinucleotide combinations mutate with equal frequency.
-            self.local_trinuc_bias = np.ones(len(sequence), dtype=float)
+        n = len(sequence)
+        # Start by assuming no bias. Each of the 64 valid trinucleotide combinations
+        # mutate with equal frequency. N-gap positions become 0.
+        self.local_trinuc_bias = np.ones(n, dtype=float)
+        self.local_trinuc_bias[np.where(ngaps == 0)] = 0.0
 
-            # If there are ngaps we'll set the bias rate to zero in those areas
-            self.local_trinuc_bias[np.where(ngaps == 0)] = 0.0
+        # If the model was set up with no bias, skip the trinuc weighting entirely.
+        if not self.no_bias and n >= 3:
+            # Vectorized trinucleotide scan: replaces 64 regex passes (one per trinuc)
+            # over the sequence with a single O(N) numpy expression. Each center
+            # position i in [1, n-1) gets its bias from the trinuc spanning
+            # [i-1, i, i+1], encoded as base_left*16 + base_mid*4 + base_right
+            # (matching the TRINUC_IND layout). Centers whose trinuc contains any
+            # non-ACGT base keep the initial value (1.0 normally, 0.0 if in an N-gap).
+            seq_bytes = np.frombuffer(str(sequence).upper().encode(), dtype=np.uint8)
+            nuc_idx = np.full(n, -1, dtype=np.int8)
+            nuc_idx[seq_bytes == ord('A')] = 0
+            nuc_idx[seq_bytes == ord('C')] = 1
+            nuc_idx[seq_bytes == ord('G')] = 2
+            nuc_idx[seq_bytes == ord('T')] = 3
+            tri_left = nuc_idx[:-2]
+            tri_mid = nuc_idx[1:-1]
+            tri_right = nuc_idx[2:]
+            valid = (tri_left >= 0) & (tri_mid >= 0) & (tri_right >= 0)
+            # Use int32 for the multiplied terms so we don't overflow int8.
+            trinuc_idx = (
+                tri_left.astype(np.int32) * 16
+                + tri_mid.astype(np.int32) * 4
+                + tri_right.astype(np.int32)
+            )
+            bias_table = np.asarray(self.trinuc_mutation_bias, dtype=float)
+            # Where the trinuc is valid, look up the bias; otherwise preserve current value.
+            center_view = self.local_trinuc_bias[1:-1]
+            looked_up = bias_table[np.where(valid, trinuc_idx, 0)]
+            self.local_trinuc_bias[1:-1] = np.where(valid, looked_up, center_view)
 
-            # If the model was set up with no bias, then we skip the biasing part
-            if not self.no_bias:
-                # Update the map bias at the central position for that trinuc
-                for trinuc in ALL_TRINUCS:
-                    for match in re.finditer(trinuc, str(sequence)):
-                        # match.start() + 1 puts us at the center of the trinuc
-                        if match.start() + 1 > len(self.local_trinuc_bias):
-                            _LOG.warning(f"Trinuc bias index out of range: {match.start() + 1} > {len(self.local_trinuc_bias)}")
-                        self.local_trinuc_bias[match.start() + 1] = self.trinuc_mutation_bias[TRINUC_IND[trinuc]]
-                        if len(self.local_trinuc_bias) != len(sequence):
-                            _LOG.warning(f"Trinuc bias length mismatch: {len(self.local_trinuc_bias)} != {len(sequence)}")
-
-            # Now we normalize the bias
-            self.local_trinuc_bias = self.local_trinuc_bias / sum(self.local_trinuc_bias)
-            self.local_sequence = sequence
+        # Now we normalize the bias
+        total = self.local_trinuc_bias.sum()
+        if total > 0:
+            self.local_trinuc_bias = self.local_trinuc_bias / total
+        self.local_sequence = sequence
 
     def sample_trinucs(self, rng: Generator) -> int:
         """

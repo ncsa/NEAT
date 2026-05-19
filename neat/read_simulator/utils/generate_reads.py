@@ -69,7 +69,6 @@ def cover_dataset(
     # responsibility_length, not span_length, so chunks don't over-sample their overlap
     # region (which is also covered by the next chunk).
     if options.paired_ended:
-        # TODO use gc bias to skew this number. Calculate at the runner level.
         number_reads = ceil(responsibility_length * options.coverage / (2 * options.read_len))
     else:
         number_reads = ceil(responsibility_length * options.coverage / options.read_len)
@@ -115,10 +114,17 @@ def cover_dataset(
 
         mean_weight = total_weight / n_positions
 
-        # Scale total reads by the mean/max ratio so that GC-rich regions receive
-        # proportionally more reads than AT-rich regions across the genome.
-        # For a uniform model mean_weight == max_weight, so this is a no-op.
-        number_reads = ceil(number_reads * mean_weight / gc_model.max_weight)
+        # Scale this chunk's read count by chunk_mean / global_mean. With CDF-biased
+        # placement, expected genome-wide average coverage = options.coverage × (chunk_mean /
+        # denominator). Using the genome-wide mean as denominator makes that ratio average
+        # to 1.0 across chunks, so average coverage matches options.coverage (the documented
+        # contract). The global mean is precomputed once at the runner level. When unset
+        # (e.g., cover_dataset is called directly outside the runner), we fall back to the
+        # chunk's own mean — i.e., no scaling, which is the correct single-chunk behavior.
+        denominator = options.gc_global_mean_weight if getattr(
+            options, "gc_global_mean_weight", None
+        ) else mean_weight
+        number_reads = ceil(number_reads * mean_weight / denominator)
 
         if number_reads == 0:
             return []

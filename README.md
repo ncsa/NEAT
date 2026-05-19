@@ -47,7 +47,6 @@ To cite this work, please use both of the following:
     * [`neat model-seq-err`](#neat-model-seq-err)
     * [`neat model-qual-score`](#neat-model-qual-score)
     * [`neat model-gc-bias`](#neat-model-gc-bias)
-    * [`neat vcf_compare`](#neat-vcf_compare)
   * [Tests](#tests)
     * [Guide to run locally](#guide-to-run-locally)
     * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
@@ -57,15 +56,15 @@ To cite this work, please use both of the following:
 The most up-to-date requirements are found in `environment.yml`.
 
 * Some version of Anaconda to set up the environment
-* `python` == 3.10.*
-* `poetry` == 1.3.*
+* `python` >= 3.10
+* `poetry` >= 2.0
 * `biopython` == 1.85
 * `pkginfo`
 * `matplotlib`
-* `numpy`
+* `numpy` >= 2.2
 * `pyyaml`
 * `scipy`
-* `pysam`
+* `pysam` >= 0.23
 * `frozendict`
 
 NEAT assumes a Linux environment and was tested primarily on Ubuntu Linux. It should work on most Linux systems. If you 
@@ -109,7 +108,7 @@ and run:
 
 Assuming you have installed `conda`, run `source activate` or `conda activate`.
 
-Please note that these installation instructions support MacOS, Windows, and Linux.
+NEAT is tested on Linux. macOS may work but is not regularly tested; on Windows, use WSL.
 
 Alternatively, if you wish to work with NEAT in the development-only environment, you can use `poetry install` within
 the NEAT repo, after creating the `conda` environment:
@@ -203,9 +202,8 @@ More parameters are below:
 | `mutation_bed`      | Full path to a list of regions with a column describing the mutation rate of that region, as a float with values between 0 and 0.3. The mutation rate must be in the third column as, e.g., `mut_rate`=0.00.  |
 | `rng_seed`          | Manually enter a seed for the random number generator. Used for repeating runs. Must be an integer.                                                                                                           |
 | `min_mutations`     | Set the minimum number of mutations that NEAT should add, per contig. Default is 0. We recommend setting this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.   |
-| `threads`           | Number of threads to use. More than 1 will use multi-threading to speed up processing.                                                                                                                        |
-| `mode`              | `size` or `contig` whether to divide the contigs into blocks or just by contig. By `contig` is the default, but division by `size` may speed up your run.                                                     |
-| `size`              | Default value of 500,000.                                                                                                                                                                                     |
+| `threads`           | Number of threads to use. More than 1 will use multi-threading to speed up processing. With `threads > 1`, NEAT splits each contig into chunks; with `threads == 1`, one chunk per contig is used.            |
+| `parallel_block_size` | Per-chunk size in bases when `threads > 1`. Default `0` (auto-tune from total genome length and thread count, targeting ~8 chunks per thread). Set to a positive integer to override. Ignored when `threads == 1`. |
 | `cleanup_splits`    | If running more than one simulation on the same input fasta, you can reuse splits files. By default, this will be set to `False`, and splits files will be deleted at the end of the run.                     |
 | `reuse_splits`      | If an existing splits file exists in the output folder, it will use those splits, if this value is set to `True`.                                                                                             |
 
@@ -268,7 +266,7 @@ seqkit shuffle -s 42 reads_r2.fastq.gz -o reads_r2.shuffled.fastq.gz
 
 ### Estimated runtimes
 
-> **Note:** The tables below are from the original NEAT 4.4 (v4.4.0) benchmark. NEAT v4.4.3 is roughly **9× faster on multi-threaded ecoli** and uses **~3× less memory** thanks to the performance work landed in that release. The relative shape of the tables (size scaling, contig vs. size mode tradeoffs) remains accurate, but absolute runtimes should be divided by ~5–10× for v4.4.3+. See ChangeLog v4.4.3 for a detailed before/after table on ecoli and a c_elegans scale-test.
+> **Note:** The tables below are from the original NEAT 4.4 (v4.4.0) benchmark. NEAT v4.4.4 is roughly **13× faster on multi-threaded ecoli** and uses **~3× less memory** thanks to the performance work in v4.4.3 and v4.4.4. The relative shape of the tables (size scaling, contig vs. size mode tradeoffs) remains accurate, but absolute runtimes should be divided by ~10–15× for v4.4.4+. See `ChangeLog.md` (v4.4.3 and v4.4.4 entries) for a detailed before/after table on ecoli and a c_elegans scale-test.
 
 To give users a sense of how long `neat read-simulator` runs may take, we benchmarked NEAT 4.4 on several reference genomes. All runs were paired-end, with read length of 150 bp, coverage of 10, fragment mean of 300 bp, and fragment standard deviation of 50 bp. Runtimes are reported as the average across three unique runs (`Avg. time (ms)`) and the corresponding runtime in minutes. Cells marked with N/A indicate that NEAT was not able to run to completion.
 
@@ -280,8 +278,7 @@ The inputs in single-threaded, contig-based mode most closely replicate the beha
 
 The configuration used:
 
-- `mode: contig`
-- `threads: 1`
+- `threads: 1`  (NEAT processes one contig per chunk in single-thread mode)
 - `cleanup_splits: True`
 
 | Organism        | File size (bytes) | Avg. runtime (ms) | Avg. runtime (min) |
@@ -299,10 +296,9 @@ For small genomes, single-threaded performance is already fast (on the order of 
 
 #### NEAT Multi-Threaded (size mode)
 
-Here we enabled NEAT’s parallelized mode (“small filtering”), which splits contigs into size-based blocks and processes them concurrently. The configuration used:
+Here we enabled NEAT’s multi-threaded mode, which splits contigs into size-based blocks and processes them concurrently. The configuration used:
 
-- `mode: size`
-- `size: 500000`
+- `parallel_block_size: 500000`
 - `produce_bam: false`
 - `threads: 7`
 - `cleanup_splits: True`
@@ -329,8 +325,8 @@ The following commands are examples for common types of data to be generated. Th
 ### Whole genome simulation
 Simulate whole genome dataset with random variants inserted according to the default model:
 
+Contents of neat_config.yml:
 ```yml
-[contents of neat_config.yml]
 reference: hg19.fa
 read_len: 126
 produce_bam: True
@@ -338,7 +334,8 @@ produce_vcf: True
 paired_ended: True
 fragment_mean: 300
 fragment_st_dev: 30
-
+```
+```bash
 neat read-simulator                 \
         -c neat_config.yml          \
         -o /home/me/simulated_reads/
@@ -347,8 +344,8 @@ neat read-simulator                 \
 ### Targeted region simulation
 Simulate a targeted region of a genome (e.g., an exome) with a targeted bed:
 
+Contents of neat_config.yml:
 ```yml
-[contents of neat_config.yml]
 reference: hg19.fa
 read_len: 126
 produce_bam: True
@@ -357,11 +354,11 @@ paired_ended: True
 fragment_mean: 300
 fragment_st_dev: 30
 targed_bed: hg19_exome.bed
-
+```
+```bash
 neat read-simulator                 \
         -c neat_config              \
         -o /home/me/simulated_reads/
-
 ```
 ### Parallelizing simulation
 Split the contig into blocks rather than reading by contig. Even in single-threaded mode this is likely to be faster. The chunk size auto-tunes from total genome length and thread count, targeting roughly 8 chunks per thread for good load balancing — on small bacterial genomes you get ~500 kb chunks (similar to NEAT's old hardcoded default), on human-scale genomes you get ~6 Mb chunks (a few hundred total instead of thousands). Specify `parallel_block_size` explicitly if you want to override.
@@ -377,7 +374,6 @@ paired_ended: True
 fragment_mean: 350
 fragment_st_dev: 50
 threads: 12
-parallel_mode: size
 # parallel_block_size omitted: auto-tuned from genome length and thread count.
 # Set explicitly (e.g. parallel_block_size: 1000000) only if you have a reason.
 ```
@@ -417,7 +413,6 @@ produce_bam: true
 produce_fastq: true
 produce_vcf: true
 threads: ${SLURM_CPUS_PER_TASK}
-parallel_mode: size
 YAML
 
 neat read-simulator -c "config_${CHROM}.yml" \
@@ -429,8 +424,7 @@ After the array completes, concatenate the per-chromosome outputs:
 
 ```bash
 # BAMs are already coordinate-sorted within each chromosome; cat in chromosome order
-# produces a globally-sorted whole-genome BAM with no further sort needed.
-samtools cat -o all.bam out/chr1/chr1_golden.bam out/chr2/chr2_golden.bam ... out/chrY/chrY_golden.bam
+# produces a globally-sorted whole-genome BAM with no further      2_golden.bam ... out/chrY/chrY_golden.bam
 samtools index all.bam
 
 # FASTQs: gzip-concat preserves a valid gzip stream
@@ -445,10 +439,10 @@ bcftools index all.vcf.gz
 This gives you whole-genome simulation in roughly `single-chromosome-time / nodes` wall time. For a 30× human genome with 24 nodes (each 64 cores), a per-chromosome run takes ~10 min and the array finishes in ~10 min wall, plus a few minutes for the final concat.
 
 ### Insert specific variants
-Simulate a whole genome dataset with only the variants in the provided VCF file using `-v` and setting mutation rate to 0 with `-M`.
+Simulate a whole genome dataset with only the variants in the provided VCF file by setting `include_vcf` to the VCF path and `mutation_rate: 0`:
 
+Contents of neat_config.yml:
 ```yml
-[contents of neat_config.yml]
 reference: hg19.fa
 read_len: 126
 produce_bam: True
@@ -458,7 +452,8 @@ fragment_mean: 300
 fragment_st_dev: 30
 include_vcf: NA12878.vcf
 mutation_rate: 0
-
+```
+```bash
 neat read-simulator                 \
         -c neat_config.yml          \
         -o /home/me/simulated_reads/
@@ -467,29 +462,31 @@ neat read-simulator                 \
 ### Single-end reads
 Simulate single-end reads by omitting paired-ended options:
 
+Contents of neat_config.yml:
 ```yml
-[contents of neat_config.yml]
 reference: hg18.fa
 read_len: 126
 produce_bam: True
 produce_vcf: True
-
+```
+```bash
 neat read-simulator                 \
         -c neat_config.yml          \
-        -o /home/me/simulated_read/
+        -o /home/me/simulated_read/ \
         -p 126_frags
 ```
 
 ### Large single-end reads
-Simulate PacBio-like reads by providing an error model (note that this is not yet implemented in NEAT 4.0):
+Simulate PacBio-like reads by providing an error model. Note: full long-read support is planned for a separate future release and is not yet fully validated in NEAT 4.4.
 
+Contents of neat_config.yml:
 ```yml
-[contents of neat-config.yml]
 reference: hg19.fa
 read_len: 5000
 error_model: errorModel_pacbio.pickle.gz
 avg_seq_error: 0.1
-
+```
+```bash
 neat read-simulator                 \
         -c neat_config.yml          \
         -o /home/me/simulated_reads
@@ -600,29 +597,6 @@ neat model-gc-bias    \
 ```
 
 and creates `gc_model.pickle.gz` model in the working directory.
-
-### `neat vcf_compare`
-
-Tool for comparing VCF files (Not yet implemented in NEAT 4.4).
-
-```bash
-neat vcf_compare
-        -r <ref.fa>        * Reference Fasta                           \
-        -g <golden.vcf>    * Golden VCF                                \
-        -w <workflow.vcf>  * Workflow VCF                              \
-        -o <prefix>        * Output Prefix                             \
-        -m <track.bed>     Mappability Track                           \
-        -M <int>           Maptrack Min Len                            \
-        -t <regions.bed>   Targetted Regions                           \
-        -T <int>           Min Region Len                              \
-        -c <int>           Coverage Filter Threshold [15]              \
-        -a <float>         Allele Freq Filter Threshold [0.3]          \
-        --vcf-out          Output Match/FN/FP variants [False]         \
-        --no-plot          No plotting [False]                         \
-        --incl-homs        Include homozygous ref calls [False]        \
-        --incl-fail        Include calls that failed filters [False]   \
-        --fast             No equivalent variant detection [False]
-```
 
 ## Tests
 

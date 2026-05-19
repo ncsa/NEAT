@@ -22,9 +22,12 @@ from neat.read_simulator.utils.split_inputs import (
 # ---------------------------------------------------------------------------
 
 def _make_options(tmp_path, mode="contig", read_len=50, block_size=200):
+    """Build an Options for split_inputs tests. `mode` is a test-side convenience
+    that maps to `threads` (1 for contig-style, 4 for size-style splitting) — the
+    splitting strategy is no longer a separately-configurable option."""
     opts = Options(rng_seed=0)
     opts.read_len = read_len
-    opts.parallel_mode = mode
+    opts.threads = 1 if mode == "contig" else 4
     opts.parallel_block_size = block_size
     opts.splits_dir = tmp_path / "splits"
     opts.splits_dir.mkdir(exist_ok=True)

@@ -1,3 +1,106 @@
+# NEAT v4.4.4
+Follow-up release on top of v4.4.3 bundling three lines of work: another perf
+pass over the remaining single-thread hot paths (variant overlap checks,
+trinucleotide bias mapping, BAM record encoding), a coverage-semantics fix
+for the GC bias model added earlier in the 4.4 line, and removal of the
+`parallel_mode` config key. The perf changes are behavior-preserving for a
+given seed; the GC bias fix changes output bytes when a non-uniform `gc_model`
+is configured (a typical model with mean weight ~0.7 previously delivered
+~70 % of the requested coverage; v4.4.4 delivers the full coverage).
+
+**Benchmark (ecoli 10× coverage, 4 threads, identical configs):**
+
+| Metric                       | v4.4.3   | v4.4.4   | Improvement     |
+|------------------------------|----------|----------|-----------------|
+| ecoli SE wall time           | 1:35     | **1:07** | 1.42× faster    |
+| ecoli PE wall time           | 1:34     | **1:06** | 1.43× faster    |
+| ecoli SE total CPU           | 331 s    | 244 s    | 26% less        |
+| ecoli PE total CPU           | 338 s    | 248 s    | 27% less        |
+| Worker CPU utilization (PE)  | 359%/400 | **378%** | 94.5% of theory |
+| Peak resident memory         | 175 MB   | 175 MB   | unchanged       |
+
+Cumulative vs the v4.4.2 baseline at the start of this performance arc:
+SE 14:55 → 1:07 (**13.3× faster**), PE 14:46 → 1:06 (**13.4× faster**).
+
+**Hot-path fixes:**
+
+- `ContigVariants.check_if_del` / `check_if_ins` — replace O(N) linear scans
+  of `all_dels` / `all_ins` with O(1) lookups into per-position bucket dicts.
+  Each indel is indexed at every reference position it covers when added;
+  total memory cost is O(sum of indel lengths). Single-thread profile on
+  14 k calls: `check_if_del` 3.62 s → 0.011 s (325×); `check_if_ins` 3.70 s →
+  0.007 s (530×). Removes O(N²) scaling that would have hurt larger genomes.
+
+- `variant_models.map_local_trinuc_bias` — replace 64 regex scans per call
+  (one `re.finditer` per trinucleotide) with a single vectorized numpy
+  expression. The cache check is also tightened from `==` (O(N) byte
+  compare) to `is` (O(1) identity), since callers pass different slice
+  objects each time anyway. Single-thread profile on 14 k calls: 13.5 s →
+  0.81 s (16×). The entire `generate_variants` call dropped from 24.9 s
+  cumulative to 4.2 s.
+
+- `OutputFileWriter.write_bam_record` — vectorize BAM record encoding:
+  - Sequence encoding replaces the per-byte Python loop (28 M
+    `Seq.__getitem__` calls in the old code) with a 256-entry numpy lookup
+    plus a single `((codes[0::2] << 4) | codes[1::2]).tobytes()`.
+  - Quality encoding replaces `"".join([chr(n) for n in quality_array])`
+    with one `np.asarray(...).astype(np.uint8).tobytes()` call.
+  - CIGAR ops are now packed in one `struct.pack(f'<{n}I', ...)` instead of
+    one pack-per-op + `bytearray.extend`. The CIGAR string is parsed in a
+    single linear pass (the previous code did `re.split` + `re.findall`).
+  - The fixed-size BAM record header is now one
+    `struct.pack('<iiiIIiiii', ...)` instead of nine separate pack calls
+    glued with `+`.
+  Single-thread profile: self time 12.0 s → 3.2 s, cumtime 58.1 s → 8.1 s
+  (7.2× cumulative). This was the single biggest hot path of the release.
+
+The vectorized sequence and CIGAR encodings produce byte-identical BAM records
+to the prior implementation (verified by `pysam.AlignmentFile` read-back and
+sort-order checks on the 4-thread ecoli benchmark).
+
+**Config cleanup:** `parallel_mode` has been removed from the YAML schema.
+The splitting strategy is now derived from `threads` (single-chunk-per-
+contig when `threads == 1`, size-based chunking when `threads > 1`).
+Existing configs with `parallel_mode: ...` keep parsing — the key is
+silently ignored with a one-line deprecation warning. The option never
+actually let users change effective behavior under the old logic (it was
+force-overridden to `'contig'` when `threads == 1`, and `'size'` was a
+strict superset for `threads > 1`), so this is API surface cleanup rather
+than a behavior change.
+
+**GC bias coverage fix.** When a non-uniform `gc_model` was configured,
+`cover_dataset` had been scaling per-chunk reads by `chunk_mean / max_weight`.
+That made `coverage` the *peak* coverage at the GC bias maximum, undercounting
+total reads by `mean_weight_genome / max_weight` (a typical model with
+mean ~0.7, max 1.0 delivered ~70 % of the requested coverage). The user-facing
+config (`template_neat_config.yml:18`) documents `coverage` as "average coverage
+for the entire genome," so this was a documentation/behavior mismatch.
+
+The fix:
+
+- New `compute_genome_wide_gc_mean_weight(reference, gc_model)` helper
+  (`neat/model_gc_bias/utils.py`) — single-pass vectorized scan over every
+  length-`window_size` window in the reference, reusing the same prefix-sum
+  windowing as `cover_dataset`. Uniform models short-circuit without scanning.
+- `read_simulator_runner` precomputes this once and stores it on `options` so
+  all worker chunks see the same denominator (no redundant per-chunk genome
+  scans).
+- `cover_dataset` now scales by `chunk_mean / global_mean`, which averages to
+  1.0 across chunks and preserves `options.coverage` as the genome-wide average.
+- When `cover_dataset` is called directly outside the runner (e.g., unit tests
+  with an in-memory `SeqRecord`), `gc_global_mean_weight` is unset and the
+  scaling falls back to chunk-local mean — i.e., no rescaling, which is the
+  correct single-chunk behavior.
+
+The stale `TODO use gc bias to skew this number. Calculate at the runner level.`
+at `generate_reads.py:72` is removed; that work is now complete.
+
+All 603 unit/integration tests pass (up from 599 with three new
+`test_compute_genome_wide_gc_mean_*` unit tests plus
+`test_gc_bias_preserves_average_coverage`, which runs the full pipeline against
+a half-AT / half-GC reference under a non-uniform model and asserts delivered
+reads are within 20 % of `coverage × genome_length / read_len`).
+
 # NEAT v4.4.3
 Major performance and memory overhaul focused on making NEAT viable for large
 genomes on supercomputing hardware. No user-visible API changes (other than

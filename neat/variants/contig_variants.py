@@ -38,18 +38,24 @@ class ContigVariants:
             "INFO": '.',
             "FORMAT": 'GT',
         }
-        self.all_dels = []
-        self.all_ins = []
+        # Indels are indexed by every reference position they cover so check_if_del /
+        # check_if_ins is O(1) on average. The previous representation (`all_dels` /
+        # `all_ins` flat lists) made each check O(N) and the whole variant-generation
+        # pass O(N**2). Each Insertion/Deletion of length L occupies L position-buckets;
+        # since indels here are short (typically 1-10 bp) and the simulator rejects
+        # overlapping ones per genotype, total memory is O(sum of indel lengths).
+        self._del_by_position: dict[int, list] = {}
+        self._ins_by_position: dict[int, list] = {}
 
     def check_if_del(self, other):
-        for deletion in self.all_dels:
-            if np.array_equal(other.genotype, deletion.genotype) and deletion.contains(other):
+        for deletion in self._del_by_position.get(other.position1, ()):
+            if np.array_equal(other.genotype, deletion.genotype):
                 return deletion
         return None
 
     def check_if_ins(self, other):
-        for insert in self.all_ins:
-            if np.array_equal(other.genotype, insert.genotype) and insert.contains(other.position1):
+        for insert in self._ins_by_position.get(other.position1, ()):
+            if np.array_equal(other.genotype, insert.genotype):
                 return insert
         return None
 
@@ -65,9 +71,11 @@ class ContigVariants:
             if self.find_dups(input_variant):
                 return 1
         if type(input_variant) == Insertion:
-            self.all_ins.append(input_variant)
+            for p in range(input_variant.position1, input_variant.position1 + input_variant.length):
+                self._ins_by_position.setdefault(p, []).append(input_variant)
         elif type(input_variant) == Deletion:
-            self.all_dels.append(input_variant)
+            for p in range(input_variant.position1, input_variant.position1 + input_variant.length):
+                self._del_by_position.setdefault(p, []).append(input_variant)
 
         self.contig_variants[input_variant.position1].append(input_variant)
         return 0

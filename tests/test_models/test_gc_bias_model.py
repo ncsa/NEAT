@@ -137,3 +137,51 @@ def test_get_gc_bias_weights_gc_rich_heavier_than_at_rich(tmp_path):
 
     weights = get_gc_bias_weights(str(bam), str(ref), window_size=100)
     assert weights[100] > weights[0]
+
+
+# ---------------------------------------------------------------------------
+# compute_genome_wide_gc_mean_weight
+# ---------------------------------------------------------------------------
+
+from neat.model_gc_bias.utils import compute_genome_wide_gc_mean_weight
+
+
+def test_compute_genome_wide_gc_mean_uniform_model(tmp_path):
+    """Uniform model: returns weights[0] without scanning the reference."""
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\n" + "ACGT" * 1000 + "\n")
+    model = GCBiasModel([0.7] * 101, window_size=100)
+    # No need to even index — uniform short-circuits
+    assert compute_genome_wide_gc_mean_weight(str(ref), model) == pytest.approx(0.7)
+
+
+def test_compute_genome_wide_gc_mean_pure_at_reference(tmp_path):
+    """A 100%-AT reference samples every window at GC bin 0 → returns weights[0]."""
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\n" + "A" * 2000 + "\n")
+    weights = [0.0] * 101
+    weights[0] = 0.3
+    weights[100] = 1.0
+    model = GCBiasModel(weights, window_size=100)
+    pysam_index_fasta(ref)
+    mean = compute_genome_wide_gc_mean_weight(str(ref), model)
+    assert mean == pytest.approx(0.3, abs=1e-6)
+
+
+def test_compute_genome_wide_gc_mean_mixed_reference(tmp_path):
+    """Half-AT/half-GC reference should land between weights[0] and weights[100]."""
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\n" + "A" * 5000 + "G" * 5000 + "\n")
+    weights = [0.5] * 101
+    weights[100] = 1.0
+    model = GCBiasModel(weights, window_size=100)
+    pysam_index_fasta(ref)
+    mean = compute_genome_wide_gc_mean_weight(str(ref), model)
+    # ≈ 50 % windows at bin 0 (weight 0.5) + 50 % at bin 100 (weight 1.0), with a 100 bp
+    # transition zone near the midpoint. Should land near 0.75.
+    assert 0.7 < mean < 0.8
+
+
+def pysam_index_fasta(ref_path):
+    """Build a .fai for pysam.FastaFile."""
+    pysam.faidx(str(ref_path))
