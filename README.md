@@ -268,6 +268,8 @@ seqkit shuffle -s 42 reads_r2.fastq.gz -o reads_r2.shuffled.fastq.gz
 
 ### Estimated runtimes
 
+> **Note:** The tables below are from the original NEAT 4.4 (v4.4.0) benchmark. NEAT v4.4.3 is roughly **9× faster on multi-threaded ecoli** and uses **~3× less memory** thanks to the performance work landed in that release. The relative shape of the tables (size scaling, contig vs. size mode tradeoffs) remains accurate, but absolute runtimes should be divided by ~5–10× for v4.4.3+. See ChangeLog v4.4.3 for a detailed before/after table on ecoli and a c_elegans scale-test.
+
 To give users a sense of how long `neat read-simulator` runs may take, we benchmarked NEAT 4.4 on several reference genomes. All runs were paired-end, with read length of 150 bp, coverage of 10, fragment mean of 300 bp, and fragment standard deviation of 50 bp. Runtimes are reported as the average across three unique runs (`Avg. time (ms)`) and the corresponding runtime in minutes. Cells marked with N/A indicate that NEAT was not able to run to completion.
 
 Benchmarks were run on a System76 Meerkat with a 13th Gen Intel Core i3-1315U (8 logical cores, up to 4.50 GHz) and 16 GiB RAM, using a 512 GB SSD and Ubuntu 24.04.3 LTS (Linux kernel 6.14). Actual runtimes will vary depending on your hardware.

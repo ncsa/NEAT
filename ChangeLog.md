@@ -7,10 +7,10 @@ chunk size now auto-tuning by default).
 
 | Metric                  | v4.4.2     | v4.4.3     | Improvement     |
 |-------------------------|------------|------------|-----------------|
-| ecoli SE wall time      | 14:55      | 1:57       | 7.6× faster     |
-| ecoli PE wall time      | 14:46      | 1:44       | 8.5× faster     |
-| ecoli SE total CPU      | 3,227 s    | 356 s      | 9.1× less       |
-| ecoli PE total CPU      | 3,168 s    | 368 s      | 8.6× less       |
+| ecoli SE wall time      | 14:55      | 1:35       | 9.4× faster     |
+| ecoli PE wall time      | 14:46      | 1:35       | 9.4× faster     |
+| ecoli SE total CPU      | 3,227 s    | 331 s      | 9.7× less       |
+| ecoli PE total CPU      | 3,168 s    | 338 s      | 9.4× less       |
 | Peak resident memory    | 549 MB     | 175 MB     | 3.1× less       |
 | Peak heap (memray)      | 1.27 GB    | 0.32 GB    | 4× less         |
 | Per-worker memory       | O(N×cov)   | O(1)       | bounded         |
@@ -18,8 +18,8 @@ chunk size now auto-tuning by default).
 | BAM correctness         | 0.06% dups | strict     | fixed           |
 
 **Versus NEAT 2.1 (single-threaded baseline):**
-- SE: 12:28 → 1:57 (6.4× faster, 53% less CPU)
-- PE: 20:12 → 1:44 (11.6× faster, 70% less CPU)
+- SE: 12:28 → 1:35 (7.9× faster, 56% less CPU)
+- PE: 20:12 → 1:35 (12.8× faster, 72% less CPU)
 
 **Scale-test (c_elegans 10× coverage, 4 threads, 100 Mb genome — ~7× the
 ecoli reference):**
