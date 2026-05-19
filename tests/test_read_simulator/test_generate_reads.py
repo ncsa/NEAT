@@ -321,11 +321,35 @@ def _make_options(paired=False, seed=0):
     opts.read_len = _READ_LEN
     opts.paired_ended = paired
     opts.coverage = 5
+    # Enable BAM so generate_reads streams Read objects to the collecting OFW for
+    # inspection. FASTQ stays off — we don't need its bytes for these tests.
     opts.produce_fastq = False
-    opts.produce_bam = False
+    opts.produce_bam = True
     opts.produce_vcf = False
     opts.overwrite_output = True
     return opts
+
+
+class _CollectingOFW:
+    """
+    Minimal OutputFileWriter stand-in for generate_reads tests.
+
+    generate_reads now streams Read objects to its output_file_writer instead of
+    returning a list. Tests that want to inspect the generated reads enable
+    produce_bam=True and pass an instance of this class as the ofw. Every
+    ``write_bam_record`` call is captured into ``bam_records`` for assertion.
+    """
+    def __init__(self):
+        # generate_reads dereferences ofw.bam and ofw.files_to_write[ofw.bam].
+        # Provide a stub handle so those lookups succeed; we don't use the handle.
+        self.bam = "_collecting_bam"
+        self.fq1 = None
+        self.fq2 = None
+        self.files_to_write = {self.bam: SimpleNamespace(write=lambda *a, **kw: None)}
+        self.bam_records = []
+
+    def write_bam_record(self, read, contig_id, bam_handle, read_length):
+        self.bam_records.append(read)
 
 
 def _make_models(read_len=_READ_LEN, frag_mean=300):
@@ -407,16 +431,17 @@ def test_generate_reads_single_ended_returns_read_none_pairs():
     err, qual, frag = _make_models()
     opts = _make_options(paired=False)
     cv = ContigVariants()
+    ofw = _CollectingOFW()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             _all_span_targeted(), _nothing_discarded(),
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), _nothing_discarded(),
+                   opts, ofw, "chr1", 0, 0)
 
-    assert isinstance(results, list)
-    assert len(results) > 0
-    for read1, read2 in results:
-        assert isinstance(read1, Read)
-        assert read2 is None
+    # In SE mode only read1 records are emitted — all forward strand.
+    assert len(ofw.bam_records) > 0
+    for read in ofw.bam_records:
+        assert isinstance(read, Read)
+        assert read.is_reverse is False
 
 
 def test_generate_reads_paired_ended_returns_read_read_pairs():
@@ -424,15 +449,21 @@ def test_generate_reads_paired_ended_returns_read_read_pairs():
     err, qual, frag = _make_models()
     opts = _make_options(paired=True)
     cv = ContigVariants()
+    ofw = _CollectingOFW()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             _all_span_targeted(), _nothing_discarded(),
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), _nothing_discarded(),
+                   opts, ofw, "chr1", 0, 0)
 
-    assert len(results) > 0
-    for read1, read2 in results:
-        assert isinstance(read1, Read)
-        assert isinstance(read2, Read)
+    # PE mode emits both forward (r1) and reverse (r2) records, interleaved by
+    # position via the heap-buffer in generate_reads. Verify both strands appear.
+    assert len(ofw.bam_records) > 0
+    forwards = [r for r in ofw.bam_records if not r.is_reverse]
+    reverses = [r for r in ofw.bam_records if r.is_reverse]
+    assert len(forwards) > 0
+    assert len(reverses) > 0
+    # Each fragment contributes one r1 and one r2.
+    assert len(forwards) == len(reverses)
 
 
 def test_generate_reads_read_length_matches_options():
@@ -440,13 +471,15 @@ def test_generate_reads_read_length_matches_options():
     err, qual, frag = _make_models()
     opts = _make_options(paired=False)
     cv = ContigVariants()
+    ofw = _CollectingOFW()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             _all_span_targeted(), _nothing_discarded(),
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), _nothing_discarded(),
+                   opts, ofw, "chr1", 0, 0)
 
-    for read1, _ in results:
-        assert len(read1.read_sequence) == _READ_LEN
+    assert len(ofw.bam_records) > 0
+    for read in ofw.bam_records:
+        assert len(read.read_sequence) == _READ_LEN
 
 
 # ---------------------------------------------------------------------------
@@ -459,13 +492,14 @@ def test_generate_reads_targeted_region_flag_false_filters_all():
     err, qual, frag = _make_models()
     opts = _make_options(paired=False)
     cv = ContigVariants()
+    ofw = _CollectingOFW()
     no_target = [(0, _SPAN, False)]
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             no_target, _nothing_discarded(),
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   no_target, _nothing_discarded(),
+                   opts, ofw, "chr1", 0, 0)
 
-    assert results == []
+    assert ofw.bam_records == []
 
 
 def test_generate_reads_discard_region_removes_all():
@@ -474,13 +508,14 @@ def test_generate_reads_discard_region_removes_all():
     err, qual, frag = _make_models()
     opts = _make_options(paired=False)
     cv = ContigVariants()
+    ofw = _CollectingOFW()
     discard_all = [(0, _SPAN, True)]
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             _all_span_targeted(), discard_all,
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), discard_all,
+                   opts, ofw, "chr1", 0, 0)
 
-    assert results == []
+    assert ofw.bam_records == []
 
 
 def test_generate_reads_discard_flag_false_keeps_reads():
@@ -489,12 +524,13 @@ def test_generate_reads_discard_flag_false_keeps_reads():
     err, qual, frag = _make_models()
     opts = _make_options(paired=False)
     cv = ContigVariants()
+    ofw = _CollectingOFW()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             _all_span_targeted(), _nothing_discarded(),
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), _nothing_discarded(),
+                   opts, ofw, "chr1", 0, 0)
 
-    assert len(results) > 0
+    assert len(ofw.bam_records) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +542,7 @@ def test_generate_reads_variants_populated_on_reads():
     ref = _make_reference()
     err, qual, frag = _make_models()
     opts = _make_options(paired=False)
+    ofw = _CollectingOFW()
 
     cv = ContigVariants()
     snv = SingleNucleotideVariant(
@@ -516,11 +553,11 @@ def test_generate_reads_variants_populated_on_reads():
     )
     cv.add_variant(snv)
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             _all_span_targeted(), _nothing_discarded(),
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), _nothing_discarded(),
+                   opts, ofw, "chr1", 0, 0)
 
-    reads_with_mutations = [r1 for r1, _ in results if r1.mutations]
+    reads_with_mutations = [r for r in ofw.bam_records if r.mutations]
     assert len(reads_with_mutations) > 0
 
 
@@ -540,30 +577,33 @@ def test_generate_reads_paired_discard_region_removes_all():
     err, qual, frag = _make_models()
     opts = _make_options(paired=True)
     cv = ContigVariants()
+    ofw = _CollectingOFW()
     discard_all = [(0, _SPAN, True)]
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             _all_span_targeted(), discard_all,
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), discard_all,
+                   opts, ofw, "chr1", 0, 0)
 
-    assert results == []
+    assert ofw.bam_records == []
 
 
 def test_generate_reads_paired_no_discard_produces_read_pairs():
-    """Paired-end run without discard produces (Read, Read) pairs (regression guard)."""
+    """Paired-end run without discard produces both forward and reverse read records."""
     ref = _make_reference()
     err, qual, frag = _make_models()
     opts = _make_options(paired=True)
     cv = ContigVariants()
+    ofw = _CollectingOFW()
 
-    results = generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
-                             _all_span_targeted(), _nothing_discarded(),
-                             opts, None, "chr1", 0, 0)
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), _nothing_discarded(),
+                   opts, ofw, "chr1", 0, 0)
 
-    assert len(results) > 0
-    for read1, read2 in results:
-        assert isinstance(read1, Read)
-        assert isinstance(read2, Read)
+    forwards = [r for r in ofw.bam_records if not r.is_reverse]
+    reverses = [r for r in ofw.bam_records if r.is_reverse]
+    assert len(forwards) > 0
+    assert len(reverses) > 0
+    assert len(forwards) == len(reverses)
 
 
 # ---------------------------------------------------------------------------

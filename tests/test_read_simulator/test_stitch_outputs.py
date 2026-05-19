@@ -50,42 +50,47 @@ def _make_ofw(tmp_path: Path, vcf_path: Path = None):
     return ofw
 
 
-# concat
+# concat (byte-level gzip concatenation — concatenated gzip streams are valid gzip)
 
 def test_concat_single_file(tmp_path):
     src = _write_gz(tmp_path / "a.gz", "hello\n")
-    dest = io.StringIO()
+    dest = tmp_path / "out.gz"
     concat([src], dest)
-    assert dest.getvalue() == "hello\n"
+    with gzip.open(dest, "rt") as f:
+        assert f.read() == "hello\n"
 
 
 def test_concat_multiple_files(tmp_path):
     a = _write_gz(tmp_path / "a.gz", "line1\n")
     b = _write_gz(tmp_path / "b.gz", "line2\n")
-    dest = io.StringIO()
+    dest = tmp_path / "out.gz"
     concat([a, b], dest)
-    assert dest.getvalue() == "line1\nline2\n"
+    with gzip.open(dest, "rt") as f:
+        assert f.read() == "line1\nline2\n"
 
 
 def test_concat_empty_list(tmp_path):
-    dest = io.StringIO()
+    """Empty input list: concat is a no-op and dest is not created."""
+    dest = tmp_path / "out.gz"
     concat([], dest)
-    assert dest.getvalue() == ""
+    assert not dest.exists()
 
 
 def test_concat_preserves_content(tmp_path):
     content = "ACGT\nACGT\nACGT\n"
     src = _write_gz(tmp_path / "reads.gz", content)
-    dest = io.StringIO()
+    dest = tmp_path / "out.gz"
     concat([src], dest)
-    assert dest.getvalue() == content
+    with gzip.open(dest, "rt") as f:
+        assert f.read() == content
 
 
 def test_concat_order_is_preserved(tmp_path):
     files = [_write_gz(tmp_path / f"{i}.gz", f"chunk{i}\n") for i in range(5)]
-    dest = io.StringIO()
+    dest = tmp_path / "out.gz"
     concat(files, dest)
-    result = dest.getvalue()
+    with gzip.open(dest, "rt") as f:
+        result = f.read()
     positions = [result.index(f"chunk{i}") for i in range(5)]
     assert positions == sorted(positions)
 
@@ -199,54 +204,46 @@ def test_find_dups_exact_duplicate_rejected(tmp_path):
     assert cv.add_variant(v2) == 1
 
 
-# merge_bam
+# merge_bam (now a raw BGZF concatenation via pysam.cat — see stitch_outputs)
 
-def test_merge_bam_calls_pysam_merge_and_sort(tmp_path):
+def test_merge_bam_calls_pysam_cat(tmp_path):
     ofw = _make_ofw(tmp_path)
     bam_files = [tmp_path / f"{i}.bam" for i in range(3)]
 
     with patch("neat.read_simulator.utils.stitch_outputs.pysam") as mock_pysam:
         merge_bam(bam_files, ofw, threads=4)
 
-    # pysam.merge should have been called at least twice (once per chunk + final)
-    assert mock_pysam.merge.call_count >= 2
-    # pysam.sort should have been called once
-    mock_pysam.sort.assert_called_once()
+    # Per-worker BAMs are coord-sorted and cover non-overlapping ranges, so a single
+    # pysam.cat is sufficient — no merge/sort needed.
+    mock_pysam.cat.assert_called_once()
+    mock_pysam.merge.assert_not_called()
+    mock_pysam.sort.assert_not_called()
 
 
-def test_merge_bam_sort_uses_output_bam_path(tmp_path):
+def test_merge_bam_cat_uses_output_bam_path(tmp_path):
     ofw = _make_ofw(tmp_path)
     bam_files = [tmp_path / "a.bam"]
 
     with patch("neat.read_simulator.utils.stitch_outputs.pysam") as mock_pysam:
         merge_bam(bam_files, ofw, threads=2)
 
-    sort_args = mock_pysam.sort.call_args[0]
-    assert str(ofw.bam) in sort_args
+    cat_args = mock_pysam.cat.call_args[0]
+    assert "-o" in cat_args
+    assert str(ofw.bam) in cat_args
 
 
-def test_merge_bam_temp_file_cleaned_up(tmp_path):
-    ofw = _make_ofw(tmp_path)
-    bam_files = [tmp_path / "a.bam"]
-    temp_merged = ofw.tmp_dir / "temp_merged.bam"
-
-    with patch("neat.read_simulator.utils.stitch_outputs.pysam"):
-        merge_bam(bam_files, ofw, threads=1)
-
-    # temp_merged.bam should have been unlinked (missing_ok=True means no error if absent)
-    assert not temp_merged.exists()
-
-
-def test_merge_bam_chunks_large_bam_list(tmp_path):
-    """More than 500 BAMs triggers chunked intermediate merges."""
+def test_merge_bam_passes_all_inputs_to_cat(tmp_path):
+    """Cat is given every per-worker BAM as a positional argument, in order."""
     ofw = _make_ofw(tmp_path)
     bam_files = [tmp_path / f"{i}.bam" for i in range(600)]
 
     with patch("neat.read_simulator.utils.stitch_outputs.pysam") as mock_pysam:
         merge_bam(bam_files, ofw, threads=1)
 
-    # Two chunks (0–499, 500–599) → 2 intermediate merges + 1 final = 3 total
-    assert mock_pysam.merge.call_count == 3
+    cat_args = mock_pysam.cat.call_args[0]
+    # cat call shape: ("-o", out_path, *input_paths)
+    passed_inputs = [a for a in cat_args if a not in ("-o", str(ofw.bam))]
+    assert passed_inputs == [str(p) for p in bam_files]
 
 
 # main
@@ -260,7 +257,10 @@ def test_main_fq1_only(tmp_path):
     src = _write_gz(tmp_path / "chunk.fq1.gz", "@read1\nACGT\n+\nIIII\n")
     output_files = [(0, _file_dict(fq1=src))]
     main(ofw, output_files)
-    assert "read1" in ofw._fq1_buf.getvalue()
+    # Byte-level concat writes raw bytes to ofw.fq1 (the path), not through the
+    # StringIO handle. Read the actual file back.
+    with gzip.open(ofw.fq1, "rt") as fh:
+        assert "read1" in fh.read()
 
 
 def test_main_fq1_and_fq2(tmp_path):
@@ -269,8 +269,10 @@ def test_main_fq1_and_fq2(tmp_path):
     src2 = _write_gz(tmp_path / "c.fq2.gz", "@r2\nTTGG\n+\nIIII\n")
     output_files = [(0, _file_dict(fq1=src1, fq2=src2))]
     main(ofw, output_files)
-    assert "r1" in ofw._fq1_buf.getvalue()
-    assert "r2" in ofw._fq2_buf.getvalue()
+    with gzip.open(ofw.fq1, "rt") as fh:
+        assert "r1" in fh.read()
+    with gzip.open(ofw.fq2, "rt") as fh:
+        assert "r2" in fh.read()
 
 
 def test_main_vcf(tmp_path):
@@ -288,8 +290,10 @@ def test_main_none_files_not_concatenated(tmp_path):
     ofw = _make_ofw(tmp_path)
     output_files = [(0, _file_dict())]  # all None
     main(ofw, output_files)  # should not raise
-    assert ofw._fq1_buf.getvalue() == ""
-    assert ofw._fq2_buf.getvalue() == ""
+    # No inputs → byte-level concat is a no-op and the destination paths are not
+    # created. The VCF buffer remains untouched (no merge_vcfs run).
+    assert not ofw.fq1.exists()
+    assert not ofw.fq2.exists()
     assert ofw._vcf_buf.getvalue() == ""
 
 
@@ -300,7 +304,8 @@ def test_main_multiple_threads(tmp_path):
         for i in range(3)
     ]
     main(ofw, chunks)
-    result = ofw._fq1_buf.getvalue()
+    with gzip.open(ofw.fq1, "rt") as fh:
+        result = fh.read()
     for i in range(3):
         assert f"chunk{i}" in result
 

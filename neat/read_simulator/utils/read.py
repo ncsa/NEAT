@@ -170,26 +170,49 @@ class Read:
 
     def apply_errors(self, quality_model: TraditionalQualityModel):
         """
-        This function applies errors to a sequence and calls the update_quality_array function after
+        Apply this read's stored sequencing errors to read_sequence and quality_array in
+        a single pass.
 
-        :param quality_model: The error model for this run,
-        :return: None, The sequence, with errors applied
+        self.errors is in descending position order (set up by get_sequencing_errors).
+        The original implementation iterated in that order, doing one np.concatenate +
+        one MutableSeq slice/concat per error — quadratic in errors-per-read. Here we
+        iterate ascending and append unchanged ranges plus error alternates into chunk
+        lists, then join once at the end. The result preserves the prior per-error
+        quality-array semantics (including the convention that insertion anchors lose
+        their original quality and gain alt_len-1 low-quality scores).
         """
-        mutated_sequence = MutableSeq(self.read_sequence)
-        for error in self.errors:
-            # Replace the entire ref sequence with the entire alt sequence
-            mutated_sequence = \
-                mutated_sequence[:error.location] + error.alt + mutated_sequence[error.location+len(error.ref):]
-            # update quality score for error
-            self.update_quality_array(
-                len(error.ref),
-                error.alt,
-                error.location,
-                "error",
-                list(quality_model.quality_scores),
-            )
+        if not self.errors:
+            return
 
-        self.read_sequence = Seq(mutated_sequence)
+        errors_asc = list(reversed(self.errors))
+        low_score = min(quality_model.quality_scores)
+
+        seq_str = str(self.read_sequence)
+        seq_chunks: list[str] = []
+        q_chunks: list[np.ndarray] = []
+        prev_end = 0
+
+        for error in errors_asc:
+            loc = error.location
+            ref_len = len(error.ref)
+            alt_str = str(error.alt)
+            alt_len = len(alt_str)
+            seq_chunks.append(seq_str[prev_end:loc])
+            q_chunks.append(self.quality_array[prev_end:loc])
+            seq_chunks.append(alt_str)
+            if alt_len > 1:
+                q_chunks.append(np.full(alt_len - 1, low_score, dtype=int))
+            elif ref_len > 1 and alt_len == 1:
+                pass  # deletion — no new quality scores
+            else:
+                q_chunks.append(np.array([low_score], dtype=int))
+            prev_end = loc + ref_len
+
+        seq_chunks.append(seq_str[prev_end:])
+        q_chunks.append(self.quality_array[prev_end:])
+
+        self.read_sequence = Seq(''.join(seq_chunks))
+        self.quality_array = np.concatenate(q_chunks)
 
     def apply_mutations(self, quality_scores: list, rng: Generator):
         """
@@ -341,8 +364,10 @@ class Read:
         # It updates the quality array and reference segment in place, including reversing them, if appropriate
         self.convert_masking(qual_model)
 
-        # set the read sequence to match the reference, then modify
-        self.read_sequence = deepcopy(self.reference_segment)
+        # Start the read sequence as an alias of the masked reference. Biopython Seq is
+        # immutable; apply_mutations and apply_errors below produce new Seq objects via
+        # their own working copies, so no independent deepcopy is needed here.
+        self.read_sequence = self.reference_segment
 
         # Get errors for the read and update the quality score
         self.errors, self.padding = err_model.get_sequencing_errors(
@@ -385,7 +410,9 @@ class Read:
         bad_score = min(quality_model.quality_scores)
         # we'll use generic human repeats, as commonly found in masked regions. We may refine this to make configurable
         repeat_bases = list("TTAGGG")
-        raw_sequence = deepcopy(self.reference_segment)
+        # Immutable Biopython Seq; the MutableSeq below is the working copy, so no
+        # deepcopy needed here.
+        raw_sequence = self.reference_segment
 
         start = raw_sequence.find('N')
         if start != -1:
@@ -404,38 +431,108 @@ class Read:
 
     def make_cigar(self):
         """
-        Aligns the reference and mutated sequences.
-        """
-        # These parameters were set to minimize breaks in the mutated sequence and find the best
-        # alignment from there.
+        Build the CIGAR string describing how this read aligns to its reference window.
 
+        Three paths, in priority order:
+          1. No indels (the common case, ~98% of reads on default error models) — the CIGAR
+             is just `{run_read_length}M`.
+          2. Forward read whose indels all come from sequencing errors — walk the sorted
+             error positions in O(read length) to emit M/I/D ops directly. No alignment
+             needed; each error's stored location is already the anchor position in
+             reference-window coordinates.
+          3. Anything else (reverse reads with indels, or any read where a mutation indel
+             may have been applied) — fall back to pairwise alignment. Mutation indels are
+             applied before sequencing errors and can shift the read coordinate frame, and
+             reverse reads truncate the segment from the opposite end; neither case fits
+             the simple walker.
         """
-        The sequence alignment. We restrict the alignment to the section of the reference where we know the read
-        came from and try to generate a minimal cigar string. The cigar string part may still need tweaking.
-        """
+        error_indels = [
+            e for e in self.errors
+            if e.error_type is Insertion or e.error_type is Deletion
+        ]
+        has_mutation_indels = any(
+            type(v) is Insertion or type(v) is Deletion
+            for variants_at_loc in self.mutations.values()
+            for v in variants_at_loc
+        )
 
+        if not error_indels and not has_mutation_indels:
+            return f"{self.run_read_length}M"
+
+        if not has_mutation_indels and not self.is_reverse:
+            return self._cigar_from_error_indels(error_indels)
+
+        return self._cigar_via_alignment()
+
+    def _cigar_from_error_indels(self, error_indels):
+        """
+        Build the CIGAR for a forward read whose only indels come from sequencing errors.
+
+        Walks the error list in reference-window order, emitting M/I/D ops and stopping
+        once the CIGAR's query side reaches run_read_length. Run-length-encodes the result
+        as it goes.
+        """
+        events = sorted(error_indels, key=lambda e: e.location)
+
+        ops: list[list] = []
+
+        def emit(op_char, count):
+            if count <= 0:
+                return
+            if ops and ops[-1][0] == op_char:
+                ops[-1][1] += count
+            else:
+                ops.append([op_char, count])
+
+        ref_pos = 0
+        remaining_query = self.run_read_length
+
+        for ev in events:
+            if remaining_query == 0:
+                break
+            # M's leading up to and including the anchor base at ev.location.
+            m_count = ev.location - ref_pos + 1
+            m_emitted = min(m_count, remaining_query)
+            emit('M', m_emitted)
+            remaining_query -= m_emitted
+            ref_pos = ev.location + 1
+            if remaining_query == 0:
+                break
+            if ev.error_type is Insertion:
+                i_emitted = min(ev.length, remaining_query)
+                emit('I', i_emitted)
+                remaining_query -= i_emitted
+            else:  # Deletion
+                emit('D', ev.length)
+                ref_pos += ev.length
+
+        if remaining_query > 0:
+            emit('M', remaining_query)
+
+        return ''.join(f"{count}{op}" for op, count in ops)
+
+    def _cigar_via_alignment(self):
+        """
+        Pairwise-alignment fallback for cases the direct walker cannot model: reverse reads
+        with indels, or any read where a mutation indel preceded the sequencing errors.
+        """
         template = self.reference_segment
         if self.is_reverse:
             template = template.reverse_complement()
         query = self.read_sequence
 
         cigar = ["M"] * self.run_read_length
-        aligner2 = PairwiseAligner()
-        aligner2.mode = "fogsaa"
-        alignments2 = aligner2.align(template, query)
-        aligned_template = alignments2[0][0]
-        aligned_query = alignments2[0][1]
+        aligner = PairwiseAligner()
+        aligner.mode = "fogsaa"
+        alignments = aligner.align(template, query)
+        aligned_template = alignments[0][0]
+        aligned_query = alignments[0][1]
         start_point = self.run_read_length - 1 if self.is_reverse else 0
         for i in range(self.run_read_length):
-            if self.is_reverse:
-                index = start_point - i
-            else:
-                index = i
+            index = start_point - i if self.is_reverse else i
             if aligned_template[index] == "-":
                 cigar[index] = "I"
             elif aligned_query[index] == "-":
-                # Ds are special because they don't count toward the final total and we need to maintain a consistent
-                # cigar length, so we insert.
                 cigar.insert(index, "D")
         if self.is_reverse:
             cigar.reverse()

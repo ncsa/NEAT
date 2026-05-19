@@ -81,32 +81,27 @@ class TraditionalQualityModel:
         :return: An array of quality scores.
         """
         if self.uniform_quality_score:
-            return np.array([self.uniform_quality_score] * length)
+            return np.full(length, self.uniform_quality_score, dtype=int)
+
+        # Map each position in the read onto a row of the (model_read_length, 2) score
+        # parameters table. When read length matches the model exactly this is just an
+        # identity; otherwise we evenly spread the model distribution across the read.
+        if length == model_read_length:
+            quality_index_map = np.arange(model_read_length, dtype=np.int64)
         else:
-            if length == model_read_length:
-                quality_index_map = np.arange(model_read_length)
-            else:
-                # This is basically a way to evenly spread the distribution across the number of bases in the read
-                quality_index_map = np.array(
-                    [max([0, model_read_length * n // length]) for n in range(length)]
-                )
+            quality_index_map = np.maximum(
+                0, (model_read_length * np.arange(length, dtype=np.int64)) // length
+            )
 
-            temp_qual_array = []
-            for i in quality_index_map:
-                score = rng.normal(
-                    self.quality_score_probabilities[i][0],
-                    scale=self.quality_score_probabilities[i][1]
-                )
-                # make sure score is in range and an int
-                score = round(score)
-                if score > 42:
-                    score = 42
-                if score < 1:
-                    score = 1
-
-                temp_qual_array.append(score)
-
-            return np.array(temp_qual_array)
+        # Batched per-position normal draws — one rng.normal call returning `length` draws
+        # with element-wise (mean, scale) parameters. Replaces a ~150-iteration Python
+        # loop calling rng.normal scalar-per-base. Same statistical distribution but the
+        # PRNG stream is consumed in a different order, so seeded outputs are not
+        # bit-identical to the prior scalar-loop implementation.
+        means = self.quality_score_probabilities[quality_index_map, 0]
+        scales = self.quality_score_probabilities[quality_index_map, 1]
+        scores = rng.normal(means, scales)
+        return np.clip(np.rint(scores).astype(int), 1, 42)
 
 
 class MarkovQualityModel:
@@ -182,30 +177,34 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         :return: Modified sequence and associated quality scores
         """
 
-        error_indexes = []
         introduced_errors = []
-        # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
-        quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in quality_scores}
 
         # The use case here would be someone running a simulation where they want no sequencing errors.
         # No need to run any loops in this case.
         if self.average_error == 0:
             return introduced_errors
-        else:
-            i = len(quality_scores)
-            while len(error_indexes) < num_errors and i > 0:
-                index = rng.choice(list(range(len(quality_scores))))
-                if rng.random() < quality_score_error_rate[quality_scores[index]]:
-                    error_indexes.append(index)
-                i -= 1
-            # Fallback: if quality scores are too high to naturally reach num_errors,
-            # force errors at positions with at-or-below-median quality scores.
-            # Using <= so that uniform quality arrays (all scores equal) always make progress.
+
+        n = len(quality_scores)
+        # Batched rejection sampling: draw n candidate indices and n uniform deviates in two numpy
+        # calls, then accept the first num_errors candidates where the deviate is below the
+        # quality-derived error rate. Equivalent in distribution to the per-iteration scalar loop
+        # but ~150x cheaper in Python overhead. Statistical caveat: this changes the order in
+        # which the underlying PRNG stream is consumed, so seeded runs are not bit-identical to
+        # the prior interleaved-draw implementation.
+        candidate_indices = rng.integers(n, size=n)
+        candidate_randoms = rng.random(size=n)
+        rates_at_candidates = 10.0 ** (-quality_scores[candidate_indices].astype(float) / 10.0)
+        accepted = candidate_indices[candidate_randoms < rates_at_candidates]
+        error_indexes = accepted[:num_errors].tolist()
+
+        if len(error_indexes) < num_errors:
+            # Fallback: if quality scores are too high to naturally reach num_errors, force errors
+            # at positions with at-or-below-median quality scores. Using <= so that uniform
+            # quality arrays (all scores equal) always make progress.
             median_score = median(quality_scores)
-            while len(error_indexes) < num_errors:
-                index = rng.integers(len(quality_scores))
-                if quality_scores[index] <= median_score:
-                    error_indexes.append(index)
+            eligible = np.flatnonzero(quality_scores <= median_score)
+            needed = num_errors - len(error_indexes)
+            error_indexes.extend(rng.choice(eligible, size=needed, replace=True).tolist())
 
         total_indel_length = 0
         # To prevent deletion collisions

@@ -2,10 +2,8 @@
 Runner for read-simulator in single-ended mode
 """
 import gzip
-import os
 import pickle
 
-import pysam
 from Bio import SeqIO, bgzf
 import logging
 from pathlib import Path
@@ -35,6 +33,7 @@ def read_simulator_single(
         discard_regions: list,
         mutation_regions: list,
         errors_per_read: int,
+        responsibility_length: int | None = None,
 ) -> tuple[int, str, ContigVariants, dict[str, Path], ]:
     """
     inputs:
@@ -115,7 +114,11 @@ def read_simulator_single(
     )
 
     if local_options.produce_fastq or local_options.produce_bam:
-        reads_to_write = generate_reads(
+        # generate_reads streams FASTQ and (if requested) BAM records directly to the
+        # output handles on local_output_file_writer. It no longer accumulates Read
+        # objects per chunk — the coordinate-sorted BAM is emitted inline using a
+        # bounded min-heap to interleave PE mate records. See generate_reads docstring.
+        generate_reads(
             thread_idx,
             local_seq_record,
             seq_error_model,
@@ -131,33 +134,8 @@ def read_simulator_single(
             contig_name,
             contig_index,
             coords[0],
+            responsibility_length,
         )
-        if local_options.produce_bam:
-            # Writing an intermediate bam that is sorted, to make compiling them together at the end easier.
-            bam_handle = local_output_file_writer.files_to_write[local_output_file_writer.bam]
-            for read_data in reads_to_write:
-                read1 = read_data[0]
-                read2 = read_data[1]
-                if read1:
-                    local_output_file_writer.write_bam_record(
-                        read1,
-                        contig_index,
-                        bam_handle,
-                        local_options.read_len
-                    )
-                if read2:
-                    local_output_file_writer.write_bam_record(
-                        read2,
-                        contig_index,
-                        bam_handle,
-                        local_options.read_len
-                    )
-            bam_handle.flush()
-            bam_handle.close()
-            sorted_bam = local_output_file_writer.bam.with_suffix(".sorted.bam")
-            pysam.sort("-@", str(local_options.threads), "-o", str(sorted_bam), str(local_output_file_writer.bam))
-            os.rename(str(sorted_bam), str(local_output_file_writer.bam))
-            _LOG.info(f"bam for thread {thread_idx} written")
 
     if local_options.produce_vcf:
         write_block_vcf(local_variants, contig_name, block_start, local_ref_index, local_output_file_writer)
