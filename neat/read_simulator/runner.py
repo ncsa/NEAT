@@ -94,9 +94,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # to avoid pathological cases on very small or very large genomes. The FASTA index
     # (.fai) gives us per-contig lengths without parsing sequences; pysam.FastaFile
     # builds the .fai on first access if needed.
-    if (options.threads > 1
-            and options.parallel_mode == "size"
-            and options.parallel_block_size <= 0):
+    if options.threads > 1 and options.parallel_block_size <= 0:
         with pysam.FastaFile(str(options.reference)) as _fa:
             total_bp = sum(_fa.get_reference_length(c) for c in _fa.references)
         target_chunks = options.threads * 8

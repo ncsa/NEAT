@@ -202,9 +202,8 @@ More parameters are below:
 | `mutation_bed`      | Full path to a list of regions with a column describing the mutation rate of that region, as a float with values between 0 and 0.3. The mutation rate must be in the third column as, e.g., `mut_rate`=0.00.  |
 | `rng_seed`          | Manually enter a seed for the random number generator. Used for repeating runs. Must be an integer.                                                                                                           |
 | `min_mutations`     | Set the minimum number of mutations that NEAT should add, per contig. Default is 0. We recommend setting this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.   |
-| `threads`           | Number of threads to use. More than 1 will use multi-threading to speed up processing.                                                                                                                        |
-| `parallel_mode`     | `size` or `contig` — whether to divide the contigs into blocks or process one contig per worker. Default `size` when `threads > 1`; forced to `contig` when `threads == 1`.                                  |
-| `parallel_block_size` | Size of each chunk in bases when `parallel_mode: size`. Default `0` (auto-tune from total genome length and thread count, targeting ~8 chunks per thread). Set to a positive integer to override.            |
+| `threads`           | Number of threads to use. More than 1 will use multi-threading to speed up processing. With `threads > 1`, NEAT splits each contig into chunks; with `threads == 1`, one chunk per contig is used.            |
+| `parallel_block_size` | Per-chunk size in bases when `threads > 1`. Default `0` (auto-tune from total genome length and thread count, targeting ~8 chunks per thread). Set to a positive integer to override. Ignored when `threads == 1`. |
 | `cleanup_splits`    | If running more than one simulation on the same input fasta, you can reuse splits files. By default, this will be set to `False`, and splits files will be deleted at the end of the run.                     |
 | `reuse_splits`      | If an existing splits file exists in the output folder, it will use those splits, if this value is set to `True`.                                                                                             |
 
@@ -279,8 +278,7 @@ The inputs in single-threaded, contig-based mode most closely replicate the beha
 
 The configuration used:
 
-- `parallel_mode: contig`
-- `threads: 1`
+- `threads: 1`  (NEAT processes one contig per chunk in single-thread mode)
 - `cleanup_splits: True`
 
 | Organism        | File size (bytes) | Avg. runtime (ms) | Avg. runtime (min) |
@@ -298,9 +296,8 @@ For small genomes, single-threaded performance is already fast (on the order of 
 
 #### NEAT Multi-Threaded (size mode)
 
-Here we enabled NEAT’s parallelized mode (“small filtering”), which splits contigs into size-based blocks and processes them concurrently. The configuration used:
+Here we enabled NEAT’s multi-threaded mode, which splits contigs into size-based blocks and processes them concurrently. The configuration used:
 
-- `parallel_mode: size`
 - `parallel_block_size: 500000`
 - `produce_bam: false`
 - `threads: 7`
@@ -377,7 +374,6 @@ paired_ended: True
 fragment_mean: 350
 fragment_st_dev: 50
 threads: 12
-parallel_mode: size
 # parallel_block_size omitted: auto-tuned from genome length and thread count.
 # Set explicitly (e.g. parallel_block_size: 1000000) only if you have a reason.
 ```
@@ -417,7 +413,6 @@ produce_bam: true
 produce_fastq: true
 produce_vcf: true
 threads: ${SLURM_CPUS_PER_TASK}
-parallel_mode: size
 YAML
 
 neat read-simulator -c "config_${CHROM}.yml" \

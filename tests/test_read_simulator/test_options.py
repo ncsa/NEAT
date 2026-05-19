@@ -73,7 +73,6 @@ def test_from_cli_single_end_with_threads_and_splits(tmp_path: _PathAlias):
         rng_seed: 42
         overwrite_output: true
 
-        parallel_mode: size
         parallel_block_size: 500000
         threads: 2
         cleanup_splits: false
@@ -125,7 +124,6 @@ def test_from_cli_paired_end_fragments(tmp_path: _PathAlias):
         rng_seed: 7
         overwrite_output: true
 
-        parallel_mode: contig
         threads: 1
         cleanup_splits: true
         reuse_splits: false
@@ -157,9 +155,10 @@ def test_default_values():
     assert opts.produce_vcf is False
     assert opts.quality_offset == 33
     assert opts.threads == 1
-    assert opts.parallel_mode == "contig"
-    # Default is 0 (sentinel for auto-tune from genome length and thread count).
-    # An explicit positive int in YAML overrides; see runner for the auto-tune logic.
+    # parallel_block_size default is 0 (sentinel for auto-tune from genome length and
+    # thread count). An explicit positive int in YAML overrides; see runner for the
+    # auto-tune logic. The splitting strategy itself is no longer a user-facing option —
+    # it's derived from `threads` at runtime.
     assert opts.parallel_block_size == 0
     assert opts.cleanup_splits is True
     assert opts.reuse_splits is False
@@ -222,12 +221,15 @@ def test_check_and_log_error_numeric_out_of_range(capsys):
 
 
 def test_check_and_log_error_choice_valid():
-    Options.check_and_log_error("parallel_mode", "contig", "choice", ["size", "contig"])
+    # The schema's `choice`-type validator isn't currently used by any production
+    # option, but we still want it covered. Use a synthetic key name so the test
+    # stays meaningful regardless of which schema fields use this validator.
+    Options.check_and_log_error("_test_choice_key", "alpha", "choice", ["alpha", "beta"])
 
 
 def test_check_and_log_error_choice_invalid():
     with _pytest.raises(SystemExit):
-        Options.check_and_log_error("parallel_mode", "bad", "choice", ["size", "contig"])
+        Options.check_and_log_error("_test_choice_key", "gamma", "choice", ["alpha", "beta"])
 
 
 def test_check_options_no_output_files_exits():
@@ -260,12 +262,28 @@ def test_log_configuration_produces_bam_and_vcf(tmp_path: _PathAlias):
     assert opts.vcf in opts.output_files
 
 
-def test_log_configuration_threads_one_forces_contig(tmp_path: _PathAlias):
+def test_read_yaml_deprecated_parallel_mode_warns(tmp_path: _PathAlias, caplog):
+    """An old YAML config with `parallel_mode: ...` parses without error and emits a
+    deprecation warning. The key is silently ignored (the splitting strategy is now
+    derived from `threads`), so existing user configs keep working across the
+    deprecation."""
     ref = _project_root() / "data" / "H1N1.fa"
-    opts = Options(reference=ref, output_dir=tmp_path, output_prefix="out",
-                   overwrite_output=True, threads=1, parallel_mode="size")
-    opts.log_configuration()
-    assert opts.parallel_mode == "contig"
+    cfg = _textwrap.dedent(
+        f"""
+        reference: {ref}
+        parallel_mode: size
+        threads: 1
+        """
+    ).strip() + "\n"
+    yml_path = tmp_path / "old_config.yml"
+    yml_path.write_text(cfg, encoding="utf-8")
+    import logging as _logging
+    with caplog.at_level(_logging.WARNING):
+        Options.from_cli(tmp_path, "out", yml_path)
+    assert any(
+        "parallel_mode" in rec.message and "deprecated" in rec.message
+        for rec in caplog.records
+    )
 
 
 def test_log_configuration_fragment_mean_less_than_read_len_exits(tmp_path: _PathAlias):
@@ -304,7 +322,6 @@ def test_from_cli_reuse_splits_missing_dir_raises(tmp_path: _PathAlias):
         produce_bam: false
         produce_vcf: false
         threads: 4
-        parallel_mode: size
         parallel_block_size: 500000
         cleanup_splits: true
         reuse_splits: true

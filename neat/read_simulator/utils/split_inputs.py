@@ -74,7 +74,10 @@ def main(options: Options) -> tuple[dict, int, dict]:
         reference_keys_with_lens[contig] = len(seq_str)
         split_fasta_dict[contig] = {}
         
-        if options.parallel_mode == "contig":
+        # Single-thread runs use one chunk per contig; multi-thread runs split each
+        # contig into chunks of `parallel_block_size`. The splitting strategy is no
+        # longer user-configurable — it's derived from `threads`.
+        if options.threads == 1:
             stem = f"{idx:0{pad}d}__{contig}"
             fa = options.splits_dir / f"{stem}.fa.gz"
             write_fasta(contig, seq_str, fa)
