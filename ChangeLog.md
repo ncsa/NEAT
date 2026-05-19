@@ -55,6 +55,16 @@ encodings produce byte-identical BAM records to the prior implementation
 (verified by `pysam.AlignmentFile` read-back and sort-order checks on the
 4-thread ecoli benchmark).
 
+**Config cleanup:** `parallel_mode` has been removed from the YAML schema.
+The splitting strategy is now derived from `threads` (single-chunk-per-
+contig when `threads == 1`, size-based chunking when `threads > 1`).
+Existing configs with `parallel_mode: ...` keep parsing — the key is
+silently ignored with a one-line deprecation warning. The option never
+actually let users change effective behavior under the old logic (it was
+force-overridden to `'contig'` when `threads == 1`, and `'size'` was a
+strict superset for `threads > 1`), so this is API surface cleanup rather
+than a behavior change.
+
 # NEAT v4.4.3
 Major performance and memory overhaul focused on making NEAT viable for large
 genomes on supercomputing hardware. No user-visible API changes (other than
