@@ -1,0 +1,159 @@
+"""
+Real-hap.py integration test for `neat compare-vcfs` (issue #297).
+
+Runs an actual NEAT simulation, then invokes the real hap.py binary. Skipped
+cleanly when hap.py isn't available — set NEAT_HAPPY_BIN to the absolute path
+of a working hap.py to enable.
+
+Notes on hap.py packaging: the conda `bioconda::hap.py` package is Python-2-based.
+Its shebang resolves `python` via PATH, so the test prepends the env's bin
+directory so the child process picks up python2.7 from the same env.
+"""
+import gzip
+import json
+import os
+import shutil
+from pathlib import Path
+
+import pysam
+import pytest
+
+from neat.compare_vcfs.runner import compare_vcfs_runner
+from neat.read_simulator.runner import read_simulator_runner
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def happy_bin():
+    """Skip the test if a working hap.py is unavailable."""
+    explicit = os.environ.get("NEAT_HAPPY_BIN")
+    if explicit and Path(explicit).is_file():
+        return Path(explicit)
+    found = shutil.which("hap.py")
+    if found:
+        return Path(found)
+    pytest.skip(
+        "hap.py is not available. Install via `conda create -n hap_py_env "
+        "-c bioconda -c conda-forge hap.py -y` and set NEAT_HAPPY_BIN to its "
+        "absolute path to enable this test."
+    )
+
+
+@pytest.fixture
+def happy_env_path(happy_bin):
+    """Prepend hap.py's env bin to PATH so its #!/usr/bin/env python shebang
+    resolves to the python interpreter shipped alongside it."""
+    return str(happy_bin.parent)
+
+
+def _write_ref(path: Path) -> Path:
+    """A small but realistic reference: ~2kb with mixed GC content."""
+    # Two contigs so we can also exercise per-contig stats.
+    seq_a = "ACGT" * 250  # 1000 bp
+    seq_b = ("AAAGGCCC" * 125)  # 1000 bp, higher GC
+    path.write_text(f">chr1\n{seq_a}\n>chr2\n{seq_b}\n", encoding="utf-8")
+    # Index for hap.py (it needs a .fai)
+    pysam.FastaFile(str(path))
+    return path
+
+
+def _write_config(path: Path, ref_path: Path) -> Path:
+    cfg = (
+        f"reference: {ref_path}\n"
+        "produce_fastq: false\n"
+        "produce_bam: false\n"
+        "produce_vcf: true\n"
+        "read_len: 100\n"
+        "coverage: 5\n"
+        "rng_seed: 42\n"
+        "mutation_rate: 0.01\n"
+        "overwrite_output: true\n"
+        "cleanup_splits: true\n"
+    )
+    path.write_text(cfg, encoding="utf-8")
+    return path
+
+
+def _called_vcf_dropping_first_variant(golden_vcf: Path, output_vcf: Path) -> Path:
+    """Read golden.vcf.gz, drop the first variant, write a new bgzipped+indexed VCF.
+
+    Dropping a variant creates exactly one false negative; everything else is
+    a true positive (the rest of the truth's variants are also in the caller VCF).
+    """
+    written = 0
+    skipped = False
+    with pysam.VariantFile(str(golden_vcf)) as src:
+        # Keep the same samples / header
+        with pysam.VariantFile(str(output_vcf), "wz", header=src.header) as dst:
+            for rec in src:
+                if not skipped:
+                    skipped = True
+                    continue
+                dst.write(rec)
+                written += 1
+    pysam.tabix_index(str(output_vcf), preset="vcf", force=True)
+    assert skipped, "golden VCF had no variants to drop; test setup wrong"
+    return output_vcf
+
+
+# ===========================================================================
+# Integration test — real hap.py end-to-end
+# ===========================================================================
+
+def test_compare_vcfs_real_happy_end_to_end(tmp_path, happy_bin, happy_env_path, monkeypatch):
+    """
+    Run NEAT, drop one variant from the golden VCF to create a caller VCF with
+    exactly one FN, then run compare-vcfs against the real hap.py binary.
+    """
+    monkeypatch.setenv("PATH", happy_env_path + os.pathsep + os.environ["PATH"])
+
+    # 1. Simulate
+    sim_out = tmp_path / "sim_out"
+    sim_out.mkdir()
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(tmp_path / "conf.yml", ref)
+    read_simulator_runner(str(cfg), str(sim_out), "run")
+
+    golden = sim_out / "run_golden.vcf.gz"
+    assert golden.is_file(), "NEAT did not produce a golden VCF"
+    assert (sim_out / "simulation_summary.json").is_file()
+
+    # 2. Build a "called" VCF missing one variant
+    called = tmp_path / "called.vcf.gz"
+    _called_vcf_dropping_first_variant(golden, called)
+
+    # 3. Run compare-vcfs against real hap.py
+    cmp_out = tmp_path / "cmp_out"
+    compare_vcfs_runner(
+        golden_vcf=str(golden),
+        called_vcf=str(called),
+        neat_run_dir=str(sim_out),
+        output_dir=str(cmp_out),
+        reference=str(ref),
+        happy_bin=str(happy_bin),
+    )
+
+    # 4. Assert the three reports exist and look sensible
+    assert (cmp_out / "comparison_summary.json").is_file()
+    assert (cmp_out / "comparison_summary.txt").is_file()
+    assert (cmp_out / "FN_with_reasons.vcf").is_file()
+    assert (cmp_out / "happy.vcf.gz").is_file()
+
+    report = json.loads((cmp_out / "comparison_summary.json").read_text())
+    assert report["schema_version"] == "1"
+    # We dropped exactly one variant — expect at least one FN
+    assert report["counts"]["FN"] >= 1
+    assert report["counts"]["FP"] == 0
+    assert report["metrics"]["precision"] == pytest.approx(1.0)
+    # Every FN must be attributed somehow
+    total_attribution = sum(report["fn_attribution"].values())
+    assert total_attribution >= report["counts"]["FN"]
+
+    # And the annotated VCF must carry NEAT_REASON
+    with pysam.VariantFile(str(cmp_out / "FN_with_reasons.vcf")) as vf:
+        assert "NEAT_REASON" in vf.header.info
+        for rec in vf:
+            assert "NEAT_REASON" in rec.info
