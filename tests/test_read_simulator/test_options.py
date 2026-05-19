@@ -158,7 +158,9 @@ def test_default_values():
     assert opts.quality_offset == 33
     assert opts.threads == 1
     assert opts.parallel_mode == "contig"
-    assert opts.parallel_block_size == 500000
+    # Default is 0 (sentinel for auto-tune from genome length and thread count).
+    # An explicit positive int in YAML overrides; see runner for the auto-tune logic.
+    assert opts.parallel_block_size == 0
     assert opts.cleanup_splits is True
     assert opts.reuse_splits is False
     assert opts.overwrite_output is False
