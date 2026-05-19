@@ -2,8 +2,8 @@
 Classes for the error models used in the simulation. This will generate errors of the type contained in
 variant_models.py, each of which is based on a type from the variants submodule.
 Also contained is a simple container for storing errors, and a subclass for the simulation type to be performed.
-Currently, only the traditional type is supported, but we are working on adding a Markov chain based model in the near
-future.
+Two quality-score models are available: TraditionalQualityModel here, and the Markov-chain model in
+neat.models.markov_quality_model.
 """
 
 import logging
@@ -33,8 +33,8 @@ _LOG = logging.getLogger(__name__)
 
 class TraditionalQualityModel:
     """
-    This is the traditional NEAT model for generating quality scores. This will be replaced by
-    a Markov model or an optional markov model
+    Per-position normal-distribution model for generating quality scores. An alternative Markov-chain
+    model is available in neat.models.markov_quality_model; this one remains the default.
 
     :param transition_matrix: 2x2 matrix that gives the probability of each base transitioning to another.
     :param quality_scores: numpy array of ints of the PHRED quality scores possible from the sequencing machine
@@ -102,16 +102,6 @@ class TraditionalQualityModel:
         scales = self.quality_score_probabilities[quality_index_map, 1]
         scores = rng.normal(means, scales)
         return np.clip(np.rint(scores).astype(int), 1, 42)
-
-
-class MarkovQualityModel:
-    def __init__(self):
-        # TODO
-        pass
-
-    def get_quality_scores(self):
-        # TODO
-        pass
 
 
 class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):

@@ -20,7 +20,8 @@ from Bio import SeqIO
 from .utils import Options, OutputFileWriter, parse_beds, parse_input_vcf
 from ..common import validate_input_path, validate_output_path
 from .single_runner import read_simulator_single
-from ..models import SequencingErrorModel
+from ..models import SequencingErrorModel, GCBiasModel
+from ..model_gc_bias import compute_genome_wide_gc_mean_weight
 from ..variants import ContigVariants
 from .utils.split_inputs import main as split_main
 from .utils.stitch_outputs import main as stitch_main
@@ -104,6 +105,20 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             f"({total_bp:,} bp genome / {options.threads} threads x 8 chunks/thread)"
         )
         options.parallel_block_size = auto_size
+
+    # Precompute the genome-wide mean GC bias weight once so per-chunk read-count scaling
+    # in cover_dataset can divide by the global mean (preserving the documented "average
+    # coverage" semantics) instead of by the model's max weight (which would under-deliver
+    # coverage on non-uniform models). No-op when gc_model is unset.
+    if options.gc_model:
+        gc_model_obj = GCBiasModel.from_file(options.gc_model)
+        options.gc_global_mean_weight = compute_genome_wide_gc_mean_weight(
+            options.reference, gc_model_obj
+        )
+        _LOG.debug(
+            f"Genome-wide GC mean weight: {options.gc_global_mean_weight:.6f} "
+            f"(max: {gc_model_obj.max_weight:.6f})"
+        )
 
     # Split file by chunk for parallel analysis or by contig for either parallel or single analysis
     _LOG.info("Splitting reference...")

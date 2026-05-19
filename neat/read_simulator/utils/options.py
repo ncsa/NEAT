@@ -177,6 +177,14 @@ class Options(SimpleNamespace):
         self.splits_dir: Path | None = splits_dir
         self.reuse_splits: bool = reuse_splits
         self.gc_model: Path | None = Path(gc_model) if gc_model else None
+        # Genome-wide mean GC bias weight, computed once at the runner level when
+        # gc_model is loaded. cover_dataset divides per-chunk reads by this rather
+        # than by gc_model.max_weight so that target coverage means *average*
+        # coverage across the genome (matching the documented contract), not peak
+        # coverage at the GC bias maximum. None when no gc_model is configured or
+        # when cover_dataset is called outside the runner (e.g., direct unit tests),
+        # in which case scaling falls back to the per-chunk mean (no rescaling).
+        self.gc_global_mean_weight: float | None = None
 
         # Actual output files
         self.fq1: Path | None = fq1

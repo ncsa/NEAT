@@ -1,12 +1,15 @@
-# NEAT v4.4.4
-Follow-up perf release on top of v4.4.3, targeting the three biggest remaining
-single-thread hot paths: variant overlap checks, trinucleotide bias mapping,
-and BAM record encoding. All changes are behavior-preserving (same output for
-the same seed); no user-visible API changes.
+# NEAT v4.5.0
+Follow-up release on top of v4.4.3 bundling three lines of work: another perf
+pass over the remaining single-thread hot paths (variant overlap checks,
+trinucleotide bias mapping, BAM record encoding), a coverage-semantics fix
+for the GC bias model added earlier in the 4.4 line, and removal of the
+`parallel_mode` config key. The perf changes are behavior-preserving for a
+given seed; the GC bias fix changes output bytes when a non-uniform `gc_model`
+is configured, which is the reason for the minor version bump.
 
 **Benchmark (ecoli 10× coverage, 4 threads, identical configs):**
 
-| Metric                       | v4.4.3   | v4.4.4   | Improvement     |
+| Metric                       | v4.4.3   | v4.5.0   | Improvement     |
 |------------------------------|----------|----------|-----------------|
 | ecoli SE wall time           | 1:35     | **1:07** | 1.42× faster    |
 | ecoli PE wall time           | 1:34     | **1:06** | 1.43× faster    |
@@ -50,10 +53,9 @@ SE 14:55 → 1:07 (**13.3× faster**), PE 14:46 → 1:06 (**13.4× faster**).
   Single-thread profile: self time 12.0 s → 3.2 s, cumtime 58.1 s → 8.1 s
   (7.2× cumulative). This was the single biggest hot path of the release.
 
-All 599 unit/integration tests pass. The vectorized sequence and CIGAR
-encodings produce byte-identical BAM records to the prior implementation
-(verified by `pysam.AlignmentFile` read-back and sort-order checks on the
-4-thread ecoli benchmark).
+The vectorized sequence and CIGAR encodings produce byte-identical BAM records
+to the prior implementation (verified by `pysam.AlignmentFile` read-back and
+sort-order checks on the 4-thread ecoli benchmark).
 
 **Config cleanup:** `parallel_mode` has been removed from the YAML schema.
 The splitting strategy is now derived from `threads` (single-chunk-per-
@@ -64,6 +66,39 @@ actually let users change effective behavior under the old logic (it was
 force-overridden to `'contig'` when `threads == 1`, and `'size'` was a
 strict superset for `threads > 1`), so this is API surface cleanup rather
 than a behavior change.
+
+**GC bias coverage fix.** When a non-uniform `gc_model` was configured,
+`cover_dataset` had been scaling per-chunk reads by `chunk_mean / max_weight`.
+That made `coverage` the *peak* coverage at the GC bias maximum, undercounting
+total reads by `mean_weight_genome / max_weight` (a typical model with
+mean ~0.7, max 1.0 delivered ~70 % of the requested coverage). The user-facing
+config (`template_neat_config.yml:18`) documents `coverage` as "average coverage
+for the entire genome," so this was a documentation/behavior mismatch.
+
+The fix:
+
+- New `compute_genome_wide_gc_mean_weight(reference, gc_model)` helper
+  (`neat/model_gc_bias/utils.py`) — single-pass vectorized scan over every
+  length-`window_size` window in the reference, reusing the same prefix-sum
+  windowing as `cover_dataset`. Uniform models short-circuit without scanning.
+- `read_simulator_runner` precomputes this once and stores it on `options` so
+  all worker chunks see the same denominator (no redundant per-chunk genome
+  scans).
+- `cover_dataset` now scales by `chunk_mean / global_mean`, which averages to
+  1.0 across chunks and preserves `options.coverage` as the genome-wide average.
+- When `cover_dataset` is called directly outside the runner (e.g., unit tests
+  with an in-memory `SeqRecord`), `gc_global_mean_weight` is unset and the
+  scaling falls back to chunk-local mean — i.e., no rescaling, which is the
+  correct single-chunk behavior.
+
+The stale `TODO use gc bias to skew this number. Calculate at the runner level.`
+at `generate_reads.py:72` is removed; that work is now complete.
+
+All 603 unit/integration tests pass (up from 599 with three new
+`test_compute_genome_wide_gc_mean_*` unit tests plus
+`test_gc_bias_preserves_average_coverage`, which runs the full pipeline against
+a half-AT / half-GC reference under a non-uniform model and asserts delivered
+reads are within 20 % of `coverage × genome_length / read_len`).
 
 # NEAT v4.4.3
 Major performance and memory overhaul focused on making NEAT viable for large

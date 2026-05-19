@@ -8,6 +8,56 @@ from Bio import SeqIO
 from pathlib import Path
 
 
+def compute_genome_wide_gc_mean_weight(reference_path: str | Path, gc_model) -> float:
+    """
+    Compute the genome-wide mean GC bias weight across every length-`window_size` window
+    in the reference. Used at the runner level so that per-chunk read-count scaling can
+    divide by the global mean (preserving the user-requested average coverage) rather
+    than by the model's max weight (which would under-deliver coverage).
+
+    For a uniform model this returns weights[0] without scanning the reference.
+    All-N or sub-window contigs are skipped.
+    """
+    if gc_model.is_uniform:
+        return float(gc_model.weights[0])
+
+    window_size = gc_model.window_size
+    weights_arr = np.asarray(gc_model.weights, dtype=np.float32)
+
+    total_weight = 0.0
+    total_positions = 0
+
+    with pysam.FastaFile(str(reference_path)) as fa:
+        for contig in fa.references:
+            span_length = fa.get_reference_length(contig)
+            if span_length <= window_size:
+                continue
+            seq = fa.fetch(contig).upper()
+            n_positions = span_length - window_size + 1
+            seq_arr = np.frombuffer(seq.encode(), dtype=np.uint8)
+            gc_mask = (seq_arr == ord('G')) | (seq_arr == ord('C'))
+            n_mask = seq_arr == ord('N')
+            gc_cumsum = np.empty(span_length + 1, dtype=np.int64)
+            n_cumsum = np.empty(span_length + 1, dtype=np.int64)
+            gc_cumsum[0] = 0
+            np.cumsum(gc_mask, out=gc_cumsum[1:])
+            n_cumsum[0] = 0
+            np.cumsum(n_mask, out=n_cumsum[1:])
+            positions = np.arange(n_positions, dtype=np.int64)
+            window_ends = positions + window_size
+            gc_counts = (gc_cumsum[window_ends] - gc_cumsum[positions]).astype(np.float32)
+            n_counts = (n_cumsum[window_ends] - n_cumsum[positions]).astype(np.float32)
+            called = np.maximum(window_size - n_counts, 1.0)
+            gc_indices = np.clip(np.rint(gc_counts / called * 100).astype(np.int16), 0, 100)
+            weights = weights_arr[gc_indices]
+            total_weight += float(weights.sum())
+            total_positions += n_positions
+
+    if total_positions == 0:
+        return float(gc_model.weights[0])
+    return total_weight / total_positions
+
+
 def calculate_gc_content(sequence: str) -> float:
     """
     Calculates GC content of a sequence.

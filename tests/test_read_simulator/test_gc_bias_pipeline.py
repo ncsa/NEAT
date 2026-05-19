@@ -167,3 +167,106 @@ def test_gc_bias_multi_contig(tmp_path):
                 
     # chr2 is 100% G, chr1 is 100% A. With our model, chr2 should have significantly more reads.
     assert chr2_reads > chr1_reads
+
+
+def test_gc_bias_preserves_average_coverage(tmp_path):
+    """Average coverage across the genome should match the requested coverage even when
+    a non-uniform GC bias model is applied. Before the v4.4.5 fix, scaling by max_weight
+    instead of genome-wide mean under-delivered total reads by mean/max."""
+    # Reference: 50/50 split AT vs GC. With a model favoring 100% GC, a chunk of 100% GC
+    # has mean_weight near max, but a chunk of 0% GC has weight ~0.5 (the boost in the
+    # weights array). Genome-wide mean lies between the two extremes.
+    ref_seq = "A" * 5000 + "G" * 5000
+    ref_path = _write_ref(tmp_path / "ref.fa", ref_seq)
+
+    from neat.models.gc_bias_model import GCBiasModel
+    weights = [0.5] * 101
+    weights[100] = 1.0
+    model = GCBiasModel(weights, window_size=100)
+    model_path = tmp_path / "biased_model.pickle.gz"
+    model.save(model_path)
+
+    coverage = 30
+    read_len = 50
+    out_dir = tmp_path / "avg_out"
+    cfg_path = _write_config(
+        tmp_path / "avg.yml",
+        ref_path,
+        gc_model=str(model_path),
+        coverage=coverage,
+        read_len=read_len,
+    )
+
+    read_simulator_runner(str(cfg_path), str(out_dir), "sim_avg")
+
+    fq_files = list(out_dir.glob("*.fastq.gz"))
+    n_reads = 0
+    with gzip.open(fq_files[0], "rt") as f:
+        for line in f:
+            if line.startswith("@NEAT_generated"):
+                n_reads += 1
+
+    # Expected total bases produced (single-ended): coverage × genome_length.
+    # Expected total reads: expected_bases / read_len.
+    expected_reads = (coverage * len(ref_seq)) / read_len
+    delivered_ratio = n_reads / expected_reads
+
+    # Allow 25% tolerance for stochastic sampling, GC bin smoothing, and the boundary
+    # window (5000 ± window_size) where GC content transitions. Pre-fix the ratio was
+    # ~mean/max ≈ (0.5+1.0)/2 / 1.0 = 0.75, so even loose bounds catch a regression.
+    assert 0.8 < delivered_ratio < 1.2, (
+        f"Average coverage drifted: delivered {n_reads} reads vs expected "
+        f"{expected_reads:.0f} (ratio {delivered_ratio:.3f})"
+    )
+
+
+def test_gc_bias_preserves_coverage_multi_threaded(tmp_path):
+    """Same average-coverage contract as the single-threaded test, but with threads>1 and
+    a parallel_block_size small enough to force sub-contig chunking. Verifies that the
+    precomputed genome-wide mean is correctly applied across worker processes."""
+    # 8 kb reference with 4 alternating 2 kb segments — gives a non-trivial spread of
+    # per-chunk GC content so the chunks each see different mean_weights.
+    ref_seq = ("A" * 2000) + ("G" * 2000) + ("A" * 2000) + ("G" * 2000)
+    ref_path = _write_ref(tmp_path / "ref.fa", ref_seq)
+
+    from neat.models.gc_bias_model import GCBiasModel
+    weights = [0.5] * 101
+    weights[100] = 1.0
+    model = GCBiasModel(weights, window_size=100)
+    model_path = tmp_path / "biased_model.pickle.gz"
+    model.save(model_path)
+
+    coverage = 30
+    read_len = 50
+    out_dir = tmp_path / "mt_out"
+    # parallel_block_size = 2500 with read_len=50 yields overlap=100 and produces 4 chunks
+    # over the 8 kb reference, exercising the multi-chunk path under threads=2.
+    cfg_path = _write_config(
+        tmp_path / "mt.yml",
+        ref_path,
+        gc_model=str(model_path),
+        coverage=coverage,
+        read_len=read_len,
+        threads=2,
+        parallel_block_size=2500,
+    )
+
+    read_simulator_runner(str(cfg_path), str(out_dir), "sim_mt")
+
+    fq_files = list(out_dir.glob("*.fastq.gz"))
+    n_reads = 0
+    with gzip.open(fq_files[0], "rt") as f:
+        for line in f:
+            if line.startswith("@NEAT_generated"):
+                n_reads += 1
+
+    expected_reads = (coverage * len(ref_seq)) / read_len
+    delivered_ratio = n_reads / expected_reads
+
+    # Same 20 % tolerance as the single-threaded test. Pre-fix the ratio would have been
+    # ~0.75 (mean/max); the multi-threaded path is where the per-chunk precomputation
+    # propagation matters most, so this test guards against regressions in that plumbing.
+    assert 0.8 < delivered_ratio < 1.2, (
+        f"Multi-threaded average coverage drifted: delivered {n_reads} reads vs expected "
+        f"{expected_reads:.0f} (ratio {delivered_ratio:.3f})"
+    )
