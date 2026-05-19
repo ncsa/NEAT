@@ -45,8 +45,6 @@ def filter_lengths(datalist: list, min_reads: int) -> list:
     """
     Filters the datalist to remove outliers.
 
-    TODO this function might be useful in the simulation as well
-
     :param datalist: The list to filter
     :param min_reads: filter reads with less than this many reads. If 0, filter_lengths returns the original datalist.
     :return: The filtered list

@@ -38,7 +38,6 @@ def pick_ploids(ploidy: int,
             how_many = 1
         else:
             # if it's polyploid, we'll consider it to be on roughly half the ploids
-            # TODO may need to improve the modeling for polyploid, maybe
             how_many = ploidy//2
 
     # wp is just the temporary genotype list, a hat tip to the old version of NEAT

@@ -4,7 +4,6 @@ Utilities to generate the sequencing error model
 
 import logging
 import numpy as np
-# TODO implement plotting
 import matplotlib.pyplot as plt
 import sys
 
@@ -144,9 +143,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
                 _LOG.debug("Skipping record that doesn't match read length")
                 continue
 
-            # TODO Adding this section to account for quality score "shape" in a fastq
-            # shape_curves.append(qualities_to_check)
-
             for j in range(read_length):
                 # The qualities of each read_position_scores
                 q_score = qualities_to_check[j]
@@ -178,16 +174,6 @@ def parse_file(input_file: str, quality_scores: list, max_reads: int, qual_offse
             average_q = np.average(expanded_counts)
             st_d_q = np.std(expanded_counts)
         avg_std_by_pos.append((average_q, st_d_q))
-
-    # TODO In progress, working on ensuring the error model produces the right shape
-    # shape_curves = pd.DataFrame(shape_curves)
-    # columns = list(range(1, 11)) + list(range(15, len(shape_curves[0]), 5))
-    # shape_curves_plot = shape_curves.iloc[columns]
-    # averages = []
-    # for name, value in shape_curves_plot.items():
-    #     averages.append(np.average(value))
-    # sns.boxplot(data=shape_curves_plot, fliersize=0)
-    # plt.show()
 
     # Calculates the average error rate
     tot_bases = read_length * records_read
