@@ -205,8 +205,6 @@ More parameters are below:
 | `min_mutations`     | Set the minimum number of mutations that NEAT should add, per contig. Default is 0. We recommend setting this to at least one for small chromosomes, so NEAT will produce at least one mutation per contig.   |
 | `threads`           | Number of threads to use. More than 1 will use multi-threading to speed up processing. With `threads > 1`, NEAT splits each contig into chunks; with `threads == 1`, one chunk per contig is used.            |
 | `parallel_block_size` | Per-chunk size in bases when `threads > 1`. Default `0` (auto-tune from total genome length and thread count, targeting ~8 chunks per thread). Set to a positive integer to override. Ignored when `threads == 1`. |
-| `cleanup_splits`    | If running more than one simulation on the same input fasta, you can reuse splits files. By default, this will be set to `False`, and splits files will be deleted at the end of the run.                     |
-| `reuse_splits`      | If an existing splits file exists in the output folder, it will use those splits, if this value is set to `True`.                                                                                             |
 
 The command line options for NEAT are as follows:
 
@@ -280,7 +278,6 @@ The inputs in single-threaded, contig-based mode most closely replicate the beha
 The configuration used:
 
 - `threads: 1`  (NEAT processes one contig per chunk in single-thread mode)
-- `cleanup_splits: True`
 
 | Organism        | File size (bytes) | Avg. runtime (ms) | Avg. runtime (min) |
 |-----------------|-------------------|-------------------|--------------------|
@@ -302,7 +299,6 @@ Here we enabled NEAT’s multi-threaded mode, which splits contigs into size-bas
 - `parallel_block_size: 500000`
 - `produce_bam: false`
 - `threads: 7`
-- `cleanup_splits: True`
 
 | Organism        | File size (bytes) | Avg. runtime (ms) | Avg. runtime (min) |
 |-----------------|-------------------|-------------------|--------------------|

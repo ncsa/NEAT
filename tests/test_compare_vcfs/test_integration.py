@@ -71,7 +71,6 @@ def _write_config(path: Path, ref_path: Path) -> Path:
         "rng_seed: 42\n"
         "mutation_rate: 0.01\n"
         "overwrite_output: true\n"
-        "cleanup_splits: true\n"
     )
     path.write_text(cfg, encoding="utf-8")
     return path
@@ -250,8 +249,7 @@ def test_compare_vcfs_real_happy_with_chrom_mismatched_bed(tmp_path, happy_bin, 
         "rng_seed: 42\n"
         "mutation_rate: 0.01\n"
         f"mutation_bed: {bed}\n"
-        "overwrite_output: true\n"
-        "cleanup_splits: true\n",
+        "overwrite_output: true\n",
         encoding="utf-8",
     )
     read_simulator_runner(str(cfg_path), str(sim_out), "run")

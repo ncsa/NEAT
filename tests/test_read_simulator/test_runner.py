@@ -263,7 +263,6 @@ def _write_config(path: Path, ref_path: Path, **overrides) -> Path:
         "coverage": 2,
         "rng_seed": 42,
         "overwrite_output": "true",
-        "cleanup_splits": "true",
     }
     defaults.update(overrides)
     lines = "\n".join(f"{k}: {v}" for k, v in defaults.items())

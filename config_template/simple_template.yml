@@ -29,5 +29,3 @@ overwrite_output: .
 
 parallel_block_size: .
 threads: .
-cleanup_splits: .
-reuse_splits: .
