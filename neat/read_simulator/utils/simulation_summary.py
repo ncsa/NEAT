@@ -29,6 +29,7 @@ def write_simulation_summary(
     config_path: Path,
     analysis_start: float,
     contigs_simulated: Iterable[str],
+    reference_contigs: Iterable[str] | None = None,
 ) -> Path:
     """
     Write `simulation_summary.json` into `output_dir`.
@@ -90,6 +91,7 @@ def write_simulation_summary(
             "total_variants":     total_variants,
             "variants_by_contig": variants_by_contig,
             "contigs_simulated":  list(contigs_simulated),
+            "reference_contigs":  list(reference_contigs) if reference_contigs is not None else list(contigs_simulated),
         },
     }
 

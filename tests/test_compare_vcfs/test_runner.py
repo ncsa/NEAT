@@ -367,3 +367,65 @@ def test_runner_validates_optional_target_bed_when_provided(tmp_path):
             target_bed=str(tmp_path / "missing_target.bed"),
         )
     assert excinfo.value.code == 5
+
+
+# ===========================================================================
+# Chrom-naming mismatch end-to-end through the runner
+# ===========================================================================
+
+def test_runner_emits_chrom_mismatch_warning_into_json_report(tmp_path, monkeypatch):
+    """A BED with mismatched chrom names must surface as a warning in the JSON."""
+    mut = tmp_path / "mut.bed"
+    mut.write_text("1\t0\t1000\n")
+    run_dir = _make_summary_dir(tmp_path, extra={
+        "delivered": {"reference_contigs": ["chr1"], "contigs_simulated": ["chr1"]},
+        "config": {"mutation_bed": str(mut), "target_bed": None},
+    })
+    golden = _touch(tmp_path / "golden.vcf")
+    called = _touch(tmp_path / "called.vcf")
+    _make_executable(tmp_path / "hap.py")
+    monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
+    _install_fake_happy(monkeypatch, _HAPPY_HEADER_ONE_FN)
+
+    out_dir = tmp_path / "out"
+    compare_vcfs_runner(
+        golden_vcf=str(golden), called_vcf=str(called),
+        neat_run_dir=str(run_dir),
+        output_dir=str(out_dir),
+    )
+    report = json.loads((out_dir / "comparison_summary.json").read_text())
+    assert len(report["warnings"]) == 1
+    w = report["warnings"][0]
+    assert w["type"] == "chrom_naming_mismatch"
+    assert w["suggested_aliases"] == {"1": "chr1"}
+
+
+def test_runner_chrom_aliases_silences_warning_and_fixes_attribution(tmp_path, monkeypatch):
+    """Passing --chrom-aliases must both remove the warning AND make the FN
+    correctly attributed (no longer 'outside_mutation_bed')."""
+    mut = tmp_path / "mut.bed"
+    mut.write_text("1\t0\t1000\n")  # FN at chr1:200 falls inside if alias applied
+    run_dir = _make_summary_dir(tmp_path, extra={
+        "delivered": {"reference_contigs": ["chr1"], "contigs_simulated": ["chr1"]},
+        "config": {"mutation_bed": str(mut), "target_bed": None},
+    })
+    aliases = tmp_path / "aliases.tsv"
+    aliases.write_text("1\tchr1\n")
+
+    golden = _touch(tmp_path / "golden.vcf")
+    called = _touch(tmp_path / "called.vcf")
+    _make_executable(tmp_path / "hap.py")
+    monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
+    _install_fake_happy(monkeypatch, _HAPPY_HEADER_ONE_FN)
+
+    out_dir = tmp_path / "out"
+    compare_vcfs_runner(
+        golden_vcf=str(golden), called_vcf=str(called),
+        neat_run_dir=str(run_dir),
+        output_dir=str(out_dir),
+        chrom_aliases=str(aliases),
+    )
+    report = json.loads((out_dir / "comparison_summary.json").read_text())
+    assert report["warnings"] == []
+    # FN at chr1:200, BED's '1' mapped to 'chr1' → position 200 IS inside [0, 1000)
+    assert report["fn_attribution"] == {"unknown": 1}

@@ -39,6 +39,7 @@ def test_compare_vcfs_help_text_lists_all_documented_flags():
         "--target-bed",
         "--happy-bin",
         "--plot",
+        "--chrom-aliases",
     ]:
         assert flag in help_text, f"--help missing {flag}"
 
@@ -67,6 +68,7 @@ def test_command_routes_all_args_to_runner(monkeypatch):
         "--target-bed", "/t.bed",
         "--happy-bin", "/bin/hap.py",
         "--plot",
+        "--chrom-aliases", "/aliases.tsv",
     ])
     cmd.execute(args)
 
@@ -79,6 +81,7 @@ def test_command_routes_all_args_to_runner(monkeypatch):
         "target_bed": "/t.bed",
         "happy_bin": "/bin/hap.py",
         "plot": True,
+        "chrom_aliases": "/aliases.tsv",
     }
 
 
@@ -95,3 +98,4 @@ def test_command_optional_flags_default_to_none_or_false():
     assert args.target_bed is None
     assert args.happy_bin is None
     assert args.plot is False
+    assert args.chrom_aliases is None

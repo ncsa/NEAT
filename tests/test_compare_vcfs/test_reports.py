@@ -118,7 +118,8 @@ def test_build_comparison_summary_has_required_top_level_keys(tmp_path):
     s = _build_minimal_summary(tmp_path)
     assert set(s) == {
         "schema_version", "neat_version", "generated_at",
-        "inputs", "happy", "counts", "metrics", "fn_attribution", "outputs",
+        "inputs", "happy", "counts", "metrics", "fn_attribution",
+        "warnings", "outputs",
     }
 
 

@@ -20,8 +20,9 @@ import shutil
 from pathlib import Path
 
 from ..common import validate_input_path
+from ..common.chrom_names import load_chrom_aliases
 from ..read_simulator.utils.simulation_summary import SCHEMA_VERSION
-from .attribution import attribute_fns
+from .attribution import attribute_fns, detect_chrom_naming_mismatches
 from .happy import run_happy, parse_happy_output
 from .reports import (
     build_comparison_summary,
@@ -61,6 +62,7 @@ def compare_vcfs_runner(
     target_bed: str | None = None,
     happy_bin: str | None = None,
     plot: bool = False,
+    chrom_aliases: str | None = None,
 ):
     """
     Run the comparison pipeline.
@@ -89,6 +91,11 @@ def compare_vcfs_runner(
         validate_input_path(Path(reference).resolve())
     if target_bed is not None:
         validate_input_path(Path(target_bed).resolve())
+    if chrom_aliases is not None:
+        validate_input_path(Path(chrom_aliases).resolve())
+    aliases = load_chrom_aliases(chrom_aliases)
+    if aliases:
+        _LOG.info(f"Loaded {len(aliases)} chrom alias mapping(s) from {chrom_aliases}")
 
     happy = discover_happy(happy_bin)
     _LOG.info(f"Using hap.py at: {happy}")
@@ -119,7 +126,11 @@ def compare_vcfs_runner(
         f"FN={len(buckets['FN'])} FP={len(buckets['FP'])}"
     )
 
-    fn_reasons = attribute_fns(buckets["FN"], summary)
+    chrom_warnings = detect_chrom_naming_mismatches(summary, aliases=aliases)
+    for w in chrom_warnings:
+        _LOG.warning(w["message"])
+
+    fn_reasons = attribute_fns(buckets["FN"], summary, aliases=aliases)
     reason_counts = summarize_fn_reasons(fn_reasons)
     if fn_reasons:
         _LOG.info(f"FN attribution: {reason_counts}")
@@ -144,6 +155,7 @@ def compare_vcfs_runner(
         fn_with_reasons_vcf=fn_with_reasons_path,
         comparison_summary_json=comparison_json_path,
         comparison_summary_txt=comparison_txt_path,
+        warnings=chrom_warnings,
     )
     write_comparison_summary_json(report, comparison_json_path)
     write_comparison_summary_txt(report, comparison_txt_path)

@@ -619,7 +619,8 @@ neat compare-vcfs golden.vcf called.vcf            \
         --reference reference.fa                   \
         [--target-bed target.bed]                  \
         [--happy-bin /abs/path/to/hap.py]          \
-        [--plot]
+        [--plot]                                   \
+        [--chrom-aliases aliases.tsv]
 ```
 
 Outputs (in `--output-dir`):
@@ -631,6 +632,15 @@ Outputs (in `--output-dir`):
 | `FN_with_reasons.vcf`       | hap.py's false-negative records, each annotated with a `NEAT_REASON` INFO tag |
 | `happy.vcf.gz` (+ siblings) | Raw hap.py output preserved for inspection |
 | `fn_attribution.png`        | Optional — only written when `--plot` is set |
+
+**Chromosome-name conventions:** NEAT does NOT silently normalize chrom names
+across the reference, golden VCF, called VCF, and BED files. If your
+`mutation_bed` uses `1`, `2`, … but the reference uses `chr1`, `chr2`, …,
+`compare-vcfs` detects the mismatch up front and writes a warning into
+`comparison_summary.json` suggesting the rename. Pass `--chrom-aliases
+aliases.tsv` (two-column TSV: `bed_name<TAB>canonical_name`) to apply the
+rename at load time. This also handles common mitochondrial variants
+(`M`/`MT`/`chrM`/`chrMT`).
 
 **False-negative reason categories:**
 

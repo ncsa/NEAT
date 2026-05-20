@@ -73,6 +73,7 @@ def build_comparison_summary(
     fn_with_reasons_vcf: Path,
     comparison_summary_json: Path,
     comparison_summary_txt: Path,
+    warnings: list[dict] | None = None,
 ) -> dict:
     """Assemble the comparison_summary dict from the run's artifacts."""
     return {
@@ -92,6 +93,7 @@ def build_comparison_summary(
         "counts":         dict(counts),
         "metrics":        compute_metrics(counts),
         "fn_attribution": dict(fn_attribution),
+        "warnings":       list(warnings) if warnings else [],
         "outputs": {
             "fn_with_reasons_vcf":      str(Path(fn_with_reasons_vcf).resolve()),
             "comparison_summary_json":  str(Path(comparison_summary_json).resolve()),
@@ -161,6 +163,12 @@ def render_summary_txt(summary: dict) -> str:
             lines.append(f"  {reason:<{width}} {fn_attr[reason]}")
     else:
         lines.append("  (no false negatives)")
+
+    warnings = summary.get("warnings") or []
+    if warnings:
+        lines += ["", "Warnings", "--------"]
+        for w in warnings:
+            lines.append(f"  - {w.get('message', w)}")
 
     lines += [
         "",

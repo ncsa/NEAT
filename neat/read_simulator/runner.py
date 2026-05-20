@@ -334,6 +334,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
         config_path=config,
         analysis_start=analysis_start,
         contigs_simulated=list(input_variants_dict.keys()),
+        reference_contigs=list(reference_keys_with_lens.keys()),
     )
 
 def filter_thread_variants(contig_variants: ContigVariants, coords: tuple[int, int]) -> ContigVariants:

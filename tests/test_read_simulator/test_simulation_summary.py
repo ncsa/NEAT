@@ -297,6 +297,32 @@ def test_write_simulation_summary_contigs_simulated_preserves_order(tmp_path):
     assert summary["delivered"]["contigs_simulated"] == ["chr3", "chr1", "chr2"]
 
 
+def test_write_simulation_summary_records_reference_contigs(tmp_path):
+    """`reference_contigs` captures the full FASTA contig set, separate from
+    `contigs_simulated` (which is what the simulator iterated over)."""
+    write_simulation_summary(
+        options=_make_options(), output_dir=tmp_path, file_prefix="run",
+        config_path=tmp_path / "cfg.yml", analysis_start=0.0,
+        contigs_simulated=["chr1"],
+        reference_contigs=["chr1", "chr2", "chrX", "chrM"],
+    )
+    delivered = json.loads((tmp_path / "simulation_summary.json").read_text())["delivered"]
+    assert delivered["reference_contigs"] == ["chr1", "chr2", "chrX", "chrM"]
+    assert delivered["contigs_simulated"] == ["chr1"]
+
+
+def test_write_simulation_summary_reference_contigs_defaults_to_contigs_simulated(tmp_path):
+    """When reference_contigs is omitted, fall back to contigs_simulated so old
+    callers that don't pass it still get a populated field."""
+    write_simulation_summary(
+        options=_make_options(), output_dir=tmp_path, file_prefix="run",
+        config_path=tmp_path / "cfg.yml", analysis_start=0.0,
+        contigs_simulated=["chr1", "chr2"],
+    )
+    delivered = json.loads((tmp_path / "simulation_summary.json").read_text())["delivered"]
+    assert delivered["reference_contigs"] == ["chr1", "chr2"]
+
+
 def test_write_simulation_summary_outputs_none_when_nothing_produced(tmp_path):
     write_simulation_summary(
         options=_make_options(), output_dir=tmp_path, file_prefix="run",

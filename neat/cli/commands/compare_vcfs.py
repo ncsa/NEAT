@@ -64,6 +64,14 @@ class Command(BaseCommand):
             action="store_true",
             help="Also write fn_attribution.png — a bar chart of FN reason counts."
         )
+        parser.add_argument(
+            "--chrom-aliases",
+            dest="chrom_aliases",
+            type=str, default=None, metavar="TSV",
+            help="Two-column TSV mapping BED chrom names to reference-canonical names, "
+                 "applied to mutation_bed and target_bed at load time. Used when the BED "
+                 "uses '1' but the reference uses 'chr1', or similar prefix/mt mismatches."
+        )
 
     def execute(self, arguments: argparse.Namespace):
         compare_vcfs_runner(
@@ -75,4 +83,5 @@ class Command(BaseCommand):
             target_bed=arguments.target_bed,
             happy_bin=arguments.happy_bin,
             plot=arguments.plot,
+            chrom_aliases=arguments.chrom_aliases,
         )

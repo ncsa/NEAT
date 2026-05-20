@@ -29,9 +29,19 @@ it; install via `conda create -n hap_py_env -c bioconda -c conda-forge hap.py`
 and pass the absolute path via `--happy-bin`, or put it on `$PATH`. Without
 hap.py, the command exits with an install hint.
 
+**Chromosome-name handling:** `compare-vcfs` detects when a BED's chrom names
+don't overlap the reference's (e.g., BED uses `1`/`MT` while reference uses
+`chr1`/`chrM`) and writes a warning into `comparison_summary.json` suggesting
+an alias mapping. Users can apply the mapping via a new `--chrom-aliases TSV`
+flag. NEAT does not auto-normalize — silent renaming would mask real bugs.
+`simulation_summary.json` now also records `delivered.reference_contigs` (the
+full FASTA contig set) alongside `contigs_simulated`.
+
 **Not in this release** (deferred to follow-up issues): full per-region
 simulation telemetry (per-chunk coverage, GC-bias map, error rates by position)
-for richer FN attribution, and SV-comparison support.
+for richer FN attribution, and SV-comparison support. The simulator's silent
+"skip BED chroms not in reference" warning will be promoted to a fatal error
+in a future release with an opt-in `chrom_aliases` config key.
 
 # NEAT v4.4.4
 Follow-up release on top of v4.4.3 bundling three lines of work: another perf

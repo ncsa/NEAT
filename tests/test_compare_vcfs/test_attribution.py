@@ -13,6 +13,7 @@ from neat.compare_vcfs.attribution import (
     REASON_UNKNOWN,
     attribute_fn,
     attribute_fns,
+    detect_chrom_naming_mismatches,
     load_bed_intervals,
     position_in_intervals,
 )
@@ -256,3 +257,114 @@ def test_attribute_fns_pairs_each_record_with_reasons(tmp_path):
     [(returned_rec, reasons)] = attribute_fns([rec], summary)
     assert returned_rec is rec
     assert reasons == [REASON_UNKNOWN]
+
+
+def test_attribute_fns_applies_aliases_to_bed_chrom_keys(tmp_path):
+    """User aliases must rewrite BED chrom names so the FN check finds them."""
+    bed = tmp_path / "mut.bed"
+    bed.write_text("1\t0\t1000\n")  # BED uses '1', reference uses 'chr1'
+    summary = {
+        "delivered": {"contigs_simulated": ["chr1"], "reference_contigs": ["chr1"]},
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    fns = [_fake_record("chr1", 500)]
+    # Without aliases — FN is outside (BED chrom doesn't match ref)
+    [(_, no_alias_reasons)] = attribute_fns(fns, summary)
+    assert no_alias_reasons == [REASON_OUTSIDE_MUTATION_BED]
+    # With aliases — FN is inside (BED's '1' is normalized to 'chr1')
+    [(_, aliased_reasons)] = attribute_fns(fns, summary, aliases={"1": "chr1"})
+    assert aliased_reasons == [REASON_UNKNOWN]
+
+
+# ===========================================================================
+# detect_chrom_naming_mismatches
+# ===========================================================================
+
+def test_detect_chrom_mismatch_empty_when_no_beds_configured():
+    summary = {
+        "delivered": {"reference_contigs": ["chr1"], "contigs_simulated": ["chr1"]},
+        "config": {"mutation_bed": None, "target_bed": None},
+    }
+    assert detect_chrom_naming_mismatches(summary) == []
+
+
+def test_detect_chrom_mismatch_empty_when_overlap_exists(tmp_path):
+    """If even one chrom overlaps, no warning — partial match is acceptable."""
+    bed = tmp_path / "mut.bed"
+    bed.write_text("chr1\t0\t1000\nweird\t0\t100\n")
+    summary = {
+        "delivered": {"reference_contigs": ["chr1", "chr2"]},
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    assert detect_chrom_naming_mismatches(summary) == []
+
+
+def test_detect_chrom_mismatch_suggests_prefix_aliases(tmp_path):
+    """When the BED uses '1'/'2' and reference uses 'chr1'/'chr2', the warning
+    must include a prefix-flip mapping in suggested_aliases."""
+    bed = tmp_path / "mut.bed"
+    bed.write_text("1\t0\t1000\n2\t0\t1000\n")
+    summary = {
+        "delivered": {"reference_contigs": ["chr1", "chr2"]},
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    warnings = detect_chrom_naming_mismatches(summary)
+    assert len(warnings) == 1
+    w = warnings[0]
+    assert w["type"] == "chrom_naming_mismatch"
+    assert w["bed"] == "mutation_bed"
+    assert w["suggested_aliases"] == {"1": "chr1", "2": "chr2"}
+    assert "--chrom-aliases" in w["message"]
+
+
+def test_detect_chrom_mismatch_no_suggestion_when_inscrutable(tmp_path):
+    """Names with no prefix-flip and no mt match → warning with empty suggested_aliases."""
+    bed = tmp_path / "mut.bed"
+    bed.write_text("weird_contig\t0\t1000\n")
+    summary = {
+        "delivered": {"reference_contigs": ["chr1"]},
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    warnings = detect_chrom_naming_mismatches(summary)
+    assert len(warnings) == 1
+    assert warnings[0]["suggested_aliases"] == {}
+    assert "no naming convention" in warnings[0]["message"]
+
+
+def test_detect_chrom_mismatch_silenced_by_user_aliases(tmp_path):
+    """If user supplies aliases that resolve the mismatch, no warning is emitted."""
+    bed = tmp_path / "mut.bed"
+    bed.write_text("1\t0\t1000\n")
+    summary = {
+        "delivered": {"reference_contigs": ["chr1"]},
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    assert detect_chrom_naming_mismatches(summary, aliases={"1": "chr1"}) == []
+
+
+def test_detect_chrom_mismatch_falls_back_to_contigs_simulated(tmp_path):
+    """When reference_contigs is absent, fall back to contigs_simulated (back-compat)."""
+    bed = tmp_path / "mut.bed"
+    bed.write_text("1\t0\t1000\n")
+    summary = {
+        "delivered": {"contigs_simulated": ["chr1"]},  # no reference_contigs
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    warnings = detect_chrom_naming_mismatches(summary)
+    assert len(warnings) == 1
+    assert warnings[0]["suggested_aliases"] == {"1": "chr1"}
+
+
+def test_detect_chrom_mismatch_reports_one_warning_per_bed(tmp_path):
+    """Each mismatched BED gets its own warning entry."""
+    mut = tmp_path / "mut.bed"
+    mut.write_text("1\t0\t1000\n")
+    tgt = tmp_path / "tgt.bed"
+    tgt.write_text("2\t0\t1000\n")
+    summary = {
+        "delivered": {"reference_contigs": ["chr1", "chr2"]},
+        "config": {"mutation_bed": str(mut), "target_bed": str(tgt)},
+    }
+    warnings = detect_chrom_naming_mismatches(summary)
+    assert len(warnings) == 2
+    assert {w["bed"] for w in warnings} == {"mutation_bed", "target_bed"}

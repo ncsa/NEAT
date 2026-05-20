@@ -17,9 +17,12 @@ own (the BED checks would be meaningless).
 import logging
 from pathlib import Path
 
+from ..common.chrom_names import find_aliases
+
 __all__ = [
     "attribute_fn",
     "attribute_fns",
+    "detect_chrom_naming_mismatches",
     "load_bed_intervals",
     "position_in_intervals",
     "REASON_OUTSIDE_CONTIGS",
@@ -36,13 +39,20 @@ REASON_OUTSIDE_TARGET_BED = "outside_target_bed"
 REASON_UNKNOWN = "unknown"
 
 
-def load_bed_intervals(bed_path: Path | str | None) -> dict[str, list[tuple[int, int]]] | None:
+def load_bed_intervals(
+    bed_path: Path | str | None,
+    aliases: dict[str, str] | None = None,
+) -> dict[str, list[tuple[int, int]]] | None:
     """
     Parse a BED file into a per-contig list of sorted 0-based half-open
     intervals. Returns None if `bed_path` is None.
 
     Comments (`#`), `track`, and `browser` header lines are skipped. Rows with
     non-integer start/end are dropped with a debug log entry.
+
+    If `aliases` is provided, each BED row's chrom field is remapped through
+    the dict (`aliases.get(chrom, chrom)`) before being stored, so downstream
+    lookups can use reference-canonical names.
     """
     if bed_path is None:
         return None
@@ -61,7 +71,10 @@ def load_bed_intervals(bed_path: Path | str | None) -> dict[str, list[tuple[int,
             except ValueError:
                 _LOG.debug(f"{bed_path}:{lineno}: skipping non-integer interval")
                 continue
-            intervals.setdefault(parts[0], []).append((start, end))
+            chrom = parts[0]
+            if aliases:
+                chrom = aliases.get(chrom, chrom)
+            intervals.setdefault(chrom, []).append((start, end))
     for chrom in intervals:
         intervals[chrom].sort()
     return intervals
@@ -112,20 +125,86 @@ def attribute_fn(
     return reasons
 
 
-def attribute_fns(fn_records, summary: dict) -> list[tuple]:
+def attribute_fns(
+    fn_records,
+    summary: dict,
+    aliases: dict[str, str] | None = None,
+) -> list[tuple]:
     """
     Tag every FN against the run's simulation_summary.
 
     :param fn_records: iterable of pysam.VariantRecord (FN bucket from hap.py).
     :param summary: parsed simulation_summary.json.
+    :param aliases: optional user-supplied {bed_name: canonical_name} map applied
+        to BED chrom names at load time.
     :return: list of (record, reasons) tuples; `reasons` is a list[str].
     """
     contigs = frozenset(summary["delivered"].get("contigs_simulated", []))
     cfg = summary.get("config", {})
-    mutation_intervals = load_bed_intervals(cfg.get("mutation_bed"))
-    target_intervals = load_bed_intervals(cfg.get("target_bed"))
+    mutation_intervals = load_bed_intervals(cfg.get("mutation_bed"), aliases=aliases)
+    target_intervals = load_bed_intervals(cfg.get("target_bed"), aliases=aliases)
 
     return [
         (rec, attribute_fn(rec.chrom, rec.pos, contigs, mutation_intervals, target_intervals))
         for rec in fn_records
     ]
+
+
+def detect_chrom_naming_mismatches(
+    summary: dict,
+    aliases: dict[str, str] | None = None,
+) -> list[dict]:
+    """
+    Inspect each configured BED's chrom set against the reference's; return a
+    list of warning records (one per mismatched BED) or empty if all BEDs
+    overlap (after any user-supplied aliases are applied).
+
+    The "reference" set comes from `summary['delivered']['reference_contigs']`
+    (the full FASTA contig list), with a fallback to `contigs_simulated` for
+    backward compatibility with summaries written before that field existed.
+    """
+    aliases = aliases or {}
+    reference_chroms = frozenset(
+        summary["delivered"].get("reference_contigs")
+        or summary["delivered"].get("contigs_simulated", [])
+    )
+    if not reference_chroms:
+        return []
+
+    warnings: list[dict] = []
+    for bed_label in ("mutation_bed", "target_bed"):
+        bed_path = summary.get("config", {}).get(bed_label)
+        if not bed_path:
+            continue
+        try:
+            intervals = load_bed_intervals(bed_path, aliases=None)
+        except FileNotFoundError:
+            continue  # surface this separately; not a naming issue
+        if not intervals:
+            continue
+
+        raw_chroms = frozenset(intervals.keys())
+        mapped_chroms = frozenset(aliases.get(c, c) for c in raw_chroms)
+        if mapped_chroms & reference_chroms:
+            continue  # at least one chrom matches; not a mismatch worth flagging
+
+        suggested = find_aliases(raw_chroms, reference_chroms)
+        message = (
+            f"{bed_label} chrom names don't overlap with reference contigs"
+            + (
+                f"; suggested --chrom-aliases mappings: {suggested}"
+                if suggested
+                else " and no naming convention could be inferred. Attribution against "
+                "this BED will report every FN as 'outside'."
+            )
+        )
+        warnings.append({
+            "type": "chrom_naming_mismatch",
+            "bed": bed_label,
+            "bed_path": str(bed_path),
+            "bed_chroms_sample": sorted(raw_chroms)[:5],
+            "reference_chroms_sample": sorted(reference_chroms)[:5],
+            "suggested_aliases": suggested,
+            "message": message,
+        })
+    return warnings
