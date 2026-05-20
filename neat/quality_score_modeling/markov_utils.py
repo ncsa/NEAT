@@ -17,6 +17,7 @@ from ..model_sequencing_error.utils import convert_quality_string
 _LOG = logging.getLogger(__name__)
 
 __all__ = [
+    "down_bin_quality",
     "read_quality_lists",
     "compute_initial_distribution",
     "compute_position_distributions",
@@ -25,7 +26,7 @@ __all__ = [
 ]
 
 
-def _down_bin_quality(q: int, allowed: List[int]) -> int:
+def down_bin_quality(q: int, allowed: List[int]) -> int:
     """
     Map q to the greatest allowed value <= q (down-binning).
     If q is below the smallest allowed, map to allowed[0].
@@ -110,7 +111,7 @@ def read_quality_lists(
                     continue
 
                 if allowed_sorted is not None:
-                    qlist = [_down_bin_quality(q, allowed_sorted) for q in qlist]
+                    qlist = [down_bin_quality(q, allowed_sorted) for q in qlist]
 
                 qualities.append(qlist)
                 reads_read += 1
