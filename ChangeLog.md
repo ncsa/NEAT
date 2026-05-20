@@ -1,3 +1,18 @@
+# NEAT v4.5.1
+
+Removed the `cleanup_splits` and `reuse_splits` config options.
+
+`reuse_splits` was fully broken (it raised `FileNotFoundError` unconditionally
+regardless of whether the splits directory existed). `cleanup_splits` existed
+solely to support `reuse_splits`; without it the option has no value — the
+splits directory always lives in a `TemporaryDirectory` that is cleaned up
+automatically when the run exits.
+
+Both keys are now in `DEPRECATED_KEYS`: configs that still include them
+receive a one-line deprecation warning and continue parsing cleanly, so no
+user config breaks. The README examples and all internal test fixtures have
+been updated to drop these keys.
+
 # NEAT v4.5.0
 
 New `neat compare-vcfs` subcommand: compares a downstream variant caller's VCF
