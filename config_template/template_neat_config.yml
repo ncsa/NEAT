@@ -1,4 +1,4 @@
-## Template for NEAT's read-simulator (as of version 4.3.5, parallelization-friendly)
+## Template for NEAT's read-simulator (as of version 4.5.1, parallelization-friendly)
 ## Any parameter that is not required but has a default value will use the
 ## default value even if the variable is not included in the config. For
 ## required items, they must be included in the config and they must be given a value.
@@ -152,14 +152,3 @@ parallel_block_size: .
 # Maximum number of concurrent NEAT jobs (threads or hyperthreads) to run
 # type = int | required: no | default = all available
 threads: .
-
-# Delete the 'splits' directory after stitching completes
-# Note: If threads == 1, this option has no effect.
-# type = bool | required: no | default = true
-cleanup_splits: .
-
-# Reuse existing files in '<out_dir>/splits' and skip the split step.
-# The directory must contain NEAT-generated files and must be in the output directory within "splits"
-# Note: If threads == 1, this option has no effect.
-# type = bool | required: no | default = False
-reuse_splits: .
