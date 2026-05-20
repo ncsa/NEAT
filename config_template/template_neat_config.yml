@@ -57,12 +57,6 @@ include_vcf: .
 # type = string | required = no
 target_bed: .
 
-# Scalar value for coverage in regions outside the targeted BED. Example: 0.5
-# would get you roughly half the coverage as the on target areas. Default is
-# 0 coverage in off-target regions. Number should be a float in decimal
-# type: float | required = no | default = 0.00
-off_target_scalar: .
-
 # Absolute path to BED file containing reference regions that the simulation should discard
 # type = string | required = no
 discard_bed: .
