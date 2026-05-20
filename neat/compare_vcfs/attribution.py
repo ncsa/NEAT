@@ -129,6 +129,7 @@ def attribute_fns(
     fn_records,
     summary: dict,
     aliases: dict[str, str] | None = None,
+    skip_beds: set[str] | None = None,
 ) -> list[tuple]:
     """
     Tag every FN against the run's simulation_summary.
@@ -137,12 +138,23 @@ def attribute_fns(
     :param summary: parsed simulation_summary.json.
     :param aliases: optional user-supplied {bed_name: canonical_name} map applied
         to BED chrom names at load time.
+    :param skip_beds: optional set of BED labels (e.g., {"mutation_bed"}) to
+        treat as if not configured. Used by the runner to skip BEDs whose chrom
+        names are entirely mismatched against the reference — attributing FNs
+        against an unusable BED would produce misleading `outside_*` counts.
     :return: list of (record, reasons) tuples; `reasons` is a list[str].
     """
+    skip_beds = skip_beds or set()
     contigs = frozenset(summary["delivered"].get("contigs_simulated", []))
     cfg = summary.get("config", {})
-    mutation_intervals = load_bed_intervals(cfg.get("mutation_bed"), aliases=aliases)
-    target_intervals = load_bed_intervals(cfg.get("target_bed"), aliases=aliases)
+    mutation_intervals = (
+        None if "mutation_bed" in skip_beds
+        else load_bed_intervals(cfg.get("mutation_bed"), aliases=aliases)
+    )
+    target_intervals = (
+        None if "target_bed" in skip_beds
+        else load_bed_intervals(cfg.get("target_bed"), aliases=aliases)
+    )
 
     return [
         (rec, attribute_fn(rec.chrom, rec.pos, contigs, mutation_intervals, target_intervals))

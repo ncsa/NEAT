@@ -130,7 +130,12 @@ def compare_vcfs_runner(
     for w in chrom_warnings:
         _LOG.warning(w["message"])
 
-    fn_reasons = attribute_fns(buckets["FN"], summary, aliases=aliases)
+    # A fully mismatched BED is unusable for attribution; skip it so we don't
+    # report misleading 'outside_<bed>' counts for chroms NEAT never actually
+    # checked against the BED. The warning surfaces the underlying cause.
+    unusable_beds = {w["bed"] for w in chrom_warnings if w.get("type") == "chrom_naming_mismatch"}
+
+    fn_reasons = attribute_fns(buckets["FN"], summary, aliases=aliases, skip_beds=unusable_beds)
     reason_counts = summarize_fn_reasons(fn_reasons)
     if fn_reasons:
         _LOG.info(f"FN attribution: {reason_counts}")

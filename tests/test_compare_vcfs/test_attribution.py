@@ -355,6 +355,67 @@ def test_detect_chrom_mismatch_falls_back_to_contigs_simulated(tmp_path):
     assert warnings[0]["suggested_aliases"] == {"1": "chr1"}
 
 
+def test_detect_chrom_mismatch_skips_empty_bed(tmp_path):
+    """A BED with only comments/blanks has no chroms — no warning should fire."""
+    bed = tmp_path / "empty.bed"
+    bed.write_text("# only a comment\n\n")
+    summary = {
+        "delivered": {"reference_contigs": ["chr1"]},
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    assert detect_chrom_naming_mismatches(summary) == []
+
+
+def test_detect_chrom_mismatch_warns_when_user_aliases_dont_resolve(tmp_path):
+    """Wrong user aliases (mapping to a name not in the reference) should NOT
+    silence the warning — and the suggested mapping must come from the raw BED
+    chroms, not the user's incorrect alias output."""
+    bed = tmp_path / "mut.bed"
+    bed.write_text("1\t0\t1000\n")
+    summary = {
+        "delivered": {"reference_contigs": ["chr1"]},
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    warnings = detect_chrom_naming_mismatches(summary, aliases={"1": "definitely_not_a_chrom"})
+    assert len(warnings) == 1
+    assert warnings[0]["suggested_aliases"] == {"1": "chr1"}
+
+
+# ===========================================================================
+# attribute_fns with skip_beds (semantic gap: unusable BED → no outside_* tag)
+# ===========================================================================
+
+def test_attribute_fns_skip_beds_suppresses_outside_mutation_bed(tmp_path):
+    """When the runner marks mutation_bed as unusable, attribute_fns must not
+    report 'outside_mutation_bed' for any FN — even when chrom is in the BED
+    on paper. Locks in the semantic fix for the chrom-mismatch case."""
+    bed = tmp_path / "mut.bed"
+    bed.write_text("chrZ\t0\t1000\n")  # BED has chroms unrelated to FN locations
+    summary = {
+        "delivered": {"contigs_simulated": ["chr1"], "reference_contigs": ["chr1"]},
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    }
+    fns = [_fake_record("chr1", 500)]
+    # Without skip_beds: outside_mutation_bed (chr1 not in BED keys)
+    [(_, default_reasons)] = attribute_fns(fns, summary)
+    assert default_reasons == [REASON_OUTSIDE_MUTATION_BED]
+    # With skip_beds: BED is ignored entirely → no other reason applies → unknown
+    [(_, skipped_reasons)] = attribute_fns(fns, summary, skip_beds={"mutation_bed"})
+    assert skipped_reasons == [REASON_UNKNOWN]
+
+
+def test_attribute_fns_skip_beds_does_not_affect_outside_simulated_contigs():
+    """skip_beds is about BED checks; the simulated-contigs check still fires
+    for chroms NEAT never ran on."""
+    summary = {
+        "delivered": {"contigs_simulated": ["chr1"], "reference_contigs": ["chr1"]},
+        "config": {"mutation_bed": None, "target_bed": None},
+    }
+    fns = [_fake_record("chrZ", 100)]
+    [(_, reasons)] = attribute_fns(fns, summary, skip_beds={"mutation_bed", "target_bed"})
+    assert reasons == [REASON_OUTSIDE_CONTIGS]
+
+
 def test_detect_chrom_mismatch_reports_one_warning_per_bed(tmp_path):
     """Each mismatched BED gets its own warning entry."""
     mut = tmp_path / "mut.bed"

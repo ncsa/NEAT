@@ -398,6 +398,10 @@ def test_runner_emits_chrom_mismatch_warning_into_json_report(tmp_path, monkeypa
     w = report["warnings"][0]
     assert w["type"] == "chrom_naming_mismatch"
     assert w["suggested_aliases"] == {"1": "chr1"}
+    # Semantic guarantee: the FN must NOT be tagged 'outside_mutation_bed'
+    # because the BED was unusable. The warning surfaces the cause instead.
+    assert "outside_mutation_bed" not in report["fn_attribution"]
+    assert report["fn_attribution"] == {"unknown": 1}
 
 
 def test_runner_chrom_aliases_silences_warning_and_fixes_attribution(tmp_path, monkeypatch):

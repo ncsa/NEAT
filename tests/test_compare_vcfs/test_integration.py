@@ -217,3 +217,80 @@ def test_compare_vcfs_real_happy_multi_fn(tmp_path, happy_bin, happy_env_path, m
 
     # --plot was on, so the bar chart should be present
     assert (cmp_out / "fn_attribution.png").is_file()
+
+
+def test_compare_vcfs_real_happy_with_chrom_mismatched_bed(tmp_path, happy_bin, happy_env_path, monkeypatch):
+    """
+    End-to-end against real hap.py with a mutation_bed that uses '1'/'2' while
+    the reference uses 'chr1'/'chr2'. Verifies that:
+      - the warning surfaces in the JSON report
+      - FNs are NOT mislabeled as 'outside_mutation_bed' (the semantic fix)
+      - --chrom-aliases silences the warning AND restores correct attribution
+    """
+    monkeypatch.setenv("PATH", happy_env_path + os.pathsep + os.environ["PATH"])
+
+    # Hand-craft a mutation_bed that won't match the reference's chr-prefixed names.
+    # The simulator will log warnings and effectively ignore it (NEAT's pre-existing
+    # "skip BED chroms not in reference" behavior). simulation_summary still records
+    # the BED path; compare-vcfs reads it and detects the mismatch.
+    bed = tmp_path / "mismatched_mut.bed"
+    bed.write_text("1\t0\t1000\n2\t0\t1000\n")
+
+    sim_out = tmp_path / "sim_out"
+    sim_out.mkdir()
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg_path = tmp_path / "conf.yml"
+    cfg_path.write_text(
+        f"reference: {ref}\n"
+        "produce_fastq: false\n"
+        "produce_bam: false\n"
+        "produce_vcf: true\n"
+        "read_len: 100\n"
+        "coverage: 5\n"
+        "rng_seed: 42\n"
+        "mutation_rate: 0.01\n"
+        f"mutation_bed: {bed}\n"
+        "overwrite_output: true\n"
+        "cleanup_splits: true\n",
+        encoding="utf-8",
+    )
+    read_simulator_runner(str(cfg_path), str(sim_out), "run")
+    golden = sim_out / "run_golden.vcf.gz"
+
+    called = tmp_path / "called.vcf.gz"
+    _called_vcf_dropping_first_variant(golden, called)
+
+    # ------------------------------------------------------------------
+    # Run 1: no --chrom-aliases → mismatch warning, no misleading outside_*
+    # ------------------------------------------------------------------
+    cmp_out_no_aliases = tmp_path / "cmp_no_aliases"
+    compare_vcfs_runner(
+        golden_vcf=str(golden), called_vcf=str(called),
+        neat_run_dir=str(sim_out),
+        output_dir=str(cmp_out_no_aliases),
+        reference=str(ref),
+        happy_bin=str(happy_bin),
+    )
+    report = json.loads((cmp_out_no_aliases / "comparison_summary.json").read_text())
+    chrom_warnings = [w for w in report["warnings"] if w["type"] == "chrom_naming_mismatch"]
+    assert chrom_warnings, "expected chrom-mismatch warning to fire"
+    assert chrom_warnings[0]["suggested_aliases"] == {"1": "chr1", "2": "chr2"}
+    # Semantic guarantee: mismatched BED must NOT produce outside_mutation_bed
+    assert "outside_mutation_bed" not in report["fn_attribution"]
+
+    # ------------------------------------------------------------------
+    # Run 2: --chrom-aliases supplied → no warning, BED becomes usable
+    # ------------------------------------------------------------------
+    aliases = tmp_path / "aliases.tsv"
+    aliases.write_text("1\tchr1\n2\tchr2\n")
+    cmp_out_aliased = tmp_path / "cmp_aliased"
+    compare_vcfs_runner(
+        golden_vcf=str(golden), called_vcf=str(called),
+        neat_run_dir=str(sim_out),
+        output_dir=str(cmp_out_aliased),
+        reference=str(ref),
+        happy_bin=str(happy_bin),
+        chrom_aliases=str(aliases),
+    )
+    report_aliased = json.loads((cmp_out_aliased / "comparison_summary.json").read_text())
+    assert not [w for w in report_aliased["warnings"] if w["type"] == "chrom_naming_mismatch"]

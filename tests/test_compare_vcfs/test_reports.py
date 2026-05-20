@@ -207,6 +207,26 @@ def test_render_summary_txt_renders_NA_for_undefined_metrics(tmp_path):
     assert "N/A" in txt
 
 
+def test_render_summary_txt_includes_warnings_section(tmp_path):
+    """When warnings are present, the txt report must surface them in a dedicated section."""
+    s = _build_minimal_summary(tmp_path)
+    s["warnings"] = [
+        {"type": "chrom_naming_mismatch", "message": "mutation_bed names don't overlap reference"},
+        {"type": "chrom_naming_mismatch", "message": "target_bed names don't overlap reference"},
+    ]
+    txt = render_summary_txt(s)
+    assert "Warnings" in txt
+    assert "mutation_bed names don't overlap reference" in txt
+    assert "target_bed names don't overlap reference" in txt
+
+
+def test_render_summary_txt_omits_warnings_section_when_empty(tmp_path):
+    s = _build_minimal_summary(tmp_path)
+    s["warnings"] = []
+    txt = render_summary_txt(s)
+    assert "\nWarnings\n" not in txt
+
+
 # ===========================================================================
 # write_fn_with_reasons
 # ===========================================================================
