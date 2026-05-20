@@ -565,6 +565,8 @@ neat model-seq-err                                    \
 
 Please note that `-i2` can be used in place of `-i` to produce paired data.
 
+> **Note on binned quality scores in `model-seq-err`:** the `-Q` flag accepts a space-separated list (e.g. `-Q 2 15 23 37`) and the CLI advertises this as a binning option, but binning is not yet wired up in the sequencing-error runner — only the maximum value in the list is currently used. If you need a binned quality distribution, train it with `neat model-qual-score --markov` (see below) and supply that model to `read-simulator`.
+
 ### `neat model-qual-score`
 
 Typical usage:
@@ -585,6 +587,22 @@ Similarly, use `-i2` to produce a model for paired-ended data. `-q` denotes the 
 `-m` denotes the maximum number of reads to process. Use a large number or input -1 to use all reads. `--markov` fits a quality model from the input data using a Markov chain process instead of the baseline quality score model (optional).
 
 Finally, `-o` is the output directory for the model file and `-p` is the prefix for the output model, such that the file will be written as `<prefix>.p.gz` inside the output folder.
+
+#### Binned quality scores
+
+`-Q` accepts either a single integer (max Q, full 0..Q range learned) or a space-separated list of integers (bins). When `--markov` is set together with a list, the Markov quality model is trained with `allowed_quality_scores` restricted to those bins — observed qualities are snapped to the nearest allowed bin before fitting transition matrices, and the resulting model will only emit qualities drawn from that set.
+
+```bash
+neat model-qual-score \
+    -i input_reads.fastq(.gz)            \
+    -q 33                                \
+    -Q 2 11 24 37                        \
+    --markov                             \
+    -o /path/to/models                   \
+    -p my_binned_qual_model
+```
+
+Pass the resulting `*.p.gz` model to `read-simulator` (via the relevant model field in your config) and the simulated FASTQ qualities will be drawn from the binned distribution. There is no separate "quantize output qualities" knob in the simulator config — output binning is determined entirely by the quality model you train. Without `--markov`, the list form still trains over `0..max(bins)`; binning only takes effect on the Markov path.
 
 ### `neat model-gc-bias`
 
