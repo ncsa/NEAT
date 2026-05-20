@@ -664,6 +664,62 @@ then point `--happy-bin` at `/path/to/hap_py_env/bin/hap.py` (or put that
 directory on `$PATH`). Without `hap.py` available, `neat compare-vcfs` exits
 with a clear install hint.
 
+## Validating NEAT Outputs
+
+NEAT does not ship its own validation utilities. Use the standard bioinformatics
+tools below, which handle gzipped inputs, are actively maintained, and are
+typically already present in any conda/bioconda environment.
+
+### FASTQ validation
+
+**FastQC** — format validation plus quality metrics (GC content, adapter
+contamination, per-base quality scores):
+
+```bash
+fastq read1.fastq.gz            # single-end
+fastqc read1.fastq.gz read2.fastq.gz   # paired-end
+```
+
+**fastp** — lightweight format check without trimming or filtering:
+
+```bash
+fastp --in1 read1.fastq.gz --in2 read2.fastq.gz \
+      --disable_adapter_trimming --disable_quality_filtering \
+      --disable_length_filtering --thread 4
+```
+
+### BAM validation
+
+**samtools quickcheck** — fast EOF and header sanity check; exits non-zero on
+failure, making it CI-friendly:
+
+```bash
+samtools quickcheck output.bam
+```
+
+**samtools flagstat** — alignment statistics; a non-zero exit or obviously wrong
+counts (e.g., 0 mapped reads when coverage > 0) indicate a problem:
+
+```bash
+samtools flagstat output.bam
+```
+
+**Picard ValidateSamFile** — comprehensive structural validation (CIGAR
+consistency, mate-pair pairing, flag conflicts):
+
+```bash
+picard ValidateSamFile -I output.bam -MODE SUMMARY
+```
+
+### VCF validation
+
+**bcftools stats** — reports site counts, ts/tv ratio, and indel length
+distribution; useful for a sanity check against expected mutation rates:
+
+```bash
+bcftools stats output_golden.vcf.gz | grep "^SN"
+```
+
 ## Tests
 
 We provide unit tests (e.g., mutation and sequencing error models) and basic integration tests for the CLI.
