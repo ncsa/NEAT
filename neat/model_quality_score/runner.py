@@ -133,6 +133,7 @@ def model_qual_score_runner(
             average_error=average_error,
             quality_scores=np.array(final_quality_scores),
             qual_score_probs=read_parameters[idx],
+            quality_bins=allowed_bins,
         )
 
         markov_model: Optional[MarkovQualityModel] = None

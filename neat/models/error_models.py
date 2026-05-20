@@ -49,7 +49,8 @@ class TraditionalQualityModel:
             transition_matrix: np.ndarray = default_error_transition_matrix,
             quality_scores: np.ndarray = default_quality_scores,
             qual_score_probs: np.ndarray = default_qual_score_probs,
-            is_uniform: bool = False
+            is_uniform: bool = False,
+            quality_bins: list[int] | None = None,
     ):
 
         self.transition_matrix = transition_matrix
@@ -57,6 +58,10 @@ class TraditionalQualityModel:
         self.quality_score_probabilities = qual_score_probs
         self.is_uniform = is_uniform
         self.average_error = average_error
+        # When set, generated scores are snapped to the nearest bin value ≤ the
+        # drawn score (down-binning), matching the discrete quality levels produced
+        # by instruments like NovaSeq (Q2/Q12/Q23/Q37).
+        self.quality_bins: list[int] | None = sorted(quality_bins) if quality_bins else None
 
         # pre-compute the error rate for each quality score. This is the inverse of the phred score equation
         self.quality_score_error_rate: dict[int, float] = {x: 10. ** (-x / 10) for x in self.quality_scores}
@@ -101,7 +106,13 @@ class TraditionalQualityModel:
         means = self.quality_score_probabilities[quality_index_map, 0]
         scales = self.quality_score_probabilities[quality_index_map, 1]
         scores = rng.normal(means, scales)
-        return np.clip(np.rint(scores).astype(int), 1, 42)
+        scores = np.clip(np.rint(scores).astype(int), 1, 42)
+        if self.quality_bins:
+            bins = np.array(self.quality_bins)
+            idx = np.searchsorted(bins, scores, side="right") - 1
+            idx = np.clip(idx, 0, len(bins) - 1)
+            scores = bins[idx]
+        return scores
 
 
 class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
