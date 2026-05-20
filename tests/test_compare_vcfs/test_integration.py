@@ -99,6 +99,21 @@ def _called_vcf_dropping_first_variant(golden_vcf: Path, output_vcf: Path) -> Pa
     return output_vcf
 
 
+def _called_vcf_dropping_first_n(golden_vcf: Path, output_vcf: Path, n: int) -> int:
+    """Drop the first n variants from golden_vcf into output_vcf; returns the
+    number actually dropped (capped at the total available)."""
+    actually_dropped = 0
+    with pysam.VariantFile(str(golden_vcf)) as src:
+        with pysam.VariantFile(str(output_vcf), "wz", header=src.header) as dst:
+            for rec in src:
+                if actually_dropped < n:
+                    actually_dropped += 1
+                    continue
+                dst.write(rec)
+    pysam.tabix_index(str(output_vcf), preset="vcf", force=True)
+    return actually_dropped
+
+
 # ===========================================================================
 # Integration test — real hap.py end-to-end
 # ===========================================================================
@@ -157,3 +172,48 @@ def test_compare_vcfs_real_happy_end_to_end(tmp_path, happy_bin, happy_env_path,
         assert "NEAT_REASON" in vf.header.info
         for rec in vf:
             assert "NEAT_REASON" in rec.info
+
+
+def test_compare_vcfs_real_happy_multi_fn(tmp_path, happy_bin, happy_env_path, monkeypatch):
+    """
+    Drop multiple variants to verify FN counts scale linearly and that each
+    FN gets a NEAT_REASON tag (locks in attribution behavior at scale).
+    """
+    monkeypatch.setenv("PATH", happy_env_path + os.pathsep + os.environ["PATH"])
+
+    sim_out = tmp_path / "sim_out"
+    sim_out.mkdir()
+    ref = _write_ref(tmp_path / "ref.fa")
+    cfg = _write_config(tmp_path / "conf.yml", ref)
+    read_simulator_runner(str(cfg), str(sim_out), "run")
+    golden = sim_out / "run_golden.vcf.gz"
+
+    called = tmp_path / "called.vcf.gz"
+    n_dropped = _called_vcf_dropping_first_n(golden, called, n=3)
+    assert n_dropped == 3, "golden produced fewer than 3 variants — config too small"
+
+    cmp_out = tmp_path / "cmp_out"
+    compare_vcfs_runner(
+        golden_vcf=str(golden), called_vcf=str(called),
+        neat_run_dir=str(sim_out),
+        output_dir=str(cmp_out),
+        reference=str(ref),
+        happy_bin=str(happy_bin),
+        plot=True,
+    )
+
+    report = json.loads((cmp_out / "comparison_summary.json").read_text())
+    assert report["counts"]["FN"] >= 3, "expected ≥3 FNs after dropping 3 variants"
+    assert report["counts"]["FP"] == 0
+    assert sum(report["fn_attribution"].values()) >= report["counts"]["FN"]
+
+    # Every FN record must be annotated; this is the contract step 6 promises
+    with pysam.VariantFile(str(cmp_out / "FN_with_reasons.vcf")) as vf:
+        fn_records = list(vf)
+    assert len(fn_records) == report["counts"]["FN"]
+    for rec in fn_records:
+        tags = rec.info["NEAT_REASON"]
+        assert tags, f"FN at {rec.chrom}:{rec.pos} has empty NEAT_REASON"
+
+    # --plot was on, so the bar chart should be present
+    assert (cmp_out / "fn_attribution.png").is_file()

@@ -257,6 +257,104 @@ def test_runner_validates_optional_reference_when_provided(tmp_path):
     assert excinfo.value.code == 5
 
 
+# ===========================================================================
+# Shared fake-hap.py helpers for plot / stale-bed tests
+# ===========================================================================
+
+_HAPPY_HEADER_ONE_FN = """##fileformat=VCFv4.2
+##contig=<ID=chr1,length=1000>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=BD,Number=1,Type=String,Description="Decision">
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tTRUTH\tQUERY
+chr1\t200\t.\tA\tT\t.\t.\t.\tGT:BD\t1|0:FN\t.:.
+"""
+
+
+def _install_fake_happy(monkeypatch, body: str):
+    """Patch run_happy to write `body` as the hap.py output VCF."""
+    from neat.compare_vcfs import runner as runner_mod
+    import pysam
+
+    def fake_run_happy(happy_bin, golden_vcf, called_vcf, output_prefix, **kw):
+        raw = Path(str(output_prefix) + ".vcf")
+        raw.write_text(body)
+        return Path(pysam.tabix_index(str(raw), preset="vcf", force=True))
+
+    monkeypatch.setattr(runner_mod, "run_happy", fake_run_happy)
+
+
+# ===========================================================================
+# --plot wiring
+# ===========================================================================
+
+def test_runner_writes_plot_when_enabled(tmp_path, monkeypatch):
+    """plot=True must produce fn_attribution.png alongside the standard reports."""
+    run_dir = _make_summary_dir(tmp_path)
+    golden = _touch(tmp_path / "golden.vcf")
+    called = _touch(tmp_path / "called.vcf")
+    _make_executable(tmp_path / "hap.py")
+    monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
+    _install_fake_happy(monkeypatch, _HAPPY_HEADER_ONE_FN)
+
+    out_dir = tmp_path / "out"
+    compare_vcfs_runner(
+        golden_vcf=str(golden), called_vcf=str(called),
+        neat_run_dir=str(run_dir),
+        output_dir=str(out_dir),
+        plot=True,
+    )
+    plot_path = out_dir / "fn_attribution.png"
+    assert plot_path.is_file()
+    assert plot_path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_runner_omits_plot_by_default(tmp_path, monkeypatch):
+    """plot defaults to False; fn_attribution.png must NOT be written."""
+    run_dir = _make_summary_dir(tmp_path)
+    golden = _touch(tmp_path / "golden.vcf")
+    called = _touch(tmp_path / "called.vcf")
+    _make_executable(tmp_path / "hap.py")
+    monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
+    _install_fake_happy(monkeypatch, _HAPPY_HEADER_ONE_FN)
+
+    out_dir = tmp_path / "out"
+    compare_vcfs_runner(
+        golden_vcf=str(golden), called_vcf=str(called),
+        neat_run_dir=str(run_dir),
+        output_dir=str(out_dir),
+    )
+    assert not (out_dir / "fn_attribution.png").exists()
+
+
+# ===========================================================================
+# Stale BED path in simulation_summary
+# ===========================================================================
+
+def test_runner_fails_clearly_when_summary_bed_path_no_longer_exists(tmp_path, monkeypatch):
+    """If simulation_summary references a BED that's been moved/deleted, the
+    failure must surface (currently as FileNotFoundError from load_bed_intervals).
+    Locking in current behavior so a regression to a silent skip is caught."""
+    bed = tmp_path / "stale.bed"
+    bed.write_text("chr1\t0\t1000\n")
+    run_dir = _make_summary_dir(tmp_path, extra={
+        "config": {"mutation_bed": str(bed), "target_bed": None},
+    })
+    bed.unlink()
+
+    golden = _touch(tmp_path / "golden.vcf")
+    called = _touch(tmp_path / "called.vcf")
+    _make_executable(tmp_path / "hap.py")
+    monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
+    _install_fake_happy(monkeypatch, _HAPPY_HEADER_ONE_FN)
+
+    with pytest.raises(FileNotFoundError):
+        compare_vcfs_runner(
+            golden_vcf=str(golden), called_vcf=str(called),
+            neat_run_dir=str(run_dir),
+            output_dir=str(tmp_path / "out"),
+        )
+
+
 def test_runner_validates_optional_target_bed_when_provided(tmp_path):
     run_dir = _make_summary_dir(tmp_path)
     golden = _touch(tmp_path / "golden.vcf")

@@ -183,6 +183,21 @@ def test_attribute_fn_unknown_when_inside_all_configured_beds():
     assert reasons == [REASON_UNKNOWN]
 
 
+def test_attribute_fn_chrom_prefix_mismatch_treats_as_outside():
+    """
+    Known gotcha: if a BED uses '1' but the run records 'chr1' as simulated
+    (or vice versa), the unmatched chrom name means the FN tagged 'outside'
+    the BED. Documents that users must align chrom conventions across
+    reference, BED, golden VCF, and caller VCF — NEAT does not normalize.
+    """
+    reasons = attribute_fn(
+        "chr1", 100, frozenset({"chr1"}),
+        mutation_intervals={"1": [(0, 1000)]},  # bare-numeric chrom in BED
+        target_intervals=None,
+    )
+    assert reasons == [REASON_OUTSIDE_MUTATION_BED]
+
+
 def test_attribute_fn_bed_missing_chrom_is_outside():
     """A bed that doesn't mention this chrom counts as 'outside' for it."""
     reasons = attribute_fn(
