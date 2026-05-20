@@ -1,11 +1,14 @@
 """
-Unit tests for MarkovQualityModel
+Unit tests for MarkovQualityModel and TraditionalQualityModel (binned scoring).
 """
 
+import gzip
+import pickle
 import pytest
 import numpy as np
 from numpy.random import default_rng
 
+from neat.models.error_models import TraditionalQualityModel
 from neat.models.markov_quality_model import MarkovQualityModel
 
 # ---------------------------------------------------------------------------
@@ -164,3 +167,84 @@ def test_position_index_for_length_single_position_read():
     """length=1 always returns index 0 regardless of pos."""
     qm = _simple_model(read_length=151)
     assert qm._position_index_for_length(0, 1) == 0
+
+
+# ===========================================================================
+# TraditionalQualityModel — binned scoring
+# ===========================================================================
+
+def _trad_model(quality_bins=None):
+    """Minimal TraditionalQualityModel with a flat μ=30, σ=5 distribution."""
+    read_length = 151
+    qual_score_probs = np.full((read_length, 2), [30.0, 5.0])
+    quality_scores = np.arange(0, 43)
+    return TraditionalQualityModel(
+        quality_scores=quality_scores,
+        qual_score_probs=qual_score_probs,
+        quality_bins=quality_bins,
+    )
+
+
+def test_traditional_model_unbinned_produces_varied_scores():
+    """Without bins, scores span a range (not locked to a small set)."""
+    rng = default_rng(42)
+    model = _trad_model()
+    scores = model.get_quality_scores(151, 151, rng)
+    assert len(scores) == 151
+    assert len(set(scores.tolist())) > 4
+
+
+def test_traditional_model_binned_output_constrained():
+    """All output scores must be members of the supplied bin set."""
+    bins = [2, 12, 23, 37]
+    rng = default_rng(42)
+    model = _trad_model(quality_bins=bins)
+    scores = model.get_quality_scores(151, 151, rng)
+    assert set(scores.tolist()).issubset(set(bins))
+
+
+def test_traditional_model_binned_novaseq_bins():
+    """NovaSeq preset bins produce only {2, 12, 23, 37} across many reads."""
+    bins = [2, 12, 23, 37]
+    rng = default_rng(7)
+    model = _trad_model(quality_bins=bins)
+    all_scores = set()
+    for _ in range(20):
+        all_scores.update(model.get_quality_scores(151, 151, rng).tolist())
+    assert all_scores.issubset(set(bins))
+
+
+def test_traditional_model_binned_below_min_maps_to_first_bin():
+    """A score below the lowest bin should map to the first (lowest) bin."""
+    # Force very low scores: μ=1, σ=0.1 → always clips to 1 → below Q2 → Q2
+    read_length = 10
+    qual_score_probs = np.full((read_length, 2), [1.0, 0.1])
+    model = TraditionalQualityModel(
+        quality_scores=np.arange(0, 43),
+        qual_score_probs=qual_score_probs,
+        quality_bins=[2, 12, 23, 37],
+    )
+    rng = default_rng(0)
+    scores = model.get_quality_scores(read_length, read_length, rng)
+    assert set(scores.tolist()) == {2}
+
+
+def test_traditional_model_binned_persists_through_pickle(tmp_path):
+    """quality_bins must survive a pickle/unpickle round-trip."""
+    bins = [2, 12, 23, 37]
+    model = _trad_model(quality_bins=bins)
+    path = tmp_path / "model.pkl"
+    with open(path, "wb") as f:
+        pickle.dump(model, f)
+    with open(path, "rb") as f:
+        loaded = pickle.load(f)
+    assert loaded.quality_bins == bins
+    rng = default_rng(1)
+    scores = loaded.get_quality_scores(151, 151, rng)
+    assert set(scores.tolist()).issubset(set(bins))
+
+
+def test_traditional_model_none_bins_is_unbinned():
+    """Passing quality_bins=None (explicit) is identical to the default."""
+    model = _trad_model(quality_bins=None)
+    assert model.quality_bins is None

@@ -5,7 +5,7 @@ Unit tests for neat/quality_score_modeling/markov_utils.py
 import pytest
 
 from neat.quality_score_modeling.markov_utils import (
-    _down_bin_quality,
+    down_bin_quality,
     read_quality_lists,
     compute_initial_distribution,
     compute_position_distributions,
@@ -27,33 +27,33 @@ def _write_fastq(path, reads):
 
 
 # ---------------------------------------------------------------------------
-# _down_bin_quality
+# down_bin_quality
 # ---------------------------------------------------------------------------
 
 def test_down_bin_exact_match():
-    assert _down_bin_quality(30, [10, 20, 30, 40]) == 30
+    assert down_bin_quality(30, [10, 20, 30, 40]) == 30
 
 
 def test_down_bin_between_bins_maps_down():
-    assert _down_bin_quality(25, [10, 20, 30, 40]) == 20
+    assert down_bin_quality(25, [10, 20, 30, 40]) == 20
 
 
 def test_down_bin_below_min_maps_to_first_bin():
-    assert _down_bin_quality(5, [10, 20, 30]) == 10
+    assert down_bin_quality(5, [10, 20, 30]) == 10
 
 
 def test_down_bin_above_max_maps_to_last_bin():
-    assert _down_bin_quality(99, [10, 20, 30]) == 30
+    assert down_bin_quality(99, [10, 20, 30]) == 30
 
 
 def test_down_bin_empty_allowed_returns_q_unchanged():
-    assert _down_bin_quality(25, []) == 25
+    assert down_bin_quality(25, []) == 25
 
 
 def test_down_bin_single_bin():
-    assert _down_bin_quality(0, [20]) == 20
-    assert _down_bin_quality(20, [20]) == 20
-    assert _down_bin_quality(40, [20]) == 20
+    assert down_bin_quality(0, [20]) == 20
+    assert down_bin_quality(20, [20]) == 20
+    assert down_bin_quality(40, [20]) == 20
 
 
 # ---------------------------------------------------------------------------

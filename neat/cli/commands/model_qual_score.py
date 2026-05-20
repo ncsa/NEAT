@@ -1,6 +1,7 @@
 import argparse
 
 from ...model_quality_score import model_qual_score_runner
+from ...quality_score_modeling.presets import QUALITY_PRESETS
 from .base import BaseCommand
 from .options import output_group
 
@@ -38,7 +39,20 @@ class Command(BaseCommand):
             type=int,
             nargs="+",
             default=[42],
-            help="Max quality or explicit list of quality scores [42].",
+            help="Maximum quality score (single int) or explicit list of bin values "
+                 "(e.g. -Q 2 12 23 37). A list enables Markov binning: all observed "
+                 "scores are down-binned to the nearest value and simulation output is "
+                 "constrained to those values. Overridden by --quality-preset. [42]",
+        )
+
+        parser.add_argument(
+            "--quality-preset",
+            dest="quality_preset",
+            choices=list(QUALITY_PRESETS),
+            default=None,
+            metavar="PRESET",
+            help="Named bin preset for common Illumina instruments. Implies --markov. "
+                 f"Choices: {', '.join(QUALITY_PRESETS)}. Overrides -Q when set.",
         )
 
         parser.add_argument(
@@ -69,11 +83,15 @@ class Command(BaseCommand):
 
     def execute(self, arguments: argparse.Namespace):
 
-        if len(arguments.quality_scores) == 1:
-            qual_scores: int | list[int] = arguments.quality_scores[0]
-
+        if arguments.quality_preset:
+            qual_scores: int | list[int] = QUALITY_PRESETS[arguments.quality_preset]
+            use_markov = True
+        elif len(arguments.quality_scores) == 1:
+            qual_scores = arguments.quality_scores[0]
+            use_markov = arguments.use_markov
         else:
             qual_scores = arguments.quality_scores
+            use_markov = arguments.use_markov
 
         model_qual_score_runner(
             files=arguments.input_files,
@@ -83,5 +101,5 @@ class Command(BaseCommand):
             overwrite=arguments.overwrite,
             output_dir=arguments.output_dir,
             output_prefix=arguments.prefix,
-            use_markov=arguments.use_markov,
+            use_markov=use_markov,
         )
