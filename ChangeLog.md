@@ -1,3 +1,48 @@
+# NEAT v4.5.0
+
+New `neat compare-vcfs` subcommand: compares a downstream variant caller's VCF
+against the NEAT-simulated truth VCF and attributes each false negative to the
+simulator's own configuration (mutation bed, target bed, simulated contigs).
+Issue #297.
+
+Variant equivalence (multi-allelic normalization, haplotype-level matching) is
+delegated to Illumina's `hap.py`. NEAT adds the false-negative attribution
+layer: each FN is tagged with one or more of `outside_simulated_contigs`,
+`outside_mutation_bed`, `outside_target_bed`, or `unknown`.
+
+**Outputs (in `--output-dir`):**
+
+- `comparison_summary.json` — counts, precision/recall/F1, per-reason FN totals
+- `comparison_summary.txt` — human-readable rollup
+- `FN_with_reasons.vcf` — hap.py's FN records with an added `NEAT_REASON` INFO tag
+- `happy.vcf.gz` and siblings — preserved hap.py output
+- `fn_attribution.png` — optional bar chart, written when `--plot` is set
+
+**Prerequisite artifact:** Every `neat read-simulator` run now writes a small
+`simulation_summary.json` alongside its other outputs, capturing the run's
+config echo (coverage, read length, paired-ended, BED paths, contigs simulated)
+and delivered counts (total reads, total variants, per-contig variants). The
+`compare-vcfs` wrapper reads this file to drive attribution.
+
+**External dependency:** `hap.py` is required at runtime. NEAT does not bundle
+it; install via `conda create -n hap_py_env -c bioconda -c conda-forge hap.py`
+and pass the absolute path via `--happy-bin`, or put it on `$PATH`. Without
+hap.py, the command exits with an install hint.
+
+**Chromosome-name handling:** `compare-vcfs` detects when a BED's chrom names
+don't overlap the reference's (e.g., BED uses `1`/`MT` while reference uses
+`chr1`/`chrM`) and writes a warning into `comparison_summary.json` suggesting
+an alias mapping. Users can apply the mapping via a new `--chrom-aliases TSV`
+flag. NEAT does not auto-normalize — silent renaming would mask real bugs.
+`simulation_summary.json` now also records `delivered.reference_contigs` (the
+full FASTA contig set) alongside `contigs_simulated`.
+
+**Not in this release** (deferred to follow-up issues): full per-region
+simulation telemetry (per-chunk coverage, GC-bias map, error rates by position)
+for richer FN attribution, and SV-comparison support. The simulator's silent
+"skip BED chroms not in reference" warning will be promoted to a fatal error
+in a future release with an opt-in `chrom_aliases` config key.
+
 # NEAT v4.4.4
 Follow-up release on top of v4.4.3 bundling three lines of work: another perf
 pass over the remaining single-thread hot paths (variant overlap checks,

@@ -47,6 +47,7 @@ To cite this work, please use both of the following:
     * [`neat model-seq-err`](#neat-model-seq-err)
     * [`neat model-qual-score`](#neat-model-qual-score)
     * [`neat model-gc-bias`](#neat-model-gc-bias)
+    * [`neat compare-vcfs`](#neat-compare-vcfs)
   * [Tests](#tests)
     * [Guide to run locally](#guide-to-run-locally)
     * [Note on Sensitive Patient Data](#note-on-sensitive-patient-data)
@@ -597,6 +598,75 @@ neat model-gc-bias    \
 ```
 
 and creates `gc_model.pickle.gz` model in the working directory.
+
+### `neat compare-vcfs`
+
+Compares a downstream variant caller's VCF against a NEAT-simulated truth VCF,
+attributing each false negative to the simulator's own configuration. The
+intended workflow is: run NEAT to produce a synthetic FASTQ and golden VCF →
+run your aligner + caller on the FASTQ → compare the caller's VCF against the
+golden with `neat compare-vcfs`.
+
+Variant equivalence (multi-allelic normalization, haplotype-level matching) is
+delegated to `hap.py`. The NEAT-specific value-add is the false-negative
+attribution: each FN is tagged with one or more reasons drawn from the run
+config recorded in `simulation_summary.json`.
+
+```bash
+neat compare-vcfs golden.vcf called.vcf            \
+        --neat-run-dir /path/to/neat/output/dir    \
+        --output-dir /path/to/comparison/output    \
+        --reference reference.fa                   \
+        [--target-bed target.bed]                  \
+        [--happy-bin /abs/path/to/hap.py]          \
+        [--plot]                                   \
+        [--chrom-aliases aliases.tsv]
+```
+
+Outputs (in `--output-dir`):
+
+| File | Purpose |
+|------|---------|
+| `comparison_summary.json`   | Machine-readable: counts (TP/FN/FP), precision/recall/F1, per-reason FN counts |
+| `comparison_summary.txt`    | Human-readable rollup of the same |
+| `FN_with_reasons.vcf`       | hap.py's false-negative records, each annotated with a `NEAT_REASON` INFO tag |
+| `happy.vcf.gz` (+ siblings) | Raw hap.py output preserved for inspection |
+| `fn_attribution.png`        | Optional — only written when `--plot` is set |
+
+**Chromosome-name conventions:** NEAT does NOT silently normalize chrom names
+across the reference, golden VCF, called VCF, and BED files. If your
+`mutation_bed` uses `1`, `2`, … but the reference uses `chr1`, `chr2`, …,
+`compare-vcfs` detects the mismatch up front and writes a warning into
+`comparison_summary.json` suggesting the rename. Pass `--chrom-aliases
+aliases.tsv` (two-column TSV: `bed_name<TAB>canonical_name`) to apply the
+rename at load time. This also handles common mitochondrial variants
+(`M`/`MT`/`chrM`/`chrMT`).
+
+**False-negative reason categories:**
+
+| Tag | Meaning |
+|-----|---------|
+| `outside_simulated_contigs` | FN's chromosome wasn't part of the NEAT run at all |
+| `outside_mutation_bed`      | `mutation_bed` was set in the config and the FN falls outside its regions |
+| `outside_target_bed`        | `target_bed` was set and the FN falls outside its regions |
+| `unknown`                   | None of the above — NEAT has no specific explanation |
+
+**`simulation_summary.json` prerequisite:** Every `neat read-simulator` run now
+emits `simulation_summary.json` into its output dir as part of the standard
+artifacts; `compare-vcfs` reads this file from `--neat-run-dir` to drive
+attribution. No extra step required when running NEAT yourself; if you're
+working with pre-NEAT-4.5 output, re-run the simulator to produce one.
+
+**`hap.py` install:** `hap.py` is an external dependency. The cleanest install
+path is a dedicated conda env:
+
+```bash
+conda create -n hap_py_env -c bioconda -c conda-forge hap.py -y
+```
+
+then point `--happy-bin` at `/path/to/hap_py_env/bin/hap.py` (or put that
+directory on `$PATH`). Without `hap.py` available, `neat compare-vcfs` exits
+with a clear install hint.
 
 ## Tests
 
