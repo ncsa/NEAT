@@ -169,7 +169,7 @@ To run the simulator in multithreaded mode, set the `threads` value in the confi
 
 `read_len`: The length of the reads for the FASTQ (if using). _Integer value, default 151._
 
-`coverage`: Desired coverage depth. _Integer value, default = 10._
+`coverage`: Desired average coverage depth. _Numeric value (fractional allowed, e.g. `0.5` for low-pass simulation), must be > 0, default = 10._
 
 `ploidy`: Desired value for ploidy (# of copies of each chromosome in the organism, where if ploidy > 2, "heterozygous"  mutates floor(ploidy / 2) chromosomes). _Default is 2._
 

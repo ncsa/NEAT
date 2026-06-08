@@ -214,6 +214,41 @@ def test_check_and_log_error_numeric_out_of_range(capsys):
         Options.check_and_log_error("coverage", 0, 1, 1000000)
 
 
+def test_check_and_log_error_fractional_coverage_ok():
+    """Fractional coverage is accepted under the float schema (issue #242)."""
+    Options.check_and_log_error("coverage", 0.5, 1e-6, 1000000)  # no exception
+
+
+def test_check_and_log_error_zero_coverage_exits():
+    """Zero (or negative) coverage is rejected by the positive lower bound."""
+    with _pytest.raises(SystemExit):
+        Options.check_and_log_error("coverage", 0, 1e-6, 1000000)
+
+
+def test_from_cli_fractional_coverage(tmp_path: _PathAlias):
+    """A YAML config with fractional coverage parses and round-trips the float value."""
+    cfg = _textwrap.dedent(
+        f"""
+        reference: {(_project_root() / 'data' / 'H1N1.fa').as_posix()}
+        read_len: 75
+        coverage: 0.5
+        ploidy: 2
+        paired_ended: false
+        produce_fastq: true
+        rng_seed: 42
+        overwrite_output: true
+        """
+    ).strip() + "\n"
+
+    yml_path = tmp_path / "frac.yml"
+    yml_path.write_text(cfg, encoding="utf-8")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    opts = Options.from_cli(outdir, "frac", yml_path)
+    assert opts.coverage == 0.5
+
+
 def test_check_and_log_error_choice_valid():
     # The schema's `choice`-type validator isn't currently used by any production
     # option, but we still want it covered. Use a synthetic key name so the test
