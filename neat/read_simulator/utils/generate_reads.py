@@ -2,7 +2,6 @@ import heapq
 import logging
 import pickle
 import time
-from math import ceil
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +22,29 @@ __all__ = [
 ]
 
 _LOG = logging.getLogger(__name__)
+
+
+def _stochastic_round(expected_count: float, rng) -> int:
+    """
+    Round a fractional read count to an integer without biasing total coverage.
+
+    Each chunk of the genome computes its own fractional expected read count. Rounding
+    every chunk up (math.ceil) systematically over-covers: the bias is negligible at
+    high coverage but dominates at low or fractional coverage, where a chunk's fair
+    share can be well under one read yet still gets rounded up to a whole read. Rounding
+    the fractional part probabilistically instead makes E[count] == expected_count, so
+    the average coverage matches the requested target at any depth. The run's seeded RNG
+    is used, so output remains reproducible for a given seed.
+
+    :param expected_count: The fractional number of reads this chunk should produce.
+    :param rng: The run's seeded numpy Generator.
+    :return: A non-negative integer read count whose expectation is expected_count.
+    """
+    if expected_count <= 0:
+        return 0
+    floor = int(expected_count)
+    remainder = expected_count - floor
+    return floor + int(rng.random() < remainder)
 
 
 def cover_dataset(
@@ -67,11 +89,15 @@ def cover_dataset(
     # precompute how many reads we want
     # The numerator is the total number of base pair calls needed. Coverage is scaled by
     # responsibility_length, not span_length, so chunks don't over-sample their overlap
-    # region (which is also covered by the next chunk).
+    # region (which is also covered by the next chunk). expected_reads is kept as a float
+    # and rounded stochastically (see _stochastic_round) so that summing across many
+    # chunks does not over-cover — critical for low/fractional coverage.
     if options.paired_ended:
-        number_reads = ceil(responsibility_length * options.coverage / (2 * options.read_len))
+        expected_reads = responsibility_length * options.coverage / (2 * options.read_len)
     else:
-        number_reads = ceil(responsibility_length * options.coverage / options.read_len)
+        expected_reads = responsibility_length * options.coverage / options.read_len
+
+    number_reads = _stochastic_round(expected_reads, options.rng)
 
     if gc_model and not gc_model.is_uniform:
         # CDF-based sampling for GC bias
@@ -124,7 +150,9 @@ def cover_dataset(
         denominator = options.gc_global_mean_weight if getattr(
             options, "gc_global_mean_weight", None
         ) else mean_weight
-        number_reads = ceil(number_reads * mean_weight / denominator)
+        # Re-round from the unscaled float expectation so the GC scaling doesn't compound
+        # a prior rounding step.
+        number_reads = _stochastic_round(expected_reads * mean_weight / denominator, options.rng)
 
         if number_reads == 0:
             return []
@@ -181,6 +209,10 @@ def cover_dataset(
 
 def _uniform_sampling(span_length, number_reads, options, fragment_model, *,
                       max_start=None, responsibility_length=None):
+    # A chunk's stochastically-rounded read count can legitimately be 0 at low/fractional
+    # coverage. Bail early so we don't np.concatenate an empty accumulator list below.
+    if number_reads <= 0:
+        return []
     if span_length <= options.read_len:
         return []
 
