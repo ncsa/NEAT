@@ -1,3 +1,22 @@
+# NEAT v4.5.3
+
+Handle IUPAC ambiguity codes in the reference (issue #291).
+
+Reference assemblies such as GRCh38 carry IUPAC ambiguity codes (R, Y, S, W,
+K, M, B, D, H, V) alongside A/C/G/T/N. NEAT previously had no handling: such a
+base could survive reference loading and then crash a run with a `KeyError`
+when it landed at a sequencing-error site (the substitution model only indexes
+A/C/G/T).
+
+- Ambiguity codes are now resolved to a concrete base — one of the bases the
+  code represents, chosen with the run's seeded RNG — when the reference is
+  loaded. Every downstream consumer (reads, BAM, golden VCF, error and
+  trinucleotide lookups) therefore only ever sees A/C/G/T/N, and a count of
+  resolved bases is logged per contig. `N` keeps its existing low-quality
+  masking behavior.
+- Defense-in-depth: the sequencing-error model now skips a non-A/C/G/T
+  reference base instead of raising, so no unmapped base can crash a run.
+
 # NEAT v4.5.2
 
 Fixed coverage handling at low and fractional depths (issue #242).

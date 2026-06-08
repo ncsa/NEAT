@@ -17,6 +17,7 @@ from Bio import bgzf, SeqIO
 from Bio.Seq import Seq
 
 from neat.read_simulator.utils import Options
+from neat.common import resolve_iupac_bases
 
 _LOG = logging.getLogger(__name__)
 
@@ -71,6 +72,16 @@ def main(options: Options) -> tuple[dict, int, dict]:
     for seq_record in SeqIO.parse(str(options.reference), "fasta"):
         contig = seq_record.id
         seq_str = str(seq_record.seq).upper()
+        # Resolve any IUPAC ambiguity codes (R, Y, S, W, K, M, B, D, H, V) to a concrete
+        # base now, so every downstream consumer (reads, BAM, golden VCF, error and
+        # trinucleotide lookups) only ever sees A/C/G/T/N. 'N' is left for its existing
+        # low-quality masking. References like GRCh38 carry a handful of these codes.
+        seq_str, n_ambiguous = resolve_iupac_bases(seq_str, options.rng)
+        if n_ambiguous:
+            _LOG.warning(
+                f"Resolved {n_ambiguous} IUPAC ambiguity code(s) to concrete bases on "
+                f"contig '{contig}'."
+            )
         reference_keys_with_lens[contig] = len(seq_str)
         split_fasta_dict[contig] = {}
         
