@@ -1,3 +1,22 @@
+# NEAT v4.5.2
+
+Fixed coverage handling at low and fractional depths (issue #242).
+
+Previously no reads were generated at `coverage=1`, and fractional coverage was
+rejected outright: `coverage` was typed as an integer in the config schema, and
+the per-chunk read count was rounded with `math.ceil`.
+
+- `coverage` is now a float with a positive lower bound, so fractional depths
+  (e.g. `0.5` for low-pass simulation) are accepted and zero/negative is
+  rejected.
+- Each chunk's read count is kept as a float expectation and rounded
+  stochastically (`E[reads] == target`) rather than with `ceil`. Rounding every
+  chunk up systematically over-covered — negligible at high depth but dominant
+  at low/fractional coverage. The run's seeded RNG is used, so output remains
+  reproducible. Note: same-seed output now differs from prior versions.
+- A chunk that legitimately rounds to zero reads no longer crashes the uniform
+  sampler.
+
 # NEAT v4.5.1
 
 Removed the `cleanup_splits` and `reuse_splits` config options.

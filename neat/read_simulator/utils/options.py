@@ -61,7 +61,7 @@ class Options(SimpleNamespace):
                  rng_seed: int | None = None,
                  read_len: int = 101,
                  threads: int = 1,
-                 coverage: int = 10,
+                 coverage: float = 10,
                  error_model: Path | None = None,
                  avg_seq_error: float | None = None,
                  rescale_qualities: bool = False,
@@ -143,7 +143,7 @@ class Options(SimpleNamespace):
         self.rng_seed = rng_seed
         self.read_len: int = read_len
         self.threads: int = threads
-        self.coverage: int = coverage
+        self.coverage: float = coverage
         self.error_model: Path | None = error_model
         self.avg_seq_error: float | None = avg_seq_error
         self.rescale_qualities: bool = rescale_qualities
@@ -220,7 +220,7 @@ class Options(SimpleNamespace):
         defs = {
             'reference': (Path, None, 'exists', None),
             'read_len': (int, 151, 10, 1000000),
-            'coverage': (int, 10, 1, 1000000),
+            'coverage': (float, 10, 1e-6, 1000000),
             'error_model': (Path, None, 'exists', None),
             'avg_seq_error': (float, None, 0, 0.3),
             'rescale_qualities': (bool, False, None, None),

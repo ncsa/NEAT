@@ -6,7 +6,14 @@ from Bio.SeqRecord import SeqRecord
 
 from neat.models import FragmentLengthModel, SequencingErrorModel, TraditionalQualityModel, GCBiasModel, get_uniform_gc_model
 from neat.read_simulator.utils import Options
-from neat.read_simulator.utils.generate_reads import cover_dataset, overlaps, find_applicable_mutations, generate_reads
+from neat.read_simulator.utils.generate_reads import (
+    cover_dataset,
+    overlaps,
+    find_applicable_mutations,
+    generate_reads,
+    _stochastic_round,
+    _uniform_sampling,
+)
 from neat.read_simulator.utils.read import Read
 from neat.variants.contig_variants import ContigVariants
 from neat.variants import SingleNucleotideVariant
@@ -249,6 +256,102 @@ def test_paired_ended_coverage_accuracy(fragment_mean, target_coverage):
         f"Paired-ended (frag_mean={fragment_mean}) average coverage {avg:.2f}x "
         f"is more than 10% off target {target_coverage}x"
     )
+
+
+# Fractional / low coverage and stochastic rounding (issue #242)
+
+def test_stochastic_round_is_unbiased():
+    """Over many draws the mean of _stochastic_round equals the fractional input."""
+    rng = np.random.default_rng(1234)
+    expected = 0.3
+    n = 200_000
+    draws = [_stochastic_round(expected, rng) for _ in range(n)]
+    assert set(draws) <= {0, 1}, "fractional part in [0,1) should round to floor or floor+1"
+    mean = sum(draws) / n
+    assert abs(mean - expected) < 0.01, f"mean {mean:.4f} biased away from {expected}"
+
+
+def test_stochastic_round_edges():
+    """Whole numbers round to themselves; non-positive inputs yield 0."""
+    rng = np.random.default_rng(0)
+    assert all(_stochastic_round(5.0, rng) == 5 for _ in range(100))
+    assert _stochastic_round(0.0, rng) == 0
+    assert _stochastic_round(-3.0, rng) == 0
+    # The integer part is always retained, plus 0 or 1 from the fractional part.
+    assert all(_stochastic_round(7.4, rng) in (7, 8) for _ in range(100))
+
+
+def test_stochastic_round_reproducible():
+    """Same seed → same sequence of roundings."""
+    a = np.random.default_rng(99)
+    b = np.random.default_rng(99)
+    assert [_stochastic_round(0.5, a) for _ in range(50)] == [_stochastic_round(0.5, b) for _ in range(50)]
+
+
+def test_uniform_sampling_zero_reads_no_crash():
+    """A zero read count must return [] rather than crashing on np.concatenate([])."""
+    options = Options(rng_seed=0)
+    options.read_len = 100
+    options.paired_ended = False
+    options.overwrite_output = True
+    fragment_model = FragmentLengthModel(150, 30)
+    assert _uniform_sampling(1000, 0, options, fragment_model) == []
+
+
+def test_low_coverage_multichunk_unbiased():
+    """Summed across many small chunks, fractional coverage must not over-cover.
+
+    Each chunk's fair share here is 0.75 reads. The old ceil() rounded every chunk up
+    to 1, inflating the total by ~33%. Stochastic rounding should land the aggregate
+    near the true target and well below the ceil result. Regression test for #242.
+    """
+    read_len = 100
+    coverage = 0.5
+    responsibility_length = 150          # expected per chunk = 150 * 0.5 / 100 = 0.75 reads
+    n_chunks = 4000
+    expected_per_chunk = responsibility_length * coverage / read_len
+    target_total = n_chunks * expected_per_chunk
+    ceil_total = n_chunks  # what the old ceil() behaviour would have produced (1 per chunk)
+
+    options = Options(rng_seed=42)
+    options.read_len = read_len
+    options.paired_ended = False
+    options.coverage = coverage
+    options.overwrite_output = True
+    fragment_model = FragmentLengthModel(150, 30)
+    reference = SeqRecord(Seq("A" * 300), id="chr1")
+
+    total_reads = 0
+    for _ in range(n_chunks):
+        reads = cover_dataset(
+            reference, options, fragment_model, None,
+            responsibility_length=responsibility_length,
+        )
+        total_reads += len(reads)
+
+    # Aggregate is within 10% of the true fractional target ...
+    assert abs(total_reads - target_total) / target_total < 0.10, (
+        f"aggregate {total_reads} far from fractional target {target_total}"
+    )
+    # ... and clearly below the systematic over-coverage the old ceil() produced.
+    assert total_reads < 0.9 * ceil_total, (
+        f"aggregate {total_reads} not meaningfully below ceil result {ceil_total}"
+    )
+
+
+def test_fractional_coverage_produces_reads():
+    """cover_dataset handles a single fractional-coverage chunk without error."""
+    options = Options(rng_seed=7)
+    options.read_len = 100
+    options.paired_ended = True
+    options.coverage = 0.5
+    options.overwrite_output = True
+    fragment_model = FragmentLengthModel(300, 30)
+    reference = SeqRecord(Seq("A" * 10_000), id="chr1")
+    reads = cover_dataset(reference, options, fragment_model, None)
+    avg = _compute_avg_coverage(reads, 10_000, paired=True)
+    # Loose bound — single chunk, low depth — just confirm it's in the fractional ballpark.
+    assert 0.2 < avg < 0.8, f"fractional coverage {avg:.3f}x outside expected range"
 
 
 def test_overlaps():
