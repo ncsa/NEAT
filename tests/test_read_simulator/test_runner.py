@@ -290,6 +290,34 @@ def test_runner_produces_fastq_output(tmp_path):
     assert first_line.startswith("@"), "FASTQ file should start with '@'"
 
 
+def test_runner_handles_iupac_ambiguity_codes(tmp_path):
+    """A reference with IUPAC ambiguity codes runs end-to-end without crashing, and the
+    FASTQ output contains only A/C/G/T/N — the codes are resolved at load (issue #291)."""
+    # 400 bp with every ambiguity code embedded, plus a 10 bp N run.
+    seq = list("ACGT" * 100)
+    for i, code in enumerate("RYSWKMBDHV"):
+        seq[i * 10] = code          # scatter the 10 ambiguity codes
+    seq[200:210] = list("N" * 10)   # also exercise the N-masking path
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\n" + "".join(seq) + "\n", encoding="utf-8")
+
+    cfg = _write_config(tmp_path / "conf.yml", ref, read_len=50, coverage=20)
+    out_dir = tmp_path / "out"
+
+    read_simulator_runner(str(cfg), str(out_dir), "test")  # must not raise
+
+    fq_files = list(out_dir.glob("*.fastq.gz"))
+    assert fq_files, "Expected FASTQ output"
+    read_seqs = []
+    with gzip.open(fq_files[0], "rt") as fh:
+        for i, line in enumerate(fh):
+            if i % 4 == 1:
+                read_seqs.append(line.strip())
+    assert read_seqs, "Expected at least one read"
+    leaked = set("".join(read_seqs)) - set("ACGTN")
+    assert not leaked, f"FASTQ leaked non-ACGTN bases from IUPAC reference: {sorted(leaked)}"
+
+
 def test_runner_paired_end_produces_two_fastqs(tmp_path):
     """Paired-end mode produces both fq1 and fq2."""
     ref = _write_ref(tmp_path / "ref.fa")

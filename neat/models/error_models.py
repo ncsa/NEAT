@@ -253,7 +253,13 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # else dedicated to SNVs.
             else:
                 snv_reference = reference_segment[index]
-                nuc_index = NUC_IND[snv_reference]
+                nuc_index = NUC_IND.get(snv_reference)
+                if nuc_index is None:
+                    # Reference base is not A/C/G/T (e.g. an unresolved IUPAC code or an 'N'
+                    # that slipped through). IUPAC codes are normally resolved at reference
+                    # load (see resolve_iupac_bases), so this is a safety net: skip the error
+                    # at this position rather than raising a KeyError on the lookup.
+                    continue
                 # take the zero index because this returns a list of length 1.
                 snv_alt = rng.choice(ALLOWED_NUCL, p=self.transition_matrix[nuc_index])
                 introduced_errors.append(
