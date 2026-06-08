@@ -82,9 +82,7 @@ class Options(SimpleNamespace):
                  produce_fastq: bool = True,
                  min_mutations: int = 0,
                  parallel_block_size: int = 0,
-                 cleanup_splits: bool = True,
                  splits_dir: Path | None = None,
-                 reuse_splits: bool = False,
                  gc_model: Path | None = None,
                  **kwargs: Any
                  ):
@@ -136,9 +134,7 @@ class Options(SimpleNamespace):
             chunks of this size). Default 0 auto-tunes from total genome length and thread count, targeting
             ~8 chunks per thread. Specify a positive integer to override. Ignored when threads == 1, where
             one chunk per contig is used.
-        :param cleanup_splits: Set to False in order to preserve splits after run
-        :param reuse_splits: Attempts to reuse existing splits file
-        """
+"""
         super().__init__(**kwargs)
         self.reference: Path = reference
         self.output_dir: Path = output_dir
@@ -173,9 +169,7 @@ class Options(SimpleNamespace):
         # threads > 1, contigs are split into chunks of `parallel_block_size`; with
         # threads == 1, each contig is processed as a single chunk.
         self.parallel_block_size: int = parallel_block_size
-        self.cleanup_splits: bool = cleanup_splits
         self.splits_dir: Path | None = splits_dir
-        self.reuse_splits: bool = reuse_splits
         self.gc_model: Path | None = Path(gc_model) if gc_model else None
         # Genome-wide mean GC bias weight, computed once at the runner level when
         # gc_model is loaded. cover_dataset divides per-chunk reads by this rather
@@ -251,8 +245,6 @@ class Options(SimpleNamespace):
             'overwrite_output': (bool, False, None, None),
             'parallel_block_size': (int, 0, None, None),
             'threads': (int, 1, 1, 1000),
-            'cleanup_splits': (bool, True, None, None),
-            'reuse_splits': (bool, False, None, None),
             'gc_model': (Path, None, 'exists', None)
         }
 
@@ -312,6 +304,8 @@ class Options(SimpleNamespace):
     # Map: deprecated key -> short reason shown to the user.
     DEPRECATED_KEYS = {
         "parallel_mode": "splitting strategy is now derived from `threads`",
+        "cleanup_splits": "splits are always written to a temporary directory and cleaned up automatically",
+        "reuse_splits": "removed; splits are regenerated on each run",
     }
 
     def read_yaml(self, config_yaml: Path, args: dict):
@@ -467,23 +461,7 @@ class Options(SimpleNamespace):
         else:
             _LOG.info('Single threading - 1 thread.')
             _LOG.info('Splitting input by contig.')
-        if self.reuse_splits:
-            splits_dir = Path(f'{self.output_dir}/splits/')
-            _LOG.info(f'Reusing existing splits {splits_dir}.')
-            if not splits_dir.is_dir():
-                raise FileNotFoundError(f"reuse_splits=True but splits dir not found: {splits_dir}")
-            else:
-                if self.reuse_splits:
-                    raise FileNotFoundError(f'reuse_splits=True')
-                else:
-                    _LOG.warning(f'Reused splits set to True, but splits dir not found: {splits_dir}. Creating new splits')
-            _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
-        elif not self.cleanup_splits:
-            splits_dir = Path(f'{self.output_dir}/splits/')
-            _LOG.info(f'Preserving splits for next run in directory {self.splits_dir}.')
-        else:
-            splits_dir = self.temp_dir_path / "splits"
-
+        splits_dir = self.temp_dir_path / "splits"
         validate_output_path(splits_dir, False)
         self.splits_dir = splits_dir
 

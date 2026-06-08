@@ -75,8 +75,6 @@ def test_from_cli_single_end_with_threads_and_splits(tmp_path: _PathAlias):
 
         parallel_block_size: 500000
         threads: 2
-        cleanup_splits: false
-        reuse_splits: false
         """
     ).strip() + "\n"
 
@@ -102,8 +100,8 @@ def test_from_cli_single_end_with_threads_and_splits(tmp_path: _PathAlias):
     assert opts.vcf is None
 
     assert opts.threads == 2
-    assert opts.splits_dir == outdir / "splits"
     assert opts.splits_dir.is_dir()
+    assert opts.splits_dir.name == "splits"
 
 
 def test_from_cli_paired_end_fragments(tmp_path: _PathAlias):
@@ -125,8 +123,6 @@ def test_from_cli_paired_end_fragments(tmp_path: _PathAlias):
         overwrite_output: true
 
         threads: 1
-        cleanup_splits: true
-        reuse_splits: false
         """
     ).strip() + "\n"
 
@@ -160,8 +156,6 @@ def test_default_values():
     # auto-tune logic. The splitting strategy itself is no longer a user-facing option —
     # it's derived from `threads` at runtime.
     assert opts.parallel_block_size == 0
-    assert opts.cleanup_splits is True
-    assert opts.reuse_splits is False
     assert opts.overwrite_output is False
     assert opts.rescale_qualities is False
     assert opts.min_mutations == 0
@@ -286,6 +280,27 @@ def test_read_yaml_deprecated_parallel_mode_warns(tmp_path: _PathAlias, caplog):
     )
 
 
+def test_deprecated_cleanup_splits_warns(tmp_path: _PathAlias, caplog):
+    """cleanup_splits and reuse_splits must fire a deprecation warning and not crash."""
+    ref = _project_root() / "data" / "H1N1.fa"
+    cfg = _textwrap.dedent(
+        f"""
+        reference: {ref}
+        cleanup_splits: true
+        reuse_splits: false
+        threads: 1
+        """
+    ).strip() + "\n"
+    yml_path = tmp_path / "old_config.yml"
+    yml_path.write_text(cfg, encoding="utf-8")
+    import logging as _logging
+    with caplog.at_level(_logging.WARNING):
+        Options.from_cli(tmp_path, "out", yml_path)
+    keys_warned = {rec.message.split("`")[1] for rec in caplog.records if "deprecated" in rec.message}
+    assert "cleanup_splits" in keys_warned
+    assert "reuse_splits" in keys_warned
+
+
 def test_log_configuration_fragment_mean_less_than_read_len_exits(tmp_path: _PathAlias):
     ref = _project_root() / "data" / "H1N1.fa"
     opts = Options(reference=ref, output_dir=tmp_path, output_prefix="out",
@@ -313,27 +328,3 @@ def test_log_configuration_paired_without_model_or_mean_exits(tmp_path: _PathAli
         opts.log_configuration()
 
 
-def test_from_cli_reuse_splits_missing_dir_raises(tmp_path: _PathAlias):
-    cfg = _textwrap.dedent(
-        f"""
-        reference: {(_project_root() / 'data' / 'H1N1.fa').as_posix()}
-        paired_ended: false
-        produce_fastq: true
-        produce_bam: false
-        produce_vcf: false
-        threads: 4
-        parallel_block_size: 500000
-        cleanup_splits: true
-        reuse_splits: true
-        overwrite_output: true
-        """
-    ).strip() + "\n"
-
-    yml_path = tmp_path / "neat_from_cli_reuse.yml"
-    yml_path.write_text(cfg, encoding="utf-8")
-    
-    outdir = tmp_path / "out"
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    with _pytest.raises(FileNotFoundError, match=r"reuse_splits=True"):
-        Options.from_cli(outdir, "reuse", yml_path)

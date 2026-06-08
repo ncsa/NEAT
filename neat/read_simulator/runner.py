@@ -25,6 +25,7 @@ from ..model_gc_bias import compute_genome_wide_gc_mean_weight
 from ..variants import ContigVariants
 from .utils.split_inputs import main as split_main
 from .utils.stitch_outputs import main as stitch_main
+from .utils.simulation_summary import write_simulation_summary
 
 __all__ = ["read_simulator_runner"]
 
@@ -325,6 +326,16 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             pysam.tabix_index(str(file), preset="vcf", force=force)
 
     _LOG.info(f"Read simulator complete in {time.time() - analysis_start} s")
+
+    write_simulation_summary(
+        options=options,
+        output_dir=output_dir,
+        file_prefix=str(file_prefix),
+        config_path=config,
+        analysis_start=analysis_start,
+        contigs_simulated=list(input_variants_dict.keys()),
+        reference_contigs=list(reference_keys_with_lens.keys()),
+    )
 
 def filter_thread_variants(contig_variants: ContigVariants, coords: tuple[int, int]) -> ContigVariants:
     ret_contig_vars = ContigVariants()

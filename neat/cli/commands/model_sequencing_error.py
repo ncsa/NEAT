@@ -49,8 +49,9 @@ class Command(BaseCommand):
                             nargs='+',
                             required=False,
                             default=42,
-                            help="Quality score max. The default 42. The lowest possible score is 1. To used binned"
-                                 "scoring, enter a space separated list of scores, e.g., -Q 2 15 23 37")
+                            help="Maximum quality score [42], or a space-separated list of bin values "
+                                 "(e.g., -Q 2 12 23 37) to constrain the model to those discrete levels. "
+                                 "For named instrument presets use `neat model-qual-score --quality-preset`.")
 
         parser.add_argument('-m',
                             type=int,
