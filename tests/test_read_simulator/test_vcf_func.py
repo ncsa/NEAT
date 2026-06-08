@@ -167,6 +167,10 @@ def test_parse_deletion(tmp_path, ref_fasta, empty_input_dict, opts):
     variants = empty_input_dict["chr1"].contig_variants.get(4, [])
     assert len(variants) == 1
     assert isinstance(variants[0], Deletion)
+    # length is the full reference span (len(ref)), not len(alt). For ACGT -> A
+    # that is 4, so the deletion is reconstructed as ACGT -> A on output rather
+    # than being truncated to a single base. Regression test for issue #305.
+    assert variants[0].length == 4
 
 
 def test_parse_insertion(tmp_path, ref_fasta, empty_input_dict, opts):
