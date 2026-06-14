@@ -104,8 +104,11 @@ def cover_dataset(
         window_size = gc_model.window_size
         if span_length <= window_size:
             # Fallback to uniform if region is too short
-            return _uniform_sampling(span_length, number_reads, options, fragment_model,
-                                     max_start=max_start)
+            return _filter_n_regions(
+                _uniform_sampling(span_length, number_reads, options, fragment_model,
+                                  max_start=max_start),
+                reference, options,
+            )
 
         # Build prefix sum of weights only over the positions this chunk owns.
         if max_start < 0:
@@ -204,7 +207,59 @@ def cover_dataset(
     # which interleaves PE mate reads correctly. Users who want randomized FASTQ
     # ordering can pipe the output through `seqkit shuffle` — see README "FASTQ
     # output order".
-    return final_reads
+    return _filter_n_regions(final_reads, reference, options)
+
+
+def _filter_n_regions(final_reads: list, reference: SeqRecord, options: Options) -> list:
+    """
+    Drop fragments that fall mostly inside reference 'N' runs (assembly gaps).
+
+    Under the default ``n_handling="exclude"`` policy, a read whose window is at least
+    ``options.n_max_fraction`` 'N' is removed so that true gaps get ~zero coverage, mirroring
+    real WGS. Reads that merely clip the edge of a gap survive and have their residual N's
+    emitted as literal low-quality 'N' base calls in ``Read.convert_masking``. Under the legacy
+    ``n_handling="telomere"`` policy this is a no-op (N's are filled with a telomere repeat
+    downstream instead).
+
+    The common case — a reference chunk with no 'N' at all — returns the input list unchanged
+    after a single vectorized scan, so N-free references are neither reordered nor slowed.
+
+    :param final_reads: List of (r1_start, r1_end, r2_start, r2_end) fragment tuples.
+    :param reference: The reference chunk these positions index into.
+    :param options: Run options (reads n_handling and n_max_fraction).
+    :return: The filtered fragment list (a new list), or the input unchanged when nothing applies.
+    """
+    if options.n_handling == "telomere" or not final_reads:
+        return final_reads
+
+    seq_arr = np.frombuffer(str(reference.seq).upper().encode(), dtype=np.uint8)
+    span = seq_arr.size
+    n_mask = seq_arr == ord('N')
+    if not n_mask.any():
+        # No unknown bases in this chunk: nothing to exclude, preserve order exactly.
+        return final_reads
+
+    n_cumsum = np.empty(span + 1, dtype=np.int64)
+    n_cumsum[0] = 0
+    np.cumsum(n_mask, out=n_cumsum[1:])
+
+    arr = np.asarray(final_reads, dtype=np.int64)
+    r1s, r1e, r2s, r2e = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]
+
+    def n_fraction(start, end):
+        # Windows are half-open and always in-bounds (start >= 0, end <= span).
+        length = np.maximum(end - start, 1)
+        return (n_cumsum[end] - n_cumsum[start]) / length
+
+    # Keep a fragment only if its read1 window is below the N threshold...
+    keep = n_fraction(r1s, r1e) < options.n_max_fraction
+    if options.paired_ended:
+        # ...and, for paired reads, its read2 window too. A degenerate (0, 0) mate
+        # (filtered upstream) has zero length and is left untouched by this check.
+        has_r2 = (r2e - r2s) > 0
+        keep &= ~has_r2 | (n_fraction(r2s, r2e) < options.n_max_fraction)
+
+    return [tuple(row) for row in arr[keep].tolist()]
 
 
 def _uniform_sampling(span_length, number_reads, options, fragment_model, *,
@@ -458,7 +513,8 @@ def generate_reads(
             options.quality_offset,
             options.produce_fastq,
             errors_per_read,
-            options.rng
+            options.rng,
+            options.n_handling,
         )
 
         # Stream BAM in coordinate order: flush any buffered read2 records whose
@@ -507,7 +563,8 @@ def generate_reads(
                 options.quality_offset,
                 options.produce_fastq,
                 errors_per_read,
-                options.rng
+                options.rng,
+                options.n_handling,
             )
             if bam_handle is not None:
                 heapq.heappush(r2_buffer, (read_2.position, r2_counter, read_2))

@@ -339,6 +339,7 @@ class Read:
             produce_fastq: bool,
             num_errors: int,
             rng: Generator,
+            n_handling: str = "exclude",
     ):
         """
         Writes the record to the temporary fastq file
@@ -351,6 +352,8 @@ class Read:
             to create the bam files.
         :param num_errors: Estimated number of errors to add to this read.
         :param rng: the random number generator for this run
+        :param n_handling: How to render residual 'N' bases ("exclude" -> literal low-quality 'N';
+            "telomere" -> legacy low-quality TTAGGG fill). See Read.convert_masking.
         """
 
         # Generate quality scores for the read
@@ -360,9 +363,9 @@ class Read:
             rng
         )
 
-        # This replaces either hard or soft-masked reference segment with upper case or a standard repeat
-        # It updates the quality array and reference segment in place, including reversing them, if appropriate
-        self.convert_masking(qual_model)
+        # Render any 'N' bases in the reference segment: a literal low-quality 'N' base call
+        # (default) or the legacy TTAGGG telomere fill. Updates the quality array in place.
+        self.convert_masking(qual_model, n_handling)
 
         # Start the read sequence as an alias of the masked reference. Biopython Seq is
         # immutable; apply_mutations and apply_errors below produce new Seq objects via
@@ -399,16 +402,27 @@ class Read:
         return len(self.errors)
 
 
-    def convert_masking(self, quality_model: TraditionalQualityModel):
+    def convert_masking(self, quality_model: TraditionalQualityModel, n_handling: str = "exclude"):
         """
-        Replaces invalid characters with random valid characters drawn from a standard repeat sequence seen in a lot
-        of different species (TTAGGG). If there is call for it, we can make this customizable to species.
+        Render 'N' (unknown) bases in this read's reference segment to floor quality.
 
-        :param quality_model: The error model for this run
-        :return: The modified sequence object
+        Two policies:
+          - "exclude" (default): keep the 'N' as a literal base call and drop its quality to the
+            model floor. Real sequencers emit 'N' for no-call positions, and downstream aligners
+            and callers treat them as no-information rather than mismatches. Reads lying mostly
+            inside an N run have already been dropped at placement time (see
+            generate_reads._filter_n_regions), so only edge N's reach here.
+          - "telomere": legacy behavior — replace each 'N' with a base from the generic human
+            telomere repeat (TTAGGG) at floor quality. Fabricates mappable sequence; retained
+            only for reproducing older runs.
+
+        In both cases the quality score at each masked position is set to the model minimum.
+
+        :param quality_model: The quality model for this run (supplies the floor score).
+        :param n_handling: "exclude" (literal 'N') or "telomere" (TTAGGG fill).
         """
         bad_score = min(quality_model.quality_scores)
-        # we'll use generic human repeats, as commonly found in masked regions. We may refine this to make configurable
+        # Generic human telomere repeat, used only by the legacy "telomere" policy.
         repeat_bases = list("TTAGGG")
         # Immutable Biopython Seq; the MutableSeq below is the working copy, so no
         # deepcopy needed here.
@@ -422,7 +436,9 @@ class Read:
                 if base in ALLOWED_NUCL:
                     modified_segment += base
                 else:
-                    modified_segment += repeat_bases[i % 6]
+                    # Either render a literal 'N' (default) or the legacy telomere fill;
+                    # both sit at floor quality so callers can down-weight them.
+                    modified_segment += 'N' if n_handling != "telomere" else repeat_bases[i % 6]
                     self.quality_array[i] = bad_score
         else:
             modified_segment = MutableSeq(raw_sequence)

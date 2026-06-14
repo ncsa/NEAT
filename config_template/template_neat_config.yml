@@ -146,3 +146,16 @@ parallel_block_size: .
 # Maximum number of concurrent NEAT jobs (threads or hyperthreads) to run
 # type = int | required: no | default = all available
 threads: .
+
+# How to handle 'N' (unknown) bases in the reference.
+#   exclude  - drop reads that fall mostly inside N runs (true assembly gaps get
+#              ~zero coverage) and emit a literal 'N' at floor quality for any N
+#              remaining at a read's edge. This is the realistic default.
+#   telomere - legacy behavior: fill N with a low-quality TTAGGG telomere repeat.
+# type = str | required: no | default = exclude
+n_handling: .
+
+# Under n_handling: exclude, a read whose window is at least this fraction 'N'
+# is dropped rather than emitted. Range 0.0-1.0.
+# type = float | required: no | default = 0.5
+n_max_fraction: .
