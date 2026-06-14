@@ -430,6 +430,32 @@ def test_finalize_read_and_write_returns_error_count():
     assert error_count == len(r.errors)
 
 
+def _finalize_seq_with_n(n_handling):
+    """Run finalize on an N-containing read with no errors and return the emitted FASTQ seq."""
+    # 120-base segment (100 read + 20 padding); N run sits inside the read window.
+    ref = "ACGT" * 10 + "NNNN" + "ACGT" * 19
+    r = _make_read(reference=ref, padding=20)
+    err_model = SequencingErrorModel(read_length=_READ_LEN)
+    qual_model = TraditionalQualityModel()
+    handle = io.StringIO()
+    # num_errors=0 so no sequencing errors perturb the bases — we observe masking alone.
+    r.finalize_read_and_write(err_model, qual_model, handle, 33, True, 0, _make_rng(),
+                              n_handling=n_handling)
+    return handle.getvalue().strip().split("\n")[1]
+
+
+def test_finalize_threads_n_handling_default_literal_n():
+    """finalize_read_and_write defaults to exclude: N survives as a literal base in the FASTQ."""
+    seq = _finalize_seq_with_n("exclude")
+    assert "N" in seq
+
+
+def test_finalize_threads_n_handling_telomere():
+    """Passing n_handling='telomere' reaches convert_masking: N is filled, none left literal."""
+    seq = _finalize_seq_with_n("telomere")
+    assert "N" not in seq
+
+
 def test_finalize_read_and_write_writes_fastq():
     r = _make_read(reference=_PADDED_REF, padding=20)
     err_model = SequencingErrorModel(read_length=_READ_LEN)

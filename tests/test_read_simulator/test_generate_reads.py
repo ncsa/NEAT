@@ -844,12 +844,20 @@ def test_filter_n_regions_telomere_is_noop():
 
 
 def test_filter_n_regions_paired_drops_if_either_mate_in_gap():
-    """For paired reads, a gap-bound mate sinks the whole fragment."""
+    """For paired reads, a gap-bound mate sinks the whole fragment, whichever mate it is."""
     reference = SeqRecord(Seq("ACGT" * 125 + "N" * 500 + "ACGT" * 125), id="chr1")
-    # read1 clean, read2 in gap
-    frag = (100, 200, 600, 700)
-    out = _filter_n_regions([frag], reference, _opts_for_n(paired=True))
+    r2_in_gap = (100, 200, 600, 700)   # read1 clean, read2 in gap
+    r1_in_gap = (600, 700, 100, 200)   # read1 in gap, read2 clean
+    out = _filter_n_regions([r2_in_gap, r1_in_gap], reference, _opts_for_n(paired=True))
     assert out == []
+
+
+def test_filter_n_regions_paired_keeps_clean_fragment():
+    """Positive control: a paired fragment with both mates in clean sequence is kept."""
+    reference = SeqRecord(Seq("ACGT" * 125 + "N" * 500 + "ACGT" * 125), id="chr1")
+    frag = (100, 200, 300, 400)  # both mates in the clean left flank
+    out = _filter_n_regions([frag], reference, _opts_for_n(paired=True))
+    assert frag in out
 
 
 def test_cover_dataset_excludes_gap_uniform():
@@ -868,3 +876,28 @@ def test_cover_dataset_excludes_gap_uniform():
         assert not (r[0] in interior and r[1] - 1 in interior), f"read {r} placed in gap"
     # And clean flanks still get reads.
     assert any(r[1] <= 2000 for r in reads)
+
+
+def test_cover_dataset_excludes_gap_gc_path():
+    """The GC-bias sampling path is filtered too, not just uniform sampling."""
+    reference = SeqRecord(
+        Seq("ACGT" * 500 + "N" * 4000 + "ACGT" * 500), id="chr1"
+    )  # gap spans [2000, 6000)
+    # Weight both 50% GC (the clean ACGT flanks) and 0% GC (gap windows, where N is
+    # excluded from the GC denominator) so the GC sampler *would* place reads in the gap
+    # — isolating the N filter as the thing that removes them. Non-uniform -> GC path.
+    weights = [0.0] * 101
+    weights[0] = 1.0
+    weights[50] = 1.0
+    gc_model = GCBiasModel(weights, window_size=100)
+
+    options = _opts_for_n()
+    options.coverage = 20
+    frag = FragmentLengthModel(150, 30)
+    reads = cover_dataset(reference, options, frag, gc_model)
+
+    assert not gc_model.is_uniform  # guard: we really exercised the GC branch
+    interior = range(2200, 5800)
+    for r in reads:
+        assert not (r[0] in interior and r[1] - 1 in interior), f"read {r} placed in gap"
+    assert reads, "expected reads in the clean flanks"
