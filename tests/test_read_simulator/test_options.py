@@ -161,6 +161,9 @@ def test_default_values():
     assert opts.min_mutations == 0
     assert opts.output_prefix == "neat_sim"
     assert opts.output_files == []
+    # N handling defaults to the realistic exclude policy with a 50%-N drop threshold.
+    assert opts.n_handling == "exclude"
+    assert opts.n_max_fraction == 0.5
 
 
 def test_rng_seed_zero():
@@ -250,15 +253,31 @@ def test_from_cli_fractional_coverage(tmp_path: _PathAlias):
 
 
 def test_check_and_log_error_choice_valid():
-    # The schema's `choice`-type validator isn't currently used by any production
-    # option, but we still want it covered. Use a synthetic key name so the test
-    # stays meaningful regardless of which schema fields use this validator.
+    # The `choice`-type validator backs the `n_handling` schema field (exclude/telomere).
+    # A synthetic key keeps this unit focused on the validator itself.
     Options.check_and_log_error("_test_choice_key", "alpha", "choice", ["alpha", "beta"])
 
 
 def test_check_and_log_error_choice_invalid():
     with _pytest.raises(SystemExit):
         Options.check_and_log_error("_test_choice_key", "gamma", "choice", ["alpha", "beta"])
+
+
+def test_n_handling_choice_validation():
+    """The n_handling schema choices are accepted; anything else exits."""
+    choices = ("exclude", "telomere")
+    Options.check_and_log_error("n_handling", "exclude", "choice", choices)
+    Options.check_and_log_error("n_handling", "telomere", "choice", choices)
+    with _pytest.raises(SystemExit):
+        Options.check_and_log_error("n_handling", "ttaggg", "choice", choices)
+
+
+def test_n_max_fraction_range_validation():
+    """n_max_fraction is bounded to [0.0, 1.0]."""
+    Options.check_and_log_error("n_max_fraction", 0.0, 0.0, 1.0)
+    Options.check_and_log_error("n_max_fraction", 1.0, 0.0, 1.0)
+    with _pytest.raises(SystemExit):
+        Options.check_and_log_error("n_max_fraction", 1.5, 0.0, 1.0)
 
 
 def test_check_options_no_output_files_exits():
