@@ -13,6 +13,7 @@ from neat.read_simulator.utils.generate_reads import (
     generate_reads,
     _stochastic_round,
     _uniform_sampling,
+    _filter_n_regions,
 )
 from neat.read_simulator.utils.read import Read
 from neat.variants.contig_variants import ContigVariants
@@ -776,3 +777,127 @@ def test_cover_dataset_gc_zero_total_weight_returns_empty():
 
     reads = cover_dataset(reference, opts, frag, gc_model)
     assert reads == []
+
+
+# ---------------------------------------------------------------------------
+# N-region handling — _filter_n_regions and cover_dataset integration
+# ---------------------------------------------------------------------------
+
+def _opts_for_n(paired=False, n_max_fraction=0.5, n_handling="exclude"):
+    o = Options(rng_seed=0)
+    o.read_len = 100
+    o.paired_ended = paired
+    o.overwrite_output = True
+    o.n_handling = n_handling
+    o.n_max_fraction = n_max_fraction
+    return o
+
+
+def test_filter_n_regions_no_ns_returns_input_unchanged():
+    """An N-free reference is passed through untouched (same object, same order)."""
+    reference = SeqRecord(Seq("ACGT" * 1000), id="chr1")
+    reads = [(0, 100, 0, 0), (200, 300, 0, 0)]
+    out = _filter_n_regions(reads, reference, _opts_for_n())
+    assert out is reads  # no copy, no reorder
+
+
+def test_filter_n_regions_drops_reads_in_gap():
+    """A read lying wholly inside an N run is dropped; a read in clean sequence is kept."""
+    # 500 clean bases, a 500-base N gap, then 500 clean bases.
+    reference = SeqRecord(Seq("ACGT" * 125 + "N" * 500 + "ACGT" * 125), id="chr1")
+    in_gap = (600, 700, 0, 0)       # fully inside the N run
+    clean = (100, 200, 0, 0)        # fully in clean sequence
+    out = _filter_n_regions([in_gap, clean], reference, _opts_for_n())
+    assert clean in out
+    assert in_gap not in out
+
+
+def test_filter_n_regions_edge_read_survives():
+    """A read that only clips the gap edge (N fraction below threshold) is kept."""
+    reference = SeqRecord(Seq("ACGT" * 125 + "N" * 500 + "ACGT" * 125), id="chr1")
+    # Window [480, 580): 20 clean + 80 N -> 80% N, dropped at 0.5
+    mostly_n = (480, 580, 0, 0)
+    # Window [420, 520): 80 clean + 20 N -> 20% N, kept at 0.5
+    edge = (420, 520, 0, 0)
+    out = _filter_n_regions([mostly_n, edge], reference, _opts_for_n(n_max_fraction=0.5))
+    assert edge in out
+    assert mostly_n not in out
+
+
+def test_filter_n_regions_threshold_boundary():
+    """The threshold is inclusive: N fraction == threshold is dropped, just below is kept."""
+    reference = SeqRecord(Seq("ACGT" * 125 + "N" * 500 + "ACGT" * 125), id="chr1")
+    # Window [450, 550): 50 clean + 50 N -> exactly 50% N.
+    half = (450, 550, 0, 0)
+    out_drop = _filter_n_regions([half], reference, _opts_for_n(n_max_fraction=0.5))
+    assert out_drop == []
+    out_keep = _filter_n_regions([half], reference, _opts_for_n(n_max_fraction=0.51))
+    assert half in out_keep
+
+
+def test_filter_n_regions_telomere_is_noop():
+    """Legacy 'telomere' policy performs no placement exclusion."""
+    reference = SeqRecord(Seq("ACGT" * 125 + "N" * 500 + "ACGT" * 125), id="chr1")
+    reads = [(600, 700, 0, 0)]  # fully in gap
+    out = _filter_n_regions(reads, reference, _opts_for_n(n_handling="telomere"))
+    assert out is reads
+
+
+def test_filter_n_regions_paired_drops_if_either_mate_in_gap():
+    """For paired reads, a gap-bound mate sinks the whole fragment, whichever mate it is."""
+    reference = SeqRecord(Seq("ACGT" * 125 + "N" * 500 + "ACGT" * 125), id="chr1")
+    r2_in_gap = (100, 200, 600, 700)   # read1 clean, read2 in gap
+    r1_in_gap = (600, 700, 100, 200)   # read1 in gap, read2 clean
+    out = _filter_n_regions([r2_in_gap, r1_in_gap], reference, _opts_for_n(paired=True))
+    assert out == []
+
+
+def test_filter_n_regions_paired_keeps_clean_fragment():
+    """Positive control: a paired fragment with both mates in clean sequence is kept."""
+    reference = SeqRecord(Seq("ACGT" * 125 + "N" * 500 + "ACGT" * 125), id="chr1")
+    frag = (100, 200, 300, 400)  # both mates in the clean left flank
+    out = _filter_n_regions([frag], reference, _opts_for_n(paired=True))
+    assert frag in out
+
+
+def test_cover_dataset_excludes_gap_uniform():
+    """End-to-end: uniform sampling yields ~zero coverage inside a large N gap."""
+    span_length = 6000
+    reference = SeqRecord(
+        Seq("ACGT" * 500 + "N" * 4000 + "ACGT" * 500), id="chr1"
+    )  # gap spans [2000, 6000)
+    options = _opts_for_n()
+    options.coverage = 20
+    frag = FragmentLengthModel(150, 30)
+    reads = cover_dataset(reference, options, frag, None)
+    # No surviving read1 should sit wholly inside the gap interior.
+    interior = range(2200, 5800)
+    for r in reads:
+        assert not (r[0] in interior and r[1] - 1 in interior), f"read {r} placed in gap"
+    # And clean flanks still get reads.
+    assert any(r[1] <= 2000 for r in reads)
+
+
+def test_cover_dataset_excludes_gap_gc_path():
+    """The GC-bias sampling path is filtered too, not just uniform sampling."""
+    reference = SeqRecord(
+        Seq("ACGT" * 500 + "N" * 4000 + "ACGT" * 500), id="chr1"
+    )  # gap spans [2000, 6000)
+    # Weight both 50% GC (the clean ACGT flanks) and 0% GC (gap windows, where N is
+    # excluded from the GC denominator) so the GC sampler *would* place reads in the gap
+    # — isolating the N filter as the thing that removes them. Non-uniform -> GC path.
+    weights = [0.0] * 101
+    weights[0] = 1.0
+    weights[50] = 1.0
+    gc_model = GCBiasModel(weights, window_size=100)
+
+    options = _opts_for_n()
+    options.coverage = 20
+    frag = FragmentLengthModel(150, 30)
+    reads = cover_dataset(reference, options, frag, gc_model)
+
+    assert not gc_model.is_uniform  # guard: we really exercised the GC branch
+    interior = range(2200, 5800)
+    for r in reads:
+        assert not (r[0] in interior and r[1] - 1 in interior), f"read {r} placed in gap"
+    assert reads, "expected reads in the clean flanks"
