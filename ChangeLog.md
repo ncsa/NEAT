@@ -1,3 +1,15 @@
+# NEAT v4.6.1
+
+Internal cleanup follow-up to the v4.6.0 N-handling work.
+
+- Removed a dead `has_r2` guard in `generate_reads._filter_n_regions`. In the
+  paired branch read2 is always a real, in-bounds window (`(e - read_len, e)`
+  with `e >= read_len + 10`), so the guard was always true; the `(0, 0)`
+  placeholder mate only occurs in single-ended mode, which never reaches that
+  branch. Behavior is unchanged (covered by the paired N-filter tests).
+
+No user-facing behavior changes.
+
 # NEAT v4.6.0
 
 Realistic handling of reference `N` (unknown) bases.
