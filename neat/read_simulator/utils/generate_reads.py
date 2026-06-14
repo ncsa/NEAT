@@ -254,10 +254,10 @@ def _filter_n_regions(final_reads: list, reference: SeqRecord, options: Options)
     # Keep a fragment only if its read1 window is below the N threshold...
     keep = n_fraction(r1s, r1e) < options.n_max_fraction
     if options.paired_ended:
-        # ...and, for paired reads, its read2 window too. A degenerate (0, 0) mate
-        # (filtered upstream) has zero length and is left untouched by this check.
-        has_r2 = (r2e - r2s) > 0
-        keep &= ~has_r2 | (n_fraction(r2s, r2e) < options.n_max_fraction)
+        # ...and, for paired reads, its read2 window too. Paired mates are always real,
+        # in-bounds windows here (read2 = (e - read_len, e) with e >= read_len + 10), so no
+        # degenerate-mate guard is needed — the (0, 0) placeholder only occurs single-ended.
+        keep &= n_fraction(r2s, r2e) < options.n_max_fraction
 
     return [tuple(row) for row in arr[keep].tolist()]
 
