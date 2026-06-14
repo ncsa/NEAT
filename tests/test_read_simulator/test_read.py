@@ -383,15 +383,32 @@ def test_convert_masking_no_ns():
     assert "N" not in str(r.reference_segment)
 
 
-def test_convert_masking_replaces_ns():
-    """Ns in the reference should be replaced with TTAGGG repeat bases."""
+def test_convert_masking_default_keeps_literal_n():
+    """Under the default 'exclude' policy, residual Ns are kept as literal N at floor quality."""
     ref_with_n = "ACGT" * 10 + "NNNN" + "ACGT" * 15
     r = _make_read(reference=ref_with_n)
     r.quality_array = np.array([30] * len(ref_with_n), dtype=float)
     qual_model = TraditionalQualityModel()
-    r.convert_masking(qual_model)
+    r.convert_masking(qual_model)  # defaults to n_handling="exclude"
+    # The N's survive as literal base calls (no fabricated sequence)...
+    assert str(r.reference_segment)[40:44] == "NNNN"
+    # ...and only those positions are dropped to the model floor quality.
+    bad_score = min(qual_model.quality_scores)
+    assert all(r.quality_array[40:44] == bad_score)
+    assert all(r.quality_array[:40] == 30)
+    assert all(r.quality_array[44:] == 30)
+
+
+def test_convert_masking_telomere_legacy_fills_ttaggg():
+    """The legacy 'telomere' policy still fills Ns with TTAGGG repeat bases at floor quality."""
+    ref_with_n = "ACGT" * 10 + "NNNN" + "ACGT" * 15
+    r = _make_read(reference=ref_with_n)
+    r.quality_array = np.array([30] * len(ref_with_n), dtype=float)
+    qual_model = TraditionalQualityModel()
+    r.convert_masking(qual_model, n_handling="telomere")
     assert "N" not in str(r.reference_segment)
-    # Quality at masked positions should be set to min quality
+    # Replacement bases are drawn from the telomere repeat alphabet.
+    assert set(str(r.reference_segment)[40:44]) <= set("TTAGGG")
     bad_score = min(qual_model.quality_scores)
     assert all(r.quality_array[40:44] == bad_score)
 

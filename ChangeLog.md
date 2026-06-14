@@ -1,3 +1,35 @@
+# NEAT v4.6.0
+
+Realistic handling of reference `N` (unknown) bases.
+
+Previously every `N` in a read's reference window was filled with a low-quality
+`TTAGGG` human-telomere repeat (`Read.convert_masking`), and reads were never
+excluded from `N` regions. This fabricated the single most mismap-prone sequence
+in the genome — the telomere repeat occurs at every chromosome end — at default
+mapping quality, inside assembly gaps (centromeres, telomeres, heterochromatin)
+where real WGS produces essentially zero coverage. It was also biologically wrong
+for the many non-human genomes NEAT simulates.
+
+NEAT now models `N` regions the way real data behaves, via two complementary steps
+(both on by default):
+
+- **Placement exclusion:** fragments whose read window is at least `n_max_fraction`
+  (default 0.5) `N` are dropped at sampling time, so true assembly gaps get ~zero
+  coverage. Coverage of callable sequence is unaffected.
+- **Literal-N edges:** an `N` that remains at the edge of a surviving read is emitted
+  as a literal `N` base call at floor quality, rather than fabricated sequence.
+  Aligners and callers treat `N` as no-information, not as a mismatch.
+
+New config options:
+
+- `n_handling` — `exclude` (new default, the behavior above) or `telomere` (the
+  legacy `TTAGGG` masking, retained for reproducing older runs).
+- `n_max_fraction` — `N`-fraction at or above which a read is dropped under
+  `exclude` (range 0.0–1.0, default 0.5).
+
+Note: under the default `exclude` policy this changes the reads produced for any
+reference containing `N`. Set `n_handling: telomere` to reproduce pre-4.6.0 output.
+
 # NEAT v4.5.3
 
 Handle IUPAC ambiguity codes in the reference (issue #291).

@@ -84,6 +84,8 @@ class Options(SimpleNamespace):
                  parallel_block_size: int = 0,
                  splits_dir: Path | None = None,
                  gc_model: Path | None = None,
+                 n_handling: str = "exclude",
+                 n_max_fraction: float = 0.5,
                  **kwargs: Any
                  ):
         """
@@ -134,6 +136,12 @@ class Options(SimpleNamespace):
             chunks of this size). Default 0 auto-tunes from total genome length and thread count, targeting
             ~8 chunks per thread. Specify a positive integer to override. Ignored when threads == 1, where
             one chunk per contig is used.
+        :param n_handling: How to treat 'N' (unknown) bases in the reference. "exclude" (default) drops
+            reads that fall mostly inside N runs (so true assembly gaps get ~zero coverage) and emits a
+            literal 'N' at floor quality for residual N at read edges. "telomere" restores the legacy
+            behavior of filling N with a low-quality TTAGGG human-telomere repeat.
+        :param n_max_fraction: Under n_handling="exclude", a read whose window is at least this fraction
+            'N' is dropped rather than emitted. Range 0.0-1.0; default 0.5.
 """
         super().__init__(**kwargs)
         self.reference: Path = reference
@@ -171,6 +179,9 @@ class Options(SimpleNamespace):
         self.parallel_block_size: int = parallel_block_size
         self.splits_dir: Path | None = splits_dir
         self.gc_model: Path | None = Path(gc_model) if gc_model else None
+        # How to handle 'N' bases in the reference. See __init__ docstring.
+        self.n_handling: str = n_handling
+        self.n_max_fraction: float = n_max_fraction
         # Genome-wide mean GC bias weight, computed once at the runner level when
         # gc_model is loaded. cover_dataset divides per-chunk reads by this rather
         # than by gc_model.max_weight so that target coverage means *average*
@@ -245,7 +256,9 @@ class Options(SimpleNamespace):
             'overwrite_output': (bool, False, None, None),
             'parallel_block_size': (int, 0, None, None),
             'threads': (int, 1, 1, 1000),
-            'gc_model': (Path, None, 'exists', None)
+            'gc_model': (Path, None, 'exists', None),
+            'n_handling': (str, "exclude", 'choice', ("exclude", "telomere")),
+            'n_max_fraction': (float, 0.5, 0.0, 1.0)
         }
 
         input_args = {}
@@ -519,4 +532,9 @@ class Options(SimpleNamespace):
             _LOG.info(f'Custom average mutation rate for the run: {self.mutation_rate}')
         if self.mutation_bed:
             _LOG.info(f'BED of mutation rates of different regions: {self.mutation_bed}')
+        if self.n_handling == "telomere":
+            _LOG.info("N handling: legacy TTAGGG telomere masking.")
+        else:
+            _LOG.info(f"N handling: excluding reads >= {self.n_max_fraction:.0%} N, "
+                      f"literal N at read edges.")
         _LOG.info(f'RNG seed value for run: {self.rng_seed}')
