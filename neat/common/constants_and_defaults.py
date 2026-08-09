@@ -23,6 +23,17 @@ IUPAC_CODES = frozendict({
     'B': ('C', 'G', 'T'), 'D': ('A', 'G', 'T'), 'H': ('A', 'C', 'T'), 'V': ('A', 'C', 'G'),
 })
 
+# 3' sequencing adapters, as (read1, read2) pairs in 5'->3' orientation. A read whose insert is
+# shorter than read_len runs off the end of the fragment and into the adapter ligated at the far
+# end, so the read's 3' tail is adapter sequence rather than genome. Read 1 reads into the reverse
+# complement of the read-2-side adapter and read 2 into the read-1-side one; both TruSeq entries
+# therefore share the AGATCGGAAGAGC stem that adapter trimmers search for. Nextera libraries are
+# built by tagmentation and present the same Mosaic End on both reads.
+ADAPTER_PRESETS = frozendict({
+    'truseq': ('AGATCGGAAGAGCACACGTCTGAACTCCAGTCA', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT'),
+    'nextera': ('CTGTCTCTTATACACATCT', 'CTGTCTCTTATACACATCT'),
+})
+
 
 def resolve_iupac_bases(sequence: str, rng) -> tuple[str, int]:
     """
