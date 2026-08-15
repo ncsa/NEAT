@@ -159,39 +159,3 @@ n_handling: .
 # is dropped rather than emitted. Range 0.0-1.0.
 # type = float | required: no | default = 0.5
 n_max_fraction: .
-
-# Model 3' sequencing-adapter readthrough. A sequencer runs a fixed number of cycles
-# regardless of insert size, so when the insert is shorter than read_len the read runs
-# off the end of the fragment and into the adapter ligated at the far end. With this on,
-# those short inserts are kept and each read is padded back out to read_len with adapter
-# sequence at its 3' end. Adapter bases carry the same quality and substitution-error
-# models as genomic bases, are soft-clipped in the golden BAM, and never carry variants.
-# How much readthrough you get is set by how much of your insert distribution falls below
-# read_len -- i.e. by fragment_mean / fragment_st_dev relative to read_len. With
-# fragment_mean well above read_len this changes nothing. Requires a fragment length
-# distribution (fragment_mean + fragment_st_dev, or fragment_model).
-# Note: short inserts mean each read covers fewer genomic bases and mates overlap, so
-# realized coverage will be below the requested value.
-# type = boolean | required: no | default = false
-adapters: .
-
-# Which adapter sequences to use when adapters is true.
-#   truseq  - Illumina TruSeq (AGATCGGAAGAGC...), the most common.
-#   nextera - Nextera / transposase Mosaic End (CTGTCTCTTATACACATCT).
-#   custom  - supply your own via adapter_r1 and adapter_r2 below.
-# type = str | required: no | default = truseq
-adapter_preset: .
-
-# Read-1 and read-2 adapters, 5'->3', uppercase A/C/G/T only. Required when
-# adapter_preset is custom, and ignored otherwise (the preset supplies them).
-# Quote the value: YAML would otherwise read a bare N or Y as a boolean.
-# type = str | required: no (unless adapter_preset: custom)
-adapter_r1: .
-adapter_r2: .
-
-# Keep inserts shorter than read_len as plain insert-length genomic reads, with no adapter
-# padding. Implied by adapters; set it on its own to study the coverage behavior of a
-# short-insert library in isolation -- the control arm that separates the adapter effect
-# from the reduced-coverage effect of short inserts.
-# type = boolean | required: no | default = false
-keep_short_fragments: .

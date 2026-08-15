@@ -23,47 +23,6 @@ __all__ = [
 
 _LOG = logging.getLogger(__name__)
 
-# Shortest insert accepted when short fragments are being kept (adapter readthrough or the
-# adapter-free short-insert control). Real libraries size-select shorter molecules out, and the
-# floor also screens off FragmentLengthModel.generate_fragments' hardcoded spacer lengths
-# [10, 11, 12, 13, 14, 28, 31] — anti-infinite-loop padding that the ordinary read_len floor
-# discards today. Without it the 10-14 bp entries would surface as reads that are >90% adapter.
-MIN_SHORT_INSERT = 25
-
-
-def _min_fragment(options: Options) -> int:
-    """
-    The shortest fragment accepted by either sampler.
-
-    Ordinarily a fragment must be at least a full read long (plus 10 in paired mode, so mates do
-    not entirely overlap); anything shorter is resampled. When short inserts are being kept
-    deliberately, that floor drops to MIN_SHORT_INSERT so the left tail of the fragment
-    distribution survives instead of being silently truncated away.
-    """
-    if options.adapters or options.keep_short_fragments:
-        return MIN_SHORT_INSERT
-    return options.read_len + (10 if options.paired_ended else 0)
-
-
-def _read_windows(start: int, end: int, options: Options) -> tuple:
-    """
-    Map a sampled fragment onto its read1 and read2 reference windows.
-
-    Both windows are clamped to the fragment: a read can never extend past the molecule it was
-    sequenced from. When the insert is at least read_len long — always the case unless short
-    fragments are being kept — the clamps are inert and this returns exactly the windows NEAT has
-    always produced. For a shorter insert both mates collapse onto the whole fragment, which is
-    what a real sequencer produces: R1 and R2 fully overlap, and each runs on into its adapter.
-
-    :param start: Fragment start, relative to the reference chunk.
-    :param end: Fragment end, relative to the reference chunk.
-    :param options: Run options (reads read_len and paired_ended).
-    :return: (r1_start, r1_end, r2_start, r2_end), with (0, 0) for read2 in single-ended mode.
-    """
-    read1 = (start, min(start + options.read_len, end))
-    read2 = (max(end - options.read_len, start), end) if options.paired_ended else (0, 0)
-    return read1 + read2
-
 
 def _stochastic_round(expected_count: float, rng) -> int:
     """
@@ -202,7 +161,7 @@ def cover_dataset(
             return []
 
         # Batch CDF sampling with adaptive retry (same pattern as _uniform_sampling).
-        min_frag = _min_fragment(options)
+        min_frag = options.read_len + (10 if options.paired_ended else 0)
         # For PE, the read2 record must stay within this chunk's responsibility so the
         # cat-stitched output remains coordinate-sorted (read2.position = e - read_len).
         # Cap e at responsibility_length + read_len so read2.position <= responsibility_length,
@@ -232,8 +191,10 @@ def cover_dataset(
         valid_ends   = np.concatenate(acc_ends)[:number_reads]
 
         for s, e in zip(valid_starts.tolist(), valid_ends.tolist()):
-            final_reads.append(_read_windows(s, e, options))
-
+            read1 = (s, s + options.read_len)
+            read2 = (e - options.read_len, e) if options.paired_ended else (0, 0)
+            final_reads.append(read1 + read2)
+             
     else:
         # Uniform sampling
         final_reads = _uniform_sampling(
@@ -318,7 +279,7 @@ def _uniform_sampling(span_length, number_reads, options, fragment_model, *,
         return []
     if responsibility_length is None:
         responsibility_length = span_length
-    min_frag = _min_fragment(options)
+    min_frag = options.read_len + (10 if options.paired_ended else 0)
     # For PE, cap e so read2.position stays within this chunk's responsibility (see GC path
     # for the full rationale).
     if options.paired_ended:
@@ -348,7 +309,9 @@ def _uniform_sampling(span_length, number_reads, options, fragment_model, *,
 
     final_reads = []
     for s, e in zip(all_starts.tolist(), all_ends.tolist()):
-        final_reads.append(_read_windows(s, e, options))
+        read1 = (s, s + options.read_len)
+        read2 = (e - options.read_len, e) if options.paired_ended else (0, 0)
+        final_reads.append(read1 + read2)
     return final_reads
 
 
@@ -467,11 +430,6 @@ def generate_reads(
     r2_buffer: list[tuple[int, int, "Read"]] = []  # (position, counter, read)
     r2_counter = 0
 
-    # Resolved once per chunk. Empty strings whenever readthrough is off, which makes every
-    # adapter branch in Read a no-op and keeps output identical to a run without the feature.
-    r1_adapter = options.adapter_r1 if options.adapters else ""
-    r2_adapter = options.adapter_r2 if options.adapters else ""
-
     for i in range(len(reads)):
         # First thing we'll do is check to see if this read is filtered out by a bed file
         read1, read2 = (reads[i][0], reads[i][1]), (reads[i][2], reads[i][3])
@@ -521,21 +479,13 @@ def generate_reads(
         # +1 to account for sam indexing
         read_name = f'NEAT_generated_{contig_name}_{thread_index}_{raw_read[0]+1:010d}_{raw_read[3]+1:010d}'
 
-        # Genomic bases available to read 1. Equals read_len unless the insert was shorter, in
-        # which case the rest of the read is adapter (or, under keep_short_fragments alone, the
-        # read simply ends early).
-        insert_1 = read1[1] - read1[0]
         # add a small amount of padding to the end to account for deletions.
         # Trying out this method of using the read-length, which for the default neat run gives ~30.
         padding = options.read_len//5
-        # Deletion headroom is drawn from the reference beyond the read, but for a short insert
-        # that reference is past the end of the molecule and was never sequenced, so there is no
-        # headroom to take.
-        segment_end = read1[1] + padding if insert_1 == options.read_len else read1[1]
-        segment = reference[read1[0]: segment_end].seq
+        segment = reference[read1[0]: read1[1] + padding].seq
 
         # if we're at the end of the contig, this may not pick up the full padding
-        actual_padding = len(segment) - insert_1
+        actual_padding = len(segment) - options.read_len
 
         read_1 = Read(
             name=read_name + "/1",
@@ -546,11 +496,9 @@ def generate_reads(
             position=read1[0] + ref_start,
             end_point=read1[1] + ref_start,
             padding=actual_padding,
-            run_read_len=options.read_len if r1_adapter else insert_1,
+            run_read_len=options.read_len,
             segment_start=read1[0] + ref_start,
             is_paired=options.paired_ended,
-            genomic_len=insert_1,
-            adapter_seq=r1_adapter,
         )
 
         read_1.mutations = find_applicable_mutations(read_1, contig_variants)
@@ -575,24 +523,18 @@ def generate_reads(
         if bam_handle is not None:
             while r2_buffer and r2_buffer[0][0] < read_1.position:
                 _, _, buffered_r2 = heapq.heappop(r2_buffer)
-                ofw.write_bam_record(buffered_r2, contig_index, bam_handle, buffered_r2.run_read_length)
-            ofw.write_bam_record(read_1, contig_index, bam_handle, read_1.run_read_length)
+                ofw.write_bam_record(buffered_r2, contig_index, bam_handle, options.read_len)
+            ofw.write_bam_record(read_1, contig_index, bam_handle, options.read_len)
 
         # skip over read 2 for single ended reads.
         if options.paired_ended:
-            insert_2 = read2[1] - read2[0]
             # Padding, as above
             padding = options.read_len//5
-            # Read 2 is reverse, so its deletion headroom sits before the window — and, as for
-            # read 1, it does not exist once the window already spans the whole fragment.
-            if insert_2 == options.read_len:
-                start_coordinate = max((read2[0] - padding), 0)
-            else:
-                start_coordinate = read2[0]
+            start_coordinate = max((read2[0] - padding), 0)
             # this ensures that we get a segment with NEAT-recognized bases
             segment = reference[start_coordinate: read2[1]].seq
             # See note above
-            actual_padding = len(segment) - insert_2
+            actual_padding = len(segment) - options.read_len
 
             read_2 = Read(
                 name=read_name + "/2",
@@ -603,12 +545,10 @@ def generate_reads(
                 position=read2[0] + ref_start,
                 end_point=read2[1] + ref_start,
                 padding=actual_padding,
-                run_read_len=options.read_len if r2_adapter else insert_2,
+                run_read_len=options.read_len,
                 segment_start=start_coordinate + ref_start,
                 is_reverse=True,
-                is_paired=options.paired_ended,
-                genomic_len=insert_2,
-                adapter_seq=r2_adapter,
+                is_paired=options.paired_ended
             )
 
             read_2.mutations = find_applicable_mutations(read_2, contig_variants)
@@ -636,6 +576,6 @@ def generate_reads(
     if bam_handle is not None:
         while r2_buffer:
             _, _, buffered_r2 = heapq.heappop(r2_buffer)
-            ofw.write_bam_record(buffered_r2, contig_index, bam_handle, buffered_r2.run_read_length)
+            ofw.write_bam_record(buffered_r2, contig_index, bam_handle, options.read_len)
 
     _LOG.info(f"Finished sampling reads for thread {thread_index} in {(time.time() - start_time)/60:.2f} m")
