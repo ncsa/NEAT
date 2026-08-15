@@ -14,6 +14,9 @@ from neat.read_simulator.utils.generate_reads import (
     _stochastic_round,
     _uniform_sampling,
     _filter_n_regions,
+    _min_fragment,
+    _read_windows,
+    MIN_SHORT_INSERT,
 )
 from neat.read_simulator.utils.read import Read
 from neat.variants.contig_variants import ContigVariants
@@ -901,3 +904,179 @@ def test_cover_dataset_excludes_gap_gc_path():
     for r in reads:
         assert not (r[0] in interior and r[1] - 1 in interior), f"read {r} placed in gap"
     assert reads, "expected reads in the clean flanks"
+
+
+# ===========================================================================
+# Short inserts — fragment floor and read windowing
+# ===========================================================================
+
+def _short_insert_options(paired=True, adapters=False, keep_short=False, seed=0):
+    opts = _make_options(paired=paired, seed=seed)
+    opts.adapters = adapters
+    opts.keep_short_fragments = keep_short
+    if adapters:
+        opts.adapter_r1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+        opts.adapter_r2 = "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+    return opts
+
+
+def test_min_fragment_defaults_to_read_length():
+    """Without either short-insert feature the floor is unchanged: a full read, +10 when paired."""
+    assert _min_fragment(_short_insert_options(paired=False)) == _READ_LEN
+    assert _min_fragment(_short_insert_options(paired=True)) == _READ_LEN + 10
+
+
+@pytest.mark.parametrize("adapters,keep_short", [(True, False), (False, True), (True, True)])
+def test_min_fragment_drops_when_short_inserts_are_kept(adapters, keep_short):
+    """Either feature lowers the floor so the left tail of the insert distribution survives."""
+    opts = _short_insert_options(adapters=adapters, keep_short=keep_short)
+    assert _min_fragment(opts) == MIN_SHORT_INSERT
+
+
+def test_min_fragment_floor_excludes_fragment_model_spacers():
+    """
+    FragmentLengthModel injects hardcoded spacer lengths [10, 11, 12, 13, 14, 28, 31] to avoid
+    infinite loops. The ordinary read_len floor hides them; MIN_SHORT_INSERT must keep hiding the
+    tiny ones, or they would surface as reads that are over 90% adapter.
+    """
+    spacers = [10, 11, 12, 13, 14, 28, 31]
+    kept = [s for s in spacers if s >= MIN_SHORT_INSERT]
+    assert kept == [28, 31], "only the plausibly-real spacer lengths should survive the floor"
+
+
+def test_read_windows_unchanged_for_full_length_insert():
+    """When the insert is at least a read long the clamps are inert — the historical windows."""
+    opts = _short_insert_options()
+    start, end = 500, 500 + _READ_LEN + 50
+    assert _read_windows(start, end, opts) == (
+        start, start + _READ_LEN, end - _READ_LEN, end,
+    )
+
+
+def test_read_windows_clamp_to_short_insert():
+    """A read cannot extend past the molecule it came from: both mates collapse onto the insert."""
+    opts = _short_insert_options()
+    start, end = 500, 560  # 60-base insert, shorter than the 100-base read
+    assert _read_windows(start, end, opts) == (start, end, start, end)
+
+
+def test_read_windows_single_ended_has_no_mate():
+    opts = _short_insert_options(paired=False)
+    assert _read_windows(500, 560, opts) == (500, 560, 0, 0)
+
+
+def _sampled_inserts(opts, frag_mean=60):
+    reads = cover_dataset(
+        _make_reference(), opts, FragmentLengthModel(frag_mean, 20), None,
+    )
+    return reads
+
+
+def test_short_fragments_discarded_by_default():
+    """Default behavior is unchanged: every emitted read1 window is a full read long."""
+    opts = _short_insert_options()
+    for r1s, r1e, r2s, r2e in _sampled_inserts(opts):
+        assert r1e - r1s == _READ_LEN
+        assert r2e - r2s == _READ_LEN
+
+
+@pytest.mark.parametrize("adapters,keep_short", [(True, False), (False, True)])
+def test_short_fragments_retained_when_enabled(adapters, keep_short):
+    """With either feature on, inserts below read_len survive instead of being resampled away."""
+    opts = _short_insert_options(adapters=adapters, keep_short=keep_short)
+    reads = _sampled_inserts(opts)
+
+    assert reads, "expected reads to be generated"
+    short = [r for r in reads if r[1] - r[0] < _READ_LEN]
+    assert short, "a fragment mean well below read_len should yield short inserts"
+
+
+def test_retained_short_inserts_respect_the_floor():
+    """No emitted window may fall below MIN_SHORT_INSERT, on either mate."""
+    opts = _short_insert_options(adapters=True)
+    for r1s, r1e, r2s, r2e in _sampled_inserts(opts, frag_mean=40):
+        assert r1e - r1s >= MIN_SHORT_INSERT
+        assert r2e - r2s >= MIN_SHORT_INSERT
+
+
+def test_short_insert_mates_fully_overlap():
+    """Below read_len both mates cover the whole fragment, as a real sequencer produces."""
+    opts = _short_insert_options(adapters=True)
+    for r1s, r1e, r2s, r2e in _sampled_inserts(opts):
+        if r1e - r1s < _READ_LEN:
+            assert (r2s, r2e) == (r1s, r1e)
+
+
+# ===========================================================================
+# generate_reads — adapter readthrough end to end
+# ===========================================================================
+
+def _generate_with_adapters(adapters=True, keep_short=False, frag_mean=60, seed=0):
+    opts = _short_insert_options(adapters=adapters, keep_short=keep_short, seed=seed)
+    error_model, qual_model, _ = _make_models()
+    ofw = _CollectingOFW()
+    generate_reads(
+        1, _make_reference(), error_model, 0, qual_model,
+        FragmentLengthModel(frag_mean, 20), None, ContigVariants(),
+        _all_span_targeted(), [], opts, ofw, "chr1", 0, 0,
+    )
+    return ofw.bam_records
+
+
+def test_generate_reads_pads_short_inserts_to_read_length():
+    """Every emitted read is exactly read_len, with sequence and quality in step."""
+    records = _generate_with_adapters()
+    assert records, "expected reads to be generated"
+    assert any(r.adapter_length > 0 for r in records), "expected some readthrough"
+
+    for read in records:
+        assert len(read.read_sequence) == _READ_LEN
+        assert len(read.quality_array) == _READ_LEN
+        assert read.genomic_length + read.adapter_length == _READ_LEN
+
+
+def test_generate_reads_soft_clips_adapter_by_strand():
+    """
+    Soft clips must be in reference-forward order, since write_bam_record flips reverse reads
+    back to that orientation before writing.
+    """
+    import re
+
+    clipped = 0
+    for read in _generate_with_adapters():
+        cigar = read.make_cigar()
+        if read.adapter_length == 0:
+            assert "S" not in cigar
+            continue
+        clipped += 1
+        ops = re.findall(r"(\d+)([MIDS])", cigar)
+        if read.is_reverse:
+            assert ops[0] == (str(read.adapter_length), "S")
+        else:
+            assert ops[-1] == (str(read.adapter_length), "S")
+        # The CIGAR must account for every base of the read.
+        assert sum(int(n) for n, op in ops if op in "MIS") == _READ_LEN
+    assert clipped, "expected at least one soft-clipped read"
+
+
+def test_generate_reads_keep_short_emits_insert_length_reads_without_adapter():
+    """The control arm: short inserts stay genomic, shorter than read_len, and never soft-clipped."""
+    records = _generate_with_adapters(adapters=False, keep_short=True)
+    assert records
+
+    assert all(r.adapter_length == 0 for r in records)
+    assert all("S" not in r.make_cigar() for r in records)
+    assert any(len(r.read_sequence) < _READ_LEN for r in records), "expected insert-length reads"
+    for read in records:
+        assert len(read.read_sequence) == read.run_read_length
+        assert len(read.quality_array) == read.run_read_length
+
+
+def test_generate_reads_unchanged_when_features_disabled():
+    """A default run carries no adapter state at all."""
+    records = _generate_with_adapters(adapters=False, frag_mean=300)
+    assert records
+    for read in records:
+        assert read.adapter_length == 0
+        assert read.genomic_length == read.run_read_length == _READ_LEN
+        assert len(read.read_sequence) == _READ_LEN
