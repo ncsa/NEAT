@@ -33,6 +33,8 @@ def _make_read(
     is_reverse=False,
     is_paired=False,
     raw_read=None,
+    genomic_len=None,
+    adapter_seq="",
 ):
     if end_point is None:
         end_point = position + read_len
@@ -50,6 +52,8 @@ def _make_read(
         run_read_len=read_len,
         is_reverse=is_reverse,
         is_paired=is_paired,
+        genomic_len=genomic_len,
+        adapter_seq=adapter_seq,
     )
 
 
@@ -659,3 +663,144 @@ def test_apply_mutations_deletion_reverse_read_correct_position():
     assert len(r.read_sequence) == pre_len - (del_len - 1)
     # The base that was at correct_idx + del_len is now at correct_idx + 1
     assert str(r.read_sequence[correct_idx + 1]) == pre_at_28
+
+# ===========================================================================
+# 3' adapter readthrough
+# ===========================================================================
+
+_TRUSEQ_R1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+
+
+def _finalize_adapter_read(genomic_len, adapter=_TRUSEQ_R1, is_reverse=False,
+                           num_errors=0, seed=0):
+    """
+    Finalize a short-insert read whose reference segment is exactly `genomic_len` long.
+
+    A short insert has no reference beyond the fragment to draw deletion headroom from, so
+    padding is 0 — matching how generate_reads builds these reads.
+    """
+    r = _make_read(
+        reference=_REF[:genomic_len],
+        padding=0,
+        end_point=genomic_len,
+        is_reverse=is_reverse,
+        genomic_len=genomic_len,
+        adapter_seq=adapter,
+    )
+    r.finalize_read_and_write(
+        SequencingErrorModel(read_length=_READ_LEN),
+        TraditionalQualityModel(),
+        None,
+        33,
+        False,
+        num_errors,
+        _make_rng(seed),
+    )
+    return r
+
+
+def test_adapter_defaults_leave_read_untouched():
+    """No adapter_seq means no readthrough state at all — the ordinary-read path is unchanged."""
+    r = _make_read()
+    assert r.adapter_length == 0
+    assert r.genomic_length == r.run_read_length == _READ_LEN
+    assert len(r.quality_array) == _READ_LEN
+    assert r.make_cigar() == f"{_READ_LEN}M"
+
+
+def test_adapter_pads_short_insert_to_full_read_length():
+    """A short insert is padded back out to run_read_length, sequence and quality in step."""
+    genomic_len = 60
+    r = _finalize_adapter_read(genomic_len)
+
+    assert r.adapter_length == _READ_LEN - genomic_len
+    assert len(r.read_sequence) == _READ_LEN
+    # Sequence and quality must agree exactly: a mismatch is a malformed FASTQ record, which
+    # some aligner parsers silently truncate on rather than reject.
+    assert len(r.quality_array) == _READ_LEN
+    assert len(r.read_quality_string) == _READ_LEN
+
+
+def test_adapter_tail_matches_adapter_sequence():
+    """With no sequencing errors the 3' tail is the adapter verbatim, and the 5' part is genomic."""
+    # Tail of 20 bases, shorter than the 33-base adapter, so no wraparound here.
+    genomic_len = _READ_LEN - 20
+    r = _finalize_adapter_read(genomic_len)
+
+    tail = str(r.read_sequence[genomic_len:])
+    assert len(tail) < len(_TRUSEQ_R1)
+    assert tail == _TRUSEQ_R1[:len(tail)]
+    assert str(r.read_sequence[:genomic_len]) == _REF[:genomic_len]
+
+
+def test_adapter_sequence_is_sourced_cyclically():
+    """A read can run past the end of the adapter, so adapter bases repeat rather than run out."""
+    # Genomic part short enough that the tail is longer than the adapter itself.
+    genomic_len = _READ_LEN - len(_TRUSEQ_R1) - 10
+    r = _finalize_adapter_read(genomic_len)
+
+    tail = str(r.read_sequence[genomic_len:])
+    assert len(tail) > len(_TRUSEQ_R1)
+    expected = (_TRUSEQ_R1 * 3)[:len(tail)]
+    assert tail == expected
+
+
+def test_adapter_cigar_soft_clips_tail_on_forward_read():
+    """Forward read: adapter is at the end in reference-forward orientation, so S trails."""
+    genomic_len = 60
+    r = _finalize_adapter_read(genomic_len)
+    assert r.make_cigar() == f"{genomic_len}M{_READ_LEN - genomic_len}S"
+
+
+def test_adapter_cigar_soft_clips_lead_on_reverse_read():
+    """
+    Reverse read: write_bam_record flips SEQ back to reference-forward before writing, so the
+    adapter — 3' as sequenced — must appear as a LEADING soft clip in the CIGAR.
+    """
+    genomic_len = 60
+    r = _finalize_adapter_read(genomic_len, is_reverse=True)
+    assert r.make_cigar() == f"{_READ_LEN - genomic_len}S{genomic_len}M"
+
+
+def test_adapter_cigar_query_length_matches_sequence():
+    """M+I+S must account for every base in the read, errors or not."""
+    import re
+
+    for is_reverse in (False, True):
+        r = _finalize_adapter_read(60, is_reverse=is_reverse, num_errors=5)
+        ops = re.findall(r"(\d+)([MIDS])", r.make_cigar())
+        query_len = sum(int(n) for n, op in ops if op in "MIS")
+        assert query_len == len(r.read_sequence) == _READ_LEN
+
+
+def test_adapter_bases_take_substitution_errors_only():
+    """
+    Adapter bases are real base calls and pick up substitution noise, but never indels — an
+    indel there would change the read length that the padding exists to guarantee.
+    """
+    genomic_len = 20
+    # A run of identical bases makes any substitution obvious, and floor-quality scores make
+    # substitutions near-certain rather than rare.
+    r = _make_read(
+        reference=_REF[:genomic_len],
+        padding=0,
+        end_point=genomic_len,
+        genomic_len=genomic_len,
+        adapter_seq="AAAAAAAAAA",
+    )
+    # Bin every drawn score down to Q2 (~63% error rate), so substitutions are near-certain.
+    qual_model = TraditionalQualityModel(quality_bins=[2])
+    r.finalize_read_and_write(
+        SequencingErrorModel(read_length=_READ_LEN), qual_model, None, 33, False, 0, _make_rng(1),
+    )
+
+    tail = str(r.read_sequence[genomic_len:])
+    assert len(r.read_sequence) == _READ_LEN
+    assert len(tail) == _READ_LEN - genomic_len
+    assert any(base != "A" for base in tail), "expected substitution noise at floor quality"
+
+
+def test_adapter_read_reports_full_length():
+    """len() stays the emitted read length, which the BAM writer uses to size the record."""
+    r = _finalize_adapter_read(60)
+    assert len(r) == _READ_LEN
