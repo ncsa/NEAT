@@ -386,6 +386,12 @@ class TestUnknownVariant:
         uv = self._make(position1=42)
         assert repr(uv) == "UnknownVariant(42)"
 
+    def test_alt_defaults_to_none_so_get_alt_reaches_metadata(self):
+        """get_alt() only consults metadata['ALT'] when self.alt is falsy, so it must exist."""
+        uv = self._make(ALT="ACGT")
+        assert uv.alt is None
+        assert uv.get_alt() == "ACGT"
+
     # --- get_ref_len --------------------------------------------------------
 
     def test_get_ref_len(self):
