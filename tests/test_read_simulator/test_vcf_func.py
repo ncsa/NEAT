@@ -10,7 +10,10 @@ from Bio import SeqIO
 
 from neat.read_simulator.utils.options import Options
 from neat.read_simulator.utils.vcf_func import (
+    collect_header_declarations,
     parse_input_vcf,
+    prepend_genotype_field,
+    replace_genotype_field,
     retrieve_genotype,
     variant_genotype,
 )
@@ -104,6 +107,18 @@ def test_retrieve_genotype_gt_among_other_fields():
     """GT may appear after other FORMAT fields."""
     record = _make_vcf_record("DP:GT:GQ", "30:0|1:99")
     np.testing.assert_array_equal(retrieve_genotype(record), [0, 1])
+
+
+def test_retrieve_genotype_no_call_returns_none():
+    """A no-call GT is valid VCF but carries no ploid assignment, so it cannot be an array."""
+    assert retrieve_genotype(_make_vcf_record("GT", "./.")) is None
+    assert retrieve_genotype(_make_vcf_record("GT", ".|.")) is None
+
+
+def test_retrieve_genotype_partial_no_call_returns_none():
+    """One uncalled allele is enough; the genotype as a whole cannot be used."""
+    assert retrieve_genotype(_make_vcf_record("GT", "0/.")) is None
+    assert retrieve_genotype(_make_vcf_record("DP:GT", "30:./1")) is None
 
 
 def test_retrieve_genotype_cancer_uses_column_10():
@@ -358,3 +373,172 @@ def test_parsed_variants_marked_as_input(tmp_path, ref_fasta, empty_input_dict, 
     for v in empty_input_dict["chr1"].contig_variants[0]:
         assert v.is_input is True
 
+
+
+# no-call genotypes in the input vcf
+
+def test_no_call_genotype_generates_genotype(tmp_path, ref_fasta, empty_input_dict, opts):
+    """A './.' GT is treated like a missing GT: the variant is kept and a genotype generated."""
+    vcf = _write_vcf(tmp_path, "nocall.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.\tGT\t./.",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variants = empty_input_dict["chr1"].contig_variants[0]
+    assert len(variants) == 1
+    # pick_ploids always assigns the variant to at least one ploid.
+    assert variants[0].genotype.sum() >= 1
+
+
+def test_no_call_genotype_rewrites_sample_column(tmp_path, ref_fasta, empty_input_dict, opts):
+    """The sample column must report the generated genotype, not the './.' we could not use."""
+    vcf = _write_vcf(tmp_path, "nocall2.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.\tGT:DP\t./.:31",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variant = empty_input_dict["chr1"].contig_variants[0][0]
+    sample_field = variant.metadata["NEAT_sample"]
+    assert "." not in sample_field.split(":")[0]
+    # the other subfields are left alone
+    assert sample_field.endswith(":31")
+
+
+def test_no_call_genotype_does_not_skip_the_record(tmp_path, ref_fasta, empty_input_dict, opts):
+    """Regression: a no-call GT used to raise ValueError out of int('.')."""
+    vcf = _write_vcf(tmp_path, "nocall3.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.\tGT\t./.",
+        "chr1\t5\t.\tA\tG\t30\tPASS\t.\tGT\t1|1",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    assert len(empty_input_dict["chr1"].contig_variants[0]) == 1
+    assert len(empty_input_dict["chr1"].contig_variants[4]) == 1
+
+
+# replace_genotype_field / prepend_genotype_field
+
+def test_replace_genotype_field_keeps_other_subfields():
+    out = replace_genotype_field("./.:31:99", "GT:DP:GQ", np.array([1, 0]))
+    assert out == "1/0:31:99"
+
+
+def test_replace_genotype_field_when_gt_is_not_first():
+    out = replace_genotype_field("31:./.", "DP:GT", np.array([1, 1]))
+    assert out == "31:1/1"
+
+
+def test_replace_genotype_field_pads_a_truncated_sample_column():
+    """A VCF sample column may omit trailing subfields."""
+    out = replace_genotype_field("31", "DP:GT", np.array([1, 0]))
+    assert out == "31:1/0"
+
+
+def test_prepend_genotype_field_keeps_existing_format():
+    fmt, sample = prepend_genotype_field("42", "DP", np.array([1, 0]))
+    assert (fmt, sample) == ("GT:DP", "1/0:42")
+
+
+def test_prepend_genotype_field_replaces_a_missing_format():
+    """'GT:.' would declare a FORMAT key named '.', which is not valid VCF."""
+    fmt, sample = prepend_genotype_field(".", ".", np.array([1, 0]))
+    assert (fmt, sample) == ("GT", "1/0")
+
+
+# collect_header_declarations
+
+def test_collect_header_declarations_passes_input_declarations_through(tmp_path):
+    vcf = _write_vcf(tmp_path, "decl.vcf", [
+        "##fileformat=VCFv4.2",
+        '##FILTER=<ID=LowQual,Description="Low quality">',
+        '##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">',
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO",
+        "chr1\t1\t.\tA\tG\t30\tLowQual\tAF=0.5",
+    ])
+    declarations = collect_header_declarations(vcf)
+    assert '##FILTER=<ID=LowQual,Description="Low quality">' in declarations
+    assert '##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">' in declarations
+
+
+def test_collect_header_declarations_synthesises_undeclared_keys(tmp_path):
+    """An input vcf need not declare the keys it uses; the golden vcf still has to."""
+    vcf = _write_vcf(tmp_path, "undecl.vcf", [
+        "##fileformat=VCFv4.2",
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE1",
+        "chr1\t1\t.\tA\tG\t30\tLowQual\tAF=10;PP=11\tGT:DP\t0|1:7",
+    ])
+    declarations = collect_header_declarations(vcf)
+    ids = [d.split("ID=")[1].split(",")[0] for d in declarations]
+    assert sorted(ids) == ["AF", "DP", "LowQual", "PP"]
+    assert all("Carried over from" in d for d in declarations)
+
+
+def test_collect_header_declarations_never_declares_gt_or_pass(tmp_path):
+    """GT is declared by the output writer, and PASS needs no declaration."""
+    vcf = _write_vcf(tmp_path, "gtpass.vcf", [
+        "##fileformat=VCFv4.2",
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE1",
+        "chr1\t1\t.\tA\tG\t30\tPASS\t.\tGT\t0|1",
+    ])
+    assert collect_header_declarations(vcf) == []
+
+
+def test_collect_header_declarations_deduplicates(tmp_path):
+    vcf = _write_vcf(tmp_path, "dupe.vcf", [
+        "##fileformat=VCFv4.2",
+        '##INFO=<ID=AF,Number=A,Type=Float,Description="first">',
+        '##INFO=<ID=AF,Number=A,Type=Float,Description="second">',
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO",
+        "chr1\t1\t.\tA\tG\t30\tPASS\tAF=0.5",
+    ])
+    declarations = collect_header_declarations(vcf)
+    assert declarations == ['##INFO=<ID=AF,Number=A,Type=Float,Description="first">']
+
+
+# input variant metadata
+
+def test_input_variant_metadata_is_flat(tmp_path, ref_fasta, empty_input_dict, opts):
+    """Regression: metadata was nested under a literal 'kwargs' key, so every lookup failed."""
+    vcf = _write_vcf(tmp_path, "meta.vcf", _vcf_header_with_format() + [
+        "chr1\t1\trs1\tA\tG\t30\tLowQual\tAF=0.5\tGT\t0|1",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    metadata = empty_input_dict["chr1"].contig_variants[0][0].metadata
+    assert "kwargs" not in metadata
+    assert metadata["REF"] == "A"
+    assert metadata["ID"] == "rs1"
+    assert metadata["FILTER"] == "LowQual"
+    assert metadata["INFO"] == "AF=0.5"
+
+
+def test_unknown_variant_reports_its_reference_length(tmp_path, ref_fasta, empty_input_dict, opts):
+    """Regression: get_ref_len raised KeyError('REF') as soon as a read carried the variant."""
+    vcf = _write_vcf(tmp_path, "mnp.vcf", _vcf_header_with_format() + [
+        "chr1\t1\t.\tAC\tGT\t30\tPASS\t.\tGT\t1|1",
+    ])
+    parse_input_vcf(empty_input_dict, vcf, 2, ref_fasta, opts)
+    variant = empty_input_dict["chr1"].contig_variants[0][0]
+    assert isinstance(variant, UnknownVariant)
+    assert variant.get_ref_len() == 2
+    assert variant.get_alt() == "GT"
+
+
+# multiallelic records with a generated genotype
+
+def test_generated_genotype_can_reach_the_second_alt(tmp_path, ref_fasta, empty_input_dict, opts):
+    """ALT alleles are comma-separated, so a two-ALT record has to be counted as two.
+
+    Splitting on ';' left alt_count at 1 for every record, so pick_ploids could only ever draw
+    allele 1 and the second ALT never landed on a ploid.
+    """
+    seen = set()
+    for seed in range(30):
+        options = Options(rng_seed=seed)
+        options.ploidy = 2
+        variants = {"chr1": ContigVariants(), "chr2": ContigVariants()}
+        vcf = _write_vcf(tmp_path, f"multi_{seed}.vcf", _vcf_header_no_format() + [
+            "chr1\t1\t.\tA\tG,T\t30\tPASS\t.",
+        ])
+        parse_input_vcf(variants, vcf, 2, ref_fasta, options)
+        for variant in variants["chr1"].contig_variants[0]:
+            if variant.genotype.sum() >= 1:
+                seen.add(variant.get_alt())
+    assert seen == {"G", "T"}

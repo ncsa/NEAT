@@ -31,6 +31,10 @@ class UnknownVariant(BaseVariant):
         self.genotype = genotype
         self.qual_score = qual_score
         self.is_input = is_input
+        # An unknown variant's alternate is not derivable from the reference the way an SNV's or
+        # an indel's is, so it lives in the metadata instead. BaseVariant.get_alt() falls through
+        # to metadata['ALT'] only when self.alt is falsy, so it has to exist.
+        self.alt = None
         self.metadata = kwargs
 
     def __lt__(self, position):
