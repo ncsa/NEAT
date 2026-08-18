@@ -464,7 +464,10 @@ def generate_reads(
     t = time.time()
 
     bam_handle = ofw.files_to_write[ofw.bam] if options.produce_bam else None
-    r2_buffer: list[tuple[int, int, "Read"]] = []  # (position, counter, read)
+    # (reference start, counter, read). The key is the position the record will actually carry,
+    # which for a reverse read is not read.position — an indel moves where its alignment starts —
+    # so it has to be the sort key or the BAM comes out unsorted and cannot be indexed.
+    r2_buffer: list[tuple[int, int, "Read"]] = []
     r2_counter = 0
 
     # Resolved once per chunk. Empty strings whenever readthrough is off, which makes every
@@ -627,7 +630,8 @@ def generate_reads(
                 options.n_handling,
             )
             if bam_handle is not None:
-                heapq.heappush(r2_buffer, (read_2.position, r2_counter, read_2))
+                reference_start = read_2.make_alignment()[1]
+                heapq.heappush(r2_buffer, (reference_start, r2_counter, read_2))
                 r2_counter += 1
 
     # Flush any read2 records still in the buffer — these all have positions at or
