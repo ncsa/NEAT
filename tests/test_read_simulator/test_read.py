@@ -804,3 +804,128 @@ def test_adapter_read_reports_full_length():
     """len() stays the emitted read length, which the BAM writer uses to size the record."""
     r = _finalize_adapter_read(60)
     assert len(r) == _READ_LEN
+
+
+# ---------------------------------------------------------------------------
+# CIGAR construction via alignment (issue 326)
+#
+# A non-repetitive reference: _REF is "ACGT" repeated, which an aligner can
+# match at several offsets, so these tests supply their own template.
+# ---------------------------------------------------------------------------
+
+_UNIQUE_REF = (
+    "TTGACCATGGCAGTTCAAGGCTATCCGAATTCACGGTACCTAGGCATTAGCCGGATCAATGCC"
+    "AAGGTTCCAATGGCTTAAGCCTGATCAGGTTACCGGAATTCCGGTTAACCGGATTACGGCATA"
+)
+
+
+def _alignment_read(read_sequence, reference, position=0, end_point=None,
+                    is_reverse=False, genomic_len=None, segment_start=None):
+    """A read whose CIGAR must come from the alignment path, with its sequence supplied."""
+    genomic_len = genomic_len if genomic_len is not None else len(read_sequence)
+    if end_point is None:
+        end_point = position + genomic_len
+    r = Read(
+        name="align_read",
+        raw_read=(position, end_point, position + 150, end_point + 150),
+        reference_segment=Seq(reference),
+        reference_id="chr1",
+        ref_id_index=0,
+        position=position,
+        end_point=end_point,
+        padding=len(reference) - genomic_len,
+        run_read_len=genomic_len,
+        segment_start=segment_start if segment_start is not None else position,
+        is_reverse=is_reverse,
+        genomic_len=genomic_len,
+    )
+    r.read_sequence = Seq(read_sequence)
+    # A mutation indel on the read is what routes make_cigar to the alignment path.
+    r.mutations = {position: [Insertion(position, 2, "AT", np.array([1, 1]))]}
+    return r
+
+
+def _ops(cigar):
+    import re
+    return [(op, int(n)) for n, op in re.findall(r"(\d+)([MIDS])", cigar)]
+
+
+def test_reference_span_counts_only_reference_consuming_ops():
+    assert Read.reference_span("100M") == 100
+    assert Read.reference_span("10M5I85M") == 95
+    assert Read.reference_span("10M5D85M") == 100
+    assert Read.reference_span("10S90M") == 90
+    assert Read.reference_span("50M600I") == 50
+
+
+def test_long_insertion_survives_into_the_cigar():
+    """An insertion longer than 4 bp used to be unrepresentable: the op list was fixed at the
+    read length and an insertion was recorded by overwriting one of its entries."""
+    anchor = _UNIQUE_REF[:40]
+    inserted = "GGGGTTTTGGGGTTTTGGGGTTTTGGGGTTTTGGGGTTTTGGGGTTTTGGGGTTTTGGGG"
+    read = _alignment_read(anchor + inserted, _UNIQUE_REF)
+    cigar, _ = read.make_alignment()
+    ops = _ops(cigar)
+    # Not the full 60: the tail of a repetitive insert can find a match in the template. The point
+    # is the order of magnitude — the old op list could not carry an insertion past 4 bp at all.
+    assert max((n for op, n in ops if op == "I"), default=0) >= 40
+    # every base of the read is still accounted for
+    assert sum(n for op, n in ops if op in "MIS") == len(read.read_sequence)
+
+
+def test_insertion_longer_than_the_read_is_bounded_by_it():
+    """A read made entirely of inserted sequence cannot claim more query bases than it has."""
+    inserted = "GGGGTTTT" * 12
+    read = _alignment_read(inserted[:64], _UNIQUE_REF)
+    cigar, _ = read.make_alignment()
+    ops = _ops(cigar)
+    assert sum(n for op, n in ops if op in "MIS") == 64
+
+
+def test_cigar_query_length_always_matches_the_read():
+    """M+I+S must cover the read whichever path built the cigar."""
+    for cut in (10, 40, 80):
+        read = _alignment_read(_UNIQUE_REF[:cut] + "GGGGTTTT" * 4, _UNIQUE_REF)
+        ops = _ops(read.make_cigar())
+        assert sum(n for op, n in ops if op in "MIS") == len(read.read_sequence)
+
+
+def test_reverse_read_position_is_anchored_on_its_right_edge():
+    """A reverse read's headroom sits before its window, so a deletion moves where the alignment
+    starts. POS has to come from end_point minus the reference the cigar covers, not from
+    self.position, which left every gapped reverse read shifted by its net indel length."""
+    headroom = 10
+    # The 101 reference bases the read covers: one base of headroom plus its window. Dropping an
+    # interior base leaves a 100 bp read spanning 101 bp of reference, so it reaches one base
+    # further left than self.position.
+    covered = _UNIQUE_REF[headroom - 1:headroom + 100]
+    mutated = covered[:51] + covered[52:]
+    read = _alignment_read(
+        str(Seq(mutated).reverse_complement()),
+        _UNIQUE_REF[:headroom + 100],
+        position=headroom,
+        end_point=headroom + 100,
+        is_reverse=True,
+        segment_start=0,
+    )
+    cigar, reference_start = read.make_alignment()
+    assert "D" in cigar
+    # A reverse read's alignment ends where its window ends, and the deletion pushes its start left.
+    assert reference_start + Read.reference_span(cigar) == read.end_point
+    assert reference_start == read.position - 1
+
+
+def test_forward_read_position_is_anchored_on_its_left_edge():
+    read = _alignment_read(_UNIQUE_REF[:40] + "GGGGTTTT" * 4, _UNIQUE_REF)
+    _, reference_start = read.make_alignment()
+    assert reference_start == read.position
+
+
+def test_ungapped_read_reports_its_own_position():
+    """The fast path must not disturb either anchor."""
+    for is_reverse in (False, True):
+        r = _make_read(reference=_PADDED_REF, padding=20, is_reverse=is_reverse)
+        r.read_sequence = Seq(_REF)
+        cigar, reference_start = r.make_alignment()
+        assert cigar == f"{_READ_LEN}M"
+        assert reference_start == r.position
