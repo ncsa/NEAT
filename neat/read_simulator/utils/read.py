@@ -540,6 +540,21 @@ class Read:
         Any 3' adapter tail is then soft-clipped on, since those bases are not reference-derived
         and must consume no reference coordinates. See _add_adapter_soft_clip for why its position
         in the string depends on the strand.
+
+        :return: The CIGAR string for this read
+        """
+        return self.make_alignment()[0]
+
+    def make_alignment(self):
+        """
+        Build the CIGAR string together with the reference position it starts from.
+
+        The two come back as a pair because they are not independent. When an indel straddles the
+        edge of the read, the alignment consumes reference before the read's first base; SAM cannot
+        express that as a leading D, so POS carries it instead. A CIGAR handed out without its
+        matching POS is not enough to place the read.
+
+        :return: A (cigar, reference start) pair, the reference start being 0-based
         """
         error_indels = [
             e for e in self.errors
@@ -552,13 +567,35 @@ class Read:
         )
 
         if not error_indels and not has_mutation_indels:
-            genomic_cigar = f"{self.genomic_length}M"
+            genomic_cigar, leading_skip = f"{self.genomic_length}M", 0
         elif not has_mutation_indels and not self.is_reverse:
-            genomic_cigar = self._cigar_from_error_indels(error_indels)
+            # The walker anchors on the first error's own location, so it never opens on a deletion.
+            genomic_cigar, leading_skip = self._cigar_from_error_indels(error_indels), 0
         else:
-            genomic_cigar = self._cigar_via_alignment()
+            genomic_cigar, leading_skip = self._cigar_via_alignment()
 
-        return self._add_adapter_soft_clip(genomic_cigar)
+        cigar = self._add_adapter_soft_clip(genomic_cigar)
+        return cigar, self._reference_start(cigar, leading_skip)
+
+    def _reference_start(self, cigar: str, leading_skip: int):
+        """
+        The reference position the CIGAR's first op aligns to — a BAM record's POS field.
+
+        A forward read is anchored at its left edge: its deletion headroom comes from beyond the
+        window, so an indel inside moves only where the read ends, and reference consumed ahead of
+        the first base pushes the start to the right. A reverse read is anchored at its right edge
+        instead. Its headroom is drawn from before the window and the reverse complement takes its
+        bases from the right, so POS has to be found by stepping back from end_point over the
+        reference the alignment covers. Reporting self.position for a reverse read shifts every
+        gapped one by its net indel length.
+
+        :param cigar: The CIGAR string for this read
+        :param leading_skip: Reference bases the alignment consumed before the read's first base
+        :return: The 0-based reference position for the record's POS field
+        """
+        if not self.is_reverse:
+            return self.position + leading_skip
+        return self.end_point - leading_skip - self.reference_span(cigar)
 
     def _add_adapter_soft_clip(self, genomic_cigar: str):
         """
@@ -628,6 +665,16 @@ class Read:
         """
         Pairwise-alignment fallback for cases the direct walker cannot model: reverse reads
         with indels, or any read where a mutation indel preceded the sequencing errors.
+
+        The template is the read's reference window followed by the deletion headroom drawn beyond
+        it (see generate_reads). A reverse read's window sits at the *end* of its segment, so
+        reverse-complementing puts it at the front — which means that for either strand the query
+        aligns at the start of the template and the headroom trails, and one walk handles both.
+
+        The ops come from the alignment's own columns. Deriving them from read coordinates instead
+        does not work: the aligned rows are longer than the read whenever there is a gap, so read
+        offsets stop addressing the columns they are meant to, and an insertion longer than the
+        read has no read coordinate to be recorded at.
         """
         template = self.reference_segment
         if self.is_reverse:
@@ -636,22 +683,85 @@ class Read:
         # and is soft-clipped by the caller.
         query = self.read_sequence[:self.genomic_length]
 
-        cigar = ["M"] * self.genomic_length
         aligner = PairwiseAligner()
-        aligner.mode = "fogsaa"
-        alignments = aligner.align(template, query)
-        aligned_template = alignments[0][0]
-        aligned_query = alignments[0][1]
-        start_point = self.genomic_length - 1 if self.is_reverse else 0
-        for i in range(self.genomic_length):
-            index = start_point - i if self.is_reverse else i
-            if aligned_template[index] == "-":
-                cigar[index] = "I"
-            elif aligned_query[index] == "-":
-                cigar.insert(index, "D")
+        aligner.mode = "global"
+        # Gaps have to cost something, and the two directions do not cost the same. On the default
+        # scoring (every gap free) the aligner takes a gap to buy a single match, which renders one
+        # indel as a scatter of 1 bp ops; with a flat affine penalty in both directions it instead
+        # explains a long insertion as a wall of mismatches. The asymmetry below follows what NEAT
+        # can actually produce.
+        aligner.match_score = 1.0
+        aligner.mismatch_score = -1.0
+        # An inserted allele can run to hundreds of bases, so opening an insertion is what costs;
+        # extending one is free.
+        aligner.target_open_gap_score = -8.0
+        aligner.target_extend_gap_score = 0.0
+        # A deletion can only consume the headroom drawn beyond the read, so it stays short and
+        # keeps a per-base price.
+        aligner.query_open_gap_score = -5.0
+        aligner.query_extend_gap_score = -1.0
+        # The headroom past the read's last base is template the read never reached, so trailing
+        # query gaps are free. The leading edge keeps its price: the read's first base comes from
+        # template[0] on either strand, and a free gap there would let the alignment slide off the
+        # anchor that POS is derived from. Assigned after the scores above, which would cover these.
+        aligner.query_right_open_gap_score = 0.0
+        aligner.query_right_extend_gap_score = 0.0
+
+        alignment = aligner.align(template, query)[0]
+        aligned_template = alignment[0]
+        aligned_query = alignment[1]
+
+        ops = []
+        query_used = 0
+        leading_skip = 0
+        for template_base, query_base in zip(aligned_template, aligned_query):
+            if query_used == self.genomic_length:
+                # Everything past the read's last base is headroom, not part of its alignment.
+                break
+            if template_base == '-':
+                ops.append('I')
+                query_used += 1
+            elif query_base == '-':
+                if query_used:
+                    ops.append('D')
+                else:
+                    # Reference consumed before the read's first base, which happens when an indel
+                    # straddles the edge of the read. SAM has no leading D, so this is handed to
+                    # POS instead of the CIGAR (see _reference_start).
+                    leading_skip += 1
+            else:
+                ops.append('M')
+                query_used += 1
+
+        if not ops:
+            # No alignment to describe (an empty read); M keeps the record well formed.
+            return f"{self.genomic_length}M", 0
+
         if self.is_reverse:
-            cigar.reverse()
-        return self.tally_cigar_list(cigar)
+            # Built against the reverse-complemented template, so these run in read order, while
+            # SAM wants them in reference-forward order.
+            ops.reverse()
+        return self.tally_cigar_list(ops), leading_skip
+
+    @staticmethod
+    def reference_span(cigar: str):
+        """
+        How many reference bases a CIGAR consumes. M and D advance the reference; I and S are
+        query-only.
+
+        :param cigar: The CIGAR string to measure
+        :return: The number of reference bases the alignment covers
+        """
+        span = 0
+        count = ""
+        for char in cigar:
+            if char.isdigit():
+                count += char
+            else:
+                if char in "MD":
+                    span += int(count)
+                count = ""
+        return span
 
     @staticmethod
     def tally_cigar_list(cigar: list):
