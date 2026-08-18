@@ -85,17 +85,21 @@ class OutputFileWriter:
     :param vcf_header: optional parameters for vcf header.
     :param bam_header: A dictionary of lengths of each contig from the reference, keyed by contig id.
     :param vcf_format: The format to compress the vcf file, since we need to speed up the intermediate files with gzip
+    :param vcf_declarations: '##INFO'/'##FILTER'/'##FORMAT' lines carried over from an input vcf,
+        needed because records copied from that file reference the keys they declare.
     """
     def __init__(self,
                  options: Options,
                  vcf_header: dict = None,
                  vcf_format: str = "bgzip",
-                 bam_header: dict = None):
+                 bam_header: dict = None,
+                 vcf_declarations: list = None):
 
         self.paired_ended = options.paired_ended
         self.vcf_header = vcf_header
         self.bam_header = bam_header
         self.vcf_format = vcf_format
+        self.vcf_declarations = vcf_declarations or []
         self.tmp_dir = options.temp_dir_path
 
         file_handles: dict[Path, Any] = {}
@@ -141,6 +145,9 @@ class OutputFileWriter:
             ref_line = ""
             for (contig, length) in self.vcf_header.items():
                 ref_line += f"##contig=<ID={contig}, length={length}>\n"
+            # Already deduplicated by collect_header_declarations, which also drops any GT
+            # declaration since one is written below.
+            declaration_lines = "".join(f"{line}\n" for line in self.vcf_declarations)
             vcf_header = f'##fileformat=VCFv4.1\n' \
                          f'##reference={Path(options.reference).resolve()}\n' \
                          f'##source=NEAT\n' \
@@ -149,6 +156,7 @@ class OutputFileWriter:
                          f'##ALT=<ID=INS,Description="Insertion of novel sequence">\n' \
                          f'##ALT=<ID=SNP,Description="Single Nucleotide Polymorphism">\n' \
                          f'##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n' \
+                         f'{declaration_lines}' \
                          f'{ref_line}' \
                          f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNEAT_simulated_sample\n'
             self.files_to_write[self.vcf].write(vcf_header)

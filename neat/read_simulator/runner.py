@@ -17,7 +17,7 @@ import pysam
 from pysam import bcftools
 from Bio import SeqIO
 
-from .utils import Options, OutputFileWriter, parse_beds, parse_input_vcf
+from .utils import Options, OutputFileWriter, parse_beds, parse_input_vcf, collect_header_declarations
 from ..common import validate_input_path, validate_output_path
 from .single_runner import read_simulator_single
 from ..models import SequencingErrorModel, GCBiasModel
@@ -155,6 +155,9 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     ) = parse_beds(options, reference_keys_with_lens)
 
     input_variants_dict = {x: ContigVariants() for x in reference_keys_with_lens}
+    # Declarations from the input vcf's header, so the fields we copy from its records stay valid
+    # in the golden vcf.
+    input_vcf_declarations = []
     if options.include_vcf:
         _LOG.info(f"Reading input VCF: {options.include_vcf}.")
         # To avoid loading full reference again, we might need a way to pass the reference path
@@ -171,6 +174,7 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
             options
         )
         del reference_index
+        input_vcf_declarations = collect_header_declarations(options.include_vcf)
 
     if any((options.target_bed, options.discard_bed, options.mutation_bed)):
         _LOG.debug("Finished reading input beds.")
@@ -185,7 +189,8 @@ def read_simulator_runner(config: str, output_dir: str, file_prefix: str):
     # Creates files and sets up objects for files that can be written to as needed.
     # Also creates headers for bam and vcf. We create the overall bam with no header, as it will get a header from
     # merging the smaller bams.
-    output_file_writer = OutputFileWriter(options=options, vcf_header = reference_keys_with_lens, bam_header=None)
+    output_file_writer = OutputFileWriter(options=options, vcf_header = reference_keys_with_lens, bam_header=None,
+                                          vcf_declarations=input_vcf_declarations)
 
     if options.threads > 1:
         _LOG.info(f"[parallel] Launching {count} NEAT job(s) (max {options.threads} in parallel)...")
