@@ -230,7 +230,9 @@ class OutputFileWriter:
         :param bam_handle: the handle to write data to
         :param read_length: the length of the read to output
         """
-        read_bin = reg2bin(read.position, read.end_point)
+        # The CIGAR and the position it starts from are computed together; see make_alignment.
+        cigar, reference_start = read.make_alignment()
+        read_bin = reg2bin(reference_start, reference_start + read.reference_span(cigar))
 
         mate_position = read.get_mpos()
         flag = read.calculate_flags(self.paired_ended)
@@ -240,8 +242,6 @@ class OutputFileWriter:
             alt_sequence = read.read_sequence.reverse_complement()
         else:
             alt_sequence = read.read_sequence
-
-        cigar = read.make_cigar()
 
         # Parse the CIGAR string in one linear pass instead of two regex scans
         # (re.split + re.findall) — equivalent output, no regex overhead.
@@ -317,7 +317,7 @@ class OutputFileWriter:
             '<iiiIIiiii',
             block_size,
             contig_id,
-            read.position,
+            reference_start,
             (read_bin << 16) + (read.mapping_quality << 8) + len(name_bytes),
             (flag << 16) + cig_ops,
             seq_len,
