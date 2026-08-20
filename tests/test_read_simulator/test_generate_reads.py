@@ -1080,3 +1080,40 @@ def test_generate_reads_unchanged_when_features_disabled():
         assert read.adapter_length == 0
         assert read.genomic_length == read.run_read_length == _READ_LEN
         assert len(read.read_sequence) == _READ_LEN
+
+
+
+def test_bam_records_are_emitted_in_coordinate_order_when_mates_share_a_window():
+    """Regression: read 1 was written straight out while only read 2 was buffered.
+
+    A deletion moves where a reverse read's alignment starts, so read 2 can begin before read 1
+    of its own fragment once the insert is short enough that the mates cover the same window.
+    Read 1 had already been written by the time read 2 was queued, leaving the BAM unsorted and
+    unindexable (`samtools index` fails).
+
+    The fragment length is pinned at read_len: short enough for the mates to coincide, long enough
+    that the deletion headroom still exists (a shorter insert has no headroom, so the deletion
+    would be skipped instead of applied).
+    """
+    from neat.variants.deletion import Deletion
+
+    opts = _short_insert_options(adapters=True, seed=3)
+    error_model, qual_model, _ = _make_models()
+
+    # A homozygous deletion every read spanning it must apply.
+    variants = ContigVariants()
+    for location in range(150, _SPAN - 150, 97):
+        variants.add_variant(
+            Deletion(location, 3, np.array([1, 1]), "42", is_input=True, REF="AAAA")
+        )
+
+    ofw = _CollectingOFW()
+    generate_reads(
+        1, _make_reference(), error_model, 0, qual_model,
+        FragmentLengthModel(_READ_LEN, 2), None, variants,
+        _all_span_targeted(), [], opts, ofw, "chr1", 0, 0,
+    )
+
+    starts = [read.make_alignment()[1] for read in ofw.bam_records]
+    assert starts, "expected some records"
+    assert starts == sorted(starts), "golden BAM records are not in coordinate order"
