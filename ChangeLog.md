@@ -1,3 +1,42 @@
+# NEAT v4.6.2
+
+Bug fixes for input VCF (`include_vcf`) handling. Both issues were reported against
+the v4.6.1 bioconda build.
+
+- A no-call genotype (`./.`) in an input VCF aborted the run with
+  `ValueError: invalid literal for int() with base 10: '.'` before any read was
+  generated, leaving an empty output directory (#324). A no-call is valid VCF 4.2
+  and is what several callers emit for a record that is present but unassigned to a
+  genotype. It is now treated the way a record whose FORMAT has no `GT` at all was
+  already treated: a genotype is generated with `pick_ploids`, with a warning and a
+  tally, and the sample column is rewritten so the reads and the golden VCF agree on
+  the genotype used. Other FORMAT subfields are preserved.
+
+- Input variants were constructed with `kwargs=data` against a `**kwargs`
+  signature, so every one of them carried `metadata = {'kwargs': {...}}` and every
+  metadata lookup missed. This dropped input `ID`/`FILTER`/`INFO`/`FORMAT` from the
+  golden VCF silently, and raised `KeyError: 'REF'` from
+  `UnknownVariant.get_ref_len` as soon as a read carried a multi-nucleotide variant
+  — coverage-dependent, and after the FASTQs had already been written, so the run
+  left a partial output set (#325). `UnknownVariant` also never set `self.alt`.
+
+- Restoring that metadata meant it began reaching the output, which exposed two
+  latent defects that would otherwise have broken previously-working runs,
+  including the H1N1 example in `data/`:
+
+  - The golden VCF carried input `ID`/`FILTER`/`INFO`/`FORMAT` values without the
+    matching `##INFO`/`##FILTER`/`##FORMAT` declarations, which is not valid VCF.
+    `bcftools sort` fails on the first such record and the run then died with a
+    `FileNotFoundError` on its temp file. Declarations from the input header are now
+    carried over, and permissive ones are synthesised for keys the input itself left
+    undeclared (`data/H1N1.vcf` uses `AF`, `PP` and `DP` while declaring none).
+  - Records whose FORMAT was `.` produced `GT:.`, naming a FORMAT key `.`. A missing
+    FORMAT is now replaced rather than prepended to.
+
+- `alt_count` split the ALT column on `;` rather than `,`. ALT alleles are
+  comma-separated, so the count was always 1 and `pick_ploids` could never draw the
+  second alternate of a multiallelic record.
+
 # NEAT v4.6.1
 
 Internal cleanup follow-up to the v4.6.0 N-handling work.
