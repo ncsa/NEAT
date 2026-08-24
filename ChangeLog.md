@@ -85,8 +85,11 @@ Note on coverage: short inserts carry fewer genomic bases per read and their mat
 so realized depth falls below the requested `coverage`. This matches `eidolon`'s behavior and
 is documented rather than compensated for, so the two simulators stay comparable arm-for-arm.
 
-Both features default to off, and output is unchanged when their keys are omitted —
-verified byte-for-byte on FASTQ and on all BAM alignment records for a fixed seed.
+Both features default to off, and omitting their keys leaves the adapter and short-insert
+code paths unexercised. Output is not byte-identical to previous releases even then: the
+fragment-sampling change described above applies to every run, so for a fixed seed the
+fragment draws — and therefore the reads — differ from v4.6.x whether or not these features
+are enabled.
 
 # NEAT v4.6.2
 
