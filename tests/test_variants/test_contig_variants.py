@@ -85,9 +85,6 @@ def test_get_ref_alt_insertion_alt_from_variant():
 def test_get_ref_alt_unknown_uses_metadata():
     uv = UnknownVariant(5, _GT.copy(), "42", is_input=True,
                         REF="A", ALT="ACGT")
-    # UnknownVariant does not set self.alt; patch it so get_alt() falls
-    # through to metadata['ALT'] rather than raising AttributeError.
-    uv.alt = None
     ref, alt = ContigVariants.get_ref_alt(uv, _REC, 0)
     assert ref == "A"
     assert alt == "ACGT"

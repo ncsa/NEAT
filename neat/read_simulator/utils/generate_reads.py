@@ -464,8 +464,17 @@ def generate_reads(
     t = time.time()
 
     bam_handle = ofw.files_to_write[ofw.bam] if options.produce_bam else None
-    r2_buffer: list[tuple[int, int, "Read"]] = []  # (position, counter, read)
-    r2_counter = 0
+    # (reference start, counter, read), ordered by the position each record will actually carry.
+    # For a reverse read that is not read.position: an indel moves where its alignment starts. Both
+    # reads go through the buffer, not just read 2 — once the insert is short enough that the mates
+    # cover the same window, read 2 can start before read 1 of its own fragment, so writing read 1
+    # straight out leaves the BAM unsorted and unindexable.
+    bam_buffer: list[tuple[int, int, "Read"]] = []
+    bam_counter = 0
+    # Fragments arrive in read-1 order, and no read can start earlier than its own fragment start
+    # less the deletion headroom (read_len // 5). A whole read length is a generous bound on that,
+    # so anything below the watermark can be written out without a later read undercutting it.
+    bam_slack = options.read_len
 
     # Resolved once per chunk. Empty strings whenever readthrough is off, which makes every
     # adapter branch in Read a no-op and keeps output identical to a run without the feature.
@@ -569,14 +578,16 @@ def generate_reads(
             options.n_handling,
         )
 
-        # Stream BAM in coordinate order: flush any buffered read2 records whose
-        # position lies before this read1, then write read1 itself. Since fragments
-        # are sorted by read1.position, read1 positions arrive monotonically.
+        # Stream BAM in coordinate order: write out everything the watermark has cleared, then
+        # buffer this read. Fragments arrive sorted by read1.position, so the watermark advances
+        # monotonically.
         if bam_handle is not None:
-            while r2_buffer and r2_buffer[0][0] < read_1.position:
-                _, _, buffered_r2 = heapq.heappop(r2_buffer)
-                ofw.write_bam_record(buffered_r2, contig_index, bam_handle, buffered_r2.run_read_length)
-            ofw.write_bam_record(read_1, contig_index, bam_handle, read_1.run_read_length)
+            watermark = read_1.position - bam_slack
+            while bam_buffer and bam_buffer[0][0] < watermark:
+                _, _, buffered = heapq.heappop(bam_buffer)
+                ofw.write_bam_record(buffered, contig_index, bam_handle, buffered.run_read_length)
+            heapq.heappush(bam_buffer, (read_1.make_alignment()[1], bam_counter, read_1))
+            bam_counter += 1
 
         # skip over read 2 for single ended reads.
         if options.paired_ended:
@@ -627,15 +638,13 @@ def generate_reads(
                 options.n_handling,
             )
             if bam_handle is not None:
-                heapq.heappush(r2_buffer, (read_2.position, r2_counter, read_2))
-                r2_counter += 1
+                heapq.heappush(bam_buffer, (read_2.make_alignment()[1], bam_counter, read_2))
+                bam_counter += 1
 
-    # Flush any read2 records still in the buffer — these all have positions at or
-    # after the last read1 we wrote, so popping them in heap order gives the correct
-    # coordinate-sorted tail.
+    # Drain whatever the watermark never cleared; popping in heap order gives the sorted tail.
     if bam_handle is not None:
-        while r2_buffer:
-            _, _, buffered_r2 = heapq.heappop(r2_buffer)
-            ofw.write_bam_record(buffered_r2, contig_index, bam_handle, buffered_r2.run_read_length)
+        while bam_buffer:
+            _, _, buffered = heapq.heappop(bam_buffer)
+            ofw.write_bam_record(buffered, contig_index, bam_handle, buffered.run_read_length)
 
     _LOG.info(f"Finished sampling reads for thread {thread_index} in {(time.time() - start_time)/60:.2f} m")
