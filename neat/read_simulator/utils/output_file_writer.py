@@ -246,10 +246,15 @@ class OutputFileWriter:
         flag = read.calculate_flags(self.paired_ended)
         template_length = read.get_tlen()
         if read.is_reverse:
-            # having weird issues with the bam
+            # SAM stores SEQ and QUAL in reference-forward orientation, while the read holds both
+            # in the orientation it was sequenced in. Flipping the sequence alone would pair every
+            # base with another base's score — most visibly on a short-insert read, where the
+            # adapter tail's scores would end up annotating the genomic prefix.
             alt_sequence = read.read_sequence.reverse_complement()
+            quality_array = np.asarray(read.quality_array)[::-1]
         else:
             alt_sequence = read.read_sequence
+            quality_array = read.quality_array
 
         # Parse the CIGAR string in one linear pass instead of two regex scans
         # (re.split + re.findall) — equivalent output, no regex overhead.
@@ -298,7 +303,7 @@ class OutputFileWriter:
         # in [0, 255]; converting in one numpy cast → bytes call is much faster.
         # np.asarray coerces list inputs (used in tests) to ndarray without copy
         # when already an ndarray of the right dtype.
-        encoded_qual = np.asarray(read.quality_array, dtype=np.uint8).tobytes()
+        encoded_qual = np.asarray(quality_array, dtype=np.uint8).tobytes()
 
         name_bytes = read.name.encode('utf-8') + b'\0'
 

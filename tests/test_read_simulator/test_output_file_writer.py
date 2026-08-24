@@ -310,6 +310,117 @@ def test_write_bam_record_reverse_strand(tmp_path):
     assert bam_handle.tell() > pos_before  # bytes were written for reverse strand
 
 
+# ---------------------------------------------------------------------------
+# BAM round trip: SEQ and QUAL orientation
+#
+# SAM stores both SEQ and QUAL in reference-forward orientation, while a Read holds both in the
+# orientation it was sequenced in. write_bam_record used to flip only the sequence, so every
+# reverse read's qualities annotated the wrong bases — invisible on a full-length read with a
+# flat quality profile, glaring on a short-insert read, where the adapter tail's scores landed
+# on the genomic prefix.
+# ---------------------------------------------------------------------------
+
+_TRUSEQ_R1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+
+
+def _adapter_read(position=100, genomic_len=25, run_read_len=40, is_reverse=True):
+    """
+    A finalized short-insert read with an adapter tail and one distinct quality per base, so
+    that any reordering of the quality array is visible rather than merely plausible.
+    """
+    from neat.models import SequencingErrorModel, TraditionalQualityModel
+
+    end_point = position + genomic_len
+    read = Read(
+        name="adapter_read",
+        raw_read=(position, end_point, position, end_point),
+        reference_segment=Seq(_REF_SEQ[:genomic_len]),
+        reference_id="chr1",
+        ref_id_index=0,
+        position=position,
+        end_point=end_point,
+        padding=0,
+        run_read_len=run_read_len,
+        segment_start=position,
+        is_reverse=is_reverse,
+        is_paired=True,
+        genomic_len=genomic_len,
+        adapter_seq=_TRUSEQ_R1,
+    )
+    read.finalize_read_and_write(
+        SequencingErrorModel(read_length=run_read_len),
+        TraditionalQualityModel(),
+        None, 33, False, 0, np.random.default_rng(0),
+    )
+    # Distinct, in-range Phred scores: position i scores i + 10.
+    read.quality_array = np.arange(10, 10 + len(read.read_sequence), dtype=int)
+    return read
+
+
+def _write_and_parse(ofw, read, tmp_path):
+    """Write one record, close the file, and hand it back parsed by pysam."""
+    pysam = pytest.importorskip("pysam")
+    bam_handle = ofw.files_to_write[ofw.bam]
+    ofw.write_bam_record(read, contig_id=0, bam_handle=bam_handle,
+                         read_length=read.run_read_length)
+    ofw.flush_and_close_files(skip_bam=False)
+    with pysam.AlignmentFile(str(ofw.bam), "rb", check_sq=True) as bam:
+        records = list(bam)
+    assert len(records) == 1
+    return records[0]
+
+
+def test_bam_round_trip_reverse_read_reverses_sequence_and_qualities(tmp_path):
+    """
+    Both rows are flipped into BAM orientation, together. Reversing the sequence alone leaves
+    every base paired with a different base's score.
+    """
+    ofw = _ofw_with_bam(tmp_path)
+    read = _adapter_read(is_reverse=True)
+    record = _write_and_parse(ofw, read, tmp_path)
+
+    assert record.query_sequence == str(read.read_sequence.reverse_complement())
+    assert list(record.query_qualities) == list(read.quality_array)[::-1]
+
+
+def test_bam_round_trip_forward_read_reverses_neither(tmp_path):
+    """The control: a forward read is already in reference-forward orientation."""
+    ofw = _ofw_with_bam(tmp_path)
+    read = _adapter_read(is_reverse=False)
+    record = _write_and_parse(ofw, read, tmp_path)
+
+    assert record.query_sequence == str(read.read_sequence)
+    assert list(record.query_qualities) == list(read.quality_array)
+
+
+def test_bam_round_trip_reverse_soft_clip_carries_the_adapter(tmp_path):
+    """
+    The payoff: the soft-clipped bases in the BAM are the adapter tail, with the adapter's own
+    quality scores on them — which is only true once QUAL is reversed alongside SEQ.
+    """
+    genomic_len, run_read_len = 25, 40
+    ofw = _ofw_with_bam(tmp_path)
+    read = _adapter_read(genomic_len=genomic_len, run_read_len=run_read_len, is_reverse=True)
+    adapter_len = read.adapter_length
+    assert adapter_len == run_read_len - genomic_len
+
+    # As sequenced, the adapter is the 3' tail of the read.
+    adapter_tail = read.read_sequence[genomic_len:]
+    adapter_scores = list(read.quality_array)[genomic_len:]
+
+    record = _write_and_parse(ofw, read, tmp_path)
+
+    # A reverse read's 3' tail is the leading edge in reference-forward orientation.
+    assert record.cigartuples[0] == (4, adapter_len)   # 4 == BAM_CSOFT_CLIP
+    clipped_bases = record.query_sequence[:adapter_len]
+    clipped_scores = list(record.query_qualities)[:adapter_len]
+
+    assert clipped_bases == str(adapter_tail.reverse_complement())
+    assert clipped_scores == adapter_scores[::-1]
+    # And the genomic part keeps its own scores, in the same flipped order.
+    assert list(record.query_qualities)[adapter_len:] == list(read.quality_array)[:genomic_len][::-1]
+
+
 def test_write_bam_record_odd_length_sequence(tmp_path):
     """Odd-length reads require padding — should not crash."""
     ofw = _ofw_with_bam(tmp_path)
