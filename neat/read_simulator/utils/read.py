@@ -220,7 +220,15 @@ class Read:
             if alt_len > 1:
                 q_chunks.append(np.full(alt_len - 1, low_score, dtype=int))
             elif ref_len > 1 and alt_len == 1:
-                pass  # deletion — no new quality scores
+                # Deletion. The anchor base survives in the read — alt *is* that base, VCF-style
+                # — so its score has to survive with it; only the bases actually removed lose
+                # theirs. Dropping it shortens the quality array one further than the sequence,
+                # which is a malformed FASTQ record and a BAM record samtools refuses to index.
+                # Long latent: a full-length read draws its quality array over the reference
+                # segment including the deletion headroom and trims to genomic_length at the
+                # end, which absorbed the missing score, and a short insert could not reach
+                # here at all while its zero padding made every deletion be skipped.
+                q_chunks.append(self.quality_array[loc:loc + 1])
             else:
                 q_chunks.append(np.array([low_score], dtype=int))
             prev_end = loc + ref_len

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from Bio.Seq import Seq
 
-from neat.models import SequencingErrorModel, TraditionalQualityModel
+from neat.models import SequencingErrorModel, TraditionalQualityModel, ErrorContainer
 from neat.read_simulator.utils.read import Read
 from neat.variants import SingleNucleotideVariant
 from neat.variants.deletion import Deletion
@@ -663,6 +663,31 @@ def test_apply_mutations_deletion_reverse_read_correct_position():
     assert len(r.read_sequence) == pre_len - (del_len - 1)
     # The base that was at correct_idx + del_len is now at correct_idx + 1
     assert str(r.read_sequence[correct_idx + 1]) == pre_at_28
+
+def test_apply_errors_deletion_keeps_the_anchor_bases_quality():
+    """
+    An error deletion keeps its anchor base -- alt *is* that base, VCF-style -- so the quality
+    array has to keep the anchor's score. Dropping it left the array one shorter than the
+    sequence: a malformed FASTQ record, and a BAM record samtools refuses to index.
+
+    Long latent. A full-length read draws its quality array over the reference segment including
+    the deletion headroom and trims to genomic_length afterwards, which absorbed the missing
+    score; a short insert never reached here at all, because its zero padding made
+    get_sequencing_errors skip every deletion before one could be applied.
+    """
+    r = _make_read(reference=_REF)
+    r.read_sequence = Seq(_REF)
+    r.quality_array = np.arange(len(_REF), dtype=int)   # distinct, so the kept score is named
+    anchor_score = int(r.quality_array[10])
+
+    # ErrorContainer(type, location, length, ref, alt) -- ref spans the anchor plus the bases
+    # removed, exactly as get_sequencing_errors builds it.
+    r.errors = [ErrorContainer(Deletion, 10, 3, Seq(_REF[10:14]), Seq(_REF[10]))]
+    r.apply_errors(TraditionalQualityModel())
+
+    assert len(r.quality_array) == len(r.read_sequence)
+    assert int(r.quality_array[10]) == anchor_score, "the anchor kept its own score"
+
 
 # ===========================================================================
 # 3' adapter readthrough
