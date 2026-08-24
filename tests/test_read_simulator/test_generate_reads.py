@@ -1,3 +1,4 @@
+
 import numpy as np
 import pytest
 from types import SimpleNamespace
@@ -933,15 +934,88 @@ def test_min_fragment_drops_when_short_inserts_are_kept(adapters, keep_short):
     assert _min_fragment(opts) == MIN_SHORT_INSERT
 
 
-def test_min_fragment_floor_excludes_fragment_model_spacers():
+# The lengths FragmentLengthModel used to splice into every batch as anti-infinite-loop padding.
+# They were never draws from anyone's distribution. The ordinary read_len fragment floor hid them;
+# the lower floor that short-insert runs use admits 28 and 31, which is how they were noticed.
+_LEGACY_SPACERS = [10, 11, 12, 13, 14, 28, 31]
+
+
+def test_fragment_model_emits_no_synthetic_spacers():
     """
-    FragmentLengthModel injects hardcoded spacer lengths [10, 11, 12, 13, 14, 28, 31] to avoid
-    infinite loops. The ordinary read_len floor hides them; MIN_SHORT_INSERT must keep hiding the
-    tiny ones, or they would surface as reads that are over 90% adapter.
+    Every length the model returns is a draw from the model. This is the fix at its source: the
+    old implementation appended all seven spacers to *every* batch before sampling, so on a
+    distribution nowhere near them they still turned up, seven per batch.
     """
-    spacers = [10, 11, 12, 13, 14, 28, 31]
-    kept = [s for s in spacers if s >= MIN_SHORT_INSERT]
-    assert kept == [28, 31], "only the plausibly-real spacer lengths should survive the floor"
+    model = FragmentLengthModel(300, 20)
+    rng = np.random.default_rng(0)
+    drawn = model.generate_fragments(500, rng)
+
+    assert len(drawn) == 500
+    assert not (set(drawn) & set(_LEGACY_SPACERS))
+    # And they really are draws from this distribution, not just free of those seven values.
+    assert 200 < np.mean(drawn) < 400
+
+
+@pytest.mark.parametrize("gc_biased", [False, True])
+def test_short_insert_sampling_emits_no_spacer_lengths(gc_biased):
+    """
+    At the sampler level, on both placement paths. The fragment mean is far from every spacer
+    value, so any 28 or 31 bp insert here could only have been injected — and the lowered floor
+    that short inserts run under is exactly what would let it through.
+    """
+    opts = _short_insert_options(adapters=True)
+    opts.coverage = 30
+    gc_model = GCBiasModel([1.0 if i % 2 else 0.5 for i in range(101)], window_size=100) \
+        if gc_biased else None
+    if gc_biased:
+        assert not gc_model.is_uniform  # guard: we really exercised the GC branch
+
+    reads = cover_dataset(_make_reference(), opts, FragmentLengthModel(300, 20), gc_model)
+
+    assert reads, "expected reads to be generated"
+    lengths = {r[1] - r[0] for r in reads}
+    assert not (lengths & set(_LEGACY_SPACERS))
+    assert min(lengths) >= MIN_SHORT_INSERT
+
+
+def test_samplers_pass_through_model_lengths_unaltered():
+    """
+    A deterministic model, so anything the sampler adds of its own is visible. Every emitted
+    insert is either one of the model's own lengths or one clamped by the end of the chunk.
+    """
+    class _FixedFragments:
+        fragment_mean, fragment_st_dev = 200, 0
+
+        def generate_fragments(self, number_of_fragments, rng):
+            return ([40, 200] * (number_of_fragments // 2 + 1))[:number_of_fragments]
+
+    opts = _short_insert_options(adapters=True)
+    reads = cover_dataset(_make_reference(), opts, _FixedFragments(), None)
+
+    assert reads
+    for r1s, r1e, r2s, r2e in reads:
+        fragment_end = max(r1e, r2e)
+        assert (fragment_end - r1s) in (40, 200) or fragment_end == _SPAN
+
+
+def test_sampling_gives_up_instead_of_hanging_on_an_impossible_model(caplog):
+    """
+    Nothing injects tiny fragments into a batch any more, so a model that cannot clear the floor
+    no longer stumbles over one by accident. The bound in _sample_fragments is what keeps that
+    from becoming an infinite loop; the run continues, under-covered and said so.
+    """
+    class _TooShort:
+        fragment_mean, fragment_st_dev = 5, 1
+
+        def generate_fragments(self, number_of_fragments, rng):
+            return [5] * number_of_fragments
+
+    opts = _short_insert_options(adapters=True)
+    with caplog.at_level("WARNING", logger="neat.read_simulator.utils.generate_reads"):
+        reads = cover_dataset(_make_reference(), opts, _TooShort(), None)
+
+    assert reads == []
+    assert any("floor" in message for message in caplog.messages)
 
 
 def test_read_windows_unchanged_for_full_length_insert():
