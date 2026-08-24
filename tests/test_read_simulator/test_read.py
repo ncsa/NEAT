@@ -2,6 +2,7 @@
 Tests for neat/read_simulator/utils/read.py
 """
 import io
+import re
 
 import numpy as np
 import pytest
@@ -664,31 +665,6 @@ def test_apply_mutations_deletion_reverse_read_correct_position():
     # The base that was at correct_idx + del_len is now at correct_idx + 1
     assert str(r.read_sequence[correct_idx + 1]) == pre_at_28
 
-def test_apply_errors_deletion_keeps_the_anchor_bases_quality():
-    """
-    An error deletion keeps its anchor base -- alt *is* that base, VCF-style -- so the quality
-    array has to keep the anchor's score. Dropping it left the array one shorter than the
-    sequence: a malformed FASTQ record, and a BAM record samtools refuses to index.
-
-    Long latent. A full-length read draws its quality array over the reference segment including
-    the deletion headroom and trims to genomic_length afterwards, which absorbed the missing
-    score; a short insert never reached here at all, because its zero padding made
-    get_sequencing_errors skip every deletion before one could be applied.
-    """
-    r = _make_read(reference=_REF)
-    r.read_sequence = Seq(_REF)
-    r.quality_array = np.arange(len(_REF), dtype=int)   # distinct, so the kept score is named
-    anchor_score = int(r.quality_array[10])
-
-    # ErrorContainer(type, location, length, ref, alt) -- ref spans the anchor plus the bases
-    # removed, exactly as get_sequencing_errors builds it.
-    r.errors = [ErrorContainer(Deletion, 10, 3, Seq(_REF[10:14]), Seq(_REF[10]))]
-    r.apply_errors(TraditionalQualityModel())
-
-    assert len(r.quality_array) == len(r.read_sequence)
-    assert int(r.quality_array[10]) == anchor_score, "the anchor kept its own score"
-
-
 # ===========================================================================
 # 3' adapter readthrough
 # ===========================================================================
@@ -696,22 +672,29 @@ def test_apply_errors_deletion_keeps_the_anchor_bases_quality():
 _TRUSEQ_R1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
 
 
-def _finalize_adapter_read(genomic_len, adapter=_TRUSEQ_R1, is_reverse=False,
-                           num_errors=0, seed=0):
-    """
-    Finalize a short-insert read whose reference segment is exactly `genomic_len` long.
+# What generate_reads budgets a short insert for deletions. A short insert has no reference
+# past the fragment to draw literal headroom from, so this is an allowance rather than a
+# count of bases in hand: a deletion spends it, and the adapter tail makes up the difference.
+_DELETION_HEADROOM = _READ_LEN // 5
 
-    A short insert has no reference beyond the fragment to draw deletion headroom from, so
-    padding is 0 — matching how generate_reads builds these reads.
+
+def _finalize_adapter_read(genomic_len, adapter=_TRUSEQ_R1, is_reverse=False,
+                           num_errors=0, seed=0, mutations=None,
+                           padding=_DELETION_HEADROOM):
+    """
+    Finalize a short-insert read whose reference segment is exactly `genomic_len` long,
+    built the way generate_reads builds one.
     """
     r = _make_read(
         reference=_REF[:genomic_len],
-        padding=0,
+        padding=padding,
         end_point=genomic_len,
         is_reverse=is_reverse,
         genomic_len=genomic_len,
         adapter_seq=adapter,
     )
+    if mutations:
+        r.mutations = mutations
     r.finalize_read_and_write(
         SequencingErrorModel(read_length=_READ_LEN),
         TraditionalQualityModel(),
@@ -722,6 +705,26 @@ def _finalize_adapter_read(genomic_len, adapter=_TRUSEQ_R1, is_reverse=False,
         _make_rng(seed),
     )
     return r
+
+
+def _deletion_at(location, length):
+    """One homozygous deletion, in NEAT's VCF-style notation (see _deleted_bases)."""
+    return {location: [Deletion(position1=location, length=length,
+                                genotype=np.array([1, 1]), qual_score=30)]}
+
+
+def _deleted_bases(length):
+    """
+    Bases a NEAT Deletion of `length` actually removes from a read.
+
+    position1 is the base *before* the first deleted one, VCF-style, and apply_mutations keeps
+    it as the alternate — so a length-3 deletion takes 2 bases out of the read.
+    """
+    return length - 1
+
+
+def _cigar_ops(cigar):
+    return [(int(n), op) for n, op in re.findall(r"(\d+)([MIDS])", cigar)]
 
 
 def test_adapter_defaults_leave_read_untouched():
@@ -829,6 +832,222 @@ def test_adapter_read_reports_full_length():
     """len() stays the emitted read length, which the BAM writer uses to size the record."""
     r = _finalize_adapter_read(60)
     assert len(r) == _READ_LEN
+
+
+def test_apply_errors_deletion_keeps_the_anchor_bases_quality():
+    """
+    An error deletion keeps its anchor base -- alt *is* that base, VCF-style -- so the quality
+    array has to keep the anchor's score. Dropping it left the array one shorter than the
+    sequence: a malformed FASTQ record, and a BAM record samtools refuses to index.
+
+    Long latent. A full-length read draws its quality array over the reference segment including
+    the deletion headroom and trims to genomic_length afterwards, which absorbed the missing
+    score; a short insert never reached here at all, because its zero padding made
+    get_sequencing_errors skip every deletion before one could be applied.
+    """
+    r = _make_read(reference=_REF)
+    r.read_sequence = Seq(_REF)
+    r.quality_array = np.arange(len(_REF), dtype=int)   # distinct, so the kept score is named
+    anchor_score = int(r.quality_array[10])
+
+    # ErrorContainer(type, location, length, ref, alt) -- ref spans the anchor plus the bases
+    # removed, exactly as get_sequencing_errors builds it.
+    r.errors = [ErrorContainer(Deletion, 10, 3, Seq(_REF[10:14]), Seq(_REF[10]))]
+    r.apply_errors(TraditionalQualityModel())
+
+    assert len(r.quality_array) == len(r.read_sequence)
+    assert int(r.quality_array[10]) == anchor_score, "the anchor kept its own score"
+
+
+# ===========================================================================
+# Deletions inside a short insert
+#
+# The regression these guard: a short insert used to be built with padding=0, and both
+# apply_mutations and get_sequencing_errors skip any deletion that padding cannot cover. Every
+# deletion in an adapter-readthrough read was therefore dropped, silently, wherever it fell —
+# the read came back byte-identical to the unmutated reference while the golden VCF still
+# claimed the variant.
+# ===========================================================================
+
+@pytest.mark.parametrize("is_reverse", [False, True])
+def test_short_insert_deletion_is_applied(is_reverse):
+    """The deletion survives, and the adapter tail absorbs what it removed."""
+    genomic_len, del_len = 60, 4
+    lost = _deleted_bases(del_len)
+    r = _finalize_adapter_read(
+        genomic_len, is_reverse=is_reverse, mutations=_deletion_at(20, del_len),
+    )
+
+    # Present in the CIGAR, at its real length.
+    assert (lost, "D") in _cigar_ops(r.make_cigar())
+    # The sequencer ran its full set of cycles either way, so the read is still full length...
+    assert len(r.read_sequence) == _READ_LEN
+    # ...with the adapter tail grown by exactly what the deletion took out.
+    assert r.genomic_length == genomic_len - lost
+    assert r.adapter_length == _READ_LEN - genomic_len + lost
+    # A FASTQ record whose sequence and quality disagree is malformed.
+    assert len(r.quality_array) == len(r.read_sequence)
+    assert len(r.read_quality_string) == len(r.read_sequence)
+
+
+@pytest.mark.parametrize("is_reverse", [False, True])
+def test_short_insert_deletion_cigar_accounts_for_every_base(is_reverse):
+    """M+I+S must still cover the whole read once a deletion has shortened its genomic part."""
+    r = _finalize_adapter_read(
+        60, is_reverse=is_reverse, mutations=_deletion_at(20, 4),
+    )
+    ops = _cigar_ops(r.make_cigar())
+    assert sum(n for n, op in ops if op in "MIS") == len(r.read_sequence) == _READ_LEN
+    # The soft clip stays on the strand-correct end (see _add_adapter_soft_clip).
+    assert (ops[0][1] == "S") if is_reverse else (ops[-1][1] == "S")
+
+
+def test_short_insert_deletion_without_adapter_shortens_the_read():
+    """
+    keep_short_fragments with no adapter: nothing backfills, so the read is emitted shorter.
+    That is what a shorter sequenced molecule looks like, and every length that describes the
+    read has to agree on it — run_read_length is what the BAM writer sizes the record by.
+    """
+    genomic_len, del_len = 60, 4
+    lost = _deleted_bases(del_len)
+    r = _make_read(
+        reference=_REF[:genomic_len], padding=_DELETION_HEADROOM, end_point=genomic_len,
+        read_len=genomic_len, genomic_len=genomic_len, adapter_seq="",
+    )
+    r.mutations = _deletion_at(20, del_len)
+    r.finalize_read_and_write(
+        SequencingErrorModel(read_length=_READ_LEN), TraditionalQualityModel(),
+        None, 33, False, 0, _make_rng(0),
+    )
+
+    assert r.adapter_length == 0
+    assert "S" not in r.make_cigar()
+    assert len(r.read_sequence) == genomic_len - lost
+    assert r.genomic_length == r.run_read_length == len(r) == genomic_len - lost
+    assert len(r.quality_array) == len(r.read_sequence)
+
+
+def test_full_length_read_is_untouched_by_the_resync():
+    """
+    An ordinary read makes a deletion up from its padding — the reference just past the window —
+    and still emits exactly read_len bases. None of the short-insert bookkeeping may fire.
+    """
+    r = _make_read(reference=_PADDED_REF, padding=20)
+    r.mutations = _deletion_at(20, 4)
+    r.finalize_read_and_write(
+        SequencingErrorModel(read_length=_READ_LEN), TraditionalQualityModel(),
+        None, 33, False, 0, _make_rng(0),
+    )
+
+    assert r.genomic_length == r.run_read_length == _READ_LEN
+    assert r.adapter_length == 0
+    assert len(r.read_sequence) == _READ_LEN
+
+
+# --- Boundary cases -------------------------------------------------------
+
+def test_short_insert_deletion_at_first_genomic_base():
+    """A deletion anchored on a forward read's first base is representable."""
+    genomic_len, del_len = 60, 4
+    lost = _deleted_bases(del_len)
+    r = _finalize_adapter_read(genomic_len, mutations=_deletion_at(0, del_len))
+
+    ops = _cigar_ops(r.make_cigar())
+    assert (lost, "D") in ops
+    assert r.genomic_length == genomic_len - lost
+    assert sum(n for n, op in ops if op in "MIS") == len(r.read_sequence) == _READ_LEN
+    # SAM cannot open an alignment on a deletion, so the CIGAR must not start with one.
+    assert ops[0][1] != "D"
+
+
+def test_short_insert_deletion_at_a_reverse_reads_three_prime_edge():
+    """
+    The same deletion on a reverse read sits at the read's 3' edge, which is the CIGAR's
+    *leading* edge once SEQ is flipped to reference-forward. Known limitation: the alignment
+    absorbs it rather than emitting a leading D, so the CIGAR comes back all-M and POS slides
+    by the deleted length, misplacing the single anchor base.
+
+    The read itself is still right — the deletion really was applied, the adapter grew to match,
+    and the record is well formed. Only the annotation of that one edge base is approximate.
+
+    Pricing the aligner's trailing query gaps would recover the D here, but it costs far more
+    than it buys: it makes short inserts carrying an *insertion* misplace 5-10x more often,
+    because there the trailing template genuinely is sequence the read never reached. Measured
+    over 2400-read runs, adapter+insertion misplacement went 0.08-0.17% -> 0.96-1.62%.
+    """
+    genomic_len, del_len = 60, 4
+    lost = _deleted_bases(del_len)
+    r = _finalize_adapter_read(genomic_len, is_reverse=True, mutations=_deletion_at(0, del_len))
+
+    # Applied to the read, whatever the CIGAR says about it.
+    assert r.genomic_length == genomic_len - lost
+    assert r.adapter_length == _READ_LEN - genomic_len + lost
+    assert len(r.read_sequence) == _READ_LEN
+    assert len(r.quality_array) == len(r.read_sequence)
+
+    cigar, reference_start = r.make_alignment()
+    ops = _cigar_ops(cigar)
+    assert sum(n for n, op in ops if op in "MIS") == _READ_LEN
+    assert ops[0][1] == "S"          # adapter still clipped on the strand-correct end
+    assert ops[1][1] != "D"          # and the alignment never opens on a deletion
+    # POS absorbs the shift instead, and stays inside the read's own window.
+    assert r.position <= reference_start <= r.position + lost
+
+
+@pytest.mark.parametrize("is_reverse", [False, True])
+def test_short_insert_deletion_at_final_genomic_base(is_reverse):
+    """
+    A deletion anchored on the last base of the fragment. Its anchor is kept and the bases it
+    would remove lie past the molecule, so nothing is removed — but it must not corrupt the
+    record on the way through.
+    """
+    genomic_len = 60
+    r = _finalize_adapter_read(
+        genomic_len, is_reverse=is_reverse,
+        mutations=_deletion_at(genomic_len - 1, 4),
+    )
+
+    assert r.genomic_length == genomic_len
+    assert len(r.read_sequence) == _READ_LEN
+    assert len(r.quality_array) == len(r.read_sequence)
+    ops = _cigar_ops(r.make_cigar())
+    assert sum(n for n, op in ops if op in "MIS") == _READ_LEN
+
+
+@pytest.mark.parametrize("is_reverse", [False, True])
+def test_short_insert_deletion_extending_past_the_fragment(is_reverse):
+    """
+    A deletion whose span runs off the 3' end of the fragment. Only the part inside the molecule
+    can be sequenced away, so it is applied up to the edge and no further — and the read stays
+    well formed, which is the property that matters for the golden BAM.
+    """
+    genomic_len, del_len = 60, 10
+    overhang_anchor = genomic_len - 4          # 6 of the 9 deleted bases lie past the fragment
+    r = _finalize_adapter_read(
+        genomic_len, is_reverse=is_reverse, mutations=_deletion_at(overhang_anchor, del_len),
+    )
+
+    # Clamped at the fragment edge: at most the bases that were actually there.
+    assert genomic_len - _deleted_bases(del_len) <= r.genomic_length < genomic_len
+    assert r.genomic_length == overhang_anchor + 1
+    assert len(r.read_sequence) == _READ_LEN
+    assert len(r.quality_array) == len(r.read_sequence)
+    ops = _cigar_ops(r.make_cigar())
+    assert sum(n for n, op in ops if op in "MIS") == _READ_LEN
+
+
+def test_deletion_with_no_headroom_left_is_logged(caplog):
+    """
+    The skip is a last resort — it drops ground truth the golden VCF still carries — so it may
+    not be silent. Two deletions, the second of which the budget cannot cover.
+    """
+    genomic_len = 60
+    mutations = _deletion_at(10, _DELETION_HEADROOM)
+    mutations.update(_deletion_at(30, 8))
+    with caplog.at_level("DEBUG", logger="neat.read_simulator.utils.read"):
+        _finalize_adapter_read(genomic_len, mutations=mutations)
+
+    assert any("Skipped a" in message for message in caplog.messages)
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import random
 
 import numpy as np
 import pytest
@@ -7,6 +8,7 @@ from Bio.SeqRecord import SeqRecord
 
 from neat.models import FragmentLengthModel, SequencingErrorModel, TraditionalQualityModel, GCBiasModel, get_uniform_gc_model
 from neat.read_simulator.utils import Options
+from neat.read_simulator.utils.output_file_writer import OutputFileWriter
 from neat.read_simulator.utils.generate_reads import (
     cover_dataset,
     overlaps,
@@ -22,6 +24,7 @@ from neat.read_simulator.utils.generate_reads import (
 from neat.read_simulator.utils.read import Read
 from neat.variants.contig_variants import ContigVariants
 from neat.variants import SingleNucleotideVariant
+from neat.variants.deletion import Deletion
 
 
 def _span(a, b):
@@ -1144,6 +1147,243 @@ def test_generate_reads_keep_short_emits_insert_length_reads_without_adapter():
     for read in records:
         assert len(read.read_sequence) == read.run_read_length
         assert len(read.quality_array) == read.run_read_length
+
+
+def _deletion_variants(reference, count=150, length=5, seed=3):
+    """A spread of homozygous deletions across the contig, as an include_vcf would supply."""
+    cv = ContigVariants()
+    rng = random.Random(seed)
+    for _ in range(count):
+        position = rng.randrange(200, len(reference.seq) - 200)
+        cv.add_variant(Deletion(position1=position, length=length,
+                                genotype=np.array([1, 1]), qual_score=37))
+    return cv
+
+
+def _generate_with_variants(reference, contig_variants, *, adapters=True, keep_short=False,
+                            frag_mean=60, coverage=20, seed=0, errors_per_read=5):
+    opts = _short_insert_options(adapters=adapters, keep_short=keep_short, seed=seed)
+    opts.coverage = coverage
+    error_model, qual_model, _ = _make_models()
+    ofw = _CollectingOFW()
+    span = len(reference.seq)
+    generate_reads(
+        1, reference, error_model, errors_per_read, qual_model,
+        FragmentLengthModel(frag_mean, 20), None, contig_variants,
+        [(0, span, True)], [], opts, ofw, reference.id, 0, 0,
+    )
+    return ofw.bam_records
+
+
+@pytest.mark.parametrize("adapters,keep_short", [(True, False), (False, True)])
+def test_short_insert_reads_carry_their_deletions(adapters, keep_short):
+    """
+    The regression this branch most needed and did not have. generate_reads used to hand a short
+    insert padding=0 — correct as a count of reference bases past the fragment, fatal as the
+    headroom budget both apply_mutations and get_sequencing_errors gate deletions on. Every
+    deletion inside a short insert was dropped wherever it fell, so the read came back identical
+    to the unmutated reference while the golden VCF still claimed the variant.
+
+    Asserted here rather than on a hand-built Read, because generate_reads is where the headroom
+    is decided and where the old value came from.
+    """
+    reference = _random_reference()
+    records = _generate_with_variants(
+        reference, _deletion_variants(reference), adapters=adapters, keep_short=keep_short,
+    )
+
+    short = [r for r in records if r.genomic_length < _READ_LEN]
+    assert short, "expected short-insert reads at this fragment mean"
+
+    with_deletion = [r for r in short if "D" in r.make_cigar()]
+    # Deletions are dense enough here that most short inserts span one. The bug left ~1%
+    # standing; anything near that floor means the headroom budget is gone again.
+    assert len(with_deletion) >= 0.15 * len(short), (
+        f"only {len(with_deletion)} of {len(short)} short-insert reads carry a deletion — "
+        f"short-insert deletions are being dropped again"
+    )
+    # Both strands, since a reverse read reaches the CIGAR by a different path entirely.
+    assert any(r.is_reverse for r in with_deletion)
+    assert any(not r.is_reverse for r in with_deletion)
+
+
+@pytest.mark.parametrize("adapters,keep_short,frag_mean", [
+    (True, False, 60), (False, True, 60), (False, False, 300),
+])
+def test_generated_reads_keep_sequence_and_quality_in_step(adapters, keep_short, frag_mean):
+    """
+    One quality score per base, on every emitted read -- a broad net over the mutation and error
+    paths together, run with a high error rate so indel *errors* occur alongside the mutations.
+
+    A net, not a trap for one bug: the specific error-deletion defect that motivated it is
+    pinned by test_apply_errors_deletion_keeps_the_anchor_bases_quality, and caught end to end
+    by test_runner_adapter_run_produces_an_indexable_golden_bam. A record one quality byte short
+    does not reliably show below runner scale -- a small BAM parses cleanly and only a long
+    enough run derails the reader -- which is exactly why it needs a guard at that level too.
+    """
+    reference = _random_reference()
+    records = _generate_with_variants(
+        reference, _deletion_variants(reference), adapters=adapters, keep_short=keep_short,
+        frag_mean=frag_mean, errors_per_read=20,
+    )
+
+    assert records
+    assert any("D" in r.make_cigar() for r in records), "expected deletion-bearing reads"
+    for r in records:
+        assert len(r.quality_array) == len(r.read_sequence), (
+            f"{r.name}: {len(r.quality_array)} scores for {len(r.read_sequence)} bases"
+        )
+        assert len(r.read_sequence) == r.run_read_length
+
+
+# ===========================================================================
+# End to end: a short-insert adapter run, validated through the golden BAM
+#
+# The unit tests above inspect Read objects in memory. These parse what actually reaches disk,
+# which is where a length or orientation that only *nearly* agrees shows up as a malformed
+# record rather than a passing assertion.
+# ===========================================================================
+
+def _random_reference(length=6000, seed=11, name="chr1"):
+    """
+    A pseudorandom reference. The shared _REF_SEQ is a perfect ACGT repeat, which lets an
+    aligner explain an indel in several equally-scoring ways — fine for placement tests,
+    useless for judging a CIGAR.
+    """
+    rng = random.Random(seed)
+    seq = "".join(rng.choice("ACGT") for _ in range(length))
+    return SeqRecord(Seq(seq), id=name, name=name, description="")
+
+
+def _run_to_bam(tmp_path, reference, *, adapters=True, keep_short=False,
+                frag_mean=60, seed=0, coverage=10, errors_per_read=5):
+    """Run generate_reads through a real OutputFileWriter and return the finished BAM path."""
+    opts = _short_insert_options(adapters=adapters, keep_short=keep_short, seed=seed)
+    opts.coverage = coverage
+    opts.produce_fastq = True
+    opts.produce_bam = True
+    opts.temp_dir_path = tmp_path
+    opts.reference = str(tmp_path / "ref.fa")
+    opts.fq1 = tmp_path / "out.fq1.gz"
+    opts.fq2 = tmp_path / "out.fq2.gz"
+    opts.vcf = None
+    opts.bam = tmp_path / "out.bam"
+
+    span = len(reference.seq)
+    ofw = OutputFileWriter(options=opts, bam_header={reference.id: span})
+    error_model, qual_model, _ = _make_models()
+    # Non-zero, so reads carry real sequencing errors -- including indel errors, whose
+    # handling differs from the mutation path and which a zero here would never produce.
+    generate_reads(
+        1, reference, error_model, errors_per_read, qual_model,
+        FragmentLengthModel(frag_mean, 20), None, ContigVariants(),
+        [(0, span, True)], [], opts, ofw, reference.id, 0, 0,
+    )
+    ofw.flush_and_close_files(skip_bam=False)
+    return opts.bam
+
+
+def _bam_records(bam_path):
+    pysam = pytest.importorskip("pysam")
+    with pysam.AlignmentFile(str(bam_path), "rb", check_sq=True) as bam:
+        return list(bam)
+
+
+def test_end_to_end_short_insert_bam_records_are_well_formed(tmp_path):
+    """
+    Every mate of a paired short-insert adapter run, as the BAM records it: full read length,
+    a CIGAR that accounts for exactly the bases present, and the adapter soft-clipped onto the
+    strand-correct end.
+    """
+    reference = _random_reference()
+    records = _bam_records(_run_to_bam(tmp_path, reference))
+
+    assert records, "expected records in the golden bam"
+    clipped = [r for r in records if "S" in r.cigarstring]
+    assert clipped, "expected adapter readthrough at this fragment mean"
+
+    for record in records:
+        # The sequencer runs read_len cycles whatever the insert length.
+        assert record.query_length == _READ_LEN
+        assert len(record.query_sequence) == _READ_LEN
+        assert len(record.query_qualities) == _READ_LEN
+        # M/I/S consume query; D consumes only reference. They must add up to the read.
+        consumed = sum(n for op, n in record.cigartuples if op in (0, 1, 4))
+        assert consumed == len(record.query_sequence)
+        # Soft clip on the reference-forward leading edge for a reverse read, trailing for a
+        # forward one — SEQ is stored reference-forward, so the 3' adapter swaps ends.
+        ops = [op for op, _ in record.cigartuples]
+        if 4 in ops:
+            assert ops[0] == 4 if record.is_reverse else ops[-1] == 4
+            assert ops.count(4) == 1
+        # The record must sit inside the contig it claims.
+        assert 0 <= record.reference_start
+        assert record.reference_end <= len(reference.seq)
+
+
+def test_end_to_end_soft_clipped_bases_are_the_adapter(tmp_path):
+    """
+    The clipped bases are adapter, not mis-clipped genomic sequence, and their qualities travel
+    with them. Adapter bases take substitution errors like any other base call, so this asks for
+    a strong majority match rather than an exact one.
+    """
+    reference = _random_reference()
+    opts_r1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+    opts_r2 = "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+    records = _bam_records(_run_to_bam(tmp_path, reference))
+
+    checked = 0
+    for record in records:
+        ops = record.cigartuples
+        if 4 not in [op for op, _ in ops]:
+            continue
+        checked += 1
+        adapter = opts_r2 if record.is_read2 else opts_r1
+        if record.is_reverse:
+            clip_len = ops[0][1]
+            # Stored reference-forward, so flip it back to the orientation it was read in.
+            clipped = str(Seq(record.query_sequence[:clip_len]).reverse_complement())
+        else:
+            clip_len = ops[-1][1]
+            clipped = record.query_sequence[-clip_len:]
+        expected = (adapter * (clip_len // len(adapter) + 1))[:clip_len]
+        matches = sum(a == b for a, b in zip(clipped, expected))
+        assert matches >= 0.8 * clip_len, (
+            f"clipped tail does not look like adapter: {clipped} vs {expected}"
+        )
+    assert checked, "expected soft-clipped records to check"
+
+
+def test_end_to_end_bam_is_coordinate_sorted(tmp_path):
+    """
+    The header claims SO:coordinate, and samtools will not index a file that lies about it.
+    Short inserts put both mates on the same window, so read 2 can precede read 1 of its own
+    fragment — which is what the write buffer in generate_reads exists to handle.
+    """
+    reference = _random_reference()
+    records = _bam_records(_run_to_bam(tmp_path, reference))
+
+    positions = [r.reference_start for r in records]
+    assert positions == sorted(positions), "golden bam is not coordinate-sorted"
+
+
+def test_end_to_end_keep_short_without_adapter_writes_shorter_records(tmp_path):
+    """
+    The control arm. With no adapter nothing pads the read back out, so a short insert really
+    does reach the BAM as a shorter record — and its CIGAR still has to describe it exactly.
+    """
+    reference = _random_reference()
+    records = _bam_records(
+        _run_to_bam(tmp_path, reference, adapters=False, keep_short=True)
+    )
+
+    assert records
+    assert any(r.query_length < _READ_LEN for r in records), "expected insert-length records"
+    for record in records:
+        assert "S" not in record.cigarstring
+        consumed = sum(n for op, n in record.cigartuples if op in (0, 1, 4))
+        assert consumed == len(record.query_sequence) == record.query_length
+        assert len(record.query_qualities) == record.query_length
 
 
 def test_generate_reads_unchanged_when_features_disabled():

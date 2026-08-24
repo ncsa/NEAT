@@ -580,11 +580,18 @@ def generate_reads(
         # Deletion headroom is drawn from the reference beyond the read, but for a short insert
         # that reference is past the end of the molecule and was never sequenced, so there is no
         # headroom to take.
-        segment_end = read1[1] + padding if insert_1 == options.read_len else read1[1]
+        short_insert = insert_1 != options.read_len
+        segment_end = read1[1] if short_insert else read1[1] + padding
         segment = reference[read1[0]: segment_end].seq
 
-        # if we're at the end of the contig, this may not pick up the full padding
-        actual_padding = len(segment) - insert_1
+        # For a full-length insert the headroom is literal — extra reference bases the read pulls
+        # in to stay read_len long after a deletion — and at the end of a contig there may be
+        # fewer of them than asked for. A short insert has no reference to pull from, so its
+        # headroom is a budget instead: a deletion shortens the genomic portion and the adapter
+        # readthrough (or, with no adapter, the read simply ends earlier) absorbs the difference.
+        # Passing 0 here would make every guard keyed on padding drop short-insert deletions
+        # outright. See Read._resync_short_insert_lengths.
+        actual_padding = padding if short_insert else len(segment) - insert_1
 
         read_1 = Read(
             name=read_name + "/1",
@@ -636,14 +643,15 @@ def generate_reads(
             padding = options.read_len//5
             # Read 2 is reverse, so its deletion headroom sits before the window — and, as for
             # read 1, it does not exist once the window already spans the whole fragment.
-            if insert_2 == options.read_len:
-                start_coordinate = max((read2[0] - padding), 0)
-            else:
+            short_insert = insert_2 != options.read_len
+            if short_insert:
                 start_coordinate = read2[0]
+            else:
+                start_coordinate = max((read2[0] - padding), 0)
             # this ensures that we get a segment with NEAT-recognized bases
             segment = reference[start_coordinate: read2[1]].seq
             # See note above
-            actual_padding = len(segment) - insert_2
+            actual_padding = padding if short_insert else len(segment) - insert_2
 
             read_2 = Read(
                 name=read_name + "/2",

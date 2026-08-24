@@ -270,7 +270,13 @@ class Read:
                 elif type(variant_to_apply) == Deletion:
                     reference_length = variant_to_apply.length
                     if self.padding - variant_to_apply.length < 0:
-                        # Skip this deletion, as there is insufficient space
+                        # Skip this deletion, as there is insufficient space. Logged because the
+                        # read then disagrees with the golden VCF, which is otherwise invisible.
+                        _LOG.debug(
+                            f"Skipped a {variant_to_apply.length}-base deletion at "
+                            f"{self.reference_id}:{variant_to_apply.get_0_location() + 1} in read "
+                            f"{self.name}: only {self.padding} bases of headroom remain."
+                        )
                         self.padding = 0
                         continue
                     else:
@@ -423,6 +429,10 @@ class Read:
         else:
             self.read_sequence = self.read_sequence[:self.genomic_length]
 
+        # A deletion inside a short insert leaves fewer genomic bases than the window started
+        # with, since there is no reference past the fragment to pull replacements from.
+        self._resync_short_insert_lengths()
+
         if self.adapter_length:
             self._append_adapter_readthrough(err_model, qual_model, rng)
 
@@ -433,6 +443,42 @@ class Read:
             fastq_handle.write(fastq_record)
 
         return len(self.errors)
+
+    def _resync_short_insert_lengths(self):
+        """
+        Bring this read's length bookkeeping back in line with the sequence it actually has.
+
+        A full-length read that loses bases to a deletion makes them up from its padding — the
+        reference immediately past the read — and still emits exactly run_read_length bases. A
+        short insert is the entire molecule, so there is nothing past it to pull from and the
+        genomic portion genuinely ends up shorter. What happens next depends on the library:
+
+          - with an adapter, the sequencer keeps cycling regardless, so the adapter tail simply
+            grows by the deleted amount and the read still reaches run_read_length;
+          - without one (keep_short_fragments), nothing backfills it and the read is emitted
+            shorter, which is exactly what a shorter sequenced molecule looks like.
+
+        Everything downstream is sized from these two attributes — the CIGAR, the quality trim,
+        the length the BAM writer packs the record to — so resyncing them here is what keeps a
+        short-insert deletion representable instead of forcing it to be dropped.
+
+        No-op for an ordinary read, whose sequence still fills its genomic length.
+        """
+        genomic_length = len(self.read_sequence)
+        if genomic_length >= self.genomic_length:
+            return
+
+        self.genomic_length = genomic_length
+        if self.adapter_seq:
+            # The gap the adapter tail has to fill just got bigger.
+            self.adapter_length = self.run_read_length - genomic_length
+        else:
+            # Nothing to pad with: the emitted read is the genomic sequence, and that is its
+            # full length as far as len(), the CIGAR and the BAM record are concerned.
+            self.run_read_length = genomic_length
+        # Quality was trimmed to the pre-deletion genomic length; keep it in step so the FASTQ
+        # record stays well formed.
+        self.quality_array = self.quality_array[:genomic_length]
 
     def _append_adapter_readthrough(
             self,
@@ -464,7 +510,13 @@ class Read:
         :param qual_model: The quality score model for the run.
         :param rng: The random number generator for this run.
         """
-        number_of_bases = self.adapter_length
+        # Derived from the sequence in hand rather than taken as given, so that a deletion which
+        # shortened the genomic portion is made up by extra adapter bases and the read still
+        # comes out at run_read_length.
+        number_of_bases = self.run_read_length - len(self.read_sequence)
+        if number_of_bases <= 0:
+            return
+        self.adapter_length = number_of_bases
         scores = qual_model.get_quality_scores(err_model.read_length, number_of_bases, rng)
 
         bases = []
@@ -712,6 +764,13 @@ class Read:
         # query gaps are free. The leading edge keeps its price: the read's first base comes from
         # template[0] on either strand, and a free gap there would let the alignment slide off the
         # anchor that POS is derived from. Assigned after the scores above, which would cover these.
+        #
+        # Only when there is headroom to be unreached, though. A short insert is the whole
+        # molecule: its segment stops at the read's own window, so every template base was
+        # sequenced and a trailing query gap is a real deletion at the 3' edge. Left free, the
+        # aligner takes that gap for nothing in preference to a representable D — and on a
+        # reverse read, whose 3' edge is the CIGAR's leading edge, that turns "1M3D56M at POS p"
+        # into "57M at POS p+3", misplacing the anchor base.
         aligner.query_right_open_gap_score = 0.0
         aligner.query_right_extend_gap_score = 0.0
 
