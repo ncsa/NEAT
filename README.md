@@ -33,6 +33,8 @@ To cite this work, please use both of the following:
   * [Installation](#installation)
   * [Usage](#usage)
   * [Functionality](#functionality)
+    * [3′ Adapter Readthrough](#3-adapter-readthrough)
+    * [Output ordering](#output-ordering)
     * [Estimated runtimes](#estimated-runtimes)
   * [Examples](#examples)
     * [Whole genome simulation](#whole-genome-simulation)
@@ -251,6 +253,63 @@ Features:
 - Output a VCF file with the 'golden' set of true positive variants. These can be compared to bioinformatics workflow output (includes coverage and allele balance information)
 - Output a BAM file with the 'golden' set of aligned reads. These indicate where each read originated and how it should be aligned with the reference
 - Create paired tumour/normal datasets using characteristics learned from real tumour data
+- Optionally model 3′ sequencing-adapter readthrough for short-insert libraries (cfDNA, FFPE, small RNA)
+
+### 3′ Adapter Readthrough
+
+A sequencer runs a fixed number of cycles no matter how long the insert is. When the insert is
+shorter than `read_len`, the polymerase runs off the end of the fragment and into the adapter
+ligated at the far end, so the read's 3′ tail is adapter sequence rather than genome. NEAT can
+simulate this, which makes it possible to exercise adapter-trimming QC and to simulate the
+short-insert library types where readthrough is expected. **Disabled by default** — output is
+unchanged when the `adapters` key is omitted.
+
+```yaml
+adapters: true
+adapter_preset: truseq        # truseq | nextera | custom
+# for adapter_preset: custom, give explicit 5'->3' uppercase-ACGT sequences (quoted):
+# adapter_r1: "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+# adapter_r2: "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+```
+
+When enabled, any fragment whose insert is shorter than `read_len` is kept — instead of being
+resampled away — and the read is padded to `read_len` at its 3′ end with adapter sequence: read 1
+gets `adapter_r1`, read 2 gets `adapter_r2` (appended after read 2 is reverse-complemented, so it
+lands where a trimmer expects it). Adapter bases carry the same quality and substitution-error
+models as genomic bases, are marked soft-clipped in the golden BAM, and never introduce variants.
+
+**How much readthrough you get is controlled by how much of your insert distribution falls below
+`read_len`** — that is, by `fragment_mean` and `fragment_st_dev` relative to `read_len`. With a
+long-insert setting (`fragment_mean` well above `read_len`) essentially no read reaches the
+adapter and turning this on changes nothing.
+
+Presets:
+
+- `truseq` — Illumina TruSeq (`AGATCGGAAGAGC…`), the most common.
+- `nextera` — Nextera / transposase Mosaic End (`CTGTCTCTTATACACATCT`).
+- `custom` — supply your own `adapter_r1` / `adapter_r2`.
+
+Enabling this also relaxes the usual requirement that `fragment_mean` be at least `read_len`, so
+short-insert libraries can be simulated at all. Inserts below 25 bp are still resampled, matching
+the size selection real library preps apply.
+
+**When to enable it:**
+
+- **Validating adapter-trimming pipelines** — generate reads with known adapter content to confirm
+  that `fastp` / `cutadapt` / Trim Galore settings actually detect and remove it. Without this,
+  a trimmer reports 0% adapter whether it is configured correctly or not.
+- **Short-insert libraries** — cfDNA, FFPE or otherwise degraded DNA, ancient DNA, small RNA, and
+  ATAC-seq nucleosome-free fragments, where inserts sit near or below the read length.
+- **Aligner soft-clip benchmarking** — untrimmed adapter tails should be soft-clipped by the
+  aligner; use this to check that behavior end to end.
+
+To keep short inserts as **genomic** reads *without* modeling adapters — for example to study the
+coverage behavior of a short-insert library on its own — set `keep_short_fragments: true` instead
+of enabling `adapters`. Short fragments are then emitted as insert-length reads with no padding.
+
+> **Note on coverage:** short inserts carry fewer genomic bases per read, and their mates overlap,
+> so realized depth is below the requested `coverage`. This is a property of the library, not an
+> error; NEAT reports the requested value and does not compensate for it.
 
 ### Output ordering
 
@@ -744,6 +803,10 @@ fastp --in1 read1.fastq.gz --in2 read2.fastq.gz \
       --disable_adapter_trimming --disable_quality_filtering \
       --disable_length_filtering --thread 4
 ```
+
+`--disable_adapter_trimming` applies to the default configuration, where reads carry no adapter.
+If you enabled [3′ adapter readthrough](#3-adapter-readthrough), drop that flag — the adapter
+content report is then a meaningful check that the reads look like real short-insert data.
 
 ### BAM validation
 

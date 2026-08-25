@@ -33,6 +33,8 @@ def _make_read(
     is_reverse=False,
     is_paired=False,
     raw_read=None,
+    genomic_len=None,
+    adapter_seq="",
 ):
     if end_point is None:
         end_point = position + read_len
@@ -50,6 +52,8 @@ def _make_read(
         run_read_len=read_len,
         is_reverse=is_reverse,
         is_paired=is_paired,
+        genomic_len=genomic_len,
+        adapter_seq=adapter_seq,
     )
 
 
@@ -659,3 +663,269 @@ def test_apply_mutations_deletion_reverse_read_correct_position():
     assert len(r.read_sequence) == pre_len - (del_len - 1)
     # The base that was at correct_idx + del_len is now at correct_idx + 1
     assert str(r.read_sequence[correct_idx + 1]) == pre_at_28
+
+# ===========================================================================
+# 3' adapter readthrough
+# ===========================================================================
+
+_TRUSEQ_R1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+
+
+def _finalize_adapter_read(genomic_len, adapter=_TRUSEQ_R1, is_reverse=False,
+                           num_errors=0, seed=0):
+    """
+    Finalize a short-insert read whose reference segment is exactly `genomic_len` long.
+
+    A short insert has no reference beyond the fragment to draw deletion headroom from, so
+    padding is 0 — matching how generate_reads builds these reads.
+    """
+    r = _make_read(
+        reference=_REF[:genomic_len],
+        padding=0,
+        end_point=genomic_len,
+        is_reverse=is_reverse,
+        genomic_len=genomic_len,
+        adapter_seq=adapter,
+    )
+    r.finalize_read_and_write(
+        SequencingErrorModel(read_length=_READ_LEN),
+        TraditionalQualityModel(),
+        None,
+        33,
+        False,
+        num_errors,
+        _make_rng(seed),
+    )
+    return r
+
+
+def test_adapter_defaults_leave_read_untouched():
+    """No adapter_seq means no readthrough state at all — the ordinary-read path is unchanged."""
+    r = _make_read()
+    assert r.adapter_length == 0
+    assert r.genomic_length == r.run_read_length == _READ_LEN
+    assert len(r.quality_array) == _READ_LEN
+    assert r.make_cigar() == f"{_READ_LEN}M"
+
+
+def test_adapter_pads_short_insert_to_full_read_length():
+    """A short insert is padded back out to run_read_length, sequence and quality in step."""
+    genomic_len = 60
+    r = _finalize_adapter_read(genomic_len)
+
+    assert r.adapter_length == _READ_LEN - genomic_len
+    assert len(r.read_sequence) == _READ_LEN
+    # Sequence and quality must agree exactly: a mismatch is a malformed FASTQ record, which
+    # some aligner parsers silently truncate on rather than reject.
+    assert len(r.quality_array) == _READ_LEN
+    assert len(r.read_quality_string) == _READ_LEN
+
+
+def test_adapter_tail_matches_adapter_sequence():
+    """With no sequencing errors the 3' tail is the adapter verbatim, and the 5' part is genomic."""
+    # Tail of 20 bases, shorter than the 33-base adapter, so no wraparound here.
+    genomic_len = _READ_LEN - 20
+    r = _finalize_adapter_read(genomic_len)
+
+    tail = str(r.read_sequence[genomic_len:])
+    assert len(tail) < len(_TRUSEQ_R1)
+    assert tail == _TRUSEQ_R1[:len(tail)]
+    assert str(r.read_sequence[:genomic_len]) == _REF[:genomic_len]
+
+
+def test_adapter_sequence_is_sourced_cyclically():
+    """A read can run past the end of the adapter, so adapter bases repeat rather than run out."""
+    # Genomic part short enough that the tail is longer than the adapter itself.
+    genomic_len = _READ_LEN - len(_TRUSEQ_R1) - 10
+    r = _finalize_adapter_read(genomic_len)
+
+    tail = str(r.read_sequence[genomic_len:])
+    assert len(tail) > len(_TRUSEQ_R1)
+    expected = (_TRUSEQ_R1 * 3)[:len(tail)]
+    assert tail == expected
+
+
+def test_adapter_cigar_soft_clips_tail_on_forward_read():
+    """Forward read: adapter is at the end in reference-forward orientation, so S trails."""
+    genomic_len = 60
+    r = _finalize_adapter_read(genomic_len)
+    assert r.make_cigar() == f"{genomic_len}M{_READ_LEN - genomic_len}S"
+
+
+def test_adapter_cigar_soft_clips_lead_on_reverse_read():
+    """
+    Reverse read: write_bam_record flips SEQ back to reference-forward before writing, so the
+    adapter — 3' as sequenced — must appear as a LEADING soft clip in the CIGAR.
+    """
+    genomic_len = 60
+    r = _finalize_adapter_read(genomic_len, is_reverse=True)
+    assert r.make_cigar() == f"{_READ_LEN - genomic_len}S{genomic_len}M"
+
+
+def test_adapter_cigar_query_length_matches_sequence():
+    """M+I+S must account for every base in the read, errors or not."""
+    import re
+
+    for is_reverse in (False, True):
+        r = _finalize_adapter_read(60, is_reverse=is_reverse, num_errors=5)
+        ops = re.findall(r"(\d+)([MIDS])", r.make_cigar())
+        query_len = sum(int(n) for n, op in ops if op in "MIS")
+        assert query_len == len(r.read_sequence) == _READ_LEN
+
+
+def test_adapter_bases_take_substitution_errors_only():
+    """
+    Adapter bases are real base calls and pick up substitution noise, but never indels — an
+    indel there would change the read length that the padding exists to guarantee.
+    """
+    genomic_len = 20
+    # A run of identical bases makes any substitution obvious, and floor-quality scores make
+    # substitutions near-certain rather than rare.
+    r = _make_read(
+        reference=_REF[:genomic_len],
+        padding=0,
+        end_point=genomic_len,
+        genomic_len=genomic_len,
+        adapter_seq="AAAAAAAAAA",
+    )
+    # Bin every drawn score down to Q2 (~63% error rate), so substitutions are near-certain.
+    qual_model = TraditionalQualityModel(quality_bins=[2])
+    r.finalize_read_and_write(
+        SequencingErrorModel(read_length=_READ_LEN), qual_model, None, 33, False, 0, _make_rng(1),
+    )
+
+    tail = str(r.read_sequence[genomic_len:])
+    assert len(r.read_sequence) == _READ_LEN
+    assert len(tail) == _READ_LEN - genomic_len
+    assert any(base != "A" for base in tail), "expected substitution noise at floor quality"
+
+
+def test_adapter_read_reports_full_length():
+    """len() stays the emitted read length, which the BAM writer uses to size the record."""
+    r = _finalize_adapter_read(60)
+    assert len(r) == _READ_LEN
+
+
+# ---------------------------------------------------------------------------
+# CIGAR construction via alignment (issue 326)
+#
+# A non-repetitive reference: _REF is "ACGT" repeated, which an aligner can
+# match at several offsets, so these tests supply their own template.
+# ---------------------------------------------------------------------------
+
+_UNIQUE_REF = (
+    "TTGACCATGGCAGTTCAAGGCTATCCGAATTCACGGTACCTAGGCATTAGCCGGATCAATGCC"
+    "AAGGTTCCAATGGCTTAAGCCTGATCAGGTTACCGGAATTCCGGTTAACCGGATTACGGCATA"
+)
+
+
+def _alignment_read(read_sequence, reference, position=0, end_point=None,
+                    is_reverse=False, genomic_len=None, segment_start=None):
+    """A read whose CIGAR must come from the alignment path, with its sequence supplied."""
+    genomic_len = genomic_len if genomic_len is not None else len(read_sequence)
+    if end_point is None:
+        end_point = position + genomic_len
+    r = Read(
+        name="align_read",
+        raw_read=(position, end_point, position + 150, end_point + 150),
+        reference_segment=Seq(reference),
+        reference_id="chr1",
+        ref_id_index=0,
+        position=position,
+        end_point=end_point,
+        padding=len(reference) - genomic_len,
+        run_read_len=genomic_len,
+        segment_start=segment_start if segment_start is not None else position,
+        is_reverse=is_reverse,
+        genomic_len=genomic_len,
+    )
+    r.read_sequence = Seq(read_sequence)
+    # A mutation indel on the read is what routes make_cigar to the alignment path.
+    r.mutations = {position: [Insertion(position, 2, "AT", np.array([1, 1]))]}
+    return r
+
+
+def _ops(cigar):
+    import re
+    return [(op, int(n)) for n, op in re.findall(r"(\d+)([MIDS])", cigar)]
+
+
+def test_reference_span_counts_only_reference_consuming_ops():
+    assert Read.reference_span("100M") == 100
+    assert Read.reference_span("10M5I85M") == 95
+    assert Read.reference_span("10M5D85M") == 100
+    assert Read.reference_span("10S90M") == 90
+    assert Read.reference_span("50M600I") == 50
+
+
+def test_long_insertion_survives_into_the_cigar():
+    """An insertion longer than 4 bp used to be unrepresentable: the op list was fixed at the
+    read length and an insertion was recorded by overwriting one of its entries."""
+    anchor = _UNIQUE_REF[:40]
+    inserted = "GGGGTTTTGGGGTTTTGGGGTTTTGGGGTTTTGGGGTTTTGGGGTTTTGGGGTTTTGGGG"
+    read = _alignment_read(anchor + inserted, _UNIQUE_REF)
+    cigar, _ = read.make_alignment()
+    ops = _ops(cigar)
+    # Not the full 60: the tail of a repetitive insert can find a match in the template. The point
+    # is the order of magnitude — the old op list could not carry an insertion past 4 bp at all.
+    assert max((n for op, n in ops if op == "I"), default=0) >= 40
+    # every base of the read is still accounted for
+    assert sum(n for op, n in ops if op in "MIS") == len(read.read_sequence)
+
+
+def test_insertion_longer_than_the_read_is_bounded_by_it():
+    """A read made entirely of inserted sequence cannot claim more query bases than it has."""
+    inserted = "GGGGTTTT" * 12
+    read = _alignment_read(inserted[:64], _UNIQUE_REF)
+    cigar, _ = read.make_alignment()
+    ops = _ops(cigar)
+    assert sum(n for op, n in ops if op in "MIS") == 64
+
+
+def test_cigar_query_length_always_matches_the_read():
+    """M+I+S must cover the read whichever path built the cigar."""
+    for cut in (10, 40, 80):
+        read = _alignment_read(_UNIQUE_REF[:cut] + "GGGGTTTT" * 4, _UNIQUE_REF)
+        ops = _ops(read.make_cigar())
+        assert sum(n for op, n in ops if op in "MIS") == len(read.read_sequence)
+
+
+def test_reverse_read_position_is_anchored_on_its_right_edge():
+    """A reverse read's headroom sits before its window, so a deletion moves where the alignment
+    starts. POS has to come from end_point minus the reference the cigar covers, not from
+    self.position, which left every gapped reverse read shifted by its net indel length."""
+    headroom = 10
+    # The 101 reference bases the read covers: one base of headroom plus its window. Dropping an
+    # interior base leaves a 100 bp read spanning 101 bp of reference, so it reaches one base
+    # further left than self.position.
+    covered = _UNIQUE_REF[headroom - 1:headroom + 100]
+    mutated = covered[:51] + covered[52:]
+    read = _alignment_read(
+        str(Seq(mutated).reverse_complement()),
+        _UNIQUE_REF[:headroom + 100],
+        position=headroom,
+        end_point=headroom + 100,
+        is_reverse=True,
+        segment_start=0,
+    )
+    cigar, reference_start = read.make_alignment()
+    assert "D" in cigar
+    # A reverse read's alignment ends where its window ends, and the deletion pushes its start left.
+    assert reference_start + Read.reference_span(cigar) == read.end_point
+    assert reference_start == read.position - 1
+
+
+def test_forward_read_position_is_anchored_on_its_left_edge():
+    read = _alignment_read(_UNIQUE_REF[:40] + "GGGGTTTT" * 4, _UNIQUE_REF)
+    _, reference_start = read.make_alignment()
+    assert reference_start == read.position
+
+
+def test_ungapped_read_reports_its_own_position():
+    """The fast path must not disturb either anchor."""
+    for is_reverse in (False, True):
+        r = _make_read(reference=_PADDED_REF, padding=20, is_reverse=is_reverse)
+        r.read_sequence = Seq(_REF)
+        cigar, reference_start = r.make_alignment()
+        assert cigar == f"{_READ_LEN}M"
+        assert reference_start == r.position

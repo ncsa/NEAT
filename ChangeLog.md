@@ -1,3 +1,54 @@
+# NEAT v4.7.0
+
+Optional 3' sequencing-adapter readthrough, ported from NEAT's Rust sister project
+`eidolon` (issue #125 there), plus the adapter-free short-insert control arm that
+makes it interpretable.
+
+A sequencer runs a fixed number of cycles regardless of insert size, so a fragment
+whose insert is shorter than the read length gets read through into the adapter
+ligated at its far end. NEAT could not produce this. `fragment_mean` was required to
+be at least `read_len`, and both fragment samplers discarded anything below
+`read_len + 10` and resampled, which silently left-truncated the insert-size
+distribution the user asked for: with `read_len: 150`, `fragment_mean: 300`,
+`fragment_st_dev: 100`, about 8% of the distribution was dropped and the surviving
+mean was ~16 bp too long. Every read was genomic by construction, so a trimmer run
+against NEAT output reported 0% adapter whether or not it was correctly configured —
+a QC step that could not fail — and short-insert library types (cfDNA, FFPE and other
+degraded DNA, ancient DNA, small RNA, ATAC-seq nucleosome-free fragments) could not
+be simulated at all.
+
+New config options:
+
+- `adapters` — model 3' adapter readthrough. Inserts shorter than `read_len` are kept
+  rather than resampled, and each read is padded back out to `read_len` at its 3' end
+  with adapter sequence (read 1 gets `adapter_r1`, read 2 gets `adapter_r2`, appended
+  after read 2 is reverse-complemented so it lands in read orientation). Adapter bases
+  take quality scores and substitution errors from the run's models — substitutions
+  only, since an indel there would break the exact read length the padding provides —
+  are soft-clipped in the golden BAM, and carry no variants.
+- `adapter_preset` — `truseq` (default), `nextera`, or `custom`.
+- `adapter_r1` / `adapter_r2` — explicit 5'->3' uppercase A/C/G/T sequences, required
+  when `adapter_preset` is `custom`.
+- `keep_short_fragments` — keep short inserts as plain insert-length genomic reads with
+  no adapter padding. Implied by `adapters`; set on its own it is the isolation control
+  that separates the adapter effect from the reduced-coverage effect of short inserts.
+
+Enabling either feature relaxes the `fragment_mean >= read_len` check to a warning, so
+short-insert libraries can be configured. Inserts below 25 bp are still resampled, which
+matches real size selection and also screens off `FragmentLengthModel`'s hardcoded
+anti-infinite-loop spacer lengths (10-14 bp), which the old `read_len` floor had been
+hiding and which would otherwise have surfaced as reads that are over 90% adapter.
+
+Because SAM stores SEQ in reference-forward orientation, a reverse read's 3' adapter tail
+is written as a *leading* soft clip in the CIGAR and a forward read's as a trailing one.
+
+Note on coverage: short inserts carry fewer genomic bases per read and their mates overlap,
+so realized depth falls below the requested `coverage`. This matches `eidolon`'s behavior and
+is documented rather than compensated for, so the two simulators stay comparable arm-for-arm.
+
+Both features default to off, and output is unchanged when their keys are omitted —
+verified byte-for-byte on FASTQ and on all BAM alignment records for a fixed seed.
+
 # NEAT v4.6.2
 
 Bug fixes for input VCF (`include_vcf`) handling. Both issues were reported against

@@ -33,7 +33,7 @@ from pathlib import Path
 from numpy.random import Generator
 from math import inf
 
-from ...common import validate_input_path, validate_output_path
+from ...common import validate_input_path, validate_output_path, ADAPTER_PRESETS, ALLOWED_NUCL
 
 
 _LOG = logging.getLogger(__name__)
@@ -86,6 +86,11 @@ class Options(SimpleNamespace):
                  gc_model: Path | None = None,
                  n_handling: str = "exclude",
                  n_max_fraction: float = 0.5,
+                 adapters: bool = False,
+                 adapter_preset: str = "truseq",
+                 adapter_r1: str | None = None,
+                 adapter_r2: str | None = None,
+                 keep_short_fragments: bool = False,
                  **kwargs: Any
                  ):
         """
@@ -142,6 +147,17 @@ class Options(SimpleNamespace):
             behavior of filling N with a low-quality TTAGGG human-telomere repeat.
         :param n_max_fraction: Under n_handling="exclude", a read whose window is at least this fraction
             'N' is dropped rather than emitted. Range 0.0-1.0; default 0.5.
+        :param adapters: True to model 3' sequencing-adapter readthrough. Inserts shorter than read_len
+            are kept and the read is padded to read_len at its 3' end with adapter sequence, as a real
+            sequencer does. Default False, in which case output is unchanged.
+        :param adapter_preset: Which adapter sequences to use when adapters is True: "truseq" (default),
+            "nextera", or "custom" to supply adapter_r1/adapter_r2 yourself.
+        :param adapter_r1: Read-1 adapter, 5'->3' uppercase A/C/G/T. Required when adapter_preset is
+            "custom"; ignored otherwise (the preset supplies it).
+        :param adapter_r2: Read-2 adapter, same rules as adapter_r1.
+        :param keep_short_fragments: True to keep inserts shorter than read_len as plain insert-length
+            genomic reads with no adapter padding. Implied by adapters; set on its own to study the
+            coverage behavior of a short-insert library in isolation.
 """
         super().__init__(**kwargs)
         self.reference: Path = reference
@@ -182,6 +198,14 @@ class Options(SimpleNamespace):
         # How to handle 'N' bases in the reference. See __init__ docstring.
         self.n_handling: str = n_handling
         self.n_max_fraction: float = n_max_fraction
+        # 3' adapter readthrough. adapter_r1/adapter_r2 hold the *resolved* sequences once
+        # check_options has expanded adapter_preset; before that they are only set for the
+        # "custom" preset. Both features default off and are no-ops when disabled.
+        self.adapters: bool = adapters
+        self.adapter_preset: str = adapter_preset
+        self.adapter_r1: str | None = adapter_r1
+        self.adapter_r2: str | None = adapter_r2
+        self.keep_short_fragments: bool = keep_short_fragments
         # Genome-wide mean GC bias weight, computed once at the runner level when
         # gc_model is loaded. cover_dataset divides per-chunk reads by this rather
         # than by gc_model.max_weight so that target coverage means *average*
@@ -258,7 +282,12 @@ class Options(SimpleNamespace):
             'threads': (int, 1, 1, 1000),
             'gc_model': (Path, None, 'exists', None),
             'n_handling': (str, "exclude", 'choice', ("exclude", "telomere")),
-            'n_max_fraction': (float, 0.5, 0.0, 1.0)
+            'n_max_fraction': (float, 0.5, 0.0, 1.0),
+            'adapters': (bool, False, None, None),
+            'adapter_preset': (str, "truseq", 'choice', ("truseq", "nextera", "custom")),
+            'adapter_r1': (str, None, None, None),
+            'adapter_r2': (str, None, None, None),
+            'keep_short_fragments': (bool, False, None, None)
         }
 
         input_args = {}
@@ -422,6 +451,60 @@ class Options(SimpleNamespace):
                 self.fragment_mean = None
                 self.fragment_st_dev = None
 
+        self.resolve_adapters()
+
+    def resolve_adapters(self):
+        """
+        Validate the adapter options and expand `adapter_preset` into concrete sequences.
+
+        Readthrough only happens for inserts shorter than the read length, so enabling it
+        implies keeping short fragments rather than resampling them away. `keep_short_fragments`
+        may also be set on its own, which keeps those inserts as plain genomic reads with no
+        adapter padding — the isolation control that separates the adapter effect from the
+        reduced-coverage effect of a short-insert library.
+
+        No-op unless one of the two features is enabled, so a default run is untouched.
+        """
+        if not (self.adapters or self.keep_short_fragments):
+            return
+
+        # Both features need short inserts to survive fragment sampling, which in turn needs a
+        # fragment length distribution to draw them from.
+        if not (self.fragment_model or (self.fragment_mean and self.fragment_st_dev)):
+            _LOG.error(
+                "`adapters` and `keep_short_fragments` require a fragment length distribution. "
+                "Set `fragment_mean` and `fragment_st_dev`, or supply a `fragment_model`."
+            )
+            sys.exit(1)
+
+        if not self.adapters:
+            # keep_short_fragments on its own: short inserts stay genomic, no adapter needed.
+            return
+
+        if self.adapter_preset == "custom":
+            for name, sequence in (("adapter_r1", self.adapter_r1), ("adapter_r2", self.adapter_r2)):
+                if not sequence:
+                    _LOG.error(
+                        f"`adapter_preset: custom` requires `{name}` to be set to a 5'->3' "
+                        f"uppercase A/C/G/T sequence."
+                    )
+                    sys.exit(1)
+                if any(base not in ALLOWED_NUCL for base in str(sequence)):
+                    _LOG.error(
+                        f"`{name}` must contain only uppercase A/C/G/T (input: {sequence}). "
+                        f"Quote the value in your config so YAML does not reinterpret it."
+                    )
+                    sys.exit(1)
+            self.adapter_r1 = str(self.adapter_r1)
+            self.adapter_r2 = str(self.adapter_r2)
+        else:
+            # A named preset always wins over any adapter_r1/adapter_r2 the user also set,
+            # so the resolved pair can never be a mix of the two sources.
+            self.adapter_r1, self.adapter_r2 = ADAPTER_PRESETS[self.adapter_preset]
+
+        # Readthrough is only visible on inserts shorter than the read, so it needs them kept.
+        self.keep_short_fragments = True
+
     def log_configuration(self):
         """
         Combines the relevant parts of the input args and the options file to log a
@@ -490,9 +573,20 @@ class Options(SimpleNamespace):
         _LOG.info(f'Using a read length of {self.read_len}')
         if self.fragment_mean:
             if self.fragment_mean < self.read_len:
-                _LOG.error(f"`fragment_mean` (input: {self.fragment_mean}) "
-                           f"must be at least as long as `read_len` (input or default: {self.read_len}).")
-                sys.exit(1)
+                # Short-insert libraries (cfDNA, FFPE, small RNA) legitimately sit below the read
+                # length, and that is exactly the regime adapter readthrough models. Without one of
+                # those features on, however, every such fragment would be resampled away, so the
+                # run would silently not be the library the user asked for — keep it fatal there.
+                if self.adapters or self.keep_short_fragments:
+                    _LOG.warning(
+                        f"`fragment_mean` ({self.fragment_mean}) is below `read_len` ({self.read_len}). "
+                        f"Most reads will run off the end of their insert; realized coverage will be "
+                        f"lower than the requested {self.coverage}x because short inserts overlap."
+                    )
+                else:
+                    _LOG.error(f"`fragment_mean` (input: {self.fragment_mean}) "
+                               f"must be at least as long as `read_len` (input or default: {self.read_len}).")
+                    sys.exit(1)
             if self.fragment_st_dev:
                 _LOG.info(f'Generating fragments based on mean={self.fragment_mean}, '
                           f'stand. dev={self.fragment_st_dev}')
@@ -537,4 +631,9 @@ class Options(SimpleNamespace):
         else:
             _LOG.info(f"N handling: excluding reads >= {self.n_max_fraction:.0%} N, "
                       f"literal N at read edges.")
+        if self.adapters:
+            _LOG.info(f"3' adapter readthrough: enabled, preset '{self.adapter_preset}' "
+                      f"(R1={self.adapter_r1}, R2={self.adapter_r2}).")
+        elif self.keep_short_fragments:
+            _LOG.info("Short inserts: kept as insert-length genomic reads, no adapter padding.")
         _LOG.info(f'RNG seed value for run: {self.rng_seed}')

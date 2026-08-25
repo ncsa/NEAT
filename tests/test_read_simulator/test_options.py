@@ -382,3 +382,202 @@ def test_log_configuration_paired_without_model_or_mean_exits(tmp_path: _PathAli
         opts.log_configuration()
 
 
+
+
+# ===========================================================================
+# 3' adapter readthrough options
+# ===========================================================================
+
+def _adapter_options(**overrides):
+    opts = Options(
+        reference=_project_root() / "data" / "H1N1.fa",
+        paired_ended=True,
+        fragment_mean=80,
+        fragment_st_dev=20,
+    )
+    for key, value in overrides.items():
+        setattr(opts, key, value)
+    return opts
+
+
+def test_adapters_default_disabled():
+    """Both short-insert features are off by default, so output is unchanged."""
+    opts = Options()
+    assert opts.adapters is False
+    assert opts.keep_short_fragments is False
+    assert opts.adapter_preset == "truseq"
+
+
+def test_resolve_adapters_noop_when_disabled():
+    """With neither feature on, nothing is resolved and no sequences appear."""
+    opts = _adapter_options()
+    opts.resolve_adapters()
+    assert opts.adapter_r1 is None
+    assert opts.adapter_r2 is None
+    assert opts.keep_short_fragments is False
+
+
+def test_resolve_adapters_truseq_preset():
+    opts = _adapter_options(adapters=True, adapter_preset="truseq")
+    opts.resolve_adapters()
+    assert opts.adapter_r1 == "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+    assert opts.adapter_r2 == "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+
+
+def test_resolve_adapters_nextera_preset():
+    """Tagmentation puts the same Mosaic End on both reads."""
+    opts = _adapter_options(adapters=True, adapter_preset="nextera")
+    opts.resolve_adapters()
+    assert opts.adapter_r1 == opts.adapter_r2 == "CTGTCTCTTATACACATCT"
+
+
+def test_resolve_adapters_preset_overrides_user_sequences():
+    """A named preset always wins, so the resolved pair can never mix the two sources."""
+    opts = _adapter_options(adapters=True, adapter_preset="truseq",
+                            adapter_r1="AAAA", adapter_r2="TTTT")
+    opts.resolve_adapters()
+    assert opts.adapter_r1 == "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+
+
+def test_resolve_adapters_custom_preset_accepted():
+    opts = _adapter_options(adapters=True, adapter_preset="custom",
+                            adapter_r1="ACGTACGT", adapter_r2="TGCATGCA")
+    opts.resolve_adapters()
+    assert opts.adapter_r1 == "ACGTACGT"
+    assert opts.adapter_r2 == "TGCATGCA"
+
+
+@_pytest.mark.parametrize("r1,r2", [
+    (None, "ACGT"),           # missing r1
+    ("ACGT", None),           # missing r2
+    ("acgt", "ACGT"),         # lowercase
+    ("ACGTN", "ACGT"),        # N is not a definite base
+    ("ACGT XYZ", "ACGT"),     # junk
+])
+def test_resolve_adapters_custom_preset_rejects_bad_sequences(r1, r2):
+    opts = _adapter_options(adapters=True, adapter_preset="custom",
+                            adapter_r1=r1, adapter_r2=r2)
+    with _pytest.raises(SystemExit):
+        opts.resolve_adapters()
+
+
+def test_adapters_imply_keep_short_fragments():
+    """Readthrough is only visible on short inserts, so enabling it must keep them."""
+    opts = _adapter_options(adapters=True)
+    opts.resolve_adapters()
+    assert opts.keep_short_fragments is True
+
+
+def test_keep_short_fragments_alone_needs_no_adapter():
+    """The isolation control works on its own and resolves no adapter sequences."""
+    opts = _adapter_options(keep_short_fragments=True)
+    opts.resolve_adapters()
+    assert opts.adapter_r1 is None
+    assert opts.keep_short_fragments is True
+
+
+def test_short_insert_features_require_a_fragment_distribution():
+    """Short inserts have to come from somewhere; without a fragment source this is unusable."""
+    opts = _adapter_options(adapters=True, fragment_mean=None, fragment_st_dev=None)
+    opts.fragment_model = None
+    with _pytest.raises(SystemExit):
+        opts.resolve_adapters()
+
+
+def test_short_fragment_mean_is_fatal_without_adapters(tmp_path: _PathAlias):
+    """Below read_len every fragment would be resampled away, so the run is not what was asked for."""
+    opts = Options(reference=_project_root() / "data" / "H1N1.fa", output_dir=tmp_path,
+                   output_prefix="x", overwrite_output=True, paired_ended=True,
+                   fragment_mean=80, fragment_st_dev=20, read_len=101)
+    opts.produce_fastq = True
+    opts.produce_bam = False
+    opts.produce_vcf = False
+    with _pytest.raises(SystemExit):
+        opts.log_configuration()
+
+
+def test_short_fragment_mean_only_warns_with_adapters(tmp_path: _PathAlias, caplog):
+    """Short-insert libraries are exactly the regime readthrough models, so this is allowed."""
+    opts = Options(reference=_project_root() / "data" / "H1N1.fa", output_dir=tmp_path,
+                   output_prefix="x", overwrite_output=True, paired_ended=True,
+                   fragment_mean=80, fragment_st_dev=20, read_len=101, adapters=True)
+    opts.produce_fastq = True
+    opts.produce_bam = False
+    opts.produce_vcf = False
+    opts.log_configuration()
+    assert any("below `read_len`" in r.message for r in caplog.records)
+
+
+def _adapter_config(tmp_path: _PathAlias, extra: str) -> _PathAlias:
+    cfg = _textwrap.dedent(
+        f"""
+        reference: {(_project_root() / 'data' / 'H1N1.fa').as_posix()}
+        read_len: 101
+        coverage: 2
+        paired_ended: true
+        fragment_mean: 80
+        fragment_st_dev: 20
+        produce_bam: false
+        produce_vcf: false
+        produce_fastq: true
+        rng_seed: 42
+        overwrite_output: true
+        """
+    ).strip() + "\n" + _textwrap.dedent(extra).strip() + "\n"
+    path = tmp_path / "adapters.yml"
+    path.write_text(cfg, encoding="utf-8")
+    return path
+
+
+def test_adapter_keys_reach_options_from_config(tmp_path: _PathAlias):
+    """
+    The config keys must be wired to real attributes. An option present in the `defs` schema but
+    absent from Options.__init__ silently does nothing (see `no_coverage_bias`), so read the
+    resolved values back off a full from_cli round trip rather than trusting the schema alone.
+    """
+    yml = _adapter_config(tmp_path, "adapters: true\nadapter_preset: nextera\n")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    opts = Options.from_cli(outdir, "ad", yml)
+
+    assert opts.adapters is True
+    assert opts.adapter_preset == "nextera"
+    assert opts.adapter_r1 == "CTGTCTCTTATACACATCT"
+    assert opts.keep_short_fragments is True
+
+
+def test_keep_short_fragments_key_reaches_options_from_config(tmp_path: _PathAlias):
+    yml = _adapter_config(tmp_path, "keep_short_fragments: true\n")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    opts = Options.from_cli(outdir, "ks", yml)
+
+    assert opts.keep_short_fragments is True
+    assert opts.adapters is False
+    assert opts.adapter_r1 is None
+
+
+def test_custom_adapter_sequences_from_config(tmp_path: _PathAlias):
+    """Quoted DNA strings survive YAML parsing and validation intact."""
+    yml = _adapter_config(
+        tmp_path,
+        'adapters: true\nadapter_preset: custom\nadapter_r1: "ACGTACGT"\nadapter_r2: "TGCATGCA"\n',
+    )
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    opts = Options.from_cli(outdir, "cu", yml)
+
+    assert opts.adapter_r1 == "ACGTACGT"
+    assert opts.adapter_r2 == "TGCATGCA"
+
+
+def test_invalid_adapter_preset_rejected(tmp_path: _PathAlias):
+    yml = _adapter_config(tmp_path, "adapters: true\nadapter_preset: nonsense\n")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    with _pytest.raises(SystemExit):
+        Options.from_cli(outdir, "bad", yml)
