@@ -680,13 +680,13 @@ _DELETION_HEADROOM = _READ_LEN // 5
 
 def _finalize_adapter_read(genomic_len, adapter=_TRUSEQ_R1, is_reverse=False,
                            num_errors=0, seed=0, mutations=None,
-                           padding=_DELETION_HEADROOM):
+                           padding=_DELETION_HEADROOM, reference=None):
     """
     Finalize a short-insert read whose reference segment is exactly `genomic_len` long,
     built the way generate_reads builds one.
     """
     r = _make_read(
-        reference=_REF[:genomic_len],
+        reference=(reference if reference is not None else _REF)[:genomic_len],
         padding=padding,
         end_point=genomic_len,
         is_reverse=is_reverse,
@@ -1034,6 +1034,76 @@ def test_short_insert_deletion_extending_past_the_fragment(is_reverse):
     assert len(r.quality_array) == len(r.read_sequence)
     ops = _cigar_ops(r.make_cigar())
     assert sum(n for n, op in ops if op in "MIS") == _READ_LEN
+
+
+# --- Trailing deletions: reaching the fragment's true end (issue 333) ------
+#
+# A short insert's reference_segment carries no literal headroom past the fragment (see
+# Read.template_padding) — unlike a full-length read, where padding really is extra reference the
+# read never reached. Both CIGAR paths used to treat query exhaustion as "nothing more to
+# describe" regardless, which silently dropped a deletion whose real, in-bounds bases happened to
+# reach the fragment's last base: the golden BAM record came back looking like a perfect match
+# while the golden VCF still recorded the variant. _UNIQUE_REF sidesteps _REF's ACGT periodicity,
+# which otherwise lets the aligner represent the same deletion as a cheaper run of mismatches.
+
+def test_short_insert_deletion_reaching_the_fragment_end_keeps_its_d():
+    """The mutation-indel path (_cigar_via_alignment): a deletion with no overhang past the
+    fragment's edge must still appear as a D, not vanish once the query runs out."""
+    genomic_len, del_len = 60, 20
+    lost = _deleted_bases(del_len)
+    r = _finalize_adapter_read(
+        genomic_len, mutations=_deletion_at(genomic_len - del_len, del_len),
+        reference=_UNIQUE_REF,
+    )
+
+    assert r.genomic_length == genomic_len - lost
+    cigar = r.make_cigar()
+    ops = _cigar_ops(cigar)
+    assert (lost, "D") in ops
+    # Matches plus the real deletion account for the whole fragment — nothing dropped.
+    assert Read.reference_span(cigar) == genomic_len
+
+
+def test_short_insert_deletion_extending_past_the_fragment_keeps_its_d():
+    """The overhang case from test_short_insert_deletion_extending_past_the_fragment: only the
+    in-bounds part of the deletion is real, but that part still belongs in the CIGAR."""
+    genomic_len, del_len = 60, 10
+    overhang_anchor = genomic_len - 4
+    r = _finalize_adapter_read(
+        genomic_len, mutations=_deletion_at(overhang_anchor, del_len), reference=_UNIQUE_REF,
+    )
+
+    assert r.genomic_length == overhang_anchor + 1
+    real_removed = genomic_len - r.genomic_length  # only the in-bounds part was ever removed
+    cigar = r.make_cigar()
+    ops = _cigar_ops(cigar)
+    assert (real_removed, "D") in ops
+    assert Read.reference_span(cigar) == genomic_len
+
+
+def test_short_insert_error_deletion_reaching_the_fragment_end_keeps_its_d():
+    """The error-indel walker (_cigar_from_error_indels): same failure mode, forward-only path.
+    Bypasses the error model's own randomness and applies one deletion error directly, the way
+    get_sequencing_errors + apply_errors would leave the read afterward."""
+    genomic_len, del_len = 60, 19
+    anchor = genomic_len - del_len - 1  # last kept base; del_len bases removed reach position 59
+
+    r = _make_read(
+        reference=_UNIQUE_REF[:genomic_len], padding=_DELETION_HEADROOM, end_point=genomic_len,
+        genomic_len=genomic_len, adapter_seq=_TRUSEQ_R1,
+    )
+    r.errors = [ErrorContainer(
+        Deletion, anchor, del_len,
+        Seq(_UNIQUE_REF[anchor:anchor + del_len + 1]), Seq(_UNIQUE_REF[anchor]),
+    )]
+    r.read_sequence = Seq(_UNIQUE_REF[:anchor + 1])
+    r._resync_short_insert_lengths()
+
+    assert r.genomic_length == anchor + 1
+    cigar = r.make_cigar()
+    ops = _cigar_ops(cigar)
+    assert (del_len, "D") in ops
+    assert Read.reference_span(cigar) == genomic_len
 
 
 def test_deletion_with_no_headroom_left_is_logged(caplog):
