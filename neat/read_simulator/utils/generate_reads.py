@@ -24,11 +24,73 @@ __all__ = [
 _LOG = logging.getLogger(__name__)
 
 # Shortest insert accepted when short fragments are being kept (adapter readthrough or the
-# adapter-free short-insert control). Real libraries size-select shorter molecules out, and the
-# floor also screens off FragmentLengthModel.generate_fragments' hardcoded spacer lengths
-# [10, 11, 12, 13, 14, 28, 31] — anti-infinite-loop padding that the ordinary read_len floor
-# discards today. Without it the 10-14 bp entries would surface as reads that are >90% adapter.
+# adapter-free short-insert control). Real libraries size-select shorter molecules out, and a
+# read that is almost entirely adapter carries no usable signal anyway.
 MIN_SHORT_INSERT = 25
+
+# Ceiling on rejection-sampling rounds in _sample_fragments. Each round draws at least ten
+# candidates, so a workable fragment model converges in one or two; hitting the ceiling means
+# the model cannot produce fragments this reference and read length can use, which is a
+# configuration problem to report rather than one to spin on. This bound replaces the fixed
+# spacer lengths FragmentLengthModel used to splice into every batch for the same purpose.
+_MAX_SAMPLING_ROUNDS = 50
+
+
+def _sample_fragments(
+        number_reads: int,
+        draw_starts,
+        fragment_model: FragmentLengthModel,
+        options: Options,
+        min_frag: int,
+        e_limit: int,
+) -> tuple:
+    """
+    Rejection-sample (start, end) fragment windows until number_reads of them clear the floor.
+
+    Shared by both placement strategies; they differ only in how a batch of start positions is
+    drawn, which is what ``draw_starts`` supplies. Fragments are drawn in batches and the ones
+    whose clamped span falls below ``min_frag`` are discarded, with each subsequent batch sized
+    from the shortfall.
+
+    :param number_reads: How many fragment windows are wanted.
+    :param draw_starts: Callable taking a batch size and returning that many start positions.
+    :param fragment_model: The fragment length model to sample lengths from.
+    :param options: Run options (supplies the rng).
+    :param min_frag: Shortest acceptable fragment span, from _min_fragment.
+    :param e_limit: Upper bound for a fragment end, so mates stay inside this chunk.
+    :return: (starts, ends), each a numpy array of at most number_reads entries. Short of that
+        only when the fragment model cannot satisfy the floor, which is logged.
+    """
+    acc_starts: list[np.ndarray] = []
+    acc_ends:   list[np.ndarray] = []
+    collected = 0
+    n_batch = number_reads * 2
+
+    for _ in range(_MAX_SAMPLING_ROUNDS):
+        if collected >= number_reads:
+            break
+        s = draw_starts(n_batch)
+        fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
+        e = np.minimum(s + fl, e_limit)
+        mask = e - s >= min_frag
+        acc_starts.append(s[mask])
+        acc_ends.append(e[mask])
+        collected += int(mask.sum())
+        n_batch = max(10, (number_reads - collected) * 5)
+
+    if collected < number_reads:
+        _LOG.warning(
+            f"Fragment model (mean {fragment_model.fragment_mean}, "
+            f"st dev {fragment_model.fragment_st_dev}) produced only {collected} of "
+            f"{number_reads} fragments at or above the {min_frag} bp floor. Coverage in this "
+            f"region will be below the requested depth; check that the fragment mean suits the "
+            f"read length and reference."
+        )
+
+    return (
+        np.concatenate(acc_starts)[:number_reads],
+        np.concatenate(acc_ends)[:number_reads],
+    )
 
 
 def _min_fragment(options: Options) -> int:
@@ -212,24 +274,13 @@ def cover_dataset(
             e_limit = min(responsibility_length + options.read_len, span_length)
         else:
             e_limit = span_length
-        acc_starts: list[np.ndarray] = []
-        acc_ends:   list[np.ndarray] = []
-        collected = 0
-        n_batch = number_reads * 2
+        def draw_cdf_starts(batch_size):
+            uv = options.rng.random(batch_size) * total_weight
+            return np.clip(np.searchsorted(prefix_sum, uv).astype(int), 0, max_start)
 
-        while collected < number_reads:
-            uv = options.rng.random(n_batch) * total_weight
-            s = np.clip(np.searchsorted(prefix_sum, uv).astype(int), 0, max_start)
-            fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
-            e = np.minimum(s + fl, e_limit)
-            mask = e - s >= min_frag
-            acc_starts.append(s[mask])
-            acc_ends.append(e[mask])
-            collected += int(mask.sum())
-            n_batch = max(10, (number_reads - collected) * 5)
-
-        valid_starts = np.concatenate(acc_starts)[:number_reads]
-        valid_ends   = np.concatenate(acc_ends)[:number_reads]
+        valid_starts, valid_ends = _sample_fragments(
+            number_reads, draw_cdf_starts, fragment_model, options, min_frag, e_limit,
+        )
 
         for s, e in zip(valid_starts.tolist(), valid_ends.tolist()):
             final_reads.append(_read_windows(s, e, options))
@@ -328,23 +379,12 @@ def _uniform_sampling(span_length, number_reads, options, fragment_model, *,
 
     # First batch: 2× candidates covers >99 % of cases when frag_mean >> read_len.
     # Retry in small increments only when fragment_mean < read_len (rare).
-    acc_starts: list[np.ndarray] = []
-    acc_ends:   list[np.ndarray] = []
-    collected = 0
-    n_batch = number_reads * 2
+    def draw_uniform_starts(batch_size):
+        return options.rng.integers(0, max_start + 1, size=batch_size)
 
-    while collected < number_reads:
-        s = options.rng.integers(0, max_start + 1, size=n_batch)
-        fl = np.array(fragment_model.generate_fragments(n_batch, options.rng))
-        e = np.minimum(s + fl, e_limit)
-        mask = e - s >= min_frag
-        acc_starts.append(s[mask])
-        acc_ends.append(e[mask])
-        collected += int(mask.sum())
-        n_batch = max(10, (number_reads - collected) * 5)
-
-    all_starts = np.concatenate(acc_starts)[:number_reads]
-    all_ends   = np.concatenate(acc_ends)[:number_reads]
+    all_starts, all_ends = _sample_fragments(
+        number_reads, draw_uniform_starts, fragment_model, options, min_frag, e_limit,
+    )
 
     final_reads = []
     for s, e in zip(all_starts.tolist(), all_ends.tolist()):
@@ -540,11 +580,18 @@ def generate_reads(
         # Deletion headroom is drawn from the reference beyond the read, but for a short insert
         # that reference is past the end of the molecule and was never sequenced, so there is no
         # headroom to take.
-        segment_end = read1[1] + padding if insert_1 == options.read_len else read1[1]
+        short_insert = insert_1 != options.read_len
+        segment_end = read1[1] if short_insert else read1[1] + padding
         segment = reference[read1[0]: segment_end].seq
 
-        # if we're at the end of the contig, this may not pick up the full padding
-        actual_padding = len(segment) - insert_1
+        # For a full-length insert the headroom is literal — extra reference bases the read pulls
+        # in to stay read_len long after a deletion — and at the end of a contig there may be
+        # fewer of them than asked for. A short insert has no reference to pull from, so its
+        # headroom is a budget instead: a deletion shortens the genomic portion and the adapter
+        # readthrough (or, with no adapter, the read simply ends earlier) absorbs the difference.
+        # Passing 0 here would make every guard keyed on padding drop short-insert deletions
+        # outright. See Read._resync_short_insert_lengths.
+        actual_padding = padding if short_insert else len(segment) - insert_1
 
         read_1 = Read(
             name=read_name + "/1",
@@ -596,14 +643,15 @@ def generate_reads(
             padding = options.read_len//5
             # Read 2 is reverse, so its deletion headroom sits before the window — and, as for
             # read 1, it does not exist once the window already spans the whole fragment.
-            if insert_2 == options.read_len:
-                start_coordinate = max((read2[0] - padding), 0)
-            else:
+            short_insert = insert_2 != options.read_len
+            if short_insert:
                 start_coordinate = read2[0]
+            else:
+                start_coordinate = max((read2[0] - padding), 0)
             # this ensures that we get a segment with NEAT-recognized bases
             segment = reference[start_coordinate: read2[1]].seq
             # See note above
-            actual_padding = len(segment) - insert_2
+            actual_padding = padding if short_insert else len(segment) - insert_2
 
             read_2 = Read(
                 name=read_name + "/2",

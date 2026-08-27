@@ -35,9 +35,48 @@ New config options:
 
 Enabling either feature relaxes the `fragment_mean >= read_len` check to a warning, so
 short-insert libraries can be configured. Inserts below 25 bp are still resampled, which
-matches real size selection and also screens off `FragmentLengthModel`'s hardcoded
-anti-infinite-loop spacer lengths (10-14 bp), which the old `read_len` floor had been
-hiding and which would otherwise have surfaced as reads that are over 90% adapter.
+matches real size selection: a read that is almost entirely adapter carries no usable signal.
+
+`FragmentLengthModel.generate_fragments` no longer splices a fixed set of tiny lengths
+(10, 11, 12, 13, 14, 28, 31 bp) into every batch. Those values were anti-infinite-loop
+padding rather than draws from anyone's distribution, and the ordinary `read_len` fragment
+floor had been hiding them; the lower floor that short-insert runs use admits the 28 and
+31 bp entries, which would have put a spike of artificial, adapter-heavy inserts into the
+output. The samplers now bound their own retries instead, and report an under-covered
+region rather than spinning when a fragment model cannot clear the floor. Fragment lengths
+for a given seed differ from previous releases as a result.
+
+A deletion falling inside a short insert is now applied rather than dropped. Deletion
+headroom is normally literal — reference just past the read, which a deletion pulls in to
+keep the read at `read_len` — but a short insert is the whole molecule and has none. It is
+therefore budgeted instead: the deletion shortens the genomic portion, and the adapter tail
+grows by the same amount so the read still reaches `read_len` (with `keep_short_fragments`
+alone there is nothing to backfill with, so the read is emitted shorter, as a shorter
+sequenced molecule should be). Previously the zero headroom made every guard keyed on
+padding skip the deletion wherever it fell, so a short-insert read came back identical to
+the unmutated reference while the golden VCF still claimed the variant — on a 4000-read
+paired run with 300 deletions, 60 reads carried one where 1371 now do. A deletion that
+genuinely cannot be applied is now logged at debug level rather than dropped silently.
+
+One known limitation remains. A deletion at the extreme 3' edge of a reverse short-insert
+read lands on the CIGAR's leading edge once SEQ is flipped to reference-forward, where the
+alignment absorbs it into POS instead of emitting a leading `D`. The read is correct and the
+record well formed; the placement of that single edge base is not.
+
+Applying a deletion *error* now keeps the quality score of its anchor base. The anchor survives
+in the read -- the alternate allele is that base, VCF-style -- but its score was dropped, leaving
+the quality array one shorter than the sequence per deletion error. The defect is old and was
+masked twice over: a full-length read draws its quality array across the padded reference segment
+and trims to the read length afterwards, which absorbed the loss, and a short insert could never
+reach it while zero padding made every deletion be skipped. Fixing short-insert deletions removes
+both masks, and the malformed records that result accumulate into a golden BAM that `samtools
+index` rejects outright.
+
+Because SAM stores QUAL in the same orientation as SEQ, a reverse read's quality array is
+now reversed alongside its sequence when the golden BAM record is written. Flipping only the
+sequence paired every base with another base's score — invisible on a full-length read with
+a flat quality profile, but on a short-insert read the adapter tail's scores landed on the
+genomic prefix.
 
 Because SAM stores SEQ in reference-forward orientation, a reverse read's 3' adapter tail
 is written as a *leading* soft clip in the CIGAR and a forward read's as a trailing one.
@@ -46,8 +85,11 @@ Note on coverage: short inserts carry fewer genomic bases per read and their mat
 so realized depth falls below the requested `coverage`. This matches `eidolon`'s behavior and
 is documented rather than compensated for, so the two simulators stay comparable arm-for-arm.
 
-Both features default to off, and output is unchanged when their keys are omitted —
-verified byte-for-byte on FASTQ and on all BAM alignment records for a fixed seed.
+Both features default to off, and omitting their keys leaves the adapter and short-insert
+code paths unexercised. Output is not byte-identical to previous releases even then: the
+fragment-sampling change described above applies to every run, so for a fixed seed the
+fragment draws — and therefore the reads — differ from v4.6.x whether or not these features
+are enabled.
 
 # NEAT v4.6.2
 

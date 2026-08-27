@@ -588,3 +588,63 @@ def test_runner_bam_and_vcf_no_fastq(tmp_path):
     assert list(out_dir.glob("*.bam")), "Expected a BAM output file"
     assert list(out_dir.glob("*.vcf.gz")), "Expected a VCF output file"
     assert not list(out_dir.glob("*.fastq.gz")), "Expected no FASTQ output"
+
+
+# ---------------------------------------------------------------------------
+# Adapter readthrough through the whole runner
+# ---------------------------------------------------------------------------
+
+def test_runner_adapter_run_produces_an_indexable_golden_bam(tmp_path):
+    """
+    The full path -- chunking, stitching, sorting, indexing -- with adapters on.
+
+    Worth its own runner-level test because the defect class it guards is invisible below this
+    scale. A record whose QUAL is one byte shorter than its SEQ parses fine in a small file;
+    accumulate enough of them and the reader derails mid-stream, which is how a corrupt golden
+    BAM reached a passing unit suite. The runner indexes the BAM itself, so pysam.index failing
+    fails the run.
+    """
+    import random
+    pysam = pytest.importorskip("pysam")
+
+    rng = random.Random(5)
+    seq = "".join(rng.choice("ACGT") for _ in range(20000))
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">contig1\n" + "\n".join(seq[i:i+60] for i in range(0, len(seq), 60)) + "\n")
+    cfg = tmp_path / "cfg.yml"
+    cfg.write_text(
+        f"reference: {ref}\n"
+        "coverage: 8\n"
+        "read_len: 100\n"
+        "paired_ended: true\n"
+        "fragment_mean: 60\n"
+        "fragment_st_dev: 20\n"
+        "produce_bam: true\n"
+        "produce_fastq: true\n"
+        "produce_vcf: false\n"
+        "mutation_rate: 0.01\n"
+        "rng_seed: 20260824\n"
+        "threads: 1\n"
+        "overwrite_output: true\n"
+        "adapters: true\n"
+        "adapter_preset: truseq\n"
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+
+    read_simulator_runner(str(cfg), str(out), "sim")
+
+    bam = out / "sim_golden.bam"
+    assert bam.exists()
+    # Every record readable to the end: a truncated or malformed one raises here.
+    with pysam.AlignmentFile(str(bam), "rb") as handle:
+        records = list(handle)
+    assert records, "expected reads in the golden bam"
+
+    positions = [r.reference_start for r in records]
+    assert positions == sorted(positions), "golden bam is not coordinate-sorted"
+    for record in records:
+        assert len(record.query_qualities) == len(record.query_sequence)
+        consumed = sum(n for op, n in record.cigartuples if op in (0, 1, 4))
+        assert consumed == len(record.query_sequence)
+    assert any("S" in r.cigarstring for r in records), "expected adapter soft clips"
