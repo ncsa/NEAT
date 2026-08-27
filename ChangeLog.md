@@ -37,6 +37,24 @@ Enabling either feature relaxes the `fragment_mean >= read_len` check to a warni
 short-insert libraries can be configured. Inserts below 25 bp are still resampled, which
 matches real size selection: a read that is almost entirely adapter carries no usable signal.
 
+The golden BAM's CIGAR and POS were both wrong for a gapped read (#326, deferred out of
+v4.6.2). An insertion longer than 4 bp had nowhere to go — the CIGAR was built from a
+fixed-length op list, one entry per read base, recording an insertion by overwriting an
+entry — and every gapped reverse read reconstructed incorrectly, since reverse reads were
+indexed by read offset into aligned rows that run longer than the read whenever a gap is
+present. CIGAR ops now come from the alignment's own columns instead, one forward walk
+covering both strands, and a reverse read's POS is now found by stepping back from
+`end_point` over the reference its CIGAR covers rather than assuming an indel can't move
+where the alignment starts. An indel straddling the read's edge — reference consumed ahead
+of the first base, which SAM cannot write as a leading `D` — is now carried by POS instead
+of silently dropped. Because that can move a reverse read's position, the golden BAM writer
+now buffers both mates of a pair rather than just read 2, so an indel-shifted read can't
+leave the file unsorted. Reconstructing every read from its recorded POS and CIGAR across
+eight configurations (plain error model, 500 bp insertion, 20 bp deletion, mixed indels,
+elevated mutation rate, three read lengths) found 0 misplaced reads in seven of the eight,
+down from 77-720; the eighth (`read_len: 250`) fell from 271 to 181, a separate pre-existing
+defect that never reaches this code path.
+
 `FragmentLengthModel.generate_fragments` no longer splices a fixed set of tiny lengths
 (10, 11, 12, 13, 14, 28, 31 bp) into every batch. Those values were anti-infinite-loop
 padding rather than draws from anyone's distribution, and the ordinary `read_len` fragment
@@ -61,7 +79,20 @@ genuinely cannot be applied is now logged at debug level rather than dropped sil
 One known limitation remains. A deletion at the extreme 3' edge of a reverse short-insert
 read lands on the CIGAR's leading edge once SEQ is flipped to reference-forward, where the
 alignment absorbs it into POS instead of emitting a leading `D`. The read is correct and the
-record well formed; the placement of that single edge base is not.
+record well formed; the placement of that single edge base is not. Recovering it is not a
+simple extension of the fix below: pricing the aligner's trailing query gaps to catch it also
+lets a repetitive reference or a small deletion collapse an unrelated interior mismatch run
+into a spurious gap at that same edge, measured to raise adapter+insertion misplacement
+5-10x — a worse defect than the one it would fix.
+
+The forward-read equivalent was a real bug rather than a placement approximation, and is now
+fixed. A deletion whose real, in-bounds bases reached the fragment's exact end — no headroom
+past it to draw on, unlike an ordinary read — was dropped from the CIGAR entirely instead of
+ending in a trailing `D`: a 60 bp fragment carrying a 19 bp deletion at its tail came back as
+`41M59S` (a 60 bp `reference_span` reported as 41), with no trace that anything was missing,
+while the golden VCF still recorded the variant. Both CIGAR-building paths treated the read
+running out as "nothing more to describe," which only holds when the window has real
+reference beyond it to discard; a short insert's window has none.
 
 Applying a deletion *error* now keeps the quality score of its anchor base. The anchor survives
 in the read -- the alternate allele is that base, VCF-style -- but its score was dropped, leaving
