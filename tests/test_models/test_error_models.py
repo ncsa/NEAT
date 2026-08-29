@@ -370,3 +370,24 @@ def test_tqm_score_clamped_to_maximum():
     assert all(s == 42 for s in scores)
 
 
+
+
+def test_sem_never_returns_two_errors_at_one_position():
+    """Two errors on one base are not two sequencing errors — the second only overwrites the
+    first — and letting both through makes the read grow: apply_errors emits an alternate for
+    each while consuming a single reference base, so the read gains a base with no indel
+    recorded to describe it. A reverse read is built from the far end of its segment, so that
+    extra base slides its whole window and the record lands one base off its true position
+    while its CIGAR still claims a perfect match.
+    """
+    model = SequencingErrorModel(avg_seq_error=0.5)
+    for seed in range(50):
+        rng = np.random.default_rng(seed)
+        # Low quality across the board, so the sampler accepts many candidates and collisions
+        # among the with-replacement draws are likely.
+        quality_scores = np.full(len(_SEQ), 15)
+        errors, _ = model.get_sequencing_errors(10, _SEQ, quality_scores, 8, rng)
+        locations = [e.location for e in errors]
+        assert len(locations) == len(set(locations)), (
+            f"seed {seed}: duplicate error positions {sorted(locations)}"
+        )

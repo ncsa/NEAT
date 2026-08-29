@@ -196,7 +196,15 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         candidate_randoms = rng.random(size=n)
         rates_at_candidates = 10.0 ** (-quality_scores[candidate_indices].astype(float) / 10.0)
         accepted = candidate_indices[candidate_randoms < rates_at_candidates]
-        error_indexes = accepted[:num_errors].tolist()
+        # Candidates are drawn with replacement, so one position can be accepted more than once.
+        # Two errors on the same base are not two sequencing errors — the second only overwrites
+        # the first — and letting both through makes the read grow: the application step emits an
+        # alternate for each while consuming a single reference base, so the read gains a base that
+        # no indel was recorded to describe. A forward read merely loses its last base to the
+        # length trim, but a reverse read is built from the far end of its segment, so the extra
+        # base slides its whole window and the record lands one base off its true position with a
+        # CIGAR still claiming a perfect match. Keeping the first hit at each position avoids that.
+        error_indexes = list(dict.fromkeys(accepted.tolist()))[:num_errors]
 
         if len(error_indexes) < num_errors:
             # Fallback: if quality scores are too high to naturally reach num_errors, force errors
@@ -204,8 +212,14 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             # quality arrays (all scores equal) always make progress.
             median_score = median(quality_scores)
             eligible = np.flatnonzero(quality_scores <= median_score)
-            needed = num_errors - len(error_indexes)
-            error_indexes.extend(rng.choice(eligible, size=needed, replace=True).tolist())
+            # Skip anything the main loop already took, and draw without replacement, so the
+            # fallback cannot reintroduce the duplicates filtered out above while still filling
+            # the quota whenever there are enough distinct positions to fill it from.
+            if error_indexes:
+                eligible = np.setdiff1d(eligible, np.asarray(error_indexes, dtype=eligible.dtype))
+            needed = min(num_errors - len(error_indexes), len(eligible))
+            if needed > 0:
+                error_indexes.extend(rng.choice(eligible, size=needed, replace=False).tolist())
 
         total_indel_length = 0
         # To prevent deletion collisions
