@@ -81,7 +81,8 @@ ADAPTER_CONFIGS = {"adapters_truseq", "adapters_nextera", "adapters_single", "ad
 # A CIGAR ending in D is a known, open defect rather than an unexpected one: 302eaa1 deliberately
 # keeps a deletion reaching a read's last base, on the grounds that it is real and the golden VCF
 # records it. SAM cannot express that — a trailing D describes reference past the read's last
-# base, overstating the span, and Picard's ValidateSamFile rejects it. It predates the fixes in
+# base, overstating the span, and Picard's ValidateSamFile rejects it. Tracked as #339; it
+# predates the fixes in
 # this branch (v4.7.0 produces them too) and needs a decision about representation rather than a
 # quiet patch, so it is recorded here instead of asserted. A CIGAR *opening* on D is still a hard
 # failure everywhere: nothing is known to produce one.
