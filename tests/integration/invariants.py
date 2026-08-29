@@ -110,17 +110,32 @@ def cigars_account_for_every_base(bam_path: Path) -> list[str]:
     return failures
 
 
-def cigars_are_well_formed(bam_path: Path) -> list[str]:
-    """No leading or trailing deletion: SAM cannot place a record that opens on consumed
-    reference, and a trailing one describes reference past the read's last base."""
+def cigars_have_no_leading_deletion(bam_path: Path) -> list[str]:
+    """A CIGAR cannot open on a deletion: it would consume reference before the read's first
+    base, which is what POS already fixes. Nothing in NEAT is known to produce one, so this is a
+    hard failure wherever it appears."""
     failures = []
     with pysam.AlignmentFile(str(bam_path), "rb") as bam:
         for record in bam:
             ops = record.cigartuples
-            if not ops:
-                continue
-            if ops[0][0] == 2 or ops[-1][0] == 2:
-                failures.append(f"{record.query_name}: cigar {record.cigarstring} opens or ends on D")
+            if ops and ops[0][0] == 2:
+                failures.append(f"{record.query_name}: cigar {record.cigarstring} opens on D")
+    return failures
+
+
+def cigars_have_no_trailing_deletion(bam_path: Path) -> list[str]:
+    """A CIGAR ending in a deletion describes reference past the read's last base, overstating
+    the span, and Picard's ValidateSamFile rejects it.
+
+    Kept separate from the leading case because this one is a known, deliberate tradeoff rather
+    than an unexpected defect — see the known-failure note in test_output_invariants.py.
+    """
+    failures = []
+    with pysam.AlignmentFile(str(bam_path), "rb") as bam:
+        for record in bam:
+            ops = record.cigartuples
+            if ops and ops[-1][0] == 2:
+                failures.append(f"{record.query_name}: cigar {record.cigarstring} ends on D")
     return failures
 
 
