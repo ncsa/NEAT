@@ -1046,9 +1046,18 @@ def test_short_insert_deletion_extending_past_the_fragment(is_reverse):
 # while the golden VCF still recorded the variant. _UNIQUE_REF sidesteps _REF's ACGT periodicity,
 # which otherwise lets the aligner represent the same deletion as a cheaper run of mismatches.
 
-def test_short_insert_deletion_reaching_the_fragment_end_keeps_its_d():
-    """The mutation-indel path (_cigar_via_alignment): a deletion with no overhang past the
-    fragment's edge must still appear as a D, not vanish once the query runs out."""
+def test_short_insert_deletion_reaching_the_fragment_end_drops_its_trailing_d():
+    """The mutation-indel path (_cigar_via_alignment): a deletion past the read's last base
+    leaves the CIGAR entirely.
+
+    This reverses what 302eaa1 established. That change was right that the deletion is real and
+    that silently dropping it left the golden BAM claiming a perfect match — but a trailing D is
+    not a way to say so. It describes reference no base of the read covers, inflating the span so
+    that coverage and interval calculations count bases the read never reached, and strict
+    validators reject a CIGAR that ends on one (#339). The deletion stays in the golden VCF,
+    which is the authority on what was simulated; the BAM reports what the reads evidence, and a
+    deletion after the last sequenced base is evidenced by nothing.
+    """
     genomic_len, del_len = 60, 20
     lost = _deleted_bases(del_len)
     r = _finalize_adapter_read(
@@ -1059,14 +1068,14 @@ def test_short_insert_deletion_reaching_the_fragment_end_keeps_its_d():
     assert r.genomic_length == genomic_len - lost
     cigar = r.make_cigar()
     ops = _cigar_ops(cigar)
-    assert (lost, "D") in ops
-    # Matches plus the real deletion account for the whole fragment — nothing dropped.
-    assert Read.reference_span(cigar) == genomic_len
+    assert not [op for op in ops if op[1] == "D"], f"trailing deletion left in {cigar}"
+    # The record spans exactly the reference its own bases cover.
+    assert Read.reference_span(cigar) == r.genomic_length == genomic_len - lost
 
 
-def test_short_insert_deletion_extending_past_the_fragment_keeps_its_d():
-    """The overhang case from test_short_insert_deletion_extending_past_the_fragment: only the
-    in-bounds part of the deletion is real, but that part still belongs in the CIGAR."""
+def test_short_insert_deletion_extending_past_the_fragment_drops_its_trailing_d():
+    """The overhang case: the in-bounds part of the deletion is real, but it still sits past the
+    read's last base, so it is not something this record can express (#339)."""
     genomic_len, del_len = 60, 10
     overhang_anchor = genomic_len - 4
     r = _finalize_adapter_read(
@@ -1074,15 +1083,14 @@ def test_short_insert_deletion_extending_past_the_fragment_keeps_its_d():
     )
 
     assert r.genomic_length == overhang_anchor + 1
-    real_removed = genomic_len - r.genomic_length  # only the in-bounds part was ever removed
     cigar = r.make_cigar()
     ops = _cigar_ops(cigar)
-    assert (real_removed, "D") in ops
-    assert Read.reference_span(cigar) == genomic_len
+    assert not [op for op in ops if op[1] == "D"], f"trailing deletion left in {cigar}"
+    assert Read.reference_span(cigar) == r.genomic_length
 
 
-def test_short_insert_error_deletion_reaching_the_fragment_end_keeps_its_d():
-    """The error-indel walker (_cigar_from_error_indels): same failure mode, forward-only path.
+def test_short_insert_error_deletion_reaching_the_fragment_end_drops_its_trailing_d():
+    """The error-indel walker (_cigar_from_error_indels): same treatment, forward-only path.
     Bypasses the error model's own randomness and applies one deletion error directly, the way
     get_sequencing_errors + apply_errors would leave the read afterward."""
     genomic_len, del_len = 60, 19
@@ -1102,8 +1110,8 @@ def test_short_insert_error_deletion_reaching_the_fragment_end_keeps_its_d():
     assert r.genomic_length == anchor + 1
     cigar = r.make_cigar()
     ops = _cigar_ops(cigar)
-    assert (del_len, "D") in ops
-    assert Read.reference_span(cigar) == genomic_len
+    assert not [op for op in ops if op[1] == "D"], f"trailing deletion left in {cigar}"
+    assert Read.reference_span(cigar) == r.genomic_length
 
 
 def test_deletion_with_no_headroom_left_is_logged(caplog):
