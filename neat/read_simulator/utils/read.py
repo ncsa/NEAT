@@ -226,6 +226,13 @@ class Read:
             q_chunks.append(self.quality_array[prev_end:loc])
             seq_chunks.append(alt_str)
             if alt_len > 1:
+                # Insertion. As for the deletion below, the anchor base survives in the read —
+                # alt is that base followed by the inserted ones, VCF-style — so it keeps its own
+                # score and only the inserted bases take the floor score. Emitting alt_len - 1
+                # scores for alt_len bases leaves the record one quality byte short, which is a
+                # malformed FASTQ record and a BAM record whose packed lengths disagree, desyncing
+                # every record after it in the stream.
+                q_chunks.append(self.quality_array[loc:loc + 1])
                 q_chunks.append(np.full(alt_len - 1, low_score, dtype=int))
             elif ref_len > 1 and alt_len == 1:
                 # Deletion. The anchor base survives in the read — alt *is* that base, VCF-style
