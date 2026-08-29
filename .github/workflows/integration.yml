@@ -1,0 +1,40 @@
+name: NEAT Integration Suite
+
+# Real simulations across a configuration matrix, checking that the output describes itself:
+# reads placed where their CIGAR says, BAM sorted and indexable, FASTQ and BAM in agreement,
+# golden VCF self-consistent. Takes minutes rather than the second and a half the unit suite
+# takes, so it runs nightly and on demand instead of gating every pull request.
+#
+# See tests/integration/README.md.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: environment.yml
+          environment-name: neat
+          cache-environment: true
+
+      - name: Install NEAT (with developer dependencies)
+        shell: bash -l {0}
+        run: |
+          micromamba run -n neat poetry install --with dev
+
+      - name: Run the integration suite
+        shell: bash -l {0}
+        env:
+          NEAT_INTEGRATION: "1"
+        run: |
+          micromamba run -n neat pytest tests/integration -q --durations=10

@@ -193,6 +193,24 @@ class Read:
                             np.array(new_quality_score, dtype=int),
                             self.quality_array[location+ref_length:]))
 
+    def _anchor_score(self, location: int, low_score: int):
+        """
+        The quality score an error's anchor base keeps.
+
+        Normally its own. Errors are chosen against the read as it stood when the error model ran,
+        but mutations are applied first and a deletion shortens the read, so a location drawn near
+        the end can sit past it by the time the errors are applied. The slice is empty there, and
+        returning it would give an insertion one score fewer than the bases it adds — the
+        malformed-record path in #337. The floor score stands in, which is what a base with no
+        score of its own gets everywhere else here.
+
+        :param location: The anchor's position in the read
+        :param low_score: The model's floor score
+        :return: A one-element array holding the score for that base
+        """
+        own = self.quality_array[location:location + 1]
+        return own if own.size else np.array([low_score], dtype=int)
+
     def apply_errors(self, quality_model: TraditionalQualityModel):
         """
         Apply this read's stored sequencing errors to read_sequence and quality_array in
@@ -226,6 +244,13 @@ class Read:
             q_chunks.append(self.quality_array[prev_end:loc])
             seq_chunks.append(alt_str)
             if alt_len > 1:
+                # Insertion. As for the deletion below, the anchor base survives in the read —
+                # alt is that base followed by the inserted ones, VCF-style — so it keeps its own
+                # score and only the inserted bases take the floor score. Emitting alt_len - 1
+                # scores for alt_len bases leaves the record one quality byte short, which is a
+                # malformed FASTQ record and a BAM record whose packed lengths disagree, desyncing
+                # every record after it in the stream.
+                q_chunks.append(self._anchor_score(loc, low_score))
                 q_chunks.append(np.full(alt_len - 1, low_score, dtype=int))
             elif ref_len > 1 and alt_len == 1:
                 # Deletion. The anchor base survives in the read — alt *is* that base, VCF-style
@@ -236,7 +261,7 @@ class Read:
                 # segment including the deletion headroom and trims to genomic_length at the
                 # end, which absorbed the missing score, and a short insert could not reach
                 # here at all while its zero padding made every deletion be skipped.
-                q_chunks.append(self.quality_array[loc:loc + 1])
+                q_chunks.append(self._anchor_score(loc, low_score))
             else:
                 q_chunks.append(np.array([low_score], dtype=int))
             prev_end = loc + ref_len

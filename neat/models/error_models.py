@@ -186,26 +186,27 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
             return introduced_errors
 
         n = len(quality_scores)
-        # Batched rejection sampling: draw n candidate indices and n uniform deviates in two numpy
-        # calls, then accept the first num_errors candidates where the deviate is below the
-        # quality-derived error rate. Equivalent in distribution to the per-iteration scalar loop
-        # but ~150x cheaper in Python overhead. Statistical caveat: this changes the order in
-        # which the underlying PRNG stream is consumed, so seeded runs are not bit-identical to
-        # the prior interleaved-draw implementation.
-        candidate_indices = rng.integers(n, size=n)
-        candidate_randoms = rng.random(size=n)
-        rates_at_candidates = 10.0 ** (-quality_scores[candidate_indices].astype(float) / 10.0)
-        accepted = candidate_indices[candidate_randoms < rates_at_candidates]
-        error_indexes = accepted[:num_errors].tolist()
-
-        if len(error_indexes) < num_errors:
-            # Fallback: if quality scores are too high to naturally reach num_errors, force errors
-            # at positions with at-or-below-median quality scores. Using <= so that uniform
-            # quality arrays (all scores equal) always make progress.
-            median_score = median(quality_scores)
-            eligible = np.flatnonzero(quality_scores <= median_score)
-            needed = num_errors - len(error_indexes)
-            error_indexes.extend(rng.choice(eligible, size=needed, replace=True).tolist())
+        # Choose which positions err: num_errors of them, drawn without replacement, each
+        # weighted by its own quality-derived error rate.
+        #
+        # Without replacement is the point. A position cannot err twice — a second error on a
+        # base only overwrites the first — and letting one through makes the read grow, because
+        # the application step emits an alternate for each while consuming a single reference
+        # base, leaving a base that no indel was recorded to describe (#335).
+        #
+        # The draw is an exponential race (Efraimidis-Spirakis): give every position a key of
+        # Exp(1)/rate and keep the smallest num_errors. That is exactly weighted sampling without
+        # replacement, in one vectorised pass, with no rejection loop to retry and no separate
+        # fallback for quality scores too high for candidates to be accepted — the smallest keys
+        # exist however small the rates are. Drawing with replacement and filtering afterwards
+        # samples the wrong distribution as soon as anything has to be dropped or topped up.
+        error_rates = 10.0 ** (-quality_scores.astype(float) / 10.0)
+        wanted = min(num_errors, n)
+        if wanted > 0:
+            keys = rng.exponential(size=n) / error_rates
+            error_indexes = np.argpartition(keys, wanted - 1)[:wanted].tolist()
+        else:
+            error_indexes = []
 
         total_indel_length = 0
         # To prevent deletion collisions
@@ -270,6 +271,11 @@ class SequencingErrorModel(SnvModel, DeletionModel, InsertionModel):
         for i in range(len(introduced_errors) - 1, -1, -1):
             if introduced_errors[i].location in del_blacklist:
                 del introduced_errors[i]
+
+        # Descending position order, which is what apply_errors documents and depends on: it
+        # walks them in reverse, and an error behind the high-water mark would otherwise have its
+        # alternate appended without consuming the base it replaces, growing the read.
+        introduced_errors.sort(key=lambda error: error.location, reverse=True)
 
         return introduced_errors, max(padding, 0)
 

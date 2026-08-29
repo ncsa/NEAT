@@ -1243,3 +1243,35 @@ def test_ungapped_read_reports_its_own_position():
         cigar, reference_start = r.make_alignment()
         assert cigar == f"{_READ_LEN}M"
         assert reference_start == r.position
+
+
+def test_apply_errors_insertion_keeps_sequence_and_quality_in_step():
+    """An insertion must leave one quality score per base, like every other error type.
+
+    Emitting alt_len - 1 scores for alt_len bases leaves the record one quality byte short. That
+    is a malformed FASTQ record, and in the BAM it makes the packed lengths disagree, which
+    desyncs the reader for every record after it — a single bad read truncated a 12,000-record
+    golden BAM at 7,591 and aborted the run at indexing.
+
+    Normally the shortfall is hidden: the insertion also lengthens the sequence, and both arrays
+    are trimmed to genomic_length, so the slack absorbs it. A short insert has no such slack.
+    """
+    import numpy as np
+    from neat.models.error_models import ErrorContainer
+
+    for error, expected_growth in (
+        (ErrorContainer(Insertion, 5, 2, "A", "ATT"), 2),
+        (ErrorContainer(Insertion, 5, 1, "A", "AG"), 1),
+        (ErrorContainer(SingleNucleotideVariant, 5, 1, "A", "T"), 0),
+        (ErrorContainer(Deletion, 5, 2, "ACG", "A"), -2),
+    ):
+        r = _make_read(reference=_REF, padding=0)
+        r.read_sequence = Seq(_REF)
+        r.quality_array = np.arange(len(_REF))
+        r.errors = [error]
+        r.apply_errors(TraditionalQualityModel())
+        assert len(r.quality_array) == len(r.read_sequence), (
+            f"{error.error_type.__name__}: {len(r.quality_array)} scores "
+            f"for {len(r.read_sequence)} bases"
+        )
+        assert len(r.read_sequence) == len(_REF) + expected_growth
