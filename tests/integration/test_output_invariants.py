@@ -78,16 +78,6 @@ ADAPTER_CONFIGS = {"adapters_truseq", "adapters_nextera", "adapters_single", "ad
 # *new* is wrong — a nightly that is permanently red gets ignored — while still failing if the
 # defect spreads to a configuration not listed. Delete an entry when its issue closes; the test
 # then simply passes.
-# A CIGAR ending in D is a known, open defect rather than an unexpected one: 302eaa1 deliberately
-# keeps a deletion reaching a read's last base, on the grounds that it is real and the golden VCF
-# records it. SAM cannot express that — a trailing D describes reference past the read's last
-# base, overstating the span, and Picard's ValidateSamFile rejects it. Tracked as #339; it
-# predates the fixes in
-# this branch (v4.7.0 produces them too) and needs a decision about representation rather than a
-# quiet patch, so it is recorded here instead of asserted. A CIGAR *opening* on D is still a hard
-# failure everywhere: nothing is known to produce one.
-TRAILING_DELETION_IS_KNOWN = True
-
 
 
 @pytest.fixture(scope="module")
@@ -120,10 +110,7 @@ def test_cigars_are_consistent(case_id, reference_key, config, references, run_s
     run = _run_for(case_id, reference_key, config, references, run_simulation, _runs)
     failures = invariants.cigars_account_for_every_base(run.bam)
     failures += invariants.cigars_have_no_leading_deletion(run.bam)
-    trailing = invariants.cigars_have_no_trailing_deletion(run.bam)
-    if trailing and TRAILING_DELETION_IS_KNOWN and not failures:
-        pytest.xfail(f"cigars ending in D ({len(trailing)} records); see the note above")
-    failures += trailing
+    failures += invariants.cigars_have_no_trailing_deletion(run.bam)
     assert not failures, f"[{case_id}] {len(failures)} bad cigar(s):\n  " + "\n  ".join(failures[:10])
 
 

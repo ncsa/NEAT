@@ -667,6 +667,14 @@ class Read:
         else:
             genomic_cigar, leading_skip = self._cigar_via_alignment()
 
+        genomic_cigar, trimmed_leading = self._strip_edge_deletions(genomic_cigar)
+        if not self.is_reverse:
+            # A forward read is anchored at its left edge, so dropping reference from that edge
+            # moves where the alignment starts. A reverse read is anchored at its right edge and
+            # takes its POS from end_point less the reference the CIGAR covers, which the trimmed
+            # CIGAR already accounts for.
+            leading_skip += trimmed_leading
+
         cigar = self._add_adapter_soft_clip(genomic_cigar)
         return cigar, self._reference_start(cigar, leading_skip)
 
@@ -859,6 +867,48 @@ class Read:
             # SAM wants them in reference-forward order.
             ops.reverse()
         return self.tally_cigar_list(ops), leading_skip
+
+    @staticmethod
+    def _strip_edge_deletions(cigar: str):
+        """
+        Drop deletions sitting at either end of a CIGAR.
+
+        A deletion outside the read's aligned bases describes reference that no base of the read
+        covers. It says nothing about the sequence — the read is identical whether or not it is
+        recorded, because the deleted bases were never sequenced — while inflating the record's
+        reference span, so anything computing coverage or intervals counts bases the read never
+        reached. SAM cannot express "the read stops here and these reference bases are also
+        missing", and a CIGAR opening or closing on D is rejected by strict validators. The
+        alignment ends at its last aligned base instead.
+
+        The deletion is still in the golden VCF when it came from a variant. That is the honest
+        split: the VCF is the authority on what was simulated, and the BAM reports what the reads
+        can actually evidence — which for a deletion past the last sequenced base is nothing, the
+        same as a real aligner would produce for such a read.
+
+        :param cigar: A genomic CIGAR string, before any adapter soft clip is attached
+        :return: The trimmed CIGAR, and the number of reference bases removed from its left edge
+        """
+        operations = []
+        count = ""
+        for char in cigar:
+            if char.isdigit():
+                count += char
+            else:
+                operations.append((int(count), char))
+                count = ""
+
+        trimmed_leading = 0
+        while operations and operations[0][1] == "D":
+            trimmed_leading += operations.pop(0)[0]
+        while operations and operations[-1][1] == "D":
+            operations.pop()
+
+        if not operations:
+            # Nothing but deletions: there is no alignment to describe, so leave it be rather
+            # than emit an empty CIGAR.
+            return cigar, 0
+        return "".join(f"{length}{op}" for length, op in operations), trimmed_leading
 
     @staticmethod
     def reference_span(cigar: str):
