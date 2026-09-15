@@ -1,3 +1,53 @@
+# NEAT v4.7.1
+
+Two golden-BAM correctness fixes surfaced by the short-insert and adapter-readthrough work in
+v4.7.0, plus the integration suite that found both. Neither fix changes output for a run that
+does not use `adapters` or `keep_short_fragments`.
+
+- An insertion error wrote `alt_len - 1` quality scores for the `alt_len` bases it added to the
+  read, one short (#337, first half; the dominant source of #335). 302eaa1 had already corrected
+  the same shape on the deletion branch — the anchor base survives in the read, so its score has
+  to survive with it — but the insertion branch kept dropping it. Invisible on an ordinary read,
+  because the insertion also lengthens the sequence and both the sequence and quality arrays are
+  trimmed to `genomic_length` afterward, so the slack absorbs the one-score deficit. A short
+  insert has no slack: the record reaches the writers with mismatched lengths, producing an
+  invalid FASTQ record and a BAM record that desyncs the reader for everything after it. On one
+  12,000-record single-ended run, a single such read was enough to truncate the readable BAM to
+  7,591 records and fail at `samtools index` — after both the FASTQ and BAM had already been
+  written. `samtools quickcheck` passed regardless, since it only inspects the header and EOF
+  block. Fixed by giving the insertion branch the same anchor-preserving treatment as the
+  deletion branch.
+
+- A CIGAR could open or close on a deletion (#339). SAM has no way to say "the read stops here
+  and these reference bases are also missing" — a leading or trailing `D` describes reference no
+  base of the read covers, so `pysam`'s `reference_end` counts bases the read never reached, and
+  Picard's `ValidateSamFile` rejects such a record outright. This was a deliberate choice in
+  302eaa1 (the deletion is real and the golden VCF records it), but it is the wrong way to record
+  it: the read is byte-for-byte identical whether or not the edge deletion appears in the CIGAR,
+  since those bases were never sequenced, so nothing is lost by dropping it — and it matches what
+  a real aligner would emit for such a read, which matters for a truth set meant to be compared
+  against one. Deletions at either edge of a CIGAR are now stripped before the record is
+  written; the golden VCF is unaffected, since it remains the authority on what was simulated.
+  A forward read's POS moves accordingly, since a stripped leading deletion moves where its
+  alignment starts; a reverse read's does not need a separate adjustment, since it is already
+  derived from the reference span the (now-trimmed) CIGAR covers. This also resolves the
+  known limitation v4.7.0 shipped with, where a deletion on a reverse short-insert read's
+  trailing edge landed on the CIGAR's leading edge after SEQ was flipped to reference-forward.
+
+Both defects share a signature: a small fraction of records wrong in a way that exits 0 and
+produces an individually well-formed, complete output set, which is why neither was caught by
+the unit suite. A new nightly integration suite (`tests/integration/`) now runs real simulations
+across a 13-configuration matrix and checks output invariants directly — records placed where
+their own POS and CIGAR say, CIGAR operations accounting for every base, no CIGAR opening or
+closing on a deletion, and the golden BAM sorted and indexable — rather than pinning
+already-understood behavior the way the unit suite does.
+
+One related issue remains open and does not affect any output produced today: `apply_errors`
+documents that errors arrive in descending position order, but `get_sequencing_errors` does not
+sort them, which is load-bearing for whoever next changes error application or ordering (#337,
+second half). Tracked for follow-up rather than fixed here, since sorting breaks quality-array
+invariants elsewhere in a way that needs its own fix, not a quick patch.
+
 # NEAT v4.7.0
 
 Optional 3' sequencing-adapter readthrough, ported from NEAT's Rust sister project
