@@ -61,4 +61,31 @@ preferred-citation:
   type: article
   url: "https://joss.theoj.org/papers/10.21105/joss.09056"
   volume: 11
+references:
+- authors:
+  - family-names: Stephens
+    given-names: Zachary D.
+  - family-names: Hudson
+    given-names: Matthew E.
+  - family-names: Mainzer
+    given-names: Liudmila S.
+  - family-names: Taschuk
+    given-names: Morgan
+  - family-names: Weber
+    given-names: Matthew R.
+  - family-names: Iyer
+    given-names: Ravishankar K.
+  date-published: 2016-11-28
+  doi: 10.1371/journal.pone.0167047
+  issn: 1932-6203
+  issue: 11
+  journal: PLOS ONE
+  publisher:
+    name: Public Library of Science
+  start: e0167047
+  title: Simulating Next-Generation Sequencing Datasets from Empirical Mutation and Sequencing Models
+  type: article
+  url: "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0167047"
+  volume: 11
+  year: 2016
 title: "Enhancing short-read sequencing simulation: Updates to NEAT"
