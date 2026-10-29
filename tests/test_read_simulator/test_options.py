@@ -418,17 +418,45 @@ def test_resolve_adapters_noop_when_disabled():
 
 
 def test_resolve_adapters_truseq_preset():
+    """
+    Each read runs through the whole construct: adapter, index, then flow-cell binding sequence.
+    R1 is FastQC's "TruSeq Adapter, Index 1" plus the A-tail base; R2 is the reverse complement
+    of the TruSeq Universal Adapter.
+    """
     opts = _adapter_options(adapters=True, adapter_preset="truseq")
     opts.resolve_adapters()
-    assert opts.adapter_r1 == "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
-    assert opts.adapter_r2 == "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+    assert opts.adapter_r1 == (
+        "AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC" "ATCACG" "ATCTCGTATGCCGTCTTCTGCTTG"
+    )
+    assert opts.adapter_r2 == (
+        "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT" "AGATCTCGGTGGTCGCCGTATCATT"
+    )
 
 
 def test_resolve_adapters_nextera_preset():
-    """Tagmentation puts the same Mosaic End on both reads."""
+    """
+    Tagmentation puts the same Mosaic End on both reads; after it each read runs into its own
+    index primer — N701 and P7 on read 1, S501 and P5 on read 2.
+    """
     opts = _adapter_options(adapters=True, adapter_preset="nextera")
     opts.resolve_adapters()
-    assert opts.adapter_r1 == opts.adapter_r2 == "CTGTCTCTTATACACATCT"
+    assert opts.adapter_r1 == (
+        "CTGTCTCTTATACACATCT" "CCGAGCCCACGAGAC" "TAAGGCGA" "ATCTCGTATGCCGTCTTCTGCTTG"
+    )
+    assert opts.adapter_r2 == (
+        "CTGTCTCTTATACACATCT" "GACGCTGCCGACGA" "GCGATCTA" "GTGTAGATCTCGGTGGTCGCCGTATCATT"
+    )
+
+
+@_pytest.mark.parametrize("preset", ["truseq", "nextera"])
+def test_adapter_presets_keep_the_trimmer_stem(preset):
+    """Trimmers search for the stem, so the full construct must still start with it."""
+    opts = _adapter_options(adapters=True, adapter_preset=preset)
+    opts.resolve_adapters()
+    stems = {"truseq": ("AGATCGGAAGAGCACACGTCTGAACTCCAGTCA", "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"),
+             "nextera": ("CTGTCTCTTATACACATCT", "CTGTCTCTTATACACATCT")}[preset]
+    assert opts.adapter_r1.startswith(stems[0])
+    assert opts.adapter_r2.startswith(stems[1])
 
 
 def test_resolve_adapters_preset_overrides_user_sequences():
@@ -436,7 +464,7 @@ def test_resolve_adapters_preset_overrides_user_sequences():
     opts = _adapter_options(adapters=True, adapter_preset="truseq",
                             adapter_r1="AAAA", adapter_r2="TTTT")
     opts.resolve_adapters()
-    assert opts.adapter_r1 == "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+    assert opts.adapter_r1.startswith("AGATCGGAAGAGCACACGTCTGAACTCCAGTCA")
 
 
 def test_resolve_adapters_custom_preset_accepted():
@@ -543,8 +571,28 @@ def test_adapter_keys_reach_options_from_config(tmp_path: _PathAlias):
 
     assert opts.adapters is True
     assert opts.adapter_preset == "nextera"
-    assert opts.adapter_r1 == "CTGTCTCTTATACACATCT"
+    assert opts.adapter_r1.startswith("CTGTCTCTTATACACATCT")
+    assert opts.adapter_overrun == "polyg"
     assert opts.keep_short_fragments is True
+
+
+def test_adapter_overrun_key_reaches_options_from_config(tmp_path: _PathAlias):
+    yml = _adapter_config(tmp_path, "adapters: true\nadapter_overrun: random\n")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    opts = Options.from_cli(outdir, "ov", yml)
+
+    assert opts.adapter_overrun == "random"
+
+
+def test_invalid_adapter_overrun_rejected(tmp_path: _PathAlias):
+    yml = _adapter_config(tmp_path, "adapters: true\nadapter_overrun: cycle\n")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    with _pytest.raises(SystemExit):
+        Options.from_cli(outdir, "bad", yml)
 
 
 def test_keep_short_fragments_key_reaches_options_from_config(tmp_path: _PathAlias):

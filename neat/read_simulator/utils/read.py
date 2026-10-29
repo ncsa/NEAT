@@ -45,6 +45,8 @@ class Read:
     :param adapter_seq: The 3' sequencing adapter to read through into, in FINAL read orientation
         (i.e. already accounting for the reverse complement applied to read 2). Empty string, the
         default, disables readthrough entirely.
+    :param adapter_overrun: What the read is filled with once it runs past the end of adapter_seq:
+        "polyg" (two-colour no-calls) or "random" bases. See ADAPTER_OVERRUN_MODES.
     """
     def __init__(self,
                  name: str,
@@ -60,7 +62,8 @@ class Read:
                  is_reverse: bool = False,
                  is_paired: bool = False,
                  genomic_len: int = None,
-                 adapter_seq: str = ""):
+                 adapter_seq: str = "",
+                 adapter_overrun: str = "polyg"):
 
         self.name = name
         self.raw_read = raw_read
@@ -83,6 +86,7 @@ class Read:
         # model sees, mutation application, the M/I/D part of the CIGAR — is sized by this.
         self.genomic_length = genomic_len if genomic_len is not None else run_read_len
         self.adapter_seq = adapter_seq
+        self.adapter_overrun = adapter_overrun
         # Zero unless there is both a shortfall to fill and an adapter to fill it with, which
         # makes every adapter branch below a no-op for an ordinary read.
         self.adapter_length = max(0, run_read_len - self.genomic_length) if adapter_seq else 0
@@ -528,11 +532,15 @@ class Read:
         orientation, so the adapter lands at the 3' end where a trimmer expects it.
 
         Adapter bases:
-          - are sourced cyclically, because a read can run past the end of the adapter and on into
-            whatever follows it,
+          - are taken from adapter_seq in order. That is the whole construct (adapter, index,
+            flow-cell binding sequence), so a read that runs past its end has run off the
+            molecule entirely and the rest is filled per adapter_overrun — G for the no-signal
+            calls of two-colour chemistry, or random bases. The adapter is never repeated: no
+            real molecule carries a second copy of it,
           - draw quality scores from the same model as genomic bases,
           - take substitution errors at the rate implied by those scores, so trimmers face
-            realistic rather than pristine adapters. Insertion and deletion errors are deliberately
+            realistic rather than pristine adapters. Overrun fill does not: there is no template
+            base there to misread. Insertion and deletion errors are deliberately
             not applied: they would change the read length, and the whole point of the padding is
             to reach exactly run_read_length,
           - carry no variants — adapter is not reference-derived — and are soft-clipped in the
@@ -554,7 +562,13 @@ class Read:
 
         bases = []
         for index, score in enumerate(scores):
-            base = self.adapter_seq[index % len(self.adapter_seq)]
+            if index >= len(self.adapter_seq):
+                if self.adapter_overrun == "random":
+                    bases.append(str(rng.choice(ALLOWED_NUCL)))
+                else:
+                    bases.append("G")
+                continue
+            base = self.adapter_seq[index]
             # Phred definition, the same quality-derived rate get_sequencing_errors uses to place
             # errors on genomic bases. Computed here rather than read off a model lookup table so
             # this works for every quality model (the Markov one has no such table).

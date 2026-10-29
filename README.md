@@ -267,6 +267,7 @@ unchanged when the `adapters` key is omitted.
 ```yaml
 adapters: true
 adapter_preset: truseq        # truseq | nextera | custom
+adapter_overrun: polyg        # polyg | random -- what follows the end of the adapter construct
 # for adapter_preset: custom, give explicit 5'->3' uppercase-ACGT sequences (quoted):
 # adapter_r1: "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
 # adapter_r2: "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
@@ -278,6 +279,18 @@ gets `adapter_r1`, read 2 gets `adapter_r2` (appended after read 2 is reverse-co
 lands where a trimmer expects it). Adapter bases carry the same quality and substitution-error
 models as genomic bases, are marked soft-clipped in the golden BAM, and never introduce variants.
 
+Each preset is the whole construct a read passes through after the insert: the adapter stem, then
+a placeholder sample index, then the P7 (read 1) or P5 (read 2) flow-cell binding sequence. A
+read that is longer still has run off the end of the molecule, and what fills the rest is set by
+`adapter_overrun`:
+
+- `polyg` (default) — G, which is how two-colour instruments (NovaSeq, NextSeq, iSeq) call a
+  cycle with no signal. This produces the poly-G tails seen in real short-insert data.
+- `random` — random bases, closer to four-colour instruments (MiSeq, HiSeq).
+
+Overrun bases take no substitution errors, since there is no template base to misread. The
+adapter is never repeated: no real molecule carries a second copy of it.
+
 **How much readthrough you get is controlled by how much of your insert distribution falls below
 `read_len`** — that is, by `fragment_mean` and `fragment_st_dev` relative to `read_len`. With a
 long-insert setting (`fragment_mean` well above `read_len`) essentially no read reaches the
@@ -285,9 +298,12 @@ adapter and turning this on changes nothing.
 
 Presets:
 
-- `truseq` — Illumina TruSeq (`AGATCGGAAGAGC…`), the most common.
-- `nextera` — Nextera / transposase Mosaic End (`CTGTCTCTTATACACATCT`).
-- `custom` — supply your own `adapter_r1` / `adapter_r2`.
+- `truseq` — Illumina TruSeq (`AGATCGGAAGAGC…`), the most common. Single-index adapter 1
+  (`ATCACG`).
+- `nextera` — Nextera / transposase Mosaic End (`CTGTCTCTTATACACATCT`), indexes N701/S501.
+- `custom` — supply your own `adapter_r1` / `adapter_r2`. Give the full sequence each read runs
+  into — including your own index and P5/P7 if you want them — since `adapter_overrun` fill
+  starts as soon as it ends.
 
 Enabling this also relaxes the usual requirement that `fragment_mean` be at least `read_len`, so
 short-insert libraries can be simulated at all. Inserts below 25 bp are still resampled, matching

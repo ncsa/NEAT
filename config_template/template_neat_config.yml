@@ -179,11 +179,21 @@ adapters: .
 #   truseq  - Illumina TruSeq (AGATCGGAAGAGC...), the most common.
 #   nextera - Nextera / transposase Mosaic End (CTGTCTCTTATACACATCT).
 #   custom  - supply your own via adapter_r1 and adapter_r2 below.
+# Each preset is the full construct a read runs into: adapter, a placeholder index, then the
+# P7 (read 1) or P5 (read 2) flow-cell binding sequence.
 # type = str | required: no | default = truseq
 adapter_preset: .
 
+# What fills a read that runs past the end of the whole adapter construct, where no template is
+# left. The adapter is never repeated.
+#   polyg  - G, the no-signal call of two-colour instruments (NovaSeq, NextSeq, iSeq).
+#   random - random bases, closer to four-colour instruments (MiSeq, HiSeq).
+# type = str | required: no | default = polyg
+adapter_overrun: .
+
 # Read-1 and read-2 adapters, 5'->3', uppercase A/C/G/T only. Required when
-# adapter_preset is custom, and ignored otherwise (the preset supplies them).
+# adapter_preset is custom, and ignored otherwise (the preset supplies them). Give the full
+# sequence each read runs into; adapter_overrun fill starts where it ends.
 # Quote the value: YAML would otherwise read a bare N or Y as a boolean.
 # type = str | required: no (unless adapter_preset: custom)
 adapter_r1: .

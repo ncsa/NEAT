@@ -36,6 +36,7 @@ def _make_read(
     raw_read=None,
     genomic_len=None,
     adapter_seq="",
+    adapter_overrun="polyg",
 ):
     if end_point is None:
         end_point = position + read_len
@@ -55,6 +56,7 @@ def _make_read(
         is_paired=is_paired,
         genomic_len=genomic_len,
         adapter_seq=adapter_seq,
+        adapter_overrun=adapter_overrun,
     )
 
 
@@ -761,16 +763,92 @@ def test_adapter_tail_matches_adapter_sequence():
     assert str(r.read_sequence[:genomic_len]) == _REF[:genomic_len]
 
 
-def test_adapter_sequence_is_sourced_cyclically():
-    """A read can run past the end of the adapter, so adapter bases repeat rather than run out."""
-    # Genomic part short enough that the tail is longer than the adapter itself.
+def _finalize_overrun_read(genomic_len, adapter_overrun, seed=0, quality_bins=None):
+    """Like _finalize_adapter_read, with a chosen overrun fill and optional quality binning."""
+    r = _make_read(
+        reference=_REF[:genomic_len],
+        padding=_DELETION_HEADROOM,
+        end_point=genomic_len,
+        genomic_len=genomic_len,
+        adapter_seq=_TRUSEQ_R1,
+        adapter_overrun=adapter_overrun,
+    )
+    qual_model = (TraditionalQualityModel(quality_bins=quality_bins) if quality_bins
+                  else TraditionalQualityModel())
+    r.finalize_read_and_write(
+        SequencingErrorModel(read_length=_READ_LEN), qual_model, None, 33, False, 0,
+        _make_rng(seed),
+    )
+    return r
+
+
+def test_adapter_overrun_defaults_to_poly_g():
+    """
+    Past the end of the adapter construct there is no template left, so the read must not loop
+    back into a second copy of the adapter (#344). By default it fills with the G no-calls of
+    two-colour chemistry.
+    """
     genomic_len = _READ_LEN - len(_TRUSEQ_R1) - 10
     r = _finalize_adapter_read(genomic_len)
 
     tail = str(r.read_sequence[genomic_len:])
-    assert len(tail) > len(_TRUSEQ_R1)
-    expected = (_TRUSEQ_R1 * 3)[:len(tail)]
-    assert tail == expected
+    assert len(r.read_sequence) == _READ_LEN
+    assert tail == _TRUSEQ_R1 + "G" * 10
+    assert r.make_cigar() == f"{genomic_len}M{_READ_LEN - genomic_len}S"
+
+
+def test_adapter_overrun_random_fill():
+    """The four-colour option fills with random bases, still without repeating the adapter."""
+    overrun = 40
+    genomic_len = _READ_LEN - len(_TRUSEQ_R1) - overrun
+    r = _finalize_overrun_read(genomic_len, "random")
+
+    tail = str(r.read_sequence[genomic_len:])
+    assert len(r.read_sequence) == _READ_LEN
+    assert tail.startswith(_TRUSEQ_R1)
+    fill = tail[len(_TRUSEQ_R1):]
+    assert len(fill) == overrun
+    assert set(fill) <= set("ACGT")
+    assert len(set(fill)) > 1, "random fill should not be a single repeated base"
+    assert _TRUSEQ_R1[:13] not in fill
+
+
+def test_adapter_overrun_fill_takes_no_substitution_errors():
+    """
+    Overrun bases are no-calls rather than misread template, so even at floor quality the poly-G
+    fill stays pure G while the adapter bases before it pick up substitution noise.
+    """
+    genomic_len = 20
+    r = _finalize_overrun_read(genomic_len, "polyg", seed=1, quality_bins=[2])
+
+    tail = str(r.read_sequence[genomic_len:])
+    assert len(tail) == _READ_LEN - genomic_len
+    assert tail[len(_TRUSEQ_R1):] == "G" * (len(tail) - len(_TRUSEQ_R1))
+    assert tail[:len(_TRUSEQ_R1)] != _TRUSEQ_R1, "expected substitution noise at floor quality"
+
+
+def test_adapter_tail_shorter_than_adapter_is_unaffected_by_overrun_mode():
+    """Reads that never reach the end of the adapter come out the same under either fill."""
+    genomic_len = _READ_LEN - 20
+    polyg = _finalize_overrun_read(genomic_len, "polyg", seed=3)
+    random = _finalize_overrun_read(genomic_len, "random", seed=3)
+    assert str(polyg.read_sequence) == str(random.read_sequence)
+    assert list(polyg.quality_array) == list(random.quality_array)
+
+
+def test_deletion_lengthens_overrun_fill():
+    """A deletion in a short insert grows the tail; the extra bases come from the fill."""
+    genomic_len = _READ_LEN - len(_TRUSEQ_R1) - 5
+    location, length = 10, 4
+    r = _finalize_adapter_read(genomic_len, mutations=_deletion_at(location, length))
+
+    removed = _deleted_bases(length)
+    new_genomic = genomic_len - removed
+    tail = str(r.read_sequence[new_genomic:])
+    assert len(r.read_sequence) == _READ_LEN
+    assert tail == _TRUSEQ_R1 + "G" * (5 + removed)
+    ops = _cigar_ops(r.make_cigar())
+    assert ops[-1] == (_READ_LEN - new_genomic, "S")
 
 
 def test_adapter_cigar_soft_clips_tail_on_forward_read():

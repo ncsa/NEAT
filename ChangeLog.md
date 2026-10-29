@@ -1,3 +1,17 @@
+# Unreleased
+
+- Adapter readthrough no longer loops back into a second copy of the adapter (#344, reported by
+  @abjanssen). A read whose tail was longer than the adapter wrapped around to its start, so a
+  25 bp insert read at 150 bp carried the TruSeq stem nearly four times over. No molecule
+  carries that sequence, and a trimming benchmark scored against it is scoring against something
+  no sequencer emits. With 150 bp reads this affected every TruSeq insert under ~117 bp and every
+  Nextera insert under ~131 bp. The presets are now the full construct a read runs through —
+  adapter, placeholder index, then P7 (read 1) or P5 (read 2) — and anything past that is filled
+  per the new `adapter_overrun` option: `polyg` (default; the no-signal call of two-colour
+  instruments) or `random` (four-colour). Fill bases take no substitution errors. Reads whose tail
+  ends inside the adapter stem are unchanged; seeded adapter runs with longer tails will differ
+  from v4.7.1. Runs without `adapters` are unaffected.
+
 # NEAT v4.7.1
 
 Two golden-BAM correctness fixes surfaced by the short-insert and adapter-readthrough work in
