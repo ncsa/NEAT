@@ -8,7 +8,10 @@
   Nextera insert under ~131 bp. The presets are now the full construct a read runs through —
   adapter, placeholder index, then P7 (read 1) or P5 (read 2) — and anything past that is filled
   per the new `adapter_overrun` option: `polyg` (default; the no-signal call of two-colour
-  instruments) or `random` (four-colour). Fill bases take no substitution errors. Reads whose tail
+  instruments) or `random` (four-colour). Fill bases take no substitution errors. Poly-G carries
+  the quality model's top score, since a dark cluster is a confident G call and real poly-G tails
+  survive quality-only trimming; random fill carries the floor score (both suggested by
+  @abjanssen). Reads whose tail
   ends inside the adapter stem are unchanged; seeded adapter runs with longer tails will differ
   from v4.7.1. Runs without `adapters` are unaffected.
 

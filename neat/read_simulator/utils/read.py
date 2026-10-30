@@ -537,7 +537,10 @@ class Read:
             molecule entirely and the rest is filled per adapter_overrun — G for the no-signal
             calls of two-colour chemistry, or random bases. The adapter is never repeated: no
             real molecule carries a second copy of it,
-          - draw quality scores from the same model as genomic bases,
+          - draw quality scores from the same model as genomic bases, except overrun fill: a
+            poly-G base is a dark cluster the instrument confidently calls G, so it gets the
+            model's top score, and a random base is a guess, so it gets the floor (see
+            _overrun_fill_score),
           - take substitution errors at the rate implied by those scores, so trimmers face
             realistic rather than pristine adapters. Overrun fill does not: there is no template
             base there to misread. Insertion and deletion errors are deliberately
@@ -558,7 +561,13 @@ class Read:
         if number_of_bases <= 0:
             return
         self.adapter_length = number_of_bases
-        scores = qual_model.get_quality_scores(err_model.read_length, number_of_bases, rng)
+        # Drawn for every tail base, fill included, so the RNG stream — and with it every read
+        # whose tail ends inside the adapter — is the same whatever the fill mode.
+        scores = np.asarray(
+            qual_model.get_quality_scores(err_model.read_length, number_of_bases, rng), dtype=int
+        )
+        if number_of_bases > len(self.adapter_seq):
+            scores[len(self.adapter_seq):] = self._overrun_fill_score(qual_model)
 
         bases = []
         for index, score in enumerate(scores):
@@ -580,9 +589,23 @@ class Read:
             bases.append(base)
 
         self.read_sequence = self.read_sequence + Seq("".join(bases))
-        self.quality_array = np.concatenate(
-            (self.quality_array, np.asarray(scores, dtype=int))
-        )
+        self.quality_array = np.concatenate((self.quality_array, scores))
+
+    def _overrun_fill_score(self, qual_model) -> int:
+        """
+        The quality score for a base past the end of the adapter construct.
+
+        Poly-G is not a low-confidence call: on two-colour chemistry a dark cluster reads as a
+        confident G, which is why quality trimming alone leaves poly-G tails in place. Random
+        fill stands for a call made on no signal, so it sits at the floor. Either way the score
+        is one the instrument can actually emit — a binned model's top or bottom bin, and the
+        uniform score for a uniform model.
+        """
+        uniform = getattr(qual_model, "uniform_quality_score", None)
+        if uniform:
+            return uniform
+        levels = getattr(qual_model, "quality_bins", None) or qual_model.quality_scores
+        return max(levels) if self.adapter_overrun == "polyg" else min(levels)
 
     def convert_masking(self, quality_model: TraditionalQualityModel, n_handling: str = "exclude"):
         """

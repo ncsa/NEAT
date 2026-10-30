@@ -186,8 +186,10 @@ adapter_preset: .
 
 # What fills a read that runs past the end of the whole adapter construct, where no template is
 # left. The adapter is never repeated.
-#   polyg  - G, the no-signal call of two-colour instruments (NovaSeq, NextSeq, iSeq).
-#   random - random bases, closer to four-colour instruments (MiSeq, HiSeq).
+#   polyg  - G, the no-signal call of two-colour instruments (NovaSeq, NextSeq, iSeq), at the
+#            quality model's top score: a dark cluster is a confident G, not a low-quality one.
+#   random - random bases at the quality model's floor score, closer to four-colour instruments
+#            (MiSeq, HiSeq).
 # type = str | required: no | default = polyg
 adapter_overrun: .
 

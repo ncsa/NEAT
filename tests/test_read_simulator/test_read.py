@@ -827,6 +827,34 @@ def test_adapter_overrun_fill_takes_no_substitution_errors():
     assert tail[:len(_TRUSEQ_R1)] != _TRUSEQ_R1, "expected substitution noise at floor quality"
 
 
+@pytest.mark.parametrize("mode,pick", [("polyg", max), ("random", min)])
+def test_adapter_overrun_fill_quality(mode, pick):
+    """
+    Poly-G is a confident call on a dark cluster, so it carries the model's top score — which
+    is why quality trimming alone does not remove it. Random fill is a call on no signal and
+    sits at the floor. Adapter bases before the fill keep their modelled scores.
+    """
+    genomic_len = 20
+    r = _finalize_overrun_read(genomic_len, mode, seed=5)
+
+    model = TraditionalQualityModel()
+    fill_start = genomic_len + len(_TRUSEQ_R1)
+    fill = list(r.quality_array[fill_start:])
+    assert len(fill) == _READ_LEN - fill_start
+    assert set(fill) == {pick(model.quality_scores)}
+    assert len(set(r.quality_array[genomic_len:fill_start])) > 1
+
+
+@pytest.mark.parametrize("mode,expected", [("polyg", 37), ("random", 2)])
+def test_adapter_overrun_fill_quality_respects_bins(mode, expected):
+    """A binned instrument only emits its bin levels, so the fill takes the top or bottom bin."""
+    genomic_len = 20
+    r = _finalize_overrun_read(genomic_len, mode, quality_bins=[2, 12, 23, 37])
+
+    fill = set(r.quality_array[genomic_len + len(_TRUSEQ_R1):])
+    assert fill == {expected}
+
+
 def test_adapter_tail_shorter_than_adapter_is_unaffected_by_overrun_mode():
     """Reads that never reach the end of the adapter come out the same under either fill."""
     genomic_len = _READ_LEN - 20

@@ -285,8 +285,12 @@ read that is longer still has run off the end of the molecule, and what fills th
 `adapter_overrun`:
 
 - `polyg` (default) — G, which is how two-colour instruments (NovaSeq, NextSeq, iSeq) call a
-  cycle with no signal. This produces the poly-G tails seen in real short-insert data.
-- `random` — random bases, closer to four-colour instruments (MiSeq, HiSeq).
+  cycle with no signal. This produces the poly-G tails seen in real short-insert data. These are
+  confident calls, so they carry the quality model's top score (top bin, for a binned model) —
+  which is why trimming on quality alone leaves them in place, and why fastp has a separate
+  poly-G trim.
+- `random` — random bases at the quality model's floor score, closer to four-colour instruments
+  (MiSeq, HiSeq).
 
 Overrun bases take no substitution errors, since there is no template base to misread. The
 adapter is never repeated: no real molecule carries a second copy of it.
