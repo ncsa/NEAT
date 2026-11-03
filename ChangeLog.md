@@ -1,4 +1,8 @@
-# Unreleased
+# NEAT v4.8.0
+
+Adapter readthrough now models what a sequencer reads past the end of a short insert, rather
+than repeating the adapter. Adds one config option, `adapter_overrun`. Output is unchanged for
+runs that do not use `adapters`.
 
 - Adapter readthrough no longer loops back into a second copy of the adapter (#344, reported by
   @abjanssen). A read whose tail was longer than the adapter wrapped around to its start, so a
@@ -11,9 +15,8 @@
   instruments) or `random` (four-colour). Fill bases take no substitution errors. Poly-G carries
   the quality model's top score, since a dark cluster is a confident G call and real poly-G tails
   survive quality-only trimming; random fill carries the floor score (both suggested by
-  @abjanssen). Reads whose tail
-  ends inside the adapter stem are unchanged; seeded adapter runs with longer tails will differ
-  from v4.7.1. Runs without `adapters` are unaffected.
+  @abjanssen). Reads whose tail ends inside the adapter stem are unchanged; seeded adapter runs
+  with longer tails will differ from v4.7.1. Runs without `adapters` are unaffected.
 
 # NEAT v4.7.1
 
