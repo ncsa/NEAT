@@ -607,6 +607,7 @@ def generate_reads(
             is_paired=options.paired_ended,
             genomic_len=insert_1,
             adapter_seq=r1_adapter,
+            adapter_overrun=options.adapter_overrun,
         )
 
         read_1.mutations = find_applicable_mutations(read_1, contig_variants)
@@ -668,6 +669,7 @@ def generate_reads(
                 is_paired=options.paired_ended,
                 genomic_len=insert_2,
                 adapter_seq=r2_adapter,
+                adapter_overrun=options.adapter_overrun,
             )
 
             read_2.mutations = find_applicable_mutations(read_2, contig_variants)

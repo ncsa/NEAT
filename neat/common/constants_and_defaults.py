@@ -29,10 +29,33 @@ IUPAC_CODES = frozendict({
 # complement of the read-2-side adapter and read 2 into the read-1-side one; both TruSeq entries
 # therefore share the AGATCGGAAGAGC stem that adapter trimmers search for. Nextera libraries are
 # built by tagmentation and present the same Mosaic End on both reads.
+#
+# Each entry is the whole construct a read runs through, not just the stem: adapter, then the
+# sample index, then the flow-cell binding sequence (P7 for read 1, P5 for read 2), ending where
+# the molecule ends. Past that there is no template at all, which Read._append_adapter_readthrough
+# models separately (see ADAPTER_OVERRUN_MODES). The indexes are fixed placeholders — TruSeq
+# single-index adapter 1 (ATCACG, no i5) and Nextera N701/S501 — written as they appear in the
+# read, which for read 2 is the reverse complement of the i5 bases in the adapter oligo.
+_P7_READTHROUGH = 'ATCTCGTATGCCGTCTTCTGCTTG'
+_P5_READTHROUGH = 'GTGTAGATCTCGGTGGTCGCCGTATCATT'
 ADAPTER_PRESETS = frozendict({
-    'truseq': ('AGATCGGAAGAGCACACGTCTGAACTCCAGTCA', 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT'),
-    'nextera': ('CTGTCTCTTATACACATCT', 'CTGTCTCTTATACACATCT'),
+    'truseq': (
+        'AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC' + 'ATCACG' + _P7_READTHROUGH,
+        # Single-index universal adapter: with no i5 between them, the stem and P5 share the
+        # GTGT at their junction, so P5 picks up after it.
+        'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT' + _P5_READTHROUGH[4:],
+    ),
+    'nextera': (
+        'CTGTCTCTTATACACATCT' + 'CCGAGCCCACGAGAC' + 'TAAGGCGA' + _P7_READTHROUGH,
+        'CTGTCTCTTATACACATCT' + 'GACGCTGCCGACGA' + 'GCGATCTA' + _P5_READTHROUGH,
+    ),
 })
+
+# What the sequencer calls once a read has run past the end of the adapter construct and there is
+# no template left. Two-colour chemistry (NovaSeq, NextSeq, iSeq) reads "no signal" as G, giving
+# the poly-G tails seen in real short-insert data; four-colour chemistry (MiSeq, HiSeq) has no
+# such bias and produces low-confidence noise instead.
+ADAPTER_OVERRUN_MODES = ('polyg', 'random')
 
 
 def resolve_iupac_bases(sequence: str, rng) -> tuple[str, int]:

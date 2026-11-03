@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+from neat.common import ADAPTER_PRESETS
 from neat.models import FragmentLengthModel, SequencingErrorModel, TraditionalQualityModel, GCBiasModel, get_uniform_gc_model
 from neat.read_simulator.utils import Options
 from neat.read_simulator.utils.output_file_writer import OutputFileWriter
@@ -919,8 +920,7 @@ def _short_insert_options(paired=True, adapters=False, keep_short=False, seed=0)
     opts.adapters = adapters
     opts.keep_short_fragments = keep_short
     if adapters:
-        opts.adapter_r1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
-        opts.adapter_r2 = "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+        opts.adapter_r1, opts.adapter_r2 = ADAPTER_PRESETS["truseq"]
     return opts
 
 
@@ -1325,11 +1325,11 @@ def test_end_to_end_soft_clipped_bases_are_the_adapter(tmp_path):
     """
     The clipped bases are adapter, not mis-clipped genomic sequence, and their qualities travel
     with them. Adapter bases take substitution errors like any other base call, so this asks for
-    a strong majority match rather than an exact one.
+    a strong majority match rather than an exact one. A tail longer than the adapter construct
+    runs off the molecule into poly-G, never into a second copy of the adapter (#344).
     """
     reference = _random_reference()
-    opts_r1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
-    opts_r2 = "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+    opts_r1, opts_r2 = ADAPTER_PRESETS["truseq"]
     records = _bam_records(_run_to_bam(tmp_path, reference))
 
     checked = 0
@@ -1346,7 +1346,7 @@ def test_end_to_end_soft_clipped_bases_are_the_adapter(tmp_path):
         else:
             clip_len = ops[-1][1]
             clipped = record.query_sequence[-clip_len:]
-        expected = (adapter * (clip_len // len(adapter) + 1))[:clip_len]
+        expected = adapter[:clip_len].ljust(clip_len, "G")
         matches = sum(a == b for a, b in zip(clipped, expected))
         assert matches >= 0.8 * clip_len, (
             f"clipped tail does not look like adapter: {clipped} vs {expected}"

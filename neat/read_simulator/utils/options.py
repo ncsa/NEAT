@@ -33,7 +33,7 @@ from pathlib import Path
 from numpy.random import Generator
 from math import inf
 
-from ...common import validate_input_path, validate_output_path, ADAPTER_PRESETS, ALLOWED_NUCL
+from ...common import validate_input_path, validate_output_path, ADAPTER_PRESETS, ADAPTER_OVERRUN_MODES, ALLOWED_NUCL
 
 
 _LOG = logging.getLogger(__name__)
@@ -90,6 +90,7 @@ class Options(SimpleNamespace):
                  adapter_preset: str = "truseq",
                  adapter_r1: str | None = None,
                  adapter_r2: str | None = None,
+                 adapter_overrun: str = "polyg",
                  keep_short_fragments: bool = False,
                  **kwargs: Any
                  ):
@@ -155,6 +156,9 @@ class Options(SimpleNamespace):
         :param adapter_r1: Read-1 adapter, 5'->3' uppercase A/C/G/T. Required when adapter_preset is
             "custom"; ignored otherwise (the preset supplies it).
         :param adapter_r2: Read-2 adapter, same rules as adapter_r1.
+        :param adapter_overrun: What fills a read that runs past the end of the whole adapter
+            construct, where no template is left: "polyg" (default) for the G no-calls of
+            two-colour instruments, or "random" for four-colour instruments.
         :param keep_short_fragments: True to keep inserts shorter than read_len as plain insert-length
             genomic reads with no adapter padding. Implied by adapters; set on its own to study the
             coverage behavior of a short-insert library in isolation.
@@ -205,6 +209,7 @@ class Options(SimpleNamespace):
         self.adapter_preset: str = adapter_preset
         self.adapter_r1: str | None = adapter_r1
         self.adapter_r2: str | None = adapter_r2
+        self.adapter_overrun: str = adapter_overrun
         self.keep_short_fragments: bool = keep_short_fragments
         # Genome-wide mean GC bias weight, computed once at the runner level when
         # gc_model is loaded. cover_dataset divides per-chunk reads by this rather
@@ -287,6 +292,7 @@ class Options(SimpleNamespace):
             'adapter_preset': (str, "truseq", 'choice', ("truseq", "nextera", "custom")),
             'adapter_r1': (str, None, None, None),
             'adapter_r2': (str, None, None, None),
+            'adapter_overrun': (str, "polyg", 'choice', ADAPTER_OVERRUN_MODES),
             'keep_short_fragments': (bool, False, None, None)
         }
 
@@ -633,7 +639,8 @@ class Options(SimpleNamespace):
                       f"literal N at read edges.")
         if self.adapters:
             _LOG.info(f"3' adapter readthrough: enabled, preset '{self.adapter_preset}' "
-                      f"(R1={self.adapter_r1}, R2={self.adapter_r2}).")
+                      f"(R1={self.adapter_r1}, R2={self.adapter_r2}), "
+                      f"overrun fill '{self.adapter_overrun}'.")
         elif self.keep_short_fragments:
             _LOG.info("Short inserts: kept as insert-length genomic reads, no adapter padding.")
         _LOG.info(f'RNG seed value for run: {self.rng_seed}')
