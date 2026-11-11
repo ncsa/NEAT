@@ -1,3 +1,15 @@
+# NEAT v4.8.1
+
+Read names are now unique by appending a sequential counter through a thread-specific read counter. 
+Output differs from earlier versions only in the read name field.
+
+- Reads that started and ended at the same position no longer share a name (#347). Names were
+  previously built from the contig name, thread index and read start/stop, leaving a chance that
+  reads could have identical names. Duplicate names can break downstream tools when unique names
+  are assumed. Real Illumina reads are unique because their names carry the lane and x/y position
+  on the chip. Each read now gets a counter that numbers it within its thread. 
+  Read names change for all runs; sequences, qualities and positions are unchanged.
+
 # NEAT v4.8.0
 
 Adapter readthrough now models what a sequencer reads past the end of a short insert, rather

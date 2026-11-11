@@ -569,7 +569,7 @@ def generate_reads(
         block_read = read1 + read2
         raw_read = tuple(x + ref_start for x in block_read)
         # +1 to account for sam indexing
-        read_name = f'NEAT_generated_{contig_name}_{thread_index}_{read_counter}_{raw_read[0]+1:010d}_{raw_read[3]+1:010d}'
+        read_name = f'NEAT_generated_{contig_name}_{thread_index}_{raw_read[0]+1:010d}_{raw_read[3]+1:010d}_{read_counter}'
         read_counter += 1
 
         # Genomic bases available to read 1. Equals read_len unless the insert was shorter, in
