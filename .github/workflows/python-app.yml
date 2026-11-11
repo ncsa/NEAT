@@ -2,7 +2,7 @@ name: NEAT Unit and Integration Tests
 
 on:
   push:
-    branches: [develop]
+    branches: [main, develop]
   pull_request:
     branches: [main, develop]
 
