@@ -14,6 +14,10 @@ trailing counter field.
   names on `_` still find the existing fields where they were. Sequences, qualities, and
   positions are unchanged.
 
+- README: the intro no longer names a release that went stale (it still said v4.5 was current);
+  it now summarizes the 4.x line and points to Releases for the latest version. The sister-tool
+  section is updated for the `rusty-neat`/`rneat` → `eidolon` rename.
+
 # NEAT v4.8.0
 
 Adapter readthrough now models what a sequencer reads past the end of a short insert, rather
