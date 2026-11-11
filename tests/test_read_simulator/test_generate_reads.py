@@ -593,6 +593,25 @@ def test_generate_reads_read_length_matches_options():
     for read in ofw.bam_records:
         assert len(read.read_sequence) == _READ_LEN
 
+def test_generate_reads_names_are_unique_when_reads_share_coordinates():
+    ref = _make_reference()
+    err, qual, frag = _make_models()
+    opts = _make_options(paired=False)
+    opts.coverage = 200
+    cv = ContigVariants()
+    ofw = _CollectingOFW()
+
+    generate_reads(0, ref, err, 3, qual, frag, get_uniform_gc_model(), cv,
+                   _all_span_targeted(), _nothing_discarded(),
+                   opts, ofw, "chr1", 0, 0)
+
+    reads = ofw.bam_records
+    coords = {(r.position, r.end_point) for r in reads}
+    assert len(coords) < len(reads)
+
+    names = [r.name for r in reads]
+    assert len(set(names)) == len(names)
+
 
 # ---------------------------------------------------------------------------
 # generate_reads — BED filtering

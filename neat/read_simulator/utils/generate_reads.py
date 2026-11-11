@@ -511,6 +511,7 @@ def generate_reads(
     # straight out leaves the BAM unsorted and unindexable.
     bam_buffer: list[tuple[int, int, "Read"]] = []
     bam_counter = 0
+    read_counter = 1
     # Fragments arrive in read-1 order, and no read can start earlier than its own fragment start
     # less the deletion headroom (read_len // 5). A whole read length is a generous bound on that,
     # so anything below the watermark can be written out without a later read undercutting it.
@@ -568,7 +569,8 @@ def generate_reads(
         block_read = read1 + read2
         raw_read = tuple(x + ref_start for x in block_read)
         # +1 to account for sam indexing
-        read_name = f'NEAT_generated_{contig_name}_{thread_index}_{raw_read[0]+1:010d}_{raw_read[3]+1:010d}'
+        read_name = f'NEAT_generated_{contig_name}_{thread_index}_{raw_read[0]+1:010d}_{raw_read[3]+1:010d}_{read_counter}'
+        read_counter += 1
 
         # Genomic bases available to read 1. Equals read_len unless the insert was shorter, in
         # which case the rest of the read is adapter (or, under keep_short_fragments alone, the
