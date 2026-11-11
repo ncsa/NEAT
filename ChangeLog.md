@@ -1,3 +1,9 @@
+# Unreleased
+
+- README: the intro no longer names a release that went stale (it still said v4.5 was current);
+  it now summarizes the 4.x line and points to Releases for the latest version. The sister-tool
+  section is updated for the `rusty-neat`/`rneat` → `eidolon` rename.
+
 # NEAT v4.8.1
 
 Every read now gets a unique name. Output is unchanged apart from read names, which gain a
@@ -13,10 +19,6 @@ trailing counter field.
   field (`NEAT_generated_{contig}_{thread}_{start}_{end}_{counter}`), so scripts that split
   names on `_` still find the existing fields where they were. Sequences, qualities, and
   positions are unchanged.
-
-- README: the intro no longer names a release that went stale (it still said v4.5 was current);
-  it now summarizes the 4.x line and points to Releases for the latest version. The sister-tool
-  section is updated for the `rusty-neat`/`rneat` → `eidolon` rename.
 
 # NEAT v4.8.0
 
