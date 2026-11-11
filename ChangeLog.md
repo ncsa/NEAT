@@ -1,4 +1,7 @@
-# Unreleased
+# NEAT v4.8.1
+
+Every read now gets a unique name. Output is unchanged apart from read names, which gain a
+trailing counter field.
 
 - Read names are now unique (#347, by @abjanssen). A name was built from the contig, thread
   index, and read start/end, so any two fragments at the same position shared one. That happens
