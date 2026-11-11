@@ -612,6 +612,7 @@ def test_generate_reads_names_are_unique_when_reads_share_coordinates():
     names = [r.name for r in reads]
     assert len(set(names)) == len(names)
 
+
 # ---------------------------------------------------------------------------
 # generate_reads — BED filtering
 # ---------------------------------------------------------------------------

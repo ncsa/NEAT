@@ -1,14 +1,15 @@
-# NEAT v4.8.1
+# Unreleased
 
-Read names are now unique by appending a sequential counter through a thread-specific read counter. 
-Output differs from earlier versions only in the read name field.
-
-- Reads that started and ended at the same position no longer share a name (#347). Names were
-  previously built from the contig name, thread index and read start/stop, leaving a chance that
-  reads could have identical names. Duplicate names can break downstream tools when unique names
-  are assumed. Real Illumina reads are unique because their names carry the lane and x/y position
-  on the chip. Each read now gets a counter that numbers it within its thread. 
-  Read names change for all runs; sequences, qualities and positions are unchanged.
+- Read names are now unique (#347, by @abjanssen). A name was built from the contig, thread
+  index, and read start/end, so any two fragments at the same position shared one. That happens
+  at ordinary coverage, not just very deep runs, and tools that key on the name break on it:
+  Picard MarkDuplicates, for one, treats a shared name as a PCR duplicate and drops a read. Real
+  Illumina names are unique because they carry the lane and x/y position on the flow cell. Each
+  name now ends in a counter that numbers the read within its thread; together with the contig
+  and thread index that makes it unique across the run. The counter is appended as a new last
+  field (`NEAT_generated_{contig}_{thread}_{start}_{end}_{counter}`), so scripts that split
+  names on `_` still find the existing fields where they were. Sequences, qualities, and
+  positions are unchanged.
 
 # NEAT v4.8.0
 
