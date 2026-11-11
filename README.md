@@ -1,10 +1,16 @@
-# The NEAT Project v4.5
+# The NEAT Project
 
-Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit, version 4.5. See the [ChangeLog](ChangeLog.md) for the full version history.
+Welcome to the NEAT project, the NExt-generation sequencing Analysis Toolkit. See [Releases](https://github.com/ncsa/NEAT/releases) for the latest version and the [ChangeLog](ChangeLog.md) for the full version history.
 
-## NEAT v4.5
+## NEAT 4.x
 
-NEAT 4.5 is the current release. It adds the `neat compare-vcfs` subcommand, removes the deprecated `cleanup_splits`/`reuse_splits` config keys, and ships a number of performance and correctness fixes accumulated across the 4.4.x line. See the [ChangeLog](ChangeLog.md) for details.
+Recent releases in the 4.x line have added:
+
+- **3′ adapter readthrough and short-insert libraries** (4.7–4.8): reads from inserts shorter than the read length run into the full adapter construct, with poly-G or random fill past its end. See [3′ Adapter Readthrough](#3-adapter-readthrough).
+- **Realistic handling of reference `N` bases** (4.6): reads in assembly gaps are excluded rather than filled with fabricated sequence.
+- **`neat compare-vcfs`** (4.5): attributes a variant caller's false negatives against the simulated truth VCF.
+
+Along the way they have fixed a number of correctness issues in the golden BAM and FASTQ output. See the [ChangeLog](ChangeLog.md) for details.
 
 We consider NEAT 4.x to be a stable release line and will continue to provide bug fixes and support. We will consider new features and pull requests. Please include justification for major changes. See [contribute](CONTRIBUTING.md) for more information. If you'd like to use some of our code in your own, please review the [license](LICENSE.md) first.
 
@@ -26,8 +32,8 @@ To cite this work, please use both of the following:
 
 ## Table of Contents
 
-* [The NEAT Project v4.5](#the-neat-project-v45)
-* [NEAT v4.5](#neat-v45)
+* [The NEAT Project](#the-neat-project)
+* [NEAT 4.x](#neat-4x)
 * [Table of Contents](#table-of-contents)
   * [Prerequisites](#prerequisites)
   * [Installation](#installation)
@@ -557,7 +563,7 @@ neat read-simulator                 \
 ```
 
 ### Large single-end reads
-Simulate PacBio-like reads by providing an error model. Note: full long-read support is planned for a separate future release and is not yet fully validated in NEAT 4.4.
+Simulate PacBio-like reads by providing an error model. Note: full long-read support is planned for a separate future release and is not yet fully validated in NEAT 4.x.
 
 Contents of neat_config.yml:
 ```yml
@@ -877,5 +883,5 @@ Please see `CONTRIBUTING.md` for more information and further instructions.
 ### Note on Sensitive Patient Data
 ICGC's "Access Controlled Data" documentation can be found at <a href = https://docs.icgc.org/portal/access/ target="_blank">https://docs.icgc.org/portal/access/</a>. To have access to controlled germline data, a DACO must be submitted. Open tier data can be obtained without a DACO, but germline alleles that do not match the reference genome are masked and replaced with the reference allele. Controlled data includes unmasked germline alleles.
 
-### rneat
-We would like to introduce a sister tool, `rneat`, a Rust implementation of NEAT based largely on the original NEAT 2.1 codebase. It shares NEAT's core feature set while adding a native cancer-simulation workflow — tumor/normal mixtures with configurable purity, an origin-tagged truth VCF, complex structural variants (CNV/BND/INV), and per-tissue cancer models. It also keeps a low, flat memory footprint, produces byte-identical output for a given seed regardless of thread count, and ships as a single self-contained binary (no Python environment to manage). Check our repo here: <a href=https://github.com/ncsa/rusty-neat/ target="_blank">https://github.com/ncsa/rusty-neat</a>, where you can navigate to releases to download the latest binary, or find it on <a href=https://zenodo.org/records/20577688>Zenodo</a>. Check out `rneat` and let us know what you think!
+### eidolon
+We would like to introduce a sister tool, `eidolon` (formerly `rusty-neat`/`rneat`), a Rust implementation of NEAT based largely on the original NEAT 2.1 codebase. It shares NEAT's core feature set while adding a native cancer-simulation workflow — tumor/normal mixtures with configurable purity, an origin-tagged truth VCF, complex structural variants (CNV/BND/INV), and per-tissue cancer models. It also keeps a low, flat memory footprint, produces byte-identical output for a given seed regardless of thread count, and ships as a single self-contained binary (no Python environment to manage). Check our repo here: <a href=https://github.com/ncsa/eidolon/ target="_blank">https://github.com/ncsa/eidolon</a>, where you can navigate to releases to download the latest binary, or find it on <a href=https://doi.org/10.5281/zenodo.20100558>Zenodo</a>. Check out `eidolon` and let us know what you think!
